@@ -97,7 +97,6 @@ func Test_API_MTP(t *testing.T) {
 						t.Fatal("missing required MTP backend/artifact load evidence")
 					}
 					accepted := 0
-					requestIDs := make(map[string]bool)
 					run := func(name string, request model.D, want string, reuse bool) string {
 						request["model"], request["stream"] = id, true
 						var text string
@@ -146,7 +145,6 @@ func Test_API_MTP(t *testing.T) {
 									return "qualified IMC replay/append did not reuse cached tokens"
 								}
 								accepted += terminal.Usage.DraftAcceptedTokens
-								requestIDs[terminal.ID] = true
 								t.Logf("%s: draft=%d accepted=%d cached=%d", name, terminal.Usage.DraftTokens,
 									terminal.Usage.DraftAcceptedTokens, terminal.Usage.PromptTokensDetails.CachedTokens)
 								return ""
@@ -168,25 +166,27 @@ func Test_API_MTP(t *testing.T) {
 					long["messages"] = []model.D{{"role": "user", "content": "Explain how TCP retransmission, database transactions and garden irrigation each recover from partial failure. Give a different concrete example for each, then explain where the analogy breaks down."}}
 					long["max_tokens"] = 384
 					long["temperature"] = 0.7
+					before, ok := krn.BatchEngineSnapshot()
+					if !ok {
+						t.Fatal("missing generation diagnostics")
+					}
 					run("long-stream", long, "", false)
+					after, ok := krn.BatchEngineSnapshot()
+					if !ok {
+						t.Fatal("missing completed generation diagnostics")
+					}
+					if profile.enabled && after.SpeculativeRollbacks[fixture.strategy] <= before.SpeculativeRollbacks[fixture.strategy] {
+						t.Fatalf("native rejected-round recovery not qualified: %s", fixture.strategy)
+					}
+					if !profile.enabled && len(after.SpeculativeRollbacks) != 0 {
+						t.Fatalf("disabled control performed speculative rollback: %v", after.SpeculativeRollbacks)
+					}
 					if profile.slots == 1 {
 						t.Run("media-state", func(t *testing.T) { chatMediaState(t, test, token, id) })
 					}
 					if profile.enabled {
 						if accepted == 0 {
 							t.Fatal("MTP workload accepted no draft tokens")
-						}
-						rollback := false
-						for _, record := range test.ModelEvents()[marker:] {
-							if record.Message == "speculative" && record.Attributes["status"] == "target-rollback" &&
-								record.Attributes["backend"] == fixture.backend && record.Attributes["strategy"] == fixture.strategy {
-								if requestID, ok := record.Attributes["id"].(string); ok && requestIDs[requestID] {
-									rollback = true
-								}
-							}
-						}
-						if !rollback {
-							t.Fatalf("native rejected-round recovery not qualified: %s", fixture.strategy)
 						}
 						t.Run("transport", func(t *testing.T) { chatTransport(t, test, token, id, profile.slots) })
 					}

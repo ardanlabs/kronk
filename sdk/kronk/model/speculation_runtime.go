@@ -268,6 +268,7 @@ func (e *batchEngine) RollbackClassicTarget(slotID int, plan classicengine.Final
 		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
 			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
 		}
+		e.recordTargetSpecRollback(s, true)
 		return true, nil
 	}
 	if rollbackFrom < rollbackTo {
@@ -280,6 +281,7 @@ func (e *batchEngine) RollbackClassicTarget(slotID int, plan classicengine.Final
 		if !removed {
 			return false, fmt.Errorf("removing rejected target draft positions for seq %d", s.seqID)
 		}
+		e.recordTargetSpecRollback(s, false)
 	}
 	return false, nil
 }
@@ -389,6 +391,7 @@ func (e *batchEngine) RollbackMTPTarget(slotID int, plan mtp.FinalizePlan) (bool
 		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
 			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
 		}
+		e.recordTargetSpecRollback(s, true)
 		return true, nil
 	}
 	if rollbackFrom < rollbackTo {
@@ -401,8 +404,29 @@ func (e *batchEngine) RollbackMTPTarget(slotID int, plan mtp.FinalizePlan) (bool
 		if !removed {
 			return false, fmt.Errorf("removing rejected target draft positions for seq %d", s.seqID)
 		}
+		e.recordTargetSpecRollback(s, false)
 	}
 	return false, nil
+}
+
+// recordTargetSpecRollback counts completed native recovery, not just rejected
+// verification results. Failed restore/removal operations must not be counted.
+func (e *batchEngine) recordTargetSpecRollback(s *slot, snapshot bool) {
+	strategy := "attention-suffix"
+	switch {
+	case snapshot:
+		strategy = "recurrent-snapshot-replay"
+	case e.model.modelInfo.profile.MemorySemantics == modelprofile.MemoryRecurrent:
+		strategy = "recurrent-native"
+	}
+	if s.specTargetRollbacks == nil {
+		s.specTargetRollbacks = make(map[string]uint64)
+	}
+	if e.specTargetRollbacks == nil {
+		e.specTargetRollbacks = make(map[string]uint64)
+	}
+	s.specTargetRollbacks[strategy]++
+	e.specTargetRollbacks[strategy]++
 }
 
 func (e *batchEngine) RollbackMTPDraft(slotID int, plan mtp.FinalizePlan) error {

@@ -38,14 +38,15 @@ type batchEngine struct {
 	// slot's stable seqID must not be reassigned in the same iteration. After
 	// decode, those sequences are cleared again to remove any staged rows that
 	// were written after finishSlot's initial clear.
-	batchReleased   []bool
-	batchAssembling bool
-	batchIteration  uint64
-	imcPrepNext     int
-	prefillNext     int
-	mediaNext       int
-	diagnostics     atomic.Pointer[BatchEngineSnapshot]
-	speculation     speculation.Controller
+	batchReleased       []bool
+	batchAssembling     bool
+	batchIteration      uint64
+	imcPrepNext         int
+	prefillNext         int
+	mediaNext           int
+	diagnostics         atomic.Pointer[BatchEngineSnapshot]
+	speculation         speculation.Controller
+	specTargetRollbacks map[string]uint64 // Successful target recoveries over this engine's lifetime
 
 	// Diagnostics below are owned by processLoop and copied into diagnostics
 	// at batch-loop boundaries for concurrent observers.

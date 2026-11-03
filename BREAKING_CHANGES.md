@@ -4,6 +4,7 @@
 
 - [Unreleased](#unreleased)
   - [Internal RAM IMC Storage](#unreleased-internal-ram-imc-storage)
+  - [Speculative Rollback Diagnostics](#unreleased-speculative-rollback-diagnostics)
 - [v1.33.2](#v1332)
   - [Browser Admin Session Lifetime](#v1332-browser-admin-session-lifetime)
 - [v1.33.1](#v1331)
@@ -77,6 +78,20 @@ below refer to earlier releases, not the current source tree.
 
 Public SDK chat and pool APIs are unchanged. This change does not add durable
 session storage or recovery after restart.
+
+### Unreleased: Speculative Rollback Diagnostics
+
+`BatchEngineSnapshot` and `BatchSlotSnapshot` now expose
+`SpeculativeRollbacks map[string]uint64`. Engine counts accumulate since model
+load; slot counts belong to the active request and reset when it finishes.
+The keys are `attention-suffix`, `recurrent-native`, and
+`recurrent-snapshot-replay`. Only successful target recovery is counted;
+rejected draft tokens alone do not count as recovery.
+
+Rollback verification no longer depends on per-round `target-rollback` logs.
+The existing `slot-finished` log includes the request's totals in
+`draft_target_rollbacks` when a drafter is configured. HTTP response shapes
+are unchanged.
 
 ## v1.33.2
 

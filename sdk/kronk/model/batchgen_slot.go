@@ -185,18 +185,19 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Speculative Decoding
 
-	draftNPast          llama.Pos     // Draft model's KV cache position
-	draftPrefillNeeded  bool          // True when draft model needs prefill after target prefill
-	draftPromptTokens   []llama.Token // Full prompt tokens for draft model prefill
-	specDraftTokens     []llama.Token // Draft tokens for current speculative step
-	specBasePast        llama.Pos     // Target nPast before speculative tokens were added
-	specBaseBatch       int32         // Batch index where speculative tokens start
-	specDraftedTotal    int           // Total draft tokens generated across all speculative steps
-	specAcceptedTotal   int           // Total draft tokens accepted across all speculative steps
-	specCoveredTotal    int           // Emitted output tokens processed through speculative verification
-	processingSpecToken bool          // True while an accepted draft or bonus token is being processed
-	samplingSeeds       samplingSeeds // Derived native and Go RNG seeds for this request
-	specRNG             *rand.Rand    // Request-local RNG for speculative acceptance and manual sampling
+	draftNPast          llama.Pos         // Draft model's KV cache position
+	draftPrefillNeeded  bool              // True when draft model needs prefill after target prefill
+	draftPromptTokens   []llama.Token     // Full prompt tokens for draft model prefill
+	specDraftTokens     []llama.Token     // Draft tokens for current speculative step
+	specBasePast        llama.Pos         // Target nPast before speculative tokens were added
+	specBaseBatch       int32             // Batch index where speculative tokens start
+	specDraftedTotal    int               // Total draft tokens generated across all speculative steps
+	specAcceptedTotal   int               // Total draft tokens accepted across all speculative steps
+	specCoveredTotal    int               // Emitted output tokens processed through speculative verification
+	specTargetRollbacks map[string]uint64 // Successful target recoveries by strategy for this request
+	processingSpecToken bool              // True while an accepted draft or bonus token is being processed
+	samplingSeeds       samplingSeeds     // Derived native and Go RNG seeds for this request
+	specRNG             *rand.Rand        // Request-local RNG for speculative acceptance and manual sampling
 
 	// Per-slot owned buffers for speculative decoding. Avoids shared buffer
 	// corruption when multiple slots generate draft tokens in the same
@@ -303,6 +304,7 @@ func (s *slot) reset() {
 	s.specDraftedTotal = 0
 	s.specAcceptedTotal = 0
 	s.specCoveredTotal = 0
+	s.specTargetRollbacks = nil
 	s.processingSpecToken = false
 	s.classic.Reset()
 	s.samplingSeeds = samplingSeeds{}

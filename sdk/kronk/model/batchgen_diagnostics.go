@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"maps"
+	"time"
+)
 
 const diagnosticsPublishInterval = 100 * time.Millisecond
 
@@ -29,6 +32,7 @@ type BatchSlotSnapshot struct {
 	IMCPreparedTokens       int
 	IMCTotalTokens          int
 	IMCPreparationRemaining int
+	SpeculativeRollbacks    map[string]uint64
 }
 
 // BatchEngineSnapshot describes the latest immutable scheduler state published
@@ -55,6 +59,7 @@ type BatchEngineSnapshot struct {
 	TotalRows               int
 	GenerationContributions []BatchGenerationContribution
 	Slots                   []BatchSlotSnapshot
+	SpeculativeRollbacks    map[string]uint64
 }
 
 func (e *batchEngine) publishDiagnostics(force bool) {
@@ -82,6 +87,7 @@ func (e *batchEngine) publishDiagnostics(force bool) {
 		TotalRows:               e.batch.len(),
 		GenerationContributions: append([]BatchGenerationContribution(nil), e.diagnosticGeneration...),
 		Slots:                   make([]BatchSlotSnapshot, len(e.slots)),
+		SpeculativeRollbacks:    maps.Clone(e.specTargetRollbacks),
 	}
 	snapshot.PrefillRows = max(snapshot.TotalRows-snapshot.GenerationRows, 0)
 
@@ -122,6 +128,7 @@ func (e *batchEngine) slotSnapshot(now time.Time, s *slot) BatchSlotSnapshot {
 	}
 
 	snapshot.RequestID = s.job.id
+	snapshot.SpeculativeRollbacks = maps.Clone(s.specTargetRollbacks)
 	if !s.job.requestStart.IsZero() {
 		snapshot.RequestAge = now.Sub(s.job.requestStart)
 	}
@@ -198,5 +205,11 @@ func (m *Model) BatchEngineSnapshot() (BatchEngineSnapshot, bool) {
 	result.EligibleIMCSlots = append([]int(nil), snapshot.EligibleIMCSlots...)
 	result.GenerationContributions = append([]BatchGenerationContribution(nil), snapshot.GenerationContributions...)
 	result.Slots = append([]BatchSlotSnapshot(nil), snapshot.Slots...)
+	result.SpeculativeRollbacks = maps.Clone(snapshot.SpeculativeRollbacks)
+
+	for i := range result.Slots {
+		result.Slots[i].SpeculativeRollbacks = maps.Clone(snapshot.Slots[i].SpeculativeRollbacks)
+	}
+
 	return result, true
 }

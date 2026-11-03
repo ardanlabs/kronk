@@ -268,6 +268,7 @@ kronk server start`})]})]})}function Ps(e){let t=/^([\d.]+)\s*(MB|GB|KB|B)?$/i.e
 	TotalRows               int
 	GenerationContributions []BatchGenerationContribution
 	Slots                   []BatchSlotSnapshot
+	SpeculativeRollbacks    map[string]uint64
 }`})}),(0,G.jsx)(`p`,{className:`doc-description`,children:`BatchEngineSnapshot describes the latest immutable scheduler state published by a model's generation batch engine.`})]}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`type-batchgenerationcontribution`,children:[(0,G.jsx)(`h4`,{children:`BatchGenerationContribution`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`type BatchGenerationContribution struct {
 	SlotID int
 	Rows   int
@@ -288,6 +289,7 @@ kronk server start`})]})]})}function Ps(e){let t=/^([\d.]+)\s*(MB|GB|KB|B)?$/i.e
 	IMCPreparedTokens       int
 	IMCTotalTokens          int
 	IMCPreparationRemaining int
+	SpeculativeRollbacks    map[string]uint64
 }`})}),(0,G.jsx)(`p`,{className:`doc-description`,children:`BatchSlotSnapshot describes one generation slot at a batch-loop boundary.`})]}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`type-channel`,children:[(0,G.jsx)(`h4`,{children:`Channel`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`type Channel struct {
 	// Has unexported fields.
 }`})}),(0,G.jsx)(`p`,{className:`doc-description`,children:`Channel labels emitted tokens. Its zero value is none.`})]}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`type-chatresponse`,children:[(0,G.jsx)(`h4`,{children:`ChatResponse`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:'type ChatResponse struct {\n	ID                string   `json:"id"`\n	Object            string   `json:"object"`\n	Created           int64    `json:"created"`\n	Model             string   `json:"model"`\n	SystemFingerprint string   `json:"system_fingerprint"`\n	Choices           []Choice `json:"choices"`\n	Usage             *Usage   `json:"usage,omitempty"`\n	// Has unexported fields.\n}'})}),(0,G.jsx)(`p`,{className:`doc-description`,children:`ChatResponse represents output for inference models.`})]}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`type-choice`,children:[(0,G.jsx)(`h4`,{children:`Choice`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:'type Choice struct {\n	Index           int              `json:"index"`\n	Message         *ResponseMessage `json:"message,omitempty"`\n	Delta           *ResponseMessage `json:"delta,omitempty"`\n	Logprobs        *Logprobs        `json:"logprobs,omitempty"`\n	FinishReasonPtr *string          `json:"finish_reason"`\n}'})}),(0,G.jsx)(`p`,{className:`doc-description`,children:`Choice represents a single choice in a response.`})]}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`type-completiontokensdetails`,children:[(0,G.jsx)(`h4`,{children:`CompletionTokensDetails`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`type CompletionTokensDetails struct {

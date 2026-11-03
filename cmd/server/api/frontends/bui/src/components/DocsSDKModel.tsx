@@ -334,6 +334,7 @@ export default function DocsSDKModel() {
 	TotalRows               int
 	GenerationContributions []BatchGenerationContribution
 	Slots                   []BatchSlotSnapshot
+	SpeculativeRollbacks    map[string]uint64
 }`}</code>
               </pre>
               <p className="doc-description">BatchEngineSnapshot describes the latest immutable scheduler state published by a model's generation batch engine.</p>
@@ -370,6 +371,7 @@ export default function DocsSDKModel() {
 	IMCPreparedTokens       int
 	IMCTotalTokens          int
 	IMCPreparationRemaining int
+	SpeculativeRollbacks    map[string]uint64
 }`}</code>
               </pre>
               <p className="doc-description">BatchSlotSnapshot describes one generation slot at a batch-loop boundary.</p>
