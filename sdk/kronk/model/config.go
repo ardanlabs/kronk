@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
@@ -348,17 +347,6 @@ type AdapterConfig struct {
 // Set to RopeScalingYaRN only when the model supports YaRN and configure the
 // frequency scale required by that model.
 //
-// SessionStoreFactory constructs session stores for direct SDK use.
-// Kronk invokes it separately for every working session store it needs and
-// closes every successfully returned store. The factory must return a new,
-// independent store on each call. The factory may capture shared,
-// concurrency-safe resources such as a connection pool or process-wide quota.
-// It receives the context for the operation that needs the store. Store read,
-// prepare, commit, and reset operations also receive that context and return
-// errors. System prompt preloads always remain in RAM. When nil, Kronk uses the
-// built-in RAM factory. Backend-specific constructor parameters belong to the
-// backend package and are captured by the injected factory.
-//
 // SplitMode controls how the model is split across multiple GPUs:
 //   - SplitModeNone (0): single GPU
 //   - SplitModeLayer (1): split layers and KV across GPUs
@@ -455,7 +443,6 @@ type Config struct {
 	PtrRopeFreqScale           *float32
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
-	SessionStoreFactory        kvstorage.Factory
 	Speculation                SpeculationMode
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
@@ -598,7 +585,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nPhysicalBatchSize[%s]", formatIntPtr(cfg.PtrPhysicalBatchSize)) + fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nPhysicalBatchSize[%s]", formatIntPtr(cfg.PtrPhysicalBatchSize)) + fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.DecisionProtocol, chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
@@ -607,7 +594,7 @@ func (cfg Config) String() string {
 		cfg.NUMA,
 		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.ProjDevice, cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
-		cfg.SessionStoreFactory != nil, cfg.SpeculationMode(),
+		cfg.SpeculationMode(),
 		formatSplitModePtr(cfg.PtrSplitMode),
 		formatBoolPtr(cfg.PtrSWAFull), cfg.TensorBuftOverrides, cfg.TensorSplit,
 		formatFloat32Ptr(cfg.PtrYarnAttnFactor),
@@ -1385,8 +1372,4 @@ func WithQueueDepth(v int) Option {
 	return func(c *Config) {
 		c.PtrQueueDepth = new(v)
 	}
-}
-
-func WithSessionStoreFactory(v kvstorage.Factory) Option {
-	return func(c *Config) { c.SessionStoreFactory = v }
 }

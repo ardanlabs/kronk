@@ -168,7 +168,7 @@ func TestResolveSamplingSeedsOmitted(t *testing.T) {
 
 func TestResolveRequestSamplingSeedsSession(t *testing.T) {
 	m := Model{}
-	session := imcSession{}
+	session := imcSession{cache: &imcPrefix{}}
 
 	first, _, source, err := m.resolveRequestSamplingSeeds(nil, false, &session)
 	if err != nil {

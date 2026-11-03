@@ -213,7 +213,6 @@ jobs:
 
       - name: Run sdk tests
         run: |
-          go -C examples test -v -count=1 -timeout 2m ./session-store
           go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
           go test -v -count=1 -timeout 20m ./sdk/kronk/tests/qwen3
           go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06

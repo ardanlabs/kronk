@@ -30,7 +30,7 @@ func (e *batchEngine) queueIMCMediaPreparation(s *slot, cacheIdx llama.Pos, sess
 	prep := imcPreparation{cacheIdx: cacheIdx, position: int(cacheIdx), sessionUpdateDisabled: sessionUpdateDisabled}
 	s.imcPrep = &prep
 	if !job.imcMediaBuild && !job.imcMediaAppend {
-		job.imcMediaNativeChunks = job.imcSession.mediaNativeChunks
+		job.imcMediaNativeChunks = job.imcSession.cache.mediaNativeChunks
 		return nil
 	}
 
@@ -40,12 +40,12 @@ func (e *batchEngine) queueIMCMediaPreparation(s *slot, cacheIdx llama.Pos, sess
 		prep.baseTokens = int(cacheIdx)
 	} else if !job.imcMediaBuild {
 		prep.baseTokens = job.imcExpectedTokens
-		prefix = job.imcSession.mediaNativeChunks
-		if !job.imcSession.hasMedia {
-			prefix = []imcMediaChunk{{kind: imcMediaChunkText, tokens: slices.Clone(job.imcSession.cachedTokens)}}
+		prefix = job.imcSession.cache.mediaNativeChunks
+		if !job.imcSession.cache.hasMedia {
+			prefix = []imcMediaChunk{{kind: imcMediaChunkText, tokens: slices.Clone(job.imcSession.cache.cachedTokens)}}
 		}
 	}
-	if job.imcSystemCache == nil && (job.imcMediaBuild || (!job.imcSession.hasMedia && mtmd.DecodeUseNonCausal(s.mtmdCtx, 0))) {
+	if job.imcSystemCache == nil && (job.imcMediaBuild || (!job.imcSession.cache.hasMedia && mtmd.DecodeUseNonCausal(s.mtmdCtx, 0))) {
 		if err := e.resetIMCMediaPreparation(s); err != nil {
 			return err
 		}
@@ -205,7 +205,7 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 			job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts,
 			job.imcExpectedRenderHash)
 		e.model.cacheMu.Lock()
-		job.imcSession.promptPlan = job.imcPromptPlan
+		job.imcSession.cache.promptPlan = job.imcPromptPlan
 		e.model.cacheMu.Unlock()
 		sessionWasCommitted = true
 	}
@@ -316,12 +316,12 @@ func (e *batchEngine) advanceIMCMediaPreparation(s *slot, selectorStart, selecte
 		e.model.imcCommitSession(job.ctx, job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached,
 			job.imcNewCachedMsgCount, nil, true, job.imcMediaKVCounts, job.imcExpectedRenderHash)
 		e.model.cacheMu.Lock()
-		job.imcSession.promptPlan = job.imcPromptPlan
-		job.imcSession.samplerPromptTokens = slices.Clone(p.samplerPromptTokens)
-		job.imcSession.mediaNativeChunks = p.nativeChunks
-		job.imcSession.nextLogicalPos = p.position
-		job.imcSession.useMRoPE = job.imcSessionUseMRoPE
-		job.imcSession.useNonCausal = mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
+		job.imcSession.cache.promptPlan = job.imcPromptPlan
+		job.imcSession.cache.samplerPromptTokens = slices.Clone(p.samplerPromptTokens)
+		job.imcSession.cache.mediaNativeChunks = p.nativeChunks
+		job.imcSession.cache.nextLogicalPos = p.position
+		job.imcSession.cache.useMRoPE = job.imcSessionUseMRoPE
+		job.imcSession.cache.useNonCausal = mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
 		e.model.cacheMu.Unlock()
 		sessionWasCommitted = true
 	}

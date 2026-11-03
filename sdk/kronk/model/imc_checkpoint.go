@@ -1,66 +1,32 @@
-// Package ram provides the in-process RAM implementation of the
-// kvstorage.Store contract used by IMC (Incremental Message Cache)
-// to externalize per-session KV cache bytes between requests.
-//
-// This is the default session store. It keeps each session's bytes in a
-// single Go-allocated []byte with lazy-grow / never-shrink semantics —
-// the backing array is allocated on first Prepare, grown only when a
-// snapshot exceeds the current capacity, and retained across snapshots
-// (and across session rebinds) so per-turn allocation churn is
-// eliminated. Conversations grow monotonically and are bounded by the
-// model context window, so each session's buffer reaches steady-state
-// after a small number of Prepare calls and never reallocates again.
-//
-// SDK users can provide alternative backends behind the same contract.
-package ram
+package model
 
 import (
 	"context"
 	"errors"
 	"fmt"
-
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 )
 
-// Store is the in-process RAM session store. It is NOT safe for
-// concurrent use; the IMC scheduler serializes access via the
-// per-session pending invariant — at most one in-flight request
-// touches a given session's Store at a time.
+// imcCheckpoint holds native sequence bytes in RAM. Its backing array grows
+// lazily and retains capacity across snapshots and session rebinds.
+// It is not safe for concurrent use; the IMC scheduler serializes access
+// through session reservations and System-cache build/restore ownership.
 //
-// The zero value is a usable, empty Store.
-type Store struct {
+// The zero value is a usable, empty checkpoint.
+type imcCheckpoint struct {
 	buf      []byte
 	length   int
 	prepared int
 }
 
-var _ kvstorage.Store = (*Store)(nil)
-
-// NewFactory constructs a factory for independent RAM stores.
-func NewFactory() kvstorage.Factory {
-	return func(ctx context.Context) (kvstorage.Store, error) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		return New(), nil
-	}
-}
-
-// New returns a new, empty Store ready for use.
-func New() *Store {
-	return &Store{}
-}
-
 // Len returns the number of valid bytes currently held in the store.
 // This is the size of the most recently Commit'ed snapshot.
-func (s *Store) Len() int {
+func (s *imcCheckpoint) Len() int {
 	return s.length
 }
 
 // Cap returns the current backing-array capacity. Useful for
 // diagnostics and tests that want to verify the never-shrink invariant.
-func (s *Store) Cap() int {
+func (s *imcCheckpoint) Cap() int {
 	return cap(s.buf)
 }
 
@@ -68,7 +34,7 @@ func (s *Store) Cap() int {
 // llama.StateSeqSetData when restoring KV state). The returned read-only slice
 // aliases the internal buffer; callers must not modify it or retain it past the
 // next Prepare, Commit, Reset, or Close call.
-func (s *Store) Bytes(ctx context.Context) ([]byte, error) {
+func (s *imcCheckpoint) Bytes(ctx context.Context) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -100,12 +66,12 @@ func (s *Store) Bytes(ctx context.Context) ([]byte, error) {
 // headroom. This mirrors Go's "newLen > 2*oldCap" shortcut.
 //
 // A negative size returns an error.
-func (s *Store) Prepare(ctx context.Context, size int) ([]byte, error) {
+func (s *imcCheckpoint) Prepare(ctx context.Context, size int) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if size < 0 {
-		return nil, errors.New("ram: prepare size must not be negative")
+		return nil, errors.New("imc-checkpoint: prepare size must not be negative")
 	}
 
 	s.length = 0
@@ -128,13 +94,13 @@ func (s *Store) Prepare(ctx context.Context, size int) ([]byte, error) {
 // the prepared size, or zero on failure). The backing array is retained.
 //
 // n must be within the slice returned by Prepare.
-func (s *Store) Commit(ctx context.Context, n int) error {
+func (s *imcCheckpoint) Commit(ctx context.Context, n int) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	s.length = 0
 	if n < 0 || n > s.prepared {
-		return fmt.Errorf("ram: commit length %d outside prepared length %d", n, s.prepared)
+		return fmt.Errorf("imc-checkpoint: commit length %d outside prepared length %d", n, s.prepared)
 	}
 
 	s.length = n
@@ -146,7 +112,7 @@ func (s *Store) Commit(ctx context.Context, n int) error {
 // (Len becomes 0), while retaining capacity for the next Prepare. Called
 // when a session is rebound to a different conversation so no bytes from
 // the prior conversation survive reuse.
-func (s *Store) Reset(ctx context.Context) error {
+func (s *imcCheckpoint) Reset(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -158,11 +124,10 @@ func (s *Store) Reset(ctx context.Context) error {
 	return nil
 }
 
-// Close releases the backing array. Always returns nil; satisfies the
-// SessionStore.Close contract. The RAM impl has no file descriptors
-// or external resources to release — Go's garbage collector reclaims
+// Close releases the backing array. Always returns nil. There are no file
+// descriptors or external resources to release — Go's garbage collector reclaims
 // the backing array once no caller retains a reference.
-func (s *Store) Close() error {
+func (s *imcCheckpoint) Close() error {
 	s.buf = nil
 	s.length = 0
 	s.prepared = 0

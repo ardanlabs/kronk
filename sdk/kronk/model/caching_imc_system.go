@@ -8,7 +8,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -147,9 +146,9 @@ func (m *Model) imcReserveSystemCache(tokens []llama.Token) *imcSystemCache {
 	return selected
 }
 
-func (m *Model) imcSystemCacheStore(ctx context.Context, cache *imcSystemCache, draft bool) (kvstorage.Store, error) {
+func (m *Model) imcSystemCacheStore(cache *imcSystemCache, draft bool) *imcCheckpoint {
 	m.cacheMu.Lock()
-	var store kvstorage.Store
+	var store *imcCheckpoint
 	if draft {
 		store = cache.draftKVState
 	} else {
@@ -157,13 +156,10 @@ func (m *Model) imcSystemCacheStore(ctx context.Context, cache *imcSystemCache, 
 	}
 	m.cacheMu.Unlock()
 	if store != nil {
-		return store, nil
+		return store
 	}
 
-	store, err := newSystemCacheStore(ctx)
-	if err != nil {
-		return nil, err
-	}
+	store = &imcCheckpoint{}
 
 	m.cacheMu.Lock()
 	if draft {
@@ -172,7 +168,7 @@ func (m *Model) imcSystemCacheStore(ctx context.Context, cache *imcSystemCache, 
 		cache.kvState = store
 	}
 	m.cacheMu.Unlock()
-	return store, nil
+	return store
 }
 
 func (m *Model) imcAbortSystemCache(ctx context.Context, cache *imcSystemCache) error {

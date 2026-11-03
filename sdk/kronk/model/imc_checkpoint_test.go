@@ -1,4 +1,4 @@
-package ram
+package model
 
 import (
 	"context"
@@ -8,18 +8,18 @@ import (
 )
 
 type checkedStore struct {
-	*Store
+	*imcCheckpoint
 	t *testing.T
 }
 
 func newCheckedStore(t *testing.T) *checkedStore {
 	t.Helper()
-	return &checkedStore{Store: &Store{}, t: t}
+	return &checkedStore{imcCheckpoint: &imcCheckpoint{}, t: t}
 }
 
 func (cs *checkedStore) Bytes() []byte {
 	cs.t.Helper()
-	buf, err := cs.Store.Bytes(context.Background())
+	buf, err := cs.imcCheckpoint.Bytes(context.Background())
 	if err != nil {
 		cs.t.Fatalf("Bytes() error = %v, want nil", err)
 	}
@@ -28,7 +28,7 @@ func (cs *checkedStore) Bytes() []byte {
 
 func (cs *checkedStore) Prepare(size int) []byte {
 	cs.t.Helper()
-	buf, err := cs.Store.Prepare(context.Background(), size)
+	buf, err := cs.imcCheckpoint.Prepare(context.Background(), size)
 	if err != nil {
 		cs.t.Fatalf("Prepare(%d) error = %v, want nil", size, err)
 	}
@@ -37,31 +37,15 @@ func (cs *checkedStore) Prepare(size int) []byte {
 
 func (cs *checkedStore) Commit(n int) {
 	cs.t.Helper()
-	if err := cs.Store.Commit(context.Background(), n); err != nil {
+	if err := cs.imcCheckpoint.Commit(context.Background(), n); err != nil {
 		cs.t.Fatalf("Commit(%d) error = %v, want nil", n, err)
 	}
 }
 
 func (cs *checkedStore) Reset() {
 	cs.t.Helper()
-	if err := cs.Store.Reset(context.Background()); err != nil {
+	if err := cs.imcCheckpoint.Reset(context.Background()); err != nil {
 		cs.t.Fatalf("Reset() error = %v, want nil", err)
-	}
-}
-
-func TestNewFactory(t *testing.T) {
-	factory := NewFactory()
-
-	store1, err := factory(context.Background())
-	if err != nil {
-		t.Fatalf("factory() error = %v, want nil", err)
-	}
-	store2, err := factory(context.Background())
-	if err != nil {
-		t.Fatalf("factory() second error = %v, want nil", err)
-	}
-	if store1 == store2 {
-		t.Errorf("factory() returned the same store %p twice", store1)
 	}
 }
 
@@ -177,7 +161,7 @@ func TestStore_PrepareNegativeSize(t *testing.T) {
 	k := newCheckedStore(t)
 	_ = k.Prepare(1024)
 
-	buf, err := k.Store.Prepare(context.Background(), -1)
+	buf, err := k.imcCheckpoint.Prepare(context.Background(), -1)
 	if err == nil {
 		t.Fatal("Prepare(-1) error = nil, want non-nil")
 	}
@@ -211,14 +195,14 @@ func TestStore_CommitRejectsInvalidLength(t *testing.T) {
 	k := newCheckedStore(t)
 	_ = k.Prepare(1024)
 
-	if err := k.Store.Commit(context.Background(), -50); err == nil {
+	if err := k.imcCheckpoint.Commit(context.Background(), -50); err == nil {
 		t.Fatal("Commit(-50) error = nil, want non-nil")
 	}
 	if k.Len() != 0 {
 		t.Errorf("Commit(-50) → Len() = %d, want 0", k.Len())
 	}
 
-	if err := k.Store.Commit(context.Background(), 99999); err == nil {
+	if err := k.imcCheckpoint.Commit(context.Background(), 99999); err == nil {
 		t.Fatal("Commit(99999) error = nil, want non-nil")
 	}
 	if k.Len() != 0 {
@@ -230,7 +214,7 @@ func TestStore_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	store := New()
+	store := &imcCheckpoint{}
 	if _, err := store.Prepare(ctx, 1); !errors.Is(err, context.Canceled) {
 		t.Errorf("Prepare() error = %v, want context.Canceled", err)
 	}

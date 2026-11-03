@@ -449,8 +449,7 @@ history merely because the model computation was skipped.
 Kronk can retain an independently rendered and verified text-only system
 preload, including matching draft/MTP state when available. These
 preloads live in a model-owned RAM pool whose capacity equals the working
-session count. Unlike working snapshots, System entries do not use the
-configured session store; saved working snapshots already contain the
+session count. Working snapshots also live in RAM and already contain the
 System prefix.
 
 An exact match may skip rewriting the snapshot when the stable state has not
@@ -507,7 +506,6 @@ models:
     incremental-cache: true
     cache-min-tokens: 100
     imc-session-capacity: 8
-    session-store-kind: ram
 ```
 
 Restart the server after changing the file. This example retains eight working
@@ -520,7 +518,6 @@ The relevant settings are:
 | `incremental-cache`  | `true`  | Enables IMC for the model.                                          |
 | `cache-min-tokens`   | `100`   | Minimum stable text-token-plan length required for text IMC reuse.  |
 | `imc-session-capacity` | Derived | Reusable identities; must be at least admission capacity.          |
-| `session-store-kind` | `ram`   | Working-session storage; only `ram` is supported in server configuration. |
 
 When `imc-session-capacity` is omitted, Kronk derives the capacity from
 `nseq-max` and `queue-depth`. The same admission-capacity floor applies to an
@@ -540,31 +537,13 @@ need to compare behavior without prompt caching.
 
 ### Built-in RAM storage
 
-The built-in `ram` store keeps snapshots in process memory. It is selected by
-default when `session-store-kind` is omitted. Each session buffer
+IMC keeps snapshots in process memory. Storage is not replaceable through
+server configuration or the SDK. Each session buffer
 grows as needed and retains its peak allocation for reuse. Actual memory use
 depends on the model, cached conversation lengths, KV data types, and number of
 sessions that have been used. Budget for peak conversation state across the
 branches you expect to keep warm, not just the `nseq-max` requests that can run
 simultaneously.
-
-### Custom SDK storage
-
-Embedded applications can replace working-session storage. This is an SDK
-extension, not a server configuration option for disk storage. System preloads
-still use RAM. Custom storage must preserve complete snapshots, report read
-and write failures, and provide its own capacity limits and cleanup policy.
-
-Writing snapshot bytes to disk does not make conversations recoverable after
-a restart. Durable recovery also needs compatible model and configuration
-identities, matching cache metadata, validated snapshots, and an application
-recovery design.
-
-The [`examples/session-store`](https://github.com/ardanlabs/kronk/tree/main/examples/session-store)
-program demonstrates the SDK extension. It uses temporary files and deletes
-them when closed; it does not provide startup recovery or durable atomic
-commits. **Do not use the example as durable session storage.** Consult the
-SDK storage contract when implementing an alternative backend.
 
 Some MTP configurations maintain draft-model cached state and saved hidden
 state in addition to the target model snapshot. Account for this extra storage

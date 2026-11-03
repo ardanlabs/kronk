@@ -479,7 +479,6 @@ export default function DocsSDKModel() {
 	PtrRopeFreqScale           *float32
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
-	SessionStoreFactory        kvstorage.Factory
 	Speculation                SpeculationMode
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
@@ -542,7 +541,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">RopeFreqScale overrides the raw RoPE frequency multiplier. When nil, uses the value from model metadata. Kronk does not derive this value from ContextWindow; an N-times extension generally uses 1/N when the model's documentation requires explicit scaling.</p>
               <p className="doc-description">RecordArtifactVerification persists updated verification state after Kronk verifies a model artifact. When nil, verification state is not persisted.</p>
               <p className="doc-description">RopeScaling controls the RoPE scaling method for extended context support. Set to RopeScalingYaRN only when the model supports YaRN and configure the frequency scale required by that model.</p>
-              <p className="doc-description">SessionStoreFactory constructs session stores for direct SDK use. Kronk invokes it separately for every working session store it needs and closes every successfully returned store. The factory must return a new, independent store on each call. The factory may capture shared, concurrency-safe resources such as a connection pool or process-wide quota. It receives the context for the operation that needs the store. Store read, prepare, commit, and reset operations also receive that context and return errors. System prompt preloads always remain in RAM. When nil, Kronk uses the built-in RAM factory. Backend-specific constructor parameters belong to the backend package and are captured by the injected factory.</p>
               <p className="doc-description">SplitMode controls how the model is split across multiple GPUs: - SplitModeNone (0): single GPU - SplitModeLayer (1): split layers and KV across GPUs - SplitModeRow (2): legacy row-split parallelism - SplitModeTensor (3): tensor parallelism</p>
               <p className="doc-description">When nil (not set), the default is SplitModeLayer, matching llama.cpp. Layer mode distributes a single GGUF across multiple GPUs without requiring the backend-specific support used by row and tensor modes.</p>
               <p className="doc-description">SWAFull controls whether models with sliding window attention (SWA) use a full-size KV cache for SWA layers instead of the memory-efficient small cache. When nil (default), llama.cpp's default is used. When explicitly set to false, SWA layers only cache the last n_swa tokens, saving significant VRAM but limiting context caching and shifting. When true, SWA layers use the full context window for their KV cache, preserving accuracy at the cost of higher memory usage.</p>

@@ -29,7 +29,7 @@ type cacheResult struct {
 	imcPromptPlan          promptPlan
 
 	// IMC session-routing field. Sessions externalize their KV state
-	// via SessionStore between requests, so the matched session may run
+	// in RAM checkpoints between requests, so the matched session may run
 	// on any free execution slot — the slot is chosen by the scheduler
 	// at startSlot. imcSessionID identifies the matched session pool
 	// entry (used by imcReleaseReservation lookup and log correlation).
@@ -52,7 +52,7 @@ type cacheResult struct {
 	imcSystemBoundaryTokens int  // Exact system-prefix boundary at which to publish a missing immutable preload.
 	imcSystemCache          *imcSystemCache
 
-	// imcSession is the matched session pointer; the SessionStore on it
+	// imcSession is the matched session pointer; its RAM checkpoint
 	// is the authoritative source of the cached prefix bytes restored
 	// into the chosen slot's sequence at startSlot.
 	imcSession *imcSession

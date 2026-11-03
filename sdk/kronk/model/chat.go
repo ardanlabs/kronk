@@ -186,6 +186,7 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan 
 
 type preparedChat struct {
 	d          D
+	imcRequest D
 	object     string
 	prompt     string
 	media      [][]byte
@@ -198,6 +199,7 @@ func (m *Model) prepareChat(ctx context.Context, d D, streaming bool, requestSta
 	// Establish ownership before preparation starts. Callers may reuse or modify
 	// their request after ChatStreaming returns; the queued job must retain a
 	// stable snapshot of all mutable JSON containers.
+	request := d
 	d = d.Clone()
 
 	params, d, err := m.validateOwnedDocument(ctx, d)
@@ -226,6 +228,12 @@ func (m *Model) prepareChat(ctx context.Context, d D, streaming bool, requestSta
 
 	if err := m.prepareTextBudget(ctx, &prepared); err != nil {
 		return prepared, err
+	}
+
+	// Keep the submitted history before media/text normalization and template
+	// defaults. Only requests assigned an IMC session need a recovery record.
+	if cache.imcSession != nil {
+		prepared.imcRequest = request.Clone()
 	}
 
 	return prepared, nil
@@ -509,6 +517,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		queuedAt:            time.Now(),
 		requestStart:        requestStart,
 		d:                   prepared.d,
+		imcRequest:          prepared.imcRequest,
 		object:              prepared.object,
 		prompt:              prepared.prompt,
 		media:               prepared.media,
@@ -522,8 +531,8 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcPromptPlan:       cache.imcPromptPlan,
 
 		imcSession:         cache.imcSession,
-		imcSessionMedia:    cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
-		imcSessionUseMRoPE: cache.imcSession != nil && cache.imcSession.useMRoPE,
+		imcSessionMedia:    cache.imcSession != nil && (cache.imcSession.cache.hasMedia || cache.imcMediaBuild),
+		imcSessionUseMRoPE: cache.imcSession != nil && cache.imcSession.cache.useMRoPE,
 		imcPhysicalCached:  cache.imcExpectedTokens,
 		imcSessionID:       cache.imcSessionID,
 		imcCacheHit:        imcCacheHit,

@@ -42,30 +42,24 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	}
 
 	m.cacheMu.Lock()
+	hashes := m.imcCandidateHashes(target, nil)
 	var best *imcSession
 	var bestLen int
-	var empty *imcSession
-	var lru *imcSession
 	for _, session := range m.imcSessions {
+		cache := session.cache
 		if session.reserved {
 			continue
 		}
-		if session.totalTokensCached == 0 {
-			if empty == nil {
-				empty = session
-			}
+		if cache.totalTokensCached == 0 {
 			continue
 		}
-		if lru == nil || session.lastUsed.Before(lru.lastUsed) {
-			lru = session
-		}
-		currentExact := len(session.cachedTokens) == len(target)
-		currentFingerprintOK := !currentExact || exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK)
-		if !session.hasMedia && len(session.cachedTokens) > 0 && session.kvState != nil && session.kvState.Len() > 0 &&
-			tokensHavePrefix(target, session.cachedTokens) && currentFingerprintOK {
-			if len(session.cachedTokens) > bestLen {
+		currentExact := len(cache.cachedTokens) == len(target)
+		currentFingerprintOK := !currentExact || exactRenderFingerprintMatches(cache.cachedRenderInputHash, renderFingerprint, fingerprintOK)
+		if !cache.hasMedia && len(cache.cachedTokens) > 0 && session.kvState != nil && session.kvState.Len() > 0 &&
+			session.matchesPrefixHash(hashes) && tokensHavePrefix(target, cache.cachedTokens) && currentFingerprintOK {
+			if len(cache.cachedTokens) > bestLen {
 				best = session
-				bestLen = len(session.cachedTokens)
+				bestLen = len(cache.cachedTokens)
 			}
 		}
 	}
@@ -83,26 +77,24 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	reusable := 0
 	extension := target
 	clearSeq := true
-	selected := best
+	var selected *imcSession
 	if best != nil {
-		reusable = len(best.cachedTokens)
+		selected = best
+		reusable = len(selected.cache.cachedTokens)
 		extension = slices.Clone(target[reusable:])
 		clearSeq = false
 		if len(extension) == 0 {
 			matchKind = "exact"
 			matchReason = "complete-prefix-equal"
-			best.reserved = true
+			selected.reserved = true
 		} else {
 			matchKind = "append"
 			matchReason = "complete-prefix-append"
-			best.reserved = true
+			selected.reserved = true
 		}
-		best.lastUsed = time.Now()
+		selected.lastUsed = time.Now()
 	} else {
-		selected = empty
-		if selected == nil {
-			selected = lru
-		}
+		selected = m.imcRebuildSession()
 		if selected == nil {
 			if systemCache != nil {
 				systemCache.activeRestores--
@@ -138,10 +130,10 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	result.cacheIdx = llama.Pos(reusable)
 	result.imcSession = selected
 	result.imcSessionID = selected.id
-	result.imcExpectedHash = selected.cachedMsgsHash
-	result.imcExpectedCachedMsgs = selected.cachedMsgCount
-	result.imcExpectedTokens = selected.totalTokensCached
-	result.imcExpectedPosition = selected.logicalPosition()
+	result.imcExpectedHash = selected.cache.cachedMsgsHash
+	result.imcExpectedCachedMsgs = selected.cache.cachedMsgCount
+	result.imcExpectedTokens = selected.cache.totalTokensCached
+	result.imcExpectedPosition = selected.cache.logicalPosition()
 	if fingerprintOK {
 		result.imcExpectedRenderHash = renderFingerprint
 	}

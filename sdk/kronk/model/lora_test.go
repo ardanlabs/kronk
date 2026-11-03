@@ -41,9 +41,8 @@ func TestAdapterDraftContext(t *testing.T) {
 
 func TestCleanupGenerationRuntimeClosesStores(t *testing.T) {
 	cause := errors.New("initialization failed")
-	closeErr := errors.New("close failed")
-	store := &testCloseStore{}
-	draftStore := &testCloseStore{err: closeErr}
+	store := populatedTestSessionStore(t)
+	draftStore := populatedTestSessionStore(t)
 	m := Model{
 		imcSessions: []*imcSession{{
 			kvState:      store,
@@ -55,32 +54,12 @@ func TestCleanupGenerationRuntimeClosesStores(t *testing.T) {
 	if !errors.Is(err, cause) {
 		t.Errorf("cleanupGenerationRuntime() error = %v, want initial cause", err)
 	}
-	if !errors.Is(err, closeErr) {
-		t.Errorf("cleanupGenerationRuntime() error = %v, want close error", err)
-	}
-	if store.closes != 1 {
-		t.Errorf("store closes = %d, want 1", store.closes)
-	}
-	if draftStore.closes != 1 {
-		t.Errorf("draft store closes = %d, want 1", draftStore.closes)
+	for _, checkpoint := range []*imcCheckpoint{store, draftStore} {
+		if checkpoint.Len() != 0 || checkpoint.Cap() != 0 || bytesTestStore(t, checkpoint) != nil {
+			t.Errorf("closed checkpoint: got length %d capacity %d bytes %v, want 0/0/nil", checkpoint.Len(), checkpoint.Cap(), bytesTestStore(t, checkpoint))
+		}
 	}
 	if m.imcSessions != nil {
 		t.Errorf("imcSessions = %v, want nil", m.imcSessions)
 	}
-}
-
-type testCloseStore struct {
-	closes int
-	err    error
-}
-
-func (s *testCloseStore) Len() int                                     { return 0 }
-func (s *testCloseStore) Cap() int                                     { return 0 }
-func (s *testCloseStore) Bytes(context.Context) ([]byte, error)        { return nil, nil }
-func (s *testCloseStore) Prepare(context.Context, int) ([]byte, error) { return nil, nil }
-func (s *testCloseStore) Commit(context.Context, int) error            { return nil }
-func (s *testCloseStore) Reset(context.Context) error                  { return nil }
-func (s *testCloseStore) Close() error {
-	s.closes++
-	return s.err
 }

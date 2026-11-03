@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"slices"
@@ -20,6 +21,7 @@ type promptPlan struct {
 	units      []promptUnit
 	textTokens int
 	mediaCount int
+	mediaBytes [][]byte // Immutable payloads retained for collision-safe resident verification.
 }
 
 func buildPromptPlan(vocab llama.Vocab, prompt string, media [][]byte) (promptPlan, error) {
@@ -45,7 +47,7 @@ func buildPromptPlanTokens(prompt, marker string, media [][]byte, bos llama.Toke
 		return promptPlan{}, errors.New("prompt-plan: marker/media count mismatch")
 	}
 
-	var plan promptPlan
+	plan := promptPlan{mediaBytes: slices.Clone(media)}
 	if addBOS {
 		plan.units = append(plan.units, promptUnit{token: bos})
 		plan.textTokens++
@@ -66,7 +68,10 @@ func buildPromptPlanTokens(prompt, marker string, media [][]byte, bos llama.Toke
 }
 
 func (p promptPlan) hasPrefix(prefix promptPlan) bool {
-	return len(prefix.units) <= len(p.units) && slices.Equal(p.units[:len(prefix.units)], prefix.units)
+	if len(prefix.units) > len(p.units) || !slices.Equal(p.units[:len(prefix.units)], prefix.units) || len(prefix.mediaBytes) > len(p.mediaBytes) {
+		return false
+	}
+	return slices.EqualFunc(p.mediaBytes[:len(prefix.mediaBytes)], prefix.mediaBytes, bytes.Equal)
 }
 
 func (p promptPlan) hasTextPrefix(tokens []llama.Token) bool {
@@ -82,7 +87,7 @@ func (p promptPlan) hasTextPrefix(tokens []llama.Token) bool {
 }
 
 func (p promptPlan) equal(other promptPlan) bool {
-	return slices.Equal(p.units, other.units)
+	return len(p.units) == len(other.units) && p.hasPrefix(other)
 }
 
 func (p promptPlan) textTail(prefix promptPlan) ([]llama.Token, bool) {
