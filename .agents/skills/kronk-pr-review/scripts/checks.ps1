@@ -451,20 +451,34 @@ $iacUnits = @(@(Units 'terraform') + @(Units 'helm') + @(Units 'kustomize') | Se
 $iacFiles = @(@(Live 'k8s') + @(Live 'docker') | Where-Object { $p = $_; -not ($iacUnits | Where-Object { $_ -eq '.' -or $p.StartsWith("$_/", [StringComparison]::Ordinal) }) })
 $iacDirs = [string[]]@(@($iacUnits) + @($iacFiles) | Where-Object { $_ } | Select-Object -Unique)
 [Array]::Sort($iacDirs, [StringComparer]::Ordinal)
+# trivy reads trivy.yaml and .trivyignore from its working directory (output paths, module
+# dirs, ignores): for an untrusted change it runs from a temp dir with a neutral config.
 $iacFn = {
-    param($st, [bool]$trivy, [string[]]$targets)
+    param($st, [bool]$trivy, [string[]]$targets, [bool]$neutral, [string]$repoRoot)
+    $tdir = ''
+    if ($trivy -and $neutral) {
+        $tdir = Join-Path ([IO.Path]::GetTempPath()) ('trivy-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $tdir -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $tdir 'trivy.yaml'), "quiet: true`n")
+    }
     foreach ($x in $targets) {
         "## $x"
-        if ($trivy) { & trivy config --quiet --exit-code 1 $x 2>&1 | ForEach-Object { "$_" } }
+        if ($trivy -and $tdir) {
+            Push-Location -LiteralPath $tdir
+            & trivy config --config (Join-Path $tdir 'trivy.yaml') --quiet --exit-code 1 (Join-Path $repoRoot $x) 2>&1 | ForEach-Object { "$_" }
+            Pop-Location
+        }
+        elseif ($trivy) { & trivy config --quiet --exit-code 1 $x 2>&1 | ForEach-Object { "$_" } }
         elseif (Test-Path -LiteralPath $x -PathType Container) { & checkov --quiet --compact -d $x 2>&1 | ForEach-Object { "$_" } }
         else { & checkov --quiet --compact -f $x 2>&1 | ForEach-Object { "$_" } }
         if ($LASTEXITCODE -ne 0) { $st.rc = $LASTEXITCODE }
     }
+    if ($tdir) { Remove-Item -LiteralPath $tdir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 if ($iacDirs.Count) {
     # checkov loads the repo's .checkov.yaml, whose external-checks-dir runs Python checks from
-    # the repo: only for a maintainer PR. trivy's repo config holds Rego only.
-    if ((Has 'trivy') -or ((Has 'checkov') -and $runsCode)) { JobFn 'iac-scan' $root "iac_scan $($iacDirs -join ' ')" $iacFn @((Has 'trivy'), $iacDirs) }
+    # the repo: only for a maintainer PR. trivy runs with a neutral config ($iacFn).
+    if ((Has 'trivy') -or ((Has 'checkov') -and $runsCode)) { JobFn 'iac-scan' $root "iac_scan $($iacDirs -join ' ')" $iacFn @((Has 'trivy'), $iacDirs, (-not $runsCode), $root) }
     elseif (Has 'checkov') { Skip 'iac-scan' "$untrusted (checkov repo config can load Python checks; install trivy)" }
     else { Skip 'iac-scan' 'trivy/checkov not installed' }
 }

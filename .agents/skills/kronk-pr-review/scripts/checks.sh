@@ -502,20 +502,30 @@ iac_targets=$( { cat "$iac_units"; { live k8s; live docker; } | awk -v U="$iac_u
     BEGIN { while ((getline l < U) > 0) if (l != "") u[++n] = l }
     { for (i = 1; i <= n; i++) if (u[i] == "." || index($0, u[i] "/") == 1) next; print }'; } | grep . | sort -u)
 rm -f "$iac_units"
+# trivy reads trivy.yaml and .trivyignore from its working directory (output paths, module
+# dirs, ignores): for an untrusted change it runs from a temp dir with a neutral config.
 iac_scan() {
   rc=0
+  tcfg=''
+  if has trivy && ! runs_code; then
+    tdir=$(mktemp -d) || return 1
+    tcfg=$tdir/trivy.yaml; printf 'quiet: true\n' >"$tcfg"
+  fi
   for x in "$@"; do
     echo "## $x"
-    if has trivy; then trivy config --quiet --exit-code 1 "$x" || rc=$?
+    if has trivy && [ -n "$tcfg" ]; then
+      ( cd -- "$tdir" && trivy config --config "$tcfg" --quiet --exit-code 1 "$root/$x" ) || rc=$?
+    elif has trivy; then trivy config --quiet --exit-code 1 "$x" || rc=$?
     elif [ -d "$x" ]; then checkov --quiet --compact -d "$x" || rc=$?
     else checkov --quiet --compact -f "$x" || rc=$?
     fi
   done
+  [ -z "$tcfg" ] || rm -rf "$tdir"
   return $rc
 }
 if [ -n "$iac_targets" ]; then
   # checkov loads the repo's .checkov.yaml, whose external-checks-dir runs Python checks from
-  # the repo: only for a maintainer PR. trivy's repo config holds Rego only.
+  # the repo: only for a maintainer PR. trivy runs with a neutral config (iac_scan).
   if has trivy || { has checkov && runs_code; }; then
     # shellcheck disable=SC2086
     job iac-scan iac_scan $iac_targets
