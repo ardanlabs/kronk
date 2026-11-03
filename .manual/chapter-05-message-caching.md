@@ -449,8 +449,7 @@ history merely because the model computation was skipped.
 Kronk can retain an independently rendered and verified text-only system
 preload, including matching draft/MTP state when available. These
 preloads live in a model-owned RAM pool whose capacity equals the working
-session count. Unlike working snapshots, System entries do not use the
-configured session store; saved working snapshots already contain the
+session count. Working snapshots also live in RAM and already contain the
 System prefix.
 
 An exact match may skip rewriting the snapshot when the stable state has not
@@ -507,7 +506,6 @@ models:
     incremental-cache: true
     cache-min-tokens: 100
     imc-session-capacity: 8
-    session-store-kind: ram
 ```
 
 Restart the server after changing the file. This example retains eight working
@@ -520,7 +518,6 @@ The relevant settings are:
 | `incremental-cache`  | `true`  | Enables IMC for the model.                                          |
 | `cache-min-tokens`   | `100`   | Minimum stable text-token-plan length required for text IMC reuse.  |
 | `imc-session-capacity` | Derived | Reusable identities; must be at least admission capacity.          |
-| `session-store-kind` | `ram`   | Working-session storage; only `ram` is supported in server configuration. |
 
 When `imc-session-capacity` is omitted, Kronk derives the capacity from
 `nseq-max` and `queue-depth`. The same admission-capacity floor applies to an
@@ -540,31 +537,13 @@ need to compare behavior without prompt caching.
 
 ### Built-in RAM storage
 
-The built-in `ram` store keeps snapshots in process memory. It is selected by
-default when `session-store-kind` is omitted. Each session buffer
+IMC keeps snapshots in process memory. Storage is not replaceable through
+server configuration or the SDK. Each session buffer
 grows as needed and retains its peak allocation for reuse. Actual memory use
 depends on the model, cached conversation lengths, KV data types, and number of
 sessions that have been used. Budget for peak conversation state across the
 branches you expect to keep warm, not just the `nseq-max` requests that can run
 simultaneously.
-
-### Custom SDK storage
-
-Embedded applications can replace working-session storage. This is an SDK
-extension, not a server configuration option for disk storage. System preloads
-still use RAM. Custom storage must preserve complete snapshots, report read
-and write failures, and provide its own capacity limits and cleanup policy.
-
-Writing snapshot bytes to disk does not make conversations recoverable after
-a restart. Durable recovery also needs compatible model and configuration
-identities, matching cache metadata, validated snapshots, and an application
-recovery design.
-
-The [`examples/session-store`](https://github.com/ardanlabs/kronk/tree/main/examples/session-store)
-program demonstrates the SDK extension. It uses temporary files and deletes
-them when closed; it does not provide startup recovery or durable atomic
-commits. **Do not use the example as durable session storage.** Consult the
-SDK storage contract when implementing an alternative backend.
 
 Some MTP configurations maintain draft-model cached state and saved hidden
 state in addition to the target model snapshot. Account for this extra storage
@@ -619,6 +598,36 @@ System-preload append decisions. The server emits these through its Info
 logger; embedded application logging depends on the configured logger.
 Request-completion events include whether IMC participated
 and whether a prior snapshot was restored.
+
+For text and media requests, `plan-ready` also reports `token_cache_id`
+(the matching-metadata entry) and `imc_cache_entry` (its resident checkpoint
+entry). These are local, reusable identities, not durable conversation IDs.
+`selection` distinguishes `matched-prefix`, `empty`, and `lru-eviction`.
+`previous_cached_tokens` reports the physical cached-cell count discarded
+when preparing an empty/LRU destination; it is zero for a matched prefix.
+A System-preload append can still use an empty or LRU destination: consult
+`match_reason=system-cache-prefix` separately from `selection`.
+
+Candidate summaries count each scanned entry once, at its first failed
+eligibility check or as an eligible match:
+
+| Field | Meaning |
+| ----- | ------- |
+| `candidates_unbound` | No resident checkpoint entry is bound. |
+| `candidates_reserved` | The resident is reserved by another request. |
+| `candidates_empty` | No prefix is currently cached. |
+| `candidates_missing_checkpoint` | Nonempty metadata has no committed checkpoint bytes. |
+| `candidates_incompatible` | Metadata or the requested text/media transition is unsuitable for this planner. |
+| `candidates_prefix_mismatch` | The cached token/media prefix cannot serve this request. |
+| `candidates_fingerprint_mismatch` | An exact prefix has incompatible rendering inputs. |
+| `candidates_matching` | Eligible prefixes, including matches not selected because another is longer. |
+
+`plan-unavailable` includes the same counts when no resident can be selected.
+`plan-reset-failed` identifies the selected cache/resident, selection source,
+discarded prefix size, and reset error. These diagnostics contain identities,
+counts, and reasons—not prompt content or raw token IDs. Below-threshold
+text plans and media `plan-fallback` events do not scan candidates and do not
+include a selection summary.
 
 Text preparation emits `imc-preparation-queued`, `imc-preparation-chunk`, and
 `imc-cache-ready` events. Chunk progress and elapsed time distinguish a large

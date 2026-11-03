@@ -424,9 +424,8 @@ built or extended cache may become available to other requests before its owner
 finishes generating. Exact read-only reuse and some media operations retain
 the reservation until completion.
 
-Kronk's built-in cache store uses host RAM, and System preloads always remain
-in RAM. Embedded applications can supply a custom working-session store;
-externalizing state does not by itself make it durable across restarts. Cache
+Kronk's working-session snapshots and System preloads use host RAM and do not
+survive model unload or server restart. Cache
 matching, media reuse, invalidation, and settings are covered in
 [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
 

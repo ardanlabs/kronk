@@ -194,7 +194,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	// IMC: clear the entire sequence. The cached prefix KV state was
 	// snapshotted into session.kvState in startSlot and will be restored
-	// from its SessionStore on the next request. This applies to both text-only and
+	// from its RAM checkpoint on the next request. This applies to both text-only and
 	// media sessions — StateSeqGetData captures raw KV bytes regardless
 	// of whether they were produced by text tokens or media embeddings.
 	//

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
@@ -378,7 +377,6 @@ type ModelConfig struct {
 	PtrRopeFreqScale           *float32                  `yaml:"rope-freq-scale,omitempty"`
 	RopeScaling                model.RopeScalingType     `yaml:"rope-scaling-type,omitempty"`
 	Sampling                   SamplingConfig            `yaml:"sampling-parameters,omitempty"`
-	SessionStoreKind           kvstorage.Kind            `yaml:"session-store-kind,omitempty"`
 	Speculation                model.SpeculationMode     `yaml:"speculation,omitempty"`
 	PtrSplitMode               *model.SplitMode          `yaml:"split-mode,omitempty"`
 	PtrSWAFull                 *bool                     `yaml:"swa-full,omitempty"`

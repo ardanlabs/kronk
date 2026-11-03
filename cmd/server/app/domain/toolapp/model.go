@@ -11,7 +11,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	buckypool "github.com/ardanlabs/kronk/sdk/bucky/pool"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	malinapool "github.com/ardanlabs/kronk/sdk/malina/pool"
@@ -644,7 +643,6 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			PtrSWAFull:                 rmc.PtrSWAFull,
 			PtrIncrementalCache:        rmc.PtrIncrementalCache,
 			PtrCacheMinTokens:          rmc.PtrCacheMinTokens,
-			SessionStoreKind:           rmc.SessionStoreKind,
 			RopeScaling:                rmc.RopeScaling,
 			PtrRopeFreqBase:            rmc.PtrRopeFreqBase,
 			PtrRopeFreqScale:           rmc.PtrRopeFreqScale,
@@ -1269,7 +1267,6 @@ type ModelConfig struct {
 	PtrSWAFull                 *bool                    `json:"swa-full"`
 	PtrIncrementalCache        *bool                    `json:"incremental-cache"`
 	PtrCacheMinTokens          *int                     `json:"cache-min-tokens"`
-	SessionStoreKind           kvstorage.Kind           `json:"session-store-kind,omitzero"`
 	Sampling                   SamplingConfig           `json:"sampling-parameters"`
 	RopeScaling                model.RopeScalingType    `json:"rope-scaling-type"`
 	PtrRopeFreqBase            *float32                 `json:"rope-freq-base"`

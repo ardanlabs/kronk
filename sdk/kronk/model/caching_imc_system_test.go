@@ -25,7 +25,7 @@ func TestIMCReserveSystemCacheDeduplicates(t *testing.T) {
 func TestIMCReserveSystemCacheReusesLeastRecentlyUsedAllocation(t *testing.T) {
 	now := time.Now()
 	oldActive := populatedTestSessionStore(t)
-	oldAvailable := ramSessionStore()
+	oldAvailable := &imcCheckpoint{}
 	prepareTestStore(t, oldAvailable, 8)
 	commitTestStore(t, oldAvailable, 1)
 	newerAvailable := populatedTestSessionStore(t)
@@ -40,10 +40,7 @@ func TestIMCReserveSystemCacheReusesLeastRecentlyUsedAllocation(t *testing.T) {
 	if selected != caches[1] || !selected.building {
 		t.Fatalf("reserve = %p, want building LRU entry %p", selected, caches[1])
 	}
-	store, err := m.imcSystemCacheStore(context.Background(), selected, false)
-	if err != nil {
-		t.Fatalf("imcSystemCacheStore: %v", err)
-	}
+	store := m.imcSystemCacheStore(selected, false)
 	resetTestStore(t, store)
 	prepareTestStore(t, store, 1)[0] = 9
 	commitTestStore(t, store, 1)
@@ -76,10 +73,10 @@ func TestIMCReserveSystemCacheDoesNotEvictActiveEntries(t *testing.T) {
 }
 
 func TestIMCAbortSystemCacheRetainsAllocations(t *testing.T) {
-	target := ramSessionStore()
+	target := &imcCheckpoint{}
 	prepareTestStore(t, target, 8)
 	commitTestStore(t, target, 4)
-	draft := ramSessionStore()
+	draft := &imcCheckpoint{}
 	prepareTestStore(t, draft, 6)
 	commitTestStore(t, draft, 3)
 	cache := &imcSystemCache{id: 0, cachedTokens: []llama.Token{1}, kvState: target, draftKVState: draft}

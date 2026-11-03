@@ -55,40 +55,54 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := ramSessionStore()
+			store := &imcCheckpoint{}
 			if tt.kvBytes {
 				buf := prepareTestStore(t, store, 3)
 				copy(buf, []byte{1, 2, 3})
 				commitTestStore(t, store, len(buf))
 			}
 			session := &imcSession{
-				id:                  0,
-				seqID:               imcSeqIDUnbound,
-				totalTokensCached:   3,
-				nextLogicalPos:      3,
-				cachedMsgCount:      1,
-				cachedMsgsHash:      "hash",
-				hasMedia:            true,
-				promptPlan:          base,
-				samplerPromptTokens: baseSamplerTokens,
-				mediaKVCounts:       []int{1},
-				mediaNativeChunks:   []imcMediaChunk{{kind: imcMediaChunkImage, nTokens: 1, nPos: 1}},
-				kvState:             store,
+				seqID: imcSeqIDUnbound,
+				id:    0,
+				cache: &tokenCache{
+					id:                  87,
+					totalTokensCached:   3,
+					nextLogicalPos:      3,
+					cachedMsgCount:      1,
+					cachedMsgsHash:      "hash",
+					hasMedia:            true,
+					promptPlan:          base,
+					samplerPromptTokens: baseSamplerTokens,
+					mediaKVCounts:       []int{1},
+					mediaNativeChunks:   []imcMediaChunk{{kind: imcMediaChunkImage, nTokens: 1, nPos: 1}},
+				},
+				kvState: store,
 			}
-			session.useNonCausal = tt.nonCausal
+			session.cache.useNonCausal = tt.nonCausal
 			if tt.noNative {
-				session.mediaNativeChunks = nil
+				session.cache.mediaNativeChunks = nil
 			}
+			log, events := capturePlanLogs(t)
 			m := &Model{
 				imcSessions: []*imcSession{session},
-				log:         func(context.Context, string, ...any) {},
+				log:         log,
 			}
+			bindTestTokenCaches(m)
 			d := D{"messages": []D{{"role": "user", "content": "test"}}}
-			session.cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
+			session.cache.cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
 			result := m.processIMCMediaPlans(context.Background(), d, d, tt.actual, tt.stable, []llama.Token{9}, nil, time.Now())
 			if result.imcMatchKind != tt.wantMatch {
 				t.Fatalf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
 			}
+			wantSelection, wantPrevious, wantMatching := "matched-prefix", 0, 1
+			if tt.wantMatch == "rebuild" {
+				wantSelection, wantPrevious, wantMatching = "lru-eviction", 3, 0
+			}
+			assertPlanLogFields(t, events["plan-ready"], map[string]any{
+				"token_cache_id": 87, "imc_cache_entry": 0, "selection": wantSelection,
+				"previous_cached_tokens": wantPrevious, "candidates_matching": wantMatching,
+				"match_kind": tt.wantMatch,
+			})
 			var wantSamplerTokens []llama.Token
 			switch tt.wantMatch {
 			case "exact":
@@ -119,26 +133,37 @@ func TestProcessIMCMediaAnchorPlanningIsImmutableAndUsesLogicalPosition(t *testi
 	actual := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2}, promptUnit{token: 3}, promptUnit{token: 4})
 	store := populatedTestSessionStore(t)
 	session := &imcSession{
-		id:                  0,
-		totalTokensCached:   12,
-		nextLogicalPos:      5,
-		cachedMsgCount:      2,
-		cachedMsgsHash:      "hash",
-		hasMedia:            true,
-		useMRoPE:            true,
-		promptPlan:          base,
-		samplerPromptTokens: []llama.Token{100, 1, 2, 101},
-		mediaKVCounts:       []int{8},
-		kvState:             store,
+		id: 1,
+		cache: &tokenCache{
+			id:                  47,
+			totalTokensCached:   12,
+			nextLogicalPos:      5,
+			cachedMsgCount:      2,
+			cachedMsgsHash:      "hash",
+			hasMedia:            true,
+			useMRoPE:            true,
+			promptPlan:          base,
+			samplerPromptTokens: []llama.Token{100, 1, 2, 101},
+			mediaKVCounts:       []int{8},
+		},
+		kvState: store,
 	}
 	originalBytes := append([]byte(nil), bytesTestStore(t, store)...)
-	originalPlan := append([]promptUnit(nil), session.promptPlan.units...)
+	originalPlan := append([]promptUnit(nil), session.cache.promptPlan.units...)
 	originalLastUsed := session.lastUsed
-	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
+	otherCache := *session.cache
+	otherCache.id = 83
+	other := &imcSession{id: 0, cache: &otherCache, kvState: populatedTestSessionStore(t)}
+	m := &Model{imcSessions: []*imcSession{other, session}, log: func(context.Context, string, ...any) {}}
+	bindTestTokenCaches(m)
+	m.tokenCaches = []*tokenCache{session.cache, other.cache}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 
 	result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{4}, nil, time.Now())
 
+	if result.imcSession != session || result.imcSessionID != session.id || !session.reserved || other.reserved {
+		t.Fatalf("media binding: got session %p/%d reservations %t/%t, want %p/%d true/false", result.imcSession, result.imcSessionID, session.reserved, other.reserved, session, session.id)
+	}
 	if result.imcMatchKind != "anchor" || result.cacheIdx != 5 || result.imcExpectedTokens != 12 {
 		t.Fatalf("anchor result = kind %q cacheIdx %d physical %d", result.imcMatchKind, result.cacheIdx, result.imcExpectedTokens)
 	}
@@ -154,7 +179,7 @@ func TestProcessIMCMediaAnchorPlanningIsImmutableAndUsesLogicalPosition(t *testi
 	if want := []llama.Token{100, 1, 2, 101, 3}; !reflect.DeepEqual(result.imcMediaSamplerTokens, want) {
 		t.Fatalf("cached sampler prompt = %v, want %v", result.imcMediaSamplerTokens, want)
 	}
-	if !reflect.DeepEqual(session.promptPlan.units, originalPlan) || !reflect.DeepEqual(bytesTestStore(t, store), originalBytes) || session.lastUsed != originalLastUsed {
+	if !reflect.DeepEqual(session.cache.promptPlan.units, originalPlan) || !reflect.DeepEqual(bytesTestStore(t, store), originalBytes) || session.lastUsed != originalLastUsed {
 		t.Fatal("anchor planning mutated stored session metadata or snapshot")
 	}
 }
@@ -167,27 +192,30 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	oldStore := populatedTestSessionStore(t)
 	staged := populatedTestSessionStore(t)
 	session := &imcSession{
-		id:                0,
-		totalTokensCached: 12,
-		nextLogicalPos:    5,
-		cachedMsgCount:    2,
-		cachedMsgsHash:    "old",
-		hasMedia:          true,
-		useMRoPE:          true,
-		promptPlan:        base,
-		mediaKVCounts:     []int{8},
-		kvState:           oldStore,
-		draftKVState:      populatedTestSessionStore(t),
-		pendingH:          []float32{11, 23},
-		reserved:          true,
+		id: 0,
+		cache: &tokenCache{
+			totalTokensCached: 12,
+			nextLogicalPos:    5,
+			cachedMsgCount:    2,
+			cachedMsgsHash:    "old",
+			hasMedia:          true,
+			useMRoPE:          true,
+			promptPlan:        base,
+			mediaKVCounts:     []int{8},
+		},
+		kvState:      oldStore,
+		draftKVState: populatedTestSessionStore(t),
+		pendingH:     []float32{11, 23},
+		reserved:     true,
 	}
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
+	bindTestTokenCaches(m)
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 	renderHash, _ := m.imcRenderFingerprint(d, dMessages(d))
 
 	draftBytes := append([]byte(nil), bytesTestStore(t, session.draftKVState)...)
 	gotOld := m.imcCommitMediaAdvance(context.Background(), session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, []int{8}, nil, true, false, renderHash, true)
-	if gotOld != oldStore || session.kvState != staged || session.totalTokensCached != 13 || session.nextLogicalPos != 6 || !session.promptPlan.equal(advanced) || !reflect.DeepEqual(session.samplerPromptTokens, []llama.Token{1, 2, 3}) {
+	if gotOld != oldStore || session.kvState != staged || session.cache.totalTokensCached != 13 || session.cache.nextLogicalPos != 6 || !session.cache.promptPlan.equal(advanced) || !reflect.DeepEqual(session.cache.samplerPromptTokens, []llama.Token{1, 2, 3}) {
 		t.Fatal("media advance did not atomically publish the staged state")
 	}
 	if !reflect.DeepEqual(bytesTestStore(t, session.draftKVState), draftBytes) || !reflect.DeepEqual(session.pendingH, []float32{11, 23}) {
@@ -220,17 +248,20 @@ func TestProcessIMCMediaPlansRebuildsExactPlanWhenRenderFingerprintChanges(t *te
 	currentD := priorD.Clone()
 	currentD["chat_template_kwargs"] = D{"custom_mode": "b"}
 	session := &imcSession{
-		id:                  0,
-		totalTokensCached:   3,
-		nextLogicalPos:      3,
-		hasMedia:            true,
-		promptPlan:          stable,
-		samplerPromptTokens: []llama.Token{1, 2},
-		mediaKVCounts:       []int{1},
-		kvState:             populatedTestSessionStore(t),
+		id: 0,
+		cache: &tokenCache{
+			totalTokensCached:   3,
+			nextLogicalPos:      3,
+			hasMedia:            true,
+			promptPlan:          stable,
+			samplerPromptTokens: []llama.Token{1, 2},
+			mediaKVCounts:       []int{1},
+		},
+		kvState: populatedTestSessionStore(t),
 	}
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
-	session.cachedRenderInputHash, _ = m.imcRenderFingerprint(priorD, dMessages(priorD))
+	bindTestTokenCaches(m)
+	session.cache.cachedRenderInputHash, _ = m.imcRenderFingerprint(priorD, dMessages(priorD))
 
 	result := m.processIMCMediaPlans(context.Background(), currentD, currentD, actual, stable, []llama.Token{9}, nil, time.Now())
 	if result.imcMatchKind != "rebuild" {
@@ -244,10 +275,12 @@ func TestProcessIMCMediaPlansRebuildsExactPlanWhenRenderFingerprintChanges(t *te
 func TestIMCCommitMediaAdvanceRejectsMissingStage(t *testing.T) {
 	oldStore := populatedTestSessionStore(t)
 	session := &imcSession{
-		cachedMsgsHash:    "old",
-		totalTokensCached: 12,
-		nextLogicalPos:    5,
-		kvState:           oldStore,
+		cache: &tokenCache{
+			cachedMsgsHash:    "old",
+			totalTokensCached: 12,
+			nextLogicalPos:    5,
+		},
+		kvState: oldStore,
 	}
 	m := &Model{}
 
@@ -255,18 +288,21 @@ func TestIMCCommitMediaAdvanceRejectsMissingStage(t *testing.T) {
 	if old != nil {
 		t.Fatalf("old store = %T, want nil for rejected commit", old)
 	}
-	if session.kvState != oldStore || session.cachedMsgsHash != "old" || session.totalTokensCached != 12 || session.nextLogicalPos != 5 {
+	if session.kvState != oldStore || session.cache.cachedMsgsHash != "old" || session.cache.totalTokensCached != 12 || session.cache.nextLogicalPos != 5 {
 		t.Fatal("rejected media advance mutated the prior valid session")
 	}
 }
 
 func TestIMCCommitMediaAdvanceInvalidatesDraftMetadataWhenResetFails(t *testing.T) {
-	wantErr := errors.New("reset failed")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	wantErr := context.Canceled
 	oldStore := populatedTestSessionStore(t)
 	staged := populatedTestSessionStore(t)
 	session := &imcSession{
+		cache:        &tokenCache{},
 		kvState:      oldStore,
-		draftKVState: &resetErrorStore{err: wantErr},
+		draftKVState: populatedTestSessionStore(t),
 		pendingH:     []float32{1, 2, 3},
 		reserved:     true,
 	}
@@ -279,7 +315,7 @@ func TestIMCCommitMediaAdvanceInvalidatesDraftMetadataWhenResetFails(t *testing.
 		}
 	}}
 
-	gotOld := m.imcCommitMediaAdvance(context.Background(), session, staged, "advanced", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render", false)
+	gotOld := m.imcCommitMediaAdvance(ctx, session, staged, "advanced", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render", false)
 
 	if !errors.Is(loggedErr, wantErr) {
 		t.Errorf("logged error = %v, want %v", loggedErr, wantErr)
@@ -397,14 +433,17 @@ func TestProcessIMCMediaPlansReusesTextSessionForFirstMedia(t *testing.T) {
 	stable := mediaPlan(promptUnit{token: 1}, promptUnit{token: 2}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 3})
 	actual := mediaPlan(promptUnit{token: 1}, promptUnit{token: 2}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 3}, promptUnit{token: 9})
 	session := &imcSession{
-		id:                0,
-		totalTokensCached: 2,
-		cachedTokens:      []llama.Token{1, 2},
-		cachedMsgCount:    2,
-		cachedMsgsHash:    "text",
-		kvState:           populatedTestSessionStore(t),
+		id: 0,
+		cache: &tokenCache{
+			totalTokensCached: 2,
+			cachedTokens:      []llama.Token{1, 2},
+			cachedMsgCount:    2,
+			cachedMsgsHash:    "text",
+		},
+		kvState: populatedTestSessionStore(t),
 	}
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
+	bindTestTokenCaches(m)
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 
 	result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{9}, nil, time.Now())
@@ -465,5 +504,50 @@ func TestPromptPlanEqual(t *testing.T) {
 	}
 	if first.equal(diverged) {
 		t.Error("equal() = true for divergent plans")
+	}
+}
+
+func TestMediaPlannerIncompatibleDiagnostics(t *testing.T) {
+	for _, scenario := range []string{"invalid metadata", "non-causal append", "missing native chunks", "media tail", "empty tail"} {
+		t.Run(scenario, func(t *testing.T) {
+			base := mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true})
+			stable := mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true}, promptUnit{token: 2})
+			actual := mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true}, promptUnit{token: 2}, promptUnit{token: 9})
+			cache := &tokenCache{
+				id: 97, totalTokensCached: 11, nextLogicalPos: 4, useMRoPE: true, hasMedia: true,
+				promptPlan: base, samplerPromptTokens: []llama.Token{100, 1}, mediaKVCounts: []int{8},
+				mediaNativeChunks: []imcMediaChunk{{kind: imcMediaChunkImage, nTokens: 8, nPos: 3}},
+			}
+			switch scenario {
+			case "invalid metadata":
+				cache.mediaKVCounts = []int{-1}
+			case "non-causal append", "missing native chunks":
+				stable = mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true}, promptUnit{isMedia: true})
+				actual = mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true}, promptUnit{isMedia: true}, promptUnit{token: 9})
+				cache.useNonCausal = scenario == "non-causal append"
+				if scenario == "missing native chunks" {
+					cache.mediaNativeChunks = nil
+				}
+			case "media tail":
+				actual = mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true}, promptUnit{token: 2}, promptUnit{isMedia: true})
+			case "empty tail":
+				actual = stable
+			}
+			log, events := capturePlanLogs(t)
+			session := &imcSession{id: 0, cache: cache, kvState: populatedTestSessionStore(t)}
+			m := Model{log: log, imcSessions: []*imcSession{session}}
+			bindTestTokenCaches(&m)
+			d := D{"messages": []D{{"role": "user", "content": "private media"}}}
+			result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{9}, nil, time.Now())
+			assertPlanLogFields(t, events["plan-ready"], map[string]any{
+				"token_cache_id": 97, "imc_cache_entry": 0, "selection": "lru-eviction", "previous_cached_tokens": 11,
+				"candidates_unbound": 0, "candidates_reserved": 0, "candidates_empty": 0,
+				"candidates_missing_checkpoint": 0, "candidates_incompatible": 1,
+				"candidates_prefix_mismatch": 0, "candidates_fingerprint_mismatch": 0, "candidates_matching": 0,
+			})
+			if result.err != nil || result.imcMatchKind != "rebuild" || result.cacheIdx != 0 || !result.imcMediaBuild || !session.reserved {
+				t.Errorf("incompatible plan: got error %v kind %s prefix %d build %t reserved %t, want nil/rebuild/0/true/true", result.err, result.imcMatchKind, result.cacheIdx, result.imcMediaBuild, session.reserved)
+			}
+		})
 	}
 }

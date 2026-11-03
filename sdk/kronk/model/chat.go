@@ -522,8 +522,8 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcPromptPlan:       cache.imcPromptPlan,
 
 		imcSession:         cache.imcSession,
-		imcSessionMedia:    cache.imcSession != nil && (cache.imcSession.hasMedia || cache.imcMediaBuild),
-		imcSessionUseMRoPE: cache.imcSession != nil && cache.imcSession.useMRoPE,
+		imcSessionMedia:    cache.imcSession != nil && (cache.imcSession.cache.hasMedia || cache.imcMediaBuild),
+		imcSessionUseMRoPE: cache.imcSession != nil && cache.imcSession.cache.useMRoPE,
 		imcPhysicalCached:  cache.imcExpectedTokens,
 		imcSessionID:       cache.imcSessionID,
 		imcCacheHit:        imcCacheHit,

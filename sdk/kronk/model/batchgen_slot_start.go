@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -217,7 +216,7 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 		// state against a suffix prompt rendered for the older boundary
 		// would corrupt the request. On mismatch we fail with a retryable
 		// error so the caller re-runs token-v2 planner against the new boundary.
-		var restoreStore kvstorage.Store
+		var restoreStore *imcCheckpoint
 		var restoreLength int
 		if job.imcSession != nil {
 			session := job.imcSession
@@ -234,20 +233,20 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 				}
 				sessionVersionOK = session.reserved && restoreLength > 0
 			default:
-				cacheIdx = llama.Pos(session.logicalPosition())
-				restoredPhysicalKVCells = session.totalTokensCached
+				cacheIdx = llama.Pos(session.cache.logicalPosition())
+				restoredPhysicalKVCells = session.cache.totalTokensCached
 				restoreStore = session.kvState
 				if restoreStore != nil {
 					restoreLength = restoreStore.Len()
 				}
 				sessionVersionOK = !(job.imcReadOnlyReservation || job.imcMediaAnchorAdvance) ||
-					(session.cachedMsgsHash == job.imcExpectedHash &&
-						session.cachedMsgCount == job.imcExpectedCachedMsgs &&
-						session.totalTokensCached == job.imcExpectedTokens &&
-						session.logicalPosition() == job.imcExpectedPosition &&
+					(session.cache.cachedMsgsHash == job.imcExpectedHash &&
+						session.cache.cachedMsgCount == job.imcExpectedCachedMsgs &&
+						session.cache.totalTokensCached == job.imcExpectedTokens &&
+						session.cache.logicalPosition() == job.imcExpectedPosition &&
 						(!job.imcReadOnlyReservation ||
-							(job.imcExpectedRenderHash != "" && session.cachedRenderInputHash == job.imcExpectedRenderHash)) &&
-						(!session.hasMedia || session.promptPlan.equal(job.imcExpectedPromptPlan)) &&
+							(job.imcExpectedRenderHash != "" && session.cache.cachedRenderInputHash == job.imcExpectedRenderHash)) &&
+						(!session.cache.hasMedia || session.cache.promptPlan.equal(job.imcExpectedPromptPlan)) &&
 						session.reserved &&
 						restoreLength > 0)
 			}
@@ -347,7 +346,7 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 			if ext, ok := e.model.draft.(draftKVExternalizer); ok && job.imcSession != nil {
 				draft := ext.core()
 
-				var draftStore kvstorage.Store
+				var draftStore *imcCheckpoint
 				var draftLength int
 				var savedPendingH []float32
 				e.model.cacheMu.RLock()
@@ -590,7 +589,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 			snapshotPhysicalKVCells = job.imcNewTotalCached
 		default:
 			e.model.cacheMu.RLock()
-			snapshotPhysicalKVCells = job.imcSession.totalTokensCached
+			snapshotPhysicalKVCells = job.imcSession.cache.totalTokensCached
 			e.model.cacheMu.RUnlock()
 		}
 
@@ -618,13 +617,13 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 			e.model.cacheMu.RLock()
 			session := job.imcSession
 			versionOK := session != nil &&
-				session.cachedMsgsHash == job.imcExpectedHash &&
-				session.cachedMsgCount == job.imcExpectedCachedMsgs &&
-				session.totalTokensCached == job.imcExpectedTokens &&
-				session.logicalPosition() == job.imcExpectedPosition &&
+				session.cache.cachedMsgsHash == job.imcExpectedHash &&
+				session.cache.cachedMsgCount == job.imcExpectedCachedMsgs &&
+				session.cache.totalTokensCached == job.imcExpectedTokens &&
+				session.cache.logicalPosition() == job.imcExpectedPosition &&
 				job.imcExpectedRenderHash != "" &&
-				session.cachedRenderInputHash == job.imcExpectedRenderHash &&
-				(!session.hasMedia || session.promptPlan.equal(job.imcExpectedPromptPlan)) &&
+				session.cache.cachedRenderInputHash == job.imcExpectedRenderHash &&
+				(!session.cache.hasMedia || session.cache.promptPlan.equal(job.imcExpectedPromptPlan)) &&
 				session.kvState.Len() > 0 &&
 				session.reserved
 			e.model.cacheMu.RUnlock()
@@ -653,8 +652,8 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 
 			snapshotStart := time.Now()
 
-			// Reuse the session's SessionStore in place. Prepare returns the
-			// writable staging slice owned by the configured backend.
+			// Reuse the session's RAM store in place. Prepare returns its
+			// writable staging slice.
 			// Per-session serialization (the reserved flag and the imcSessions
 			// ownership model) guarantees no concurrent reader holds a reference
 			// to this buffer while we fill it.
@@ -663,12 +662,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 			// grew while preparing this snapshot.
 			snapshotStore := job.imcSession.kvState
 			if job.imcMediaAnchorAdvance {
-				var err error
-				snapshotStore, err = newSessionStore(job.ctx, e.model.cfg)
-				if err != nil {
-					e.finishSlot(s, fmt.Errorf("start-slot: create staged media snapshot: %w", err))
-					return
-				}
+				snapshotStore = &imcCheckpoint{}
 			}
 			capBefore := snapshotStore.Cap()
 
@@ -834,7 +828,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 					return
 				}
 
-				useNonCausal := job.imcSession.useNonCausal
+				useNonCausal := job.imcSession.cache.useNonCausal
 				if job.imcMediaAppend && s.mtmdCtx != 0 {
 					useNonCausal = mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
 				}
@@ -1214,12 +1208,7 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 		return false
 	}
 
-	targetStore, err := e.model.imcSystemCacheStore(ctx, cache, false)
-	if err != nil {
-		abortErr := e.model.imcAbortSystemCache(ctx, cache)
-		e.model.log(ctx, "start-slot", "status", "imc-system-target-create-failed", "err", errors.Join(err, abortErr))
-		return false
-	}
+	targetStore := e.model.imcSystemCacheStore(cache, false)
 	if err := targetStore.Reset(ctx); err != nil {
 		abortErr := e.model.imcAbortSystemCache(ctx, cache)
 		e.model.log(ctx, "start-slot", "status", "imc-system-target-reset-failed", "err", errors.Join(err, abortErr))
@@ -1247,40 +1236,36 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 		return false
 	}
 
-	var draftStore kvstorage.Store
+	var draftStore *imcCheckpoint
 	var pendingH []float32
 	if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled {
-		draftStore, err = e.model.imcSystemCacheStore(ctx, cache, true)
-		if err != nil {
-			e.model.log(ctx, "start-slot", "status", "imc-system-draft-create-failed", "err", err)
-		} else {
-			draftErr := draftStore.Reset(ctx)
-			draft := ext.core()
-			dctx := ext.draftKVCtx()
+		draftStore = e.model.imcSystemCacheStore(cache, true)
+		draftErr := draftStore.Reset(ctx)
+		draft := ext.core()
+		dctx := ext.draftKVCtx()
+		e.model.decodeMu.Lock()
+		llama.Synchronize(dctx)
+		draftSize := llama.StateSeqGetSize(dctx, s.seqID)
+		e.model.decodeMu.Unlock()
+		var draftBuf []byte
+		if draftErr == nil {
+			draftBuf, draftErr = prepareSessionSnapshot(ctx, draftStore, draftSize)
+		}
+		var draftExtracted uint64
+		if draftErr == nil {
 			e.model.decodeMu.Lock()
-			llama.Synchronize(dctx)
-			draftSize := llama.StateSeqGetSize(dctx, s.seqID)
+			draftExtracted = llama.StateSeqGetData(dctx, draftBuf, s.seqID)
 			e.model.decodeMu.Unlock()
-			var draftBuf []byte
-			if draftErr == nil {
-				draftBuf, draftErr = prepareSessionSnapshot(ctx, draftStore, draftSize)
-			}
-			var draftExtracted uint64
-			if draftErr == nil {
-				e.model.decodeMu.Lock()
-				draftExtracted = llama.StateSeqGetData(dctx, draftBuf, s.seqID)
-				e.model.decodeMu.Unlock()
-			}
-			if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
-				draftErr = draftStore.Commit(ctx, int(draftExtracted))
-			}
-			if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
-				pendingH = s.mtp.PendingHidden
-			} else {
-				resetErr := draftStore.Reset(ctx)
-				e.model.log(ctx, "start-slot", "status", "imc-system-draft-snapshot-failed",
-					"extracted_bytes", draftExtracted, "expected_bytes", draftSize, "err", errors.Join(draftErr, resetErr))
-			}
+		}
+		if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
+			draftErr = draftStore.Commit(ctx, int(draftExtracted))
+		}
+		if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
+			pendingH = s.mtp.PendingHidden
+		} else {
+			resetErr := draftStore.Reset(ctx)
+			e.model.log(ctx, "start-slot", "status", "imc-system-draft-snapshot-failed",
+				"extracted_bytes", draftExtracted, "expected_bytes", draftSize, "err", errors.Join(draftErr, resetErr))
 		}
 	} else if cache.draftKVState != nil {
 		if err := cache.draftKVState.Reset(ctx); err != nil {

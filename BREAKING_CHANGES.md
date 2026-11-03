@@ -2,6 +2,8 @@
 
 ## Index
 
+- [Unreleased](#unreleased)
+  - [Internal RAM IMC Storage](#unreleased-internal-ram-imc-storage)
 - [v1.33.2](#v1332)
   - [Browser Admin Session Lifetime](#v1332-browser-admin-session-lifetime)
 - [v1.33.1](#v1331)
@@ -46,6 +48,35 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## Unreleased
+
+### Unreleased: Internal RAM IMC Storage
+
+IMC checkpoints now always use Kronk's internal RAM storage. Replacing that
+storage with a custom backend is no longer supported. This supersedes the
+custom session-store guidance in the v1.32.4 and v1.30.3 entries below.
+
+The following APIs and configuration fields were removed:
+
+- `model.Config.SessionStoreFactory` and `model.WithSessionStoreFactory`
+- `kvstorage.Factory`, `kvstorage.Kind`, `kvstorage.RAM`, `kvstorage.Parse`,
+  and `kvstorage.MustParse`
+- `ram.NewFactory`
+- `models.ModelConfig.SessionStoreKind` and the `session-store-kind` YAML key
+
+The `sdk/kronk/kvstorage` and `sdk/kronk/kvstorage/ram` packages, including
+`kvstorage.Store`, `ram.Store`, and `ram.New`, were removed. Their checkpoint
+buffers are now private to the model package.
+
+Remove factory injection from SDK model configuration and remove
+`session-store-kind` from YAML configuration. No replacement setting is needed;
+Kronk manages the RAM buffers automatically. The `examples/session-store`
+example and its make target were also removed. Historical links to that example
+below refer to earlier releases, not the current source tree.
+
+Public SDK chat and pool APIs are unchanged. This change does not add durable
+session storage or recovery after restart.
 
 ## v1.33.2
 

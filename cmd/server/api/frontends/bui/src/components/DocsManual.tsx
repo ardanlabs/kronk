@@ -1435,7 +1435,7 @@ models:
           <pre className="code-block"><code className="language-text">{`session capacity ≥ admission capacity`}</code></pre>
           <p>This invariant prevents Kronk from admitting more concurrent generation requests than the IMC planner has session identities available to reserve. It avoids moving an admitted request into preparation when every session is already owned by another admitted request.</p>
           <p>A reservation gives one request exclusive access to a cache entry, including while it waits for a slot. It is not a measure of active generation. A newly built or extended cache may become available to other requests before its owner finishes generating. Exact read-only reuse and some media operations retain the reservation until completion.</p>
-          <p>Kronk's built-in cache store uses host RAM, and System preloads always remain in RAM. Embedded applications can supply a custom working-session store; externalizing state does not by itself make it durable across restarts. Cache matching, media reuse, invalidation, and settings are covered in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
+          <p>Kronk's working-session snapshots and System preloads use host RAM and do not survive model unload or server restart. Cache matching, media reuse, invalidation, and settings are covered in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
           <h3 id="411-observing-queue-behavior">4.11 Observing Queue Behavior</h3>
           <p>Kronk records two direct indicators of generation-slot contention:</p>
           <ul>
@@ -1606,7 +1606,7 @@ Next stable rendering retroactively changes an assistant turn:
           <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is held. If all session identities are reserved, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
           <p>Repetition penalties and DRY still account for the complete prompt, including the restored portion. Cache reuse does not remove earlier text from sampling history merely because the model computation was skipped.</p>
-          <p>Kronk can retain an independently rendered and verified text-only system preload, including matching draft/MTP state when available. These preloads live in a model-owned RAM pool whose capacity equals the working session count. Unlike working snapshots, System entries do not use the configured session store; saved working snapshots already contain the System prefix.</p>
+          <p>Kronk can retain an independently rendered and verified text-only system preload, including matching draft/MTP state when available. These preloads live in a model-owned RAM pool whose capacity equals the working session count. Working snapshots also live in RAM and already contain the System prefix.</p>
           <p>An exact match may skip rewriting the snapshot when the stable state has not changed. This avoids an unnecessary serialization of the state that was just restored. Exact media-plan reuse can receive the same optimization. This does not change which content is considered part of the cache.</p>
           <p>Snapshots externalize inactive session state from the model's active KV cache. They therefore do not permanently occupy an execution slot or pin their state in accelerator KV memory between requests. They do consume the configured session-store capacity, as described in <a href="#55-configuration-and-storage">Configuration and Storage</a>.</p>
           <h2 id="54-media-requests">5.4 Media Requests</h2>
@@ -1629,8 +1629,7 @@ models:
     queue-depth: 2
     incremental-cache: true
     cache-min-tokens: 100
-    imc-session-capacity: 8
-    session-store-kind: ram`}</code></pre>
+    imc-session-capacity: 8`}</code></pre>
           <p>Restart the server after changing the file. This example retains eight working cache identities while admitting up to four requests for two execution slots.</p>
           <p>The relevant settings are:</p>
           <table className="flags-table">
@@ -1657,22 +1656,13 @@ models:
                 <td>Derived</td>
                 <td>Reusable identities; must be at least admission capacity.</td>
               </tr>
-              <tr>
-                <td><code>session-store-kind</code></td>
-                <td><code>ram</code></td>
-                <td>Working-session storage; only <code>ram</code> is supported in server configuration.</td>
-              </tr>
             </tbody>
           </table>
           <p>When <code>imc-session-capacity</code> is omitted, Kronk derives the capacity from <code>nseq-max</code> and <code>queue-depth</code>. The same admission-capacity floor applies to an explicit value in <code>model_config.yaml</code>.</p>
           <p>The <code>cache-min-tokens</code> setting applies to the stable text-token-plan length. A text request below the threshold still works, but Kronk processes its complete generation-ready prompt without creating or reusing an IMC session. The current media working-plan cache does not apply this threshold; media safety depends on compatible stable and generation-ready plans. Text-only System checkpoints still use the threshold, including those created during media requests. Zero or negative <code>cache-min-tokens</code> values use the default of 100 rather than making every text prompt eligible.</p>
           <p>Set <code>incremental-cache: false</code> if a workload is entirely short-lived or if you need to compare behavior without prompt caching.</p>
           <h3 id="built-in-ram-storage">Built-in RAM storage</h3>
-          <p>The built-in <code>ram</code> store keeps snapshots in process memory. It is selected by default when <code>session-store-kind</code> is omitted. Each session buffer grows as needed and retains its peak allocation for reuse. Actual memory use depends on the model, cached conversation lengths, KV data types, and number of sessions that have been used. Budget for peak conversation state across the branches you expect to keep warm, not just the <code>nseq-max</code> requests that can run simultaneously.</p>
-          <h3 id="custom-sdk-storage">Custom SDK storage</h3>
-          <p>Embedded applications can replace working-session storage. This is an SDK extension, not a server configuration option for disk storage. System preloads still use RAM. Custom storage must preserve complete snapshots, report read and write failures, and provide its own capacity limits and cleanup policy.</p>
-          <p>Writing snapshot bytes to disk does not make conversations recoverable after a restart. Durable recovery also needs compatible model and configuration identities, matching cache metadata, validated snapshots, and an application recovery design.</p>
-          <p>The <a href="https://github.com/ardanlabs/kronk/tree/main/examples/session-store"><code>examples/session-store</code></a> program demonstrates the SDK extension. It uses temporary files and deletes them when closed; it does not provide startup recovery or durable atomic commits. <strong>Do not use the example as durable session storage.</strong> Consult the SDK storage contract when implementing an alternative backend.</p>
+          <p>IMC keeps snapshots in process memory. Storage is not replaceable through server configuration or the SDK. Each session buffer grows as needed and retains its peak allocation for reuse. Actual memory use depends on the model, cached conversation lengths, KV data types, and number of sessions that have been used. Budget for peak conversation state across the branches you expect to keep warm, not just the <code>nseq-max</code> requests that can run simultaneously.</p>
           <p>Some MTP configurations maintain draft-model cached state and saved hidden state in addition to the target model snapshot. Account for this extra storage when sizing memory. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for MTP configuration and behavior.</p>
           <h2 id="56-invalidation-and-limitations">5.6 Invalidation and Limitations</h2>
           <p>IMC favors safe reuse over partial recovery. A session is rebuilt when Kronk cannot prove that its complete saved prefix matches the new stable prompt. Common causes include:</p>
@@ -1696,6 +1686,51 @@ models:
           <p>Evaluate IMC using a representative conversation workload rather than a single prompt benchmark. The benefit grows with reusable prefix length and follow-up frequency.</p>
           <h2 id="57-observability">5.7 Observability</h2>
           <p>IMC planning events identify the selected <code>match_kind</code> (<code>exact</code>, <code>append</code>, or <code>rebuild</code>) and report reusable, extension, stable, and tail token counts. Media planning events also identify <code>media-append</code> and System-preload append decisions. The server emits these through its Info logger; embedded application logging depends on the configured logger. Request-completion events include whether IMC participated and whether a prior snapshot was restored.</p>
+          <p>For text and media requests, <code>plan-ready</code> also reports <code>token_cache_id</code> (the matching-metadata entry) and <code>imc_cache_entry</code> (its resident checkpoint entry). These are local, reusable identities, not durable conversation IDs. <code>selection</code> distinguishes <code>matched-prefix</code>, <code>empty</code>, and <code>lru-eviction</code>. <code>previous_cached_tokens</code> reports the physical cached-cell count discarded when preparing an empty/LRU destination; it is zero for a matched prefix. A System-preload append can still use an empty or LRU destination: consult <code>match_reason=system-cache-prefix</code> separately from <code>selection</code>.</p>
+          <p>Candidate summaries count each scanned entry once, at its first failed eligibility check or as an eligible match:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>candidates_unbound</code></td>
+                <td>No resident checkpoint entry is bound.</td>
+              </tr>
+              <tr>
+                <td><code>candidates_reserved</code></td>
+                <td>The resident is reserved by another request.</td>
+              </tr>
+              <tr>
+                <td><code>candidates_empty</code></td>
+                <td>No prefix is currently cached.</td>
+              </tr>
+              <tr>
+                <td><code>candidates_missing_checkpoint</code></td>
+                <td>Nonempty metadata has no committed checkpoint bytes.</td>
+              </tr>
+              <tr>
+                <td><code>candidates_incompatible</code></td>
+                <td>Metadata or the requested text/media transition is unsuitable for this planner.</td>
+              </tr>
+              <tr>
+                <td><code>candidates_prefix_mismatch</code></td>
+                <td>The cached token/media prefix cannot serve this request.</td>
+              </tr>
+              <tr>
+                <td><code>candidates_fingerprint_mismatch</code></td>
+                <td>An exact prefix has incompatible rendering inputs.</td>
+              </tr>
+              <tr>
+                <td><code>candidates_matching</code></td>
+                <td>Eligible prefixes, including matches not selected because another is longer.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>plan-unavailable</code> includes the same counts when no resident can be selected. <code>plan-reset-failed</code> identifies the selected cache/resident, selection source, discarded prefix size, and reset error. These diagnostics contain identities, counts, and reasons—not prompt content or raw token IDs. Below-threshold text plans and media <code>plan-fallback</code> events do not scan candidates and do not include a selection summary.</p>
           <p>Text preparation emits <code>imc-preparation-queued</code>, <code>imc-preparation-chunk</code>, and <code>imc-cache-ready</code> events. Chunk progress and elapsed time distinguish a large cache build from a request waiting for execution. Media preparation has corresponding media-specific events. Compare these with generation activity and end-to-end request latency when investigating responsiveness.</p>
           <p>The Prometheus counters <code>imc_snapshot_skipped_total</code> and <code>imc_pure_hit_stale_session_total</code> expose exact-hit snapshot skips and rejected stale-session races. A rising rebuild rate usually means clients are changing earlier prompt content, media, tools, or rendering inputs rather than appending to a stable conversation.</p>
           <p>Per-working-entry gauges expose token/allocation values, latest-request input/output/context, peak context, and context-window utilization. The BUI <strong>IMC Sessions</strong> page exposes working sessions and model-owned System caches on separate tabs. These are bounded current-state views, not a history of every conversation transition.</p>
@@ -4929,14 +4964,14 @@ data: [DONE]`}</code></pre>
   --endpoints chat-completions,decision,embeddings,rerank,responses,messages,tokenize,transcriptions,image-generations`}</code></pre>
           <p>Rate limits use forms such as <code>chat-completions:10000/day</code>. Token creation, key rotation, and production hardening are covered in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
           <h3 id="177-imc">17.7 IMC</h3>
-          <p>IMC is enabled by default. It externalizes cached session state to the built-in RAM store or, for direct SDK use, a configured custom session store. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for its lifecycle and settings.</p>
+          <p>IMC is enabled by default. It externalizes cached session state to the built-in RAM store. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for its lifecycle and settings.</p>
           <h4 id="every-turn-rebuilds-the-cache">Every turn rebuilds the cache</h4>
           <p>Common causes are changed earlier messages, changed template inputs, a prompt below <code>cache-min-tokens</code>, or cache pressure. Relevant JSON logs use status <code>plan-ready</code>; inspect <code>match_kind</code> (<code>exact</code>, <code>append</code>, <code>anchor</code>, or <code>rebuild</code>), <code>match_reason</code>, and the reusable/extension token counts. Status <code>plan-fallback</code> identifies prompts that cannot use the token planner safely.</p>
           <p>Keep earlier conversation messages stable and use a deterministic template. Increase <code>nseq-max</code> only when additional inference concurrency and its memory cost are both appropriate; IMC maintains more session identities than active decode slots.</p>
           <h4 id="`server-busy-processing-other-requests-try-again-shortly`">`server busy processing other requests, try again shortly`</h4>
           <p>No IMC session was available. Kronk returns this retryable error immediately rather than waiting at the session-planning stage. Wait and retry from the client. If it is frequent, inspect long-running requests and queue/cache metrics before increasing <code>nseq-max</code>.</p>
           <h4 id="`imc-restore-failed`-or-`imc-extend-stale`">`imc restore failed` or `imc extend stale`</h4>
-          <p>The current request fails. Retry it from the client; the server does not automatically repeat the request. Repeated restore failures warrant checking memory pressure, the session-store configuration, and nearby low-level errors. Reducing <code>context-window</code> or concurrency can lower memory pressure.</p>
+          <p>The current request fails. Retry it from the client; the server does not automatically repeat the request. Repeated restore failures warrant checking memory pressure and nearby low-level errors. Reducing <code>context-window</code> or concurrency can lower memory pressure.</p>
           <h3 id="178-mcp">17.8 MCP</h3>
           <p>The endpoint is <code>http://localhost:9000/mcp</code> without a trailing slash and uses Streamable HTTP. Common failures are:</p>
           <ul>
@@ -6002,7 +6037,7 @@ malina-models:
             <li><strong>&lt;code&gt;sdk/kronk/&lt;/code&gt;</strong> is the public language-model handle and API surface. A <code>kronk.Kronk</code> owns <strong>one primary loaded model</strong> and a semaphore governing admission to that handle. Its low-level model may also own draft or MTP resources. The handle exposes chat, streaming, Responses, embeddings, reranking, tokenization, model information, and unload behavior. It is not a model pool.</li>
             <li><strong>&lt;code&gt;sdk/kronk/model/&lt;/code&gt;</strong> owns low-level llama/yzma inference: model/context creation, prompt planning, batch slots, sequence IDs, prefill/decode, media handling, IMC, samplers, parser interfaces, and draft/MTP behavior. Changes here must preserve cross-slot isolation and native-resource cleanup on every exit path.</li>
             <li><strong>&lt;code&gt;sdk/kronk/parsers/&lt;/code&gt;</strong> contains model-family parser plug-ins. Family packages own streaming state machines and extraction/normalization of reasoning and tool calls. The model package owns the registry contract and selection boundary; parser packages should not reach into batch-engine state.</li>
-            <li><strong>&lt;code&gt;sdk/kronk/observ/&lt;/code&gt;</strong>, <code>sdk/kronk/kvstorage/</code>, <code>sdk/kronk/vram/</code>, <code>sdk/kronk/gguf/</code>, and <code>sdk/kronk/hf/</code> own their named concerns. Prefer these boundaries to embedding format, storage, or resource calculations in request handlers.</li>
+            <li><strong>&lt;code&gt;sdk/kronk/observ/&lt;/code&gt;</strong>, <code>sdk/kronk/vram/</code>, <code>sdk/kronk/gguf/</code>, and <code>sdk/kronk/hf/</code> own their named concerns. Prefer these boundaries to embedding format or resource calculations in request handlers.</li>
           </ul>
           <h4 id="2033-pools-and-shared-resources">20.3.3 Pools and shared resources</h4>
           <ul>
@@ -6106,9 +6141,9 @@ make benchmark-codegen \\
           <h3 id="206-core-inference-invariants">20.6 Core Inference Invariants</h3>
           <h4 id="2061-imc-sessions-slots-and-external-storage">20.6.1 IMC sessions, slots, and external storage</h4>
           <p>Incremental Message Cache (IMC) sessions are cache identities, not execution slots. A stable cache/session identifier allows a conversation prefix to survive movement between batch slots. A slot is short-lived compute capacity; binding a session to a slot would reduce concurrency and make slot reuse unsafe.</p>
-          <p>The <code>SessionStore</code> contract externalizes each session's native KV snapshot. RAM and custom implementations differ in storage and I/O, but the model layer owns when a snapshot is read, prepared, committed, reset, and closed. Session metadata—cached tokens, render-sensitive identity/version, and snapshot—must describe the same prefix. Do not update one independently and call the session valid.</p>
-          <p>Store slices are borrowed rather than transferred. Treat <code>Bytes</code> results as read-only, and do not retain a <code>Bytes</code> or <code>Prepare</code> result across the next prepare, commit, reset, or close operation. <code>Prepare</code> invalidates the committed length until <code>Commit</code> succeeds; a partial or failed snapshot must never become readable. <code>Len</code> and <code>Cap</code> are metadata operations and must not perform storage I/O. Kronk serializes one store through the session reservation, but stores returned by the same factory may run concurrently. A factory may share a connection pool, quota, or eviction manager only when that shared resource is concurrency-safe.</p>
-          <p>Pass operation contexts into cancellable backend calls and preserve storage failures with wrapped errors. Durable implementations must publish complete replacements atomically and validate length, format version, and integrity before returning bytes. They also need expiration or out-of-band garbage collection because process failure can bypass <code>Close</code>. The per-session byte-store contract does not itself provide stable conversation identity or restart recovery.</p>
+          <p>The model owns separate <code>tokenCaches</code> and <code>imcSessions</code> collections. A lightweight <code>tokenCache</code> contains a local cache identity, cached tokens, render fingerprint, and text/media prefix metadata, but no native checkpoint buffers. Planners search this collection and resolve a match through its explicit resident-session binding; cache IDs and collection positions are not used as resident-session indices. The resident <code>imcSession</code> owns RAM checkpoints, execution binding, reservations, and usage accounting, with a reference back to its TokenCache. RAM-only caching keeps equal capacities and one-to-one bindings. Reset clears the bound metadata in place without changing those references; there is no disk recovery yet.</p>
+          <p>The model's concrete <code>imcCheckpoint</code> buffer holds each session's native KV snapshot. There is no replaceable checkpoint-storage interface. The model layer owns when a snapshot is read, prepared, committed, reset, and closed. TokenCache metadata and the committed snapshot must describe the same prefix. Do not update one independently and call the session valid.</p>
+          <p>Store slices are borrowed rather than transferred. Treat <code>Bytes</code> results as read-only, and do not retain a <code>Bytes</code> or <code>Prepare</code> result across the next prepare, commit, reset, or close operation. <code>Prepare</code> invalidates the committed length until <code>Commit</code> succeeds; a partial or failed snapshot must never become readable. <code>Len</code> and <code>Cap</code> are metadata operations and must not perform storage I/O. Kronk serializes one store through the session reservation. Stores for different sessions may run concurrently. The RAM store is not a replaceable SDK extension and does not provide restart recovery.</p>
           <p>The session's <code>reserved</code> state serializes mutation and hides the session from competing selection until metadata and snapshot bytes agree. The reservation begins in prompt planning and survives the queue wait and restore; exact read-only hits keep it through generation, while a successfully published text build/extension can release it after the stable snapshot is committed. Restore only a committed snapshot whose complete token or media plan and expected version still match. Ordinary text build/extension prepares and commits through the session's existing store; if snapshot publication fails, invalidate that current state so later work rebuilds it rather than claiming the old or partial state is valid.</p>
           <p>Text planning compares complete token sequences and searches every working session for exact or append reuse before considering System. Each model owns a separate RAM-only System cache pool with the same capacity as its working-session pool. Entries contain only independently rendered, nonempty, cache-worthy system prefixes whose complete token sequences prefix the stable request. They include target KV and compatible own-KV MTP state and never advance.</p>
           <p>On a System hit, reserve the immutable source during restoration and copy it into a separately selected empty or least-recently-used working session. Multiple working sessions may preload the same System entry. On a miss, publish into an empty System entry or replace the least-recently-used entry that is not being restored. Retention failure must not fail inference. Never trim a working session at an internal token match.</p>
@@ -6117,7 +6152,7 @@ make benchmark-codegen \\
           <p>Native sequence snapshots can consume hundreds of megabytes, RAM stores retain peak backing capacity, and own-KV MTP configurations may require matching draft state. Do not create System entries for empty or below-threshold system-only renderings, and do not add user-turn or progressive checkpoint roles.</p>
           <p>Do not attempt prefix sharing by slicing or pointing into the current serialized state buffers. The native interface exposes complete per-sequence size/get/set operations, not partial state serialization, base-plus-delta restoration, copy-on-write KV pages, or immutable-prefix sharing. Hybrid recurrent state makes arbitrary byte slicing especially unsafe. Meaningful shared-prefix storage requires explicit native backend support rather than a different Go buffer layout.</p>
           <p>When investigating another template, correlate <code>match_reason</code>, <code>reusable_tokens</code>, <code>system_boundary_tokens</code>, and <code>full_input_snapshot_messages</code> from <code>plan-ready</code> records with System creation/restore and <code>slot-finished</code> events. Distinguish clean Current appends, System recovery, full rebuilds, and actual restored-token reuse.</p>
-          <p>Media-anchor advancement has a stronger replacement contract: it writes a separately staged store and swaps the store plus matching plan/count metadata only after success, so failure leaves the previous media snapshot published. Do not generalize that staged replacement guarantee to every IMC path. A <code>SessionStore</code> implementation must honor the interface's read/prepare/commit/reset lifetime rules and clean up temporary resources; callers must not assume bytes remain stable across the next mutation or modify bytes returned for reading.</p>
+          <p>Media-anchor advancement has a stronger replacement contract: it writes a separately staged store and swaps the store plus matching plan/count metadata only after success, so failure leaves the previous media snapshot published. Do not generalize that staged replacement guarantee to every IMC path. The internal RAM store must honor the read/prepare/commit/reset lifetime rules; callers must not assume bytes remain stable across the next mutation or modify bytes returned for reading.</p>
           <p>Restored KV and sampler history are separate correctness concerns. Prime sampler penalties and DRY with the complete logical prompt after restore. An own-KV MTP session may publish draft KV only with the matching target snapshot and final hidden row, including media prefixes. Media cache decoding hands off every target batch before another decode or projector encode can replace its borrowed buffers. Own-KV replay preserves projected embeddings and explicit positions and shifts only hidden states; logical continuation comes from mtmd rather than embedding-row count. A media advance retains draft state only after a complete paired snapshot for that prefix. Shared-target-KV MTP derives its resume point from the restored target and must not allocate or restore an independent draft store. A draft-only restore failure permits target-only fallback. Target-side rejection has two distinct outcomes: a stale expected-version mismatch is a retryable busy error and leaves the published session intact, while empty target bytes or a partial native target restore are request-fatal and invalidate the affected current state.</p>
           <p>Snapshot publication failures also differ by path. Ordinary text build/append and initial media build write through the current store; incomplete target serialization invalidates that current cache state, but target generation for the current request can continue. Media-anchor advancement instead uses a replacement store and requires a complete staged snapshot before swapping metadata; decode or snapshot failure fails the request while preserving the old published anchor.</p>
           <h4 id="2062-prompt-plans-text-and-media">20.6.2 Prompt plans: text and media</h4>
@@ -6364,7 +6399,6 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#55-configuration-and-storage" className={`doc-index-header ${activeSection === '55-configuration-and-storage' ? 'active' : ''}`}>5.5 Configuration and Storage</a>
               <ul>
                 <li><a href="#built-in-ram-storage" className={activeSection === 'built-in-ram-storage' ? 'active' : ''}>Built-in RAM storage</a></li>
-                <li><a href="#custom-sdk-storage" className={activeSection === 'custom-sdk-storage' ? 'active' : ''}>Custom SDK storage</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

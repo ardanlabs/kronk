@@ -182,13 +182,13 @@ func TestIMCSessionLogicalPosition(t *testing.T) {
 		session imcSession
 		want    int
 	}{
-		{name: "linear uses physical count", session: imcSession{totalTokensCached: 12}, want: 12},
-		{name: "mrope uses logical position", session: imcSession{totalTokensCached: 12, nextLogicalPos: 5}, want: 5},
+		{name: "linear uses physical count", session: imcSession{cache: &tokenCache{totalTokensCached: 12}}, want: 12},
+		{name: "mrope uses logical position", session: imcSession{cache: &tokenCache{totalTokensCached: 12, nextLogicalPos: 5}}, want: 5},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.session.logicalPosition(); got != tt.want {
+			if got := tt.session.cache.logicalPosition(); got != tt.want {
 				t.Errorf("logicalPosition() = %d, want %d", got, tt.want)
 			}
 		})

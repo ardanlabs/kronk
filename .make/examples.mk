@@ -84,9 +84,6 @@ example-question: ## Run the question example
 example-response: ## Run the response example
 	cd examples && go run ./response/main.go
 
-example-session-store: ## Run the session store example
-	cd examples && go run ./session-store/...
-
 example-vision: ## Run the vision example
 	cd examples && go run ./vision/main.go
 

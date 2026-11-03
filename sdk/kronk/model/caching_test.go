@@ -6,19 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
-
-// ramSessionStore returns a fresh in-process RAM SessionStore for use
-// in tests that need to construct an imcSession with a non-nil
-// kvState. The production code path goes through newSessionStore(ctx, cfg)
-// which dispatches by config; tests don't exercise that dispatch and
-// just need the default backend.
-func ramSessionStore() kvstorage.Store {
-	return ram.New()
-}
 
 func TestHashMessages(t *testing.T) {
 	tests := []struct {
@@ -174,7 +163,8 @@ func TestIMCSlotState(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			kvState: ramSessionStore(),
+			cache:   &tokenCache{},
+			kvState: &imcCheckpoint{},
 			seqID:   llama.SeqId(i),
 			id:      i,
 		}
@@ -189,23 +179,23 @@ func TestIMCSlotState(t *testing.T) {
 	}
 
 	// Simulate cache build on slot 0.
-	m.imcSessions[0].cachedMsgsHash = "abc123"
-	m.imcSessions[0].totalTokensCached = 1000
-	m.imcSessions[0].cachedMsgCount = 2
+	m.imcSessions[0].cache.cachedMsgsHash = "abc123"
+	m.imcSessions[0].cache.totalTokensCached = 1000
+	m.imcSessions[0].cache.cachedMsgCount = 2
 
 	// Verify state persists.
-	if m.imcSessions[0].cachedMsgsHash != "abc123" {
+	if m.imcSessions[0].cache.cachedMsgsHash != "abc123" {
 		t.Error("hash not persisted")
 	}
-	if m.imcSessions[0].totalTokensCached != 1000 {
+	if m.imcSessions[0].cache.totalTokensCached != 1000 {
 		t.Error("tokens not persisted")
 	}
-	if m.imcSessions[0].cachedMsgCount != 2 {
+	if m.imcSessions[0].cache.cachedMsgCount != 2 {
 		t.Error("msgCount not persisted")
 	}
 
 	// Verify slot 1 is independent.
-	if m.imcSessions[1].totalTokensCached != 0 {
+	if m.imcSessions[1].cache.totalTokensCached != 0 {
 		t.Error("slot 1 should be empty")
 	}
 }
@@ -221,14 +211,17 @@ func TestClearCaches(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			kvState:           ramSessionStore(),
-			seqID:             llama.SeqId(i),
-			id:                i,
-			cachedMsgsHash:    "hash",
-			totalTokensCached: 500,
-			cachedMsgCount:    3,
+			kvState: &imcCheckpoint{},
+			seqID:   llama.SeqId(i),
+			id:      i,
+			cache: &tokenCache{
+				cachedMsgsHash:    "hash",
+				totalTokensCached: 500,
+				cachedMsgCount:    3,
+			},
 		}
 	}
+	bindTestTokenCaches(m)
 
 	// Clear caches.
 	if err := m.clearCaches(context.Background()); err != nil {
@@ -237,14 +230,14 @@ func TestClearCaches(t *testing.T) {
 
 	// Verify IMC sessions cleared.
 	for i, slot := range m.imcSessions {
-		if slot.totalTokensCached != 0 {
-			t.Errorf("session %d totalTokensCached = %d, want 0", i, slot.totalTokensCached)
+		if slot.cache.totalTokensCached != 0 {
+			t.Errorf("session %d totalTokensCached = %d, want 0", i, slot.cache.totalTokensCached)
 		}
-		if slot.cachedMsgCount != 0 {
-			t.Errorf("session %d cachedMsgCount = %d, want 0", i, slot.cachedMsgCount)
+		if slot.cache.cachedMsgCount != 0 {
+			t.Errorf("session %d cachedMsgCount = %d, want 0", i, slot.cache.cachedMsgCount)
 		}
-		if slot.cachedMsgsHash != "" {
-			t.Errorf("session %d cachedMsgsHash = %q, want empty", i, slot.cachedMsgsHash)
+		if slot.cache.cachedMsgsHash != "" {
+			t.Errorf("session %d cachedMsgsHash = %q, want empty", i, slot.cache.cachedMsgsHash)
 		}
 	}
 }
@@ -274,21 +267,23 @@ func TestCacheResultFields(t *testing.T) {
 // retained so the next conversation can reuse them without allocation.
 func TestIMCResetSessionClearsKVState(t *testing.T) {
 	s := &imcSession{
-		kvState:             ramSessionStore(),
-		draftKVState:        ramSessionStore(),
-		id:                  0,
-		seqID:               0,
-		cachedMsgsHash:      "abc123",
-		cachedTokens:        []llama.Token{1, 2, 3},
-		totalTokensCached:   100,
-		cachedMsgCount:      2,
-		lastUsed:            time.Now(),
-		reserved:            true,
-		hasMedia:            true,
-		useMRoPE:            true,
-		mediaKVCounts:       []int{10, 20},
-		samplerPromptTokens: []llama.Token{4, 5, 6},
-		pendingH:            make([]float32, 4, 8),
+		kvState:      &imcCheckpoint{},
+		draftKVState: &imcCheckpoint{},
+		seqID:        0,
+		id:           0,
+		cache: &tokenCache{
+			cachedMsgsHash:      "abc123",
+			cachedTokens:        []llama.Token{1, 2, 3},
+			totalTokensCached:   100,
+			cachedMsgCount:      2,
+			hasMedia:            true,
+			useMRoPE:            true,
+			mediaKVCounts:       []int{10, 20},
+			samplerPromptTokens: []llama.Token{4, 5, 6},
+		},
+		lastUsed: time.Now(),
+		reserved: true,
+		pendingH: make([]float32, 4, 8),
 	}
 	buf := prepareTestStore(t, s.kvState, 16)
 	draftBuf := prepareTestStore(t, s.draftKVState, 16)
@@ -328,32 +323,32 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 			t.Fatalf("pendingH retained value[%d] = %f, want 0", i, v)
 		}
 	}
-	if s.samplerPromptTokens != nil {
-		t.Errorf("samplerPromptTokens = %v, want nil", s.samplerPromptTokens)
+	if s.cache.samplerPromptTokens != nil {
+		t.Errorf("samplerPromptTokens = %v, want nil", s.cache.samplerPromptTokens)
 	}
-	if s.cachedMsgsHash != "" {
-		t.Errorf("cachedMsgsHash = %q, want empty", s.cachedMsgsHash)
+	if s.cache.cachedMsgsHash != "" {
+		t.Errorf("cachedMsgsHash = %q, want empty", s.cache.cachedMsgsHash)
 	}
-	if s.cachedTokens != nil {
-		t.Errorf("cachedTokens = %v, want nil", s.cachedTokens)
+	if s.cache.cachedTokens != nil {
+		t.Errorf("cachedTokens = %v, want nil", s.cache.cachedTokens)
 	}
-	if s.totalTokensCached != 0 {
-		t.Errorf("totalTokensCached = %d, want 0", s.totalTokensCached)
+	if s.cache.totalTokensCached != 0 {
+		t.Errorf("totalTokensCached = %d, want 0", s.cache.totalTokensCached)
 	}
-	if s.cachedMsgCount != 0 {
-		t.Errorf("cachedMsgCount = %d, want 0", s.cachedMsgCount)
+	if s.cache.cachedMsgCount != 0 {
+		t.Errorf("cachedMsgCount = %d, want 0", s.cache.cachedMsgCount)
 	}
 	if s.reserved {
 		t.Error("reserved should be false")
 	}
-	if s.hasMedia {
+	if s.cache.hasMedia {
 		t.Error("hasMedia should be false")
 	}
-	if s.useMRoPE {
+	if s.cache.useMRoPE {
 		t.Error("useMRoPE should be false")
 	}
-	if s.mediaKVCounts != nil {
-		t.Errorf("mediaKVCounts = %v, want nil", s.mediaKVCounts)
+	if s.cache.mediaKVCounts != nil {
+		t.Errorf("mediaKVCounts = %v, want nil", s.cache.mediaKVCounts)
 	}
 
 	// id is structural (session-pool index) and must be preserved.
@@ -380,15 +375,18 @@ func TestClearCachesResetsKVState(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			kvState:           ramSessionStore(),
-			seqID:             llama.SeqId(i),
-			id:                i,
-			cachedMsgsHash:    "hash",
-			totalTokensCached: 500,
-			cachedMsgCount:    3,
+			kvState: &imcCheckpoint{},
+			seqID:   llama.SeqId(i),
+			id:      i,
+			cache: &tokenCache{
+				cachedMsgsHash:    "hash",
+				totalTokensCached: 500,
+				cachedMsgCount:    3,
+			},
 		}
 		prepareTestStore(t, m.imcSessions[i].kvState, 1024)
 	}
+	bindTestTokenCaches(m)
 
 	if err := m.clearCaches(context.Background()); err != nil {
 		t.Fatalf("clearCaches() error = %v, want nil", err)
@@ -398,8 +396,8 @@ func TestClearCachesResetsKVState(t *testing.T) {
 		if s.kvState.Len() != 0 {
 			t.Errorf("session[%d] kvState.Len() = %d, want 0 (contents cleared)", i, s.kvState.Len())
 		}
-		if s.totalTokensCached != 0 {
-			t.Errorf("session[%d] totalTokensCached = %d, want 0", i, s.totalTokensCached)
+		if s.cache.totalTokensCached != 0 {
+			t.Errorf("session[%d] totalTokensCached = %d, want 0", i, s.cache.totalTokensCached)
 		}
 	}
 }
@@ -443,8 +441,8 @@ func TestIMCSessionMediaFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			session := &imcSession{hasMedia: tt.hasMedia, kvState: ramSessionStore()}
-			got := session.hasMedia || tt.imcMediaBuild
+			session := &imcSession{cache: &tokenCache{hasMedia: tt.hasMedia}, kvState: &imcCheckpoint{}}
+			got := session.cache.hasMedia || tt.imcMediaBuild
 			if got != tt.wantMediaFlag {
 				t.Errorf("imcSessionMedia = %v, want %v", got, tt.wantMediaFlag)
 			}
@@ -468,7 +466,8 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	}
 
 	session := &imcSession{
-		kvState:  ramSessionStore(),
+		cache:    &tokenCache{},
+		kvState:  &imcCheckpoint{},
 		id:       0,
 		seqID:    0,
 		reserved: true,
@@ -487,11 +486,11 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	}
 
 	// Verify other fields were updated.
-	if session.cachedMsgsHash != "newhash" {
-		t.Errorf("cachedMsgsHash = %q, want newhash", session.cachedMsgsHash)
+	if session.cache.cachedMsgsHash != "newhash" {
+		t.Errorf("cachedMsgsHash = %q, want newhash", session.cache.cachedMsgsHash)
 	}
-	if session.totalTokensCached != 1000 {
-		t.Errorf("totalTokensCached = %d, want 1000", session.totalTokensCached)
+	if session.cache.totalTokensCached != 1000 {
+		t.Errorf("totalTokensCached = %d, want 1000", session.cache.totalTokensCached)
 	}
 
 	// Commit alone must not publish: reserved must still be true so a
@@ -510,8 +509,9 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 func TestIMCCommitMediaInvalidatesOwnDraftState(t *testing.T) {
 	m := &Model{}
 	session := &imcSession{
-		kvState:      ramSessionStore(),
-		draftKVState: ramSessionStore(),
+		cache:        &tokenCache{},
+		kvState:      &imcCheckpoint{},
+		draftKVState: &imcCheckpoint{},
 		pendingH:     []float32{1, 2, 3},
 	}
 	buf := prepareTestStore(t, session.draftKVState, 3)
@@ -529,9 +529,12 @@ func TestIMCCommitMediaInvalidatesOwnDraftState(t *testing.T) {
 }
 
 func TestIMCCommitMediaInvalidatesDraftMetadataWhenResetFails(t *testing.T) {
-	wantErr := errors.New("reset failed")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	wantErr := context.Canceled
 	session := &imcSession{
-		draftKVState: &resetErrorStore{err: wantErr},
+		cache:        &tokenCache{},
+		draftKVState: populatedTestSessionStore(t),
 		pendingH:     []float32{1, 2, 3},
 		reserved:     true,
 	}
@@ -544,7 +547,7 @@ func TestIMCCommitMediaInvalidatesDraftMetadataWhenResetFails(t *testing.T) {
 		}
 	}}
 
-	m.imcCommitSession(context.Background(), session, "hash", 100, 2, nil, true, []int{50}, "")
+	m.imcCommitSession(ctx, session, "hash", 100, 2, nil, true, []int{50}, "")
 
 	if !errors.Is(loggedErr, wantErr) {
 		t.Errorf("logged error = %v, want %v", loggedErr, wantErr)
@@ -552,26 +555,25 @@ func TestIMCCommitMediaInvalidatesDraftMetadataWhenResetFails(t *testing.T) {
 	if len(session.pendingH) != 0 {
 		t.Errorf("len(pendingH) = %d, want 0", len(session.pendingH))
 	}
-	if !session.hasMedia || session.totalTokensCached != 100 {
-		t.Errorf("target metadata was not committed: hasMedia=%t totalTokensCached=%d", session.hasMedia, session.totalTokensCached)
+	if !session.cache.hasMedia || session.cache.totalTokensCached != 100 {
+		t.Errorf("target metadata was not committed: hasMedia=%t totalTokensCached=%d", session.cache.hasMedia, session.cache.totalTokensCached)
 	}
 }
 
 func TestIMCInvalidateReservedSessionRetainsOwnership(t *testing.T) {
 	m := &Model{}
 	session := &imcSession{
-		cachedMsgsHash:    "hash",
-		totalTokensCached: 10,
-		reserved:          true,
-		kvState:           populatedTestSessionStore(t),
+		cache:    &tokenCache{cachedMsgsHash: "hash", totalTokensCached: 10},
+		reserved: true,
+		kvState:  populatedTestSessionStore(t),
 	}
 
 	if err := m.imcInvalidateReservedSession(context.Background(), session); err != nil {
 		t.Fatalf("imcInvalidateReservedSession() error = %v, want nil", err)
 	}
 
-	if session.totalTokensCached != 0 || session.kvState.Len() != 0 {
-		t.Fatalf("invalidated session still has cache state: tokens=%d bytes=%d", session.totalTokensCached, session.kvState.Len())
+	if session.cache.totalTokensCached != 0 || session.kvState.Len() != 0 {
+		t.Fatalf("invalidated session still has cache state: tokens=%d bytes=%d", session.cache.totalTokensCached, session.kvState.Len())
 	}
 	if !session.reserved {
 		t.Fatal("invalidated session released ownership before finishSlot cleanup")
@@ -603,10 +605,10 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			session := &imcSession{
-				kvState:  ramSessionStore(),
-				id:       1,
-				seqID:    1,
-				hasMedia: tt.hasMedia,
+				kvState: &imcCheckpoint{},
+				seqID:   1,
+				id:      1,
+				cache:   &tokenCache{hasMedia: tt.hasMedia},
 			}
 
 			job := &chatJob{
@@ -628,7 +630,7 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 // to a session across follow-up turns and is cleared when token-v2 selects the
 // session for a full rebuild. All sessions externalize their KV state to RAM.
 func TestIMCSessionMediaTransitions(t *testing.T) {
-	s := &imcSession{id: 0, seqID: 0, kvState: ramSessionStore()}
+	s := &imcSession{id: 0, seqID: 0, cache: &tokenCache{}, kvState: &imcCheckpoint{}}
 
 	// snapshot simulates startSlot writing kvState by going through the
 	// kvBuffer Prepare/Commit lifecycle.
@@ -639,12 +641,12 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	}
 
 	// Turn 1: Text build. hasMedia=false.
-	s.cachedMsgsHash = "text1"
-	s.totalTokensCached = 100
-	s.hasMedia = false
+	s.cache.cachedMsgsHash = "text1"
+	s.cache.totalTokensCached = 100
+	s.cache.hasMedia = false
 	snapshot(0x01)
 
-	if s.hasMedia {
+	if s.cache.hasMedia {
 		t.Fatal("turn 1: session should be text-only")
 	}
 	if s.kvState.Len() == 0 {
@@ -653,20 +655,20 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 
 	// Turn 2: Text→Media transition. imcMediaBuild=true, session.hasMedia
 	// transitions from false to true after commit.
-	mediaFlag := s.hasMedia || true // imcMediaBuild=true
+	mediaFlag := s.cache.hasMedia || true // imcMediaBuild=true
 	if !mediaFlag {
 		t.Fatal("turn 2: imcSessionMedia should be true during media build")
 	}
 
 	// Simulate startSlot media build + commit + snapshot.
-	s.cachedMsgsHash = "media1"
-	s.totalTokensCached = 500
-	s.hasMedia = true
+	s.cache.cachedMsgsHash = "media1"
+	s.cache.totalTokensCached = 500
+	s.cache.hasMedia = true
 	snapshot(0x02) // Media sessions also get externalized to RAM.
-	s.mediaKVCounts = []int{200}
+	s.cache.mediaKVCounts = []int{200}
 
 	// Turn 3: Media→Text follow-up. Session stays media, kvState present.
-	if !s.hasMedia {
+	if !s.cache.hasMedia {
 		t.Fatal("turn 3: session should still be media")
 	}
 	if s.kvState.Len() == 0 {
@@ -674,11 +676,11 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	}
 
 	// Simulate text extend on media session.
-	s.totalTokensCached = 600
-	s.cachedMsgCount = 4
+	s.cache.totalTokensCached = 600
+	s.cache.cachedMsgCount = 4
 
 	// Turn 4: Text→Text on media session. Still media.
-	if !s.hasMedia {
+	if !s.cache.hasMedia {
 		t.Fatal("turn 4: session should still be media")
 	}
 
@@ -686,18 +688,18 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	// published while the extension is decoded and snapshotted into a staged
 	// store, then both media anchors are committed atomically.
 	oldStore := s.kvState
-	staged := ramSessionStore()
+	staged := &imcCheckpoint{}
 	stagedBuf := prepareTestStore(t, staged, 1)
 	stagedBuf[0] = 0x03
 	commitTestStore(t, staged, 1)
 	plan := mediaPlan(promptUnit{isMedia: true}, promptUnit{isMedia: true})
 	gotOld := (&Model{}).imcCommitMediaAdvance(context.Background(), s, staged, "media2", 800, 6, 700, plan, []llama.Token{1, 2}, []int{200, 150}, nil, true, false, "render", false)
-	if gotOld != oldStore || s.kvState != staged || !s.hasMedia || len(s.mediaKVCounts) != 2 {
+	if gotOld != oldStore || s.kvState != staged || !s.cache.hasMedia || len(s.cache.mediaKVCounts) != 2 {
 		t.Fatal("turn 5: second media append did not atomically replace the session snapshot")
 	}
 
 	// Turn 6: Media→Text. Session stays media.
-	if !s.hasMedia {
+	if !s.cache.hasMedia {
 		t.Fatal("turn 6: session should still be media")
 	}
 }
@@ -713,7 +715,7 @@ func TestReleaseIMCReservationIfHeld(t *testing.T) {
 			log:         func(ctx context.Context, msg string, args ...any) {},
 		}
 		m.imcSessions[0] = &imcSession{
-			kvState:  ramSessionStore(),
+			kvState:  &imcCheckpoint{},
 			seqID:    llama.SeqId(0),
 			id:       0,
 			reserved: true,
@@ -835,13 +837,14 @@ func TestIMCSessions(t *testing.T) {
 	m := &Model{
 		cfg: Config{PtrContextWindow: new(8192)},
 		imcSessions: []*imcSession{
-			{id: 0, kvState: ramSessionStore()},
-			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
-			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, hasMedia: true, kvState: populatedTestSessionStore(t), pendingH: make([]float32, 2)},
-			{id: 3, totalTokensCached: 2048, allocatedContext: 1536, kvState: ramSessionStore()},
-			{id: 4, reserved: true, totalTokensCached: 1024, allocatedContext: 1536, cachedMsgCount: 2, kvState: ramSessionStore()},
+			{id: 0, kvState: &imcCheckpoint{}},
+			{id: 1, cache: &tokenCache{totalTokensCached: 1024}, reserved: true, kvState: &imcCheckpoint{}},
+			{id: 2, cache: &tokenCache{totalTokensCached: 2048, nextLogicalPos: 2100, cachedMsgCount: 4, hasMedia: true}, allocatedContext: 4096, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, kvState: populatedTestSessionStore(t), pendingH: make([]float32, 2)},
+			{id: 3, cache: &tokenCache{totalTokensCached: 2048}, allocatedContext: 1536, kvState: &imcCheckpoint{}},
+			{id: 4, cache: &tokenCache{totalTokensCached: 1024, cachedMsgCount: 2}, reserved: true, allocatedContext: 1536, kvState: &imcCheckpoint{}},
 		},
 	}
+	bindTestTokenCaches(m)
 	m.imcSessions[2].snapshotBytes = imcSnapshotBytes(m.imcSessions[2].kvState, m.imcSessions[2].draftKVState, m.imcSessions[2].pendingH)
 
 	got := m.IMCSessions()
@@ -869,11 +872,11 @@ func TestIMCSessions(t *testing.T) {
 	}
 
 	got[2].Context = 1
-	if m.imcSessions[2].logicalPosition() != 2100 {
+	if m.imcSessions[2].cache.logicalPosition() != 2100 {
 		t.Fatal("mutating snapshot changed the IMC cache entry")
 	}
 
-	m.imcSessions[2].totalTokensCached = 0
+	m.imcSessions[2].cache.totalTokensCached = 0
 	m.imcSessions[2].allocatedContext = 0
 	got = m.IMCSessions()
 	if got[2].State != IMCSessionStateEmpty || got[2].Context != 0 || got[2].Allocated != 0 {
@@ -942,7 +945,7 @@ func TestImcClearReservedSessionIDArg(t *testing.T) {
 	}
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			kvState:  ramSessionStore(),
+			kvState:  &imcCheckpoint{},
 			seqID:    imcSeqIDUnbound,
 			id:       i,
 			reserved: true,
@@ -972,7 +975,7 @@ func TestImcClearReservedSessionIDArg(t *testing.T) {
 // reserved until its externalized snapshot is published.
 func TestIMCCommitDoesNotPublishUntilSnapshot(t *testing.T) {
 	m := &Model{imcSessions: make([]*imcSession, 1)}
-	m.imcSessions[0] = &imcSession{kvState: ramSessionStore(), seqID: imcSeqIDUnbound, id: 0, reserved: true}
+	m.imcSessions[0] = &imcSession{cache: &tokenCache{}, kvState: &imcCheckpoint{}, seqID: imcSeqIDUnbound, id: 0, reserved: true}
 
 	m.imcCommitSession(context.Background(), m.imcSessions[0], "hash", 500, 2, []llama.Token{1, 2}, false, nil, "")
 	if !m.imcSessions[0].reserved {

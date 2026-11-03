@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.opentelemetry.io/otel/attribute"
@@ -42,7 +41,8 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 			continue
 		}
 
-		context := session.totalTokensCached
+		cache := session.cache
+		context := cache.totalTokensCached
 		allocated := max(session.allocatedContext, context)
 		peakContext := max(session.peakContext, session.highWaterContext, allocated)
 
@@ -62,20 +62,20 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 			TotalAllocated: peakContext,
 			SnapshotBytes:  session.snapshotBytes,
 			PeakContext:    peakContext,
-			Messages:       session.cachedMsgCount,
+			Messages:       cache.cachedMsgCount,
 			InputMessages:  session.inputMessages,
 			InputTokens:    session.inputTokens,
 			OutputTokens:   session.outputTokens,
 			ContextWindow:  m.cfg.ContextWindow(),
 			LastUsed:       session.lastUsed,
-			HasMedia:       session.hasMedia,
+			HasMedia:       cache.hasMedia,
 		})
 	}
 
 	return details
 }
 
-func imcSnapshotBytes(targetStore, draftStore kvstorage.Store, pendingH []float32) int {
+func imcSnapshotBytes(targetStore, draftStore *imcCheckpoint, pendingH []float32) int {
 	bytes := cap(pendingH) * 4
 	if targetStore != nil {
 		bytes += targetStore.Cap()
@@ -87,21 +87,13 @@ func imcSnapshotBytes(targetStore, draftStore kvstorage.Store, pendingH []float3
 	return bytes
 }
 
-func prepareSessionSnapshot(ctx context.Context, store kvstorage.Store, size uint64) ([]byte, error) {
+func prepareSessionSnapshot(ctx context.Context, store *imcCheckpoint, size uint64) ([]byte, error) {
 	n := int(size)
 	if n < 0 || uint64(n) != size {
 		return nil, fmt.Errorf("snapshot size %d exceeds platform limit", size)
 	}
 
-	buf, err := store.Prepare(ctx, n)
-	if err != nil {
-		return nil, err
-	}
-	if len(buf) != n {
-		return nil, fmt.Errorf("session store Prepare returned %d bytes, want %d", len(buf), n)
-	}
-
-	return buf, nil
+	return store.Prepare(ctx, n)
 }
 
 func (m *Model) imcBeginRequestUsage(session *imcSession) uint64 {
@@ -196,24 +188,11 @@ func resetCurrentSessionMetadata(s *imcSession) {
 		return
 	}
 
-	s.cachedMsgsHash = ""
-	s.cachedTokens = nil
-	s.totalTokensCached = 0
-	// allocatedContext is a historical high-water mark and remains useful even
-	// when the configured store releases its staging capacity during Reset.
-	s.nextLogicalPos = 0
-	s.cachedMsgCount = 0
+	cache := s.cache
+	*cache = tokenCache{id: cache.id, session: s}
 	clear(s.pendingH[:cap(s.pendingH)])
 	s.pendingH = s.pendingH[:0]
 	s.snapshotBytes = imcSnapshotBytes(s.kvState, s.draftKVState, s.pendingH)
-	s.hasMedia = false
-	s.useMRoPE = false
-	s.useNonCausal = false
-	s.mediaKVCounts = nil
-	s.mediaNativeChunks = nil
-	s.promptPlan = promptPlan{}
-	s.samplerPromptTokens = nil
-	s.cachedRenderInputHash = ""
 }
 
 func resetSessionStores(ctx context.Context, s *imcSession) error {
@@ -318,29 +297,30 @@ func (m *Model) imcCommitSession(ctx context.Context, session *imcSession, hash 
 	}
 
 	m.cacheMu.Lock()
-	session.cachedMsgsHash = hash
-	session.totalTokensCached = totalCached
-	session.cachedMsgCount = cachedMsgCount
+	cache := session.cache
+	cache.cachedMsgsHash = hash
+	cache.totalTokensCached = totalCached
+	cache.cachedMsgCount = cachedMsgCount
 	session.lastUsed = time.Now()
-	session.hasMedia = hasMedia
-	session.mediaKVCounts = mediaKVCounts
-	session.cachedRenderInputHash = renderInputHash
-	session.samplerPromptTokens = nil
+	cache.hasMedia = hasMedia
+	cache.mediaKVCounts = mediaKVCounts
+	cache.cachedRenderInputHash = renderInputHash
+	cache.samplerPromptTokens = nil
 	if !hasMedia {
-		session.useMRoPE = false
-		session.useNonCausal = false
-		session.mediaNativeChunks = nil
-		session.nextLogicalPos = 0
+		cache.useMRoPE = false
+		cache.useNonCausal = false
+		cache.mediaNativeChunks = nil
+		cache.nextLogicalPos = 0
 	}
 	switch {
 	case hasMedia:
-		session.cachedTokens = nil
+		cache.cachedTokens = nil
 		// Invalidate the previous draft snapshot. Admission snapshots the
 		// newly synchronized draft prefix before publishing this build.
 		clear(session.pendingH[:cap(session.pendingH)])
 		session.pendingH = session.pendingH[:0]
 	case len(cachedTokens) > 0:
-		session.cachedTokens = cachedTokens
+		cache.cachedTokens = cachedTokens
 	}
 	m.cacheMu.Unlock()
 }
@@ -350,7 +330,7 @@ func (m *Model) imcCommitSession(ctx context.Context, session *imcSession, hash 
 // and closes it after the swap. reserved remains set until the caller publishes
 // or releases the reservation. draftSnapshotOK certifies that draftKVState and
 // pendingH were just committed for the same logical prefix as staged.
-func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, staged kvstorage.Store, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, mediaKVCounts []int, mediaNativeChunks []imcMediaChunk, useMRoPE, useNonCausal bool, renderInputHash string, draftSnapshotOK bool) kvstorage.Store {
+func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, staged *imcCheckpoint, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, mediaKVCounts []int, mediaNativeChunks []imcMediaChunk, useMRoPE, useNonCausal bool, renderInputHash string, draftSnapshotOK bool) *imcCheckpoint {
 	if session == nil || staged == nil {
 		return nil
 	}
@@ -364,20 +344,21 @@ func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, 
 	m.cacheMu.Lock()
 	oldStore := session.kvState
 	session.kvState = staged
-	session.cachedMsgsHash = hash
-	session.totalTokensCached = totalCached
-	session.nextLogicalPos = nextLogicalPos
-	session.cachedMsgCount = cachedMsgCount
-	session.hasMedia = true
-	session.promptPlan = plan
-	session.samplerPromptTokens = samplerPromptTokens
-	session.mediaKVCounts = mediaKVCounts
-	session.mediaNativeChunks = mediaNativeChunks
-	session.useMRoPE = useMRoPE
-	session.useNonCausal = useNonCausal
-	session.cachedRenderInputHash = renderInputHash
+	cache := session.cache
+	cache.cachedMsgsHash = hash
+	cache.totalTokensCached = totalCached
+	cache.nextLogicalPos = nextLogicalPos
+	cache.cachedMsgCount = cachedMsgCount
+	cache.hasMedia = true
+	cache.promptPlan = plan
+	cache.samplerPromptTokens = samplerPromptTokens
+	cache.mediaKVCounts = mediaKVCounts
+	cache.mediaNativeChunks = mediaNativeChunks
+	cache.useMRoPE = useMRoPE
+	cache.useNonCausal = useNonCausal
+	cache.cachedRenderInputHash = renderInputHash
 	session.lastUsed = time.Now()
-	session.cachedTokens = nil
+	cache.cachedTokens = nil
 	session.allocatedContext = max(session.allocatedContext, totalCached)
 	session.highWaterContext = max(session.highWaterContext, totalCached)
 	if !draftSnapshotOK {
@@ -391,7 +372,7 @@ func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, 
 
 // imcPublishSession completes the publication started by imcCommitSession.
 // It clears the reserved flag, making the session visible to token-v2 planners.
-// Call this only AFTER the externalized SessionStore snapshot has been
+// Call this only AFTER the RAM checkpoint has been
 // committed for the same session, so the metadata and kvState bytes are
 // guaranteed consistent to concurrent readers.
 func (m *Model) imcPublishSession(session *imcSession) {
@@ -400,9 +381,9 @@ func (m *Model) imcPublishSession(session *imcSession) {
 	}
 
 	m.cacheMu.Lock()
-	session.allocatedContext = max(session.allocatedContext, session.totalTokensCached)
+	session.allocatedContext = max(session.allocatedContext, session.cache.totalTokensCached)
 	session.snapshotBytes = imcSnapshotBytes(session.kvState, session.draftKVState, session.pendingH)
-	session.highWaterContext = max(session.highWaterContext, session.totalTokensCached)
+	session.highWaterContext = max(session.highWaterContext, session.cache.totalTokensCached)
 	session.reserved = false
 	m.cacheMu.Unlock()
 }

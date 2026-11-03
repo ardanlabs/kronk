@@ -354,7 +354,7 @@ key rotation, and production hardening are covered in
 ### 17.7 IMC
 
 IMC is enabled by default. It externalizes cached session state to the built-in
-RAM store or, for direct SDK use, a configured custom session store. See
+RAM store. See
 [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) for its lifecycle and settings.
 
 #### Every turn rebuilds the cache
@@ -381,7 +381,7 @@ metrics before increasing `nseq-max`.
 
 The current request fails. Retry it from the client; the server does not
 automatically repeat the request. Repeated restore failures warrant checking
-memory pressure, the session-store configuration, and nearby low-level errors.
+memory pressure and nearby low-level errors.
 Reducing `context-window` or concurrency can lower memory pressure.
 
 ### 17.8 MCP

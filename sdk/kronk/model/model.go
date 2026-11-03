@@ -20,7 +20,6 @@ import (
 	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
-	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
@@ -58,45 +57,53 @@ const imcSeqIDUnbound llama.SeqId = -1
 // imcSession holds the state for a single IMC (Incremental Message Cache)
 // session. Sessions are session-pool entries, sized by IMCSessionCapacity,
 // which is validated to be at least as large as generation admission capacity.
-// Each session externalizes its cached KV state via SessionStore
+// Each session externalizes its cached KV state in internal RAM storage
 // between requests; the scheduler binds a session to
 // whichever execution slot is free at startSlot time. The seqID field
 // is dynamic: it holds the bound slot's KV sequence id while a
 // request is in flight, and imcSeqIDUnbound otherwise.
 type imcSession struct {
-	id                  int             // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
-	seqID               llama.SeqId     // KV sequence id the session is currently bound to, or imcSeqIDUnbound when its state is externalized.
-	cachedMsgsHash      string          // Hash of all cached messages
-	cachedTokens        []llama.Token   // Full token sequence in KV cache (immutable; replaced, never mutated)
-	totalTokensCached   int             // Physical KV cells in the cached prefix.
-	nextLogicalPos      int             // Next logical decode position; equals totalTokensCached except for M-RoPE media.
-	cachedMsgCount      int             // Number of messages cached
-	kvState             kvstorage.Store // Externalized KV cache state, accessed only through the pluggable SessionStore interface.
-	draftKVState        kvstorage.Store // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
-	pendingH            []float32       // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
-	lastUsed            time.Time       // Last access time (for eviction)
-	reserved            bool            // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
-	allocatedContext    int             // Largest physical KV-cell count allocated for this session.
-	snapshotBytes       int             // Reported target, compatible draft, and MTP hidden-row snapshot capacity in bytes.
-	highWaterContext    int             // Largest current context published for this session across reuse and snapshot ownership changes.
-	peakContext         int             // Largest live slot context observed for this session, including generated output.
-	inputMessages       int             // Message count from the latest request completed by this session.
-	inputTokens         int             // Complete input token count from the latest request, including the generation-template tail.
-	outputTokens        int             // Generated reasoning and completion tokens from the latest request.
-	usageVersion        uint64          // Request generation used to prevent an older completion from replacing newer diagnostics.
-	samplingSeed        uint32          // Concrete master sampling seed retained for this conversation.
-	hasSamplingSeed     bool            // True once samplingSeed has been generated or explicitly supplied.
-	hasMedia            bool            // True if the cached content includes media tokens (image/audio)
-	useMRoPE            bool            // True if the cached media used M-RoPE 4D positional encoding
-	useNonCausal        bool            // True if media decode requires non-causal attention and cannot be suffix-appended safely.
-	mediaKVCounts       []int           // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
-	mediaNativeChunks   []imcMediaChunk // Authoritative mtmd chunk stream used to prove a media append preserves the cached native prefix.
-	promptPlan          promptPlan      // Immutable token-v2 logical plan for the cached prefix.
-	samplerPromptTokens []llama.Token   // Authoritative mtmd text tokens in a cached media prefix; embedding cells are omitted.
+	id               int            // Resident pool index, used for reservation release and diagnostics.
+	cache            *tokenCache    // Non-owning binding to model-owned matching metadata.
+	seqID            llama.SeqId    // KV sequence id the session is currently bound to, or imcSeqIDUnbound when its state is externalized.
+	kvState          *imcCheckpoint // Internal RAM checkpoint of the target sequence.
+	draftKVState     *imcCheckpoint // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
+	pendingH         []float32      // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
+	lastUsed         time.Time      // Last access time (for eviction)
+	reserved         bool           // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
+	allocatedContext int            // Largest physical KV-cell count allocated for this session.
+	snapshotBytes    int            // Reported target, compatible draft, and MTP hidden-row snapshot capacity in bytes.
+	highWaterContext int            // Largest current context published for this session across reuse and snapshot ownership changes.
+	peakContext      int            // Largest live slot context observed for this session, including generated output.
+	inputMessages    int            // Message count from the latest request completed by this session.
+	inputTokens      int            // Complete input token count from the latest request, including the generation-template tail.
+	outputTokens     int            // Generated reasoning and completion tokens from the latest request.
+	usageVersion     uint64         // Request generation used to prevent an older completion from replacing newer diagnostics.
+	samplingSeed     uint32         // Concrete master sampling seed retained for this conversation.
+	hasSamplingSeed  bool           // True once samplingSeed has been generated or explicitly supplied.
+}
 
-	// cachedRenderInputHash guards token-v2 pure-hit snapshot reuse against
-	// changes to template inputs that are not represented by message tokens.
-	cachedRenderInputHash string
+// tokenCache describes a cached prefix without owning native checkpoint bytes.
+// The model owns these entries independently of the resident session pool.
+// RAM-only caching binds one entry to each session; matching searches these
+// entries and resolves the selected entry's resident session explicitly.
+// Token slices and prompt plans are immutable once published under cacheMu.
+type tokenCache struct {
+	id                    int         // Local cache identity; not a resident pool index or durable ID.
+	session               *imcSession // Current RAM residency; not owned by this entry.
+	cachedMsgsHash        string
+	cachedTokens          []llama.Token
+	totalTokensCached     int // Physical KV cells in the cached prefix.
+	nextLogicalPos        int // Next decode position; may differ from physical cells for media.
+	cachedMsgCount        int
+	hasMedia              bool
+	useMRoPE              bool
+	useNonCausal          bool
+	mediaKVCounts         []int
+	mediaNativeChunks     []imcMediaChunk
+	promptPlan            promptPlan
+	samplerPromptTokens   []llama.Token
+	cachedRenderInputHash string // Guards exact hits against render-only input changes.
 }
 
 // imcSystemCache is one immutable, model-specific system-prompt preload image.
@@ -105,8 +112,8 @@ type imcSystemCache struct {
 	id               int
 	cachedTokens     []llama.Token
 	buildingTokens   []llama.Token // Pending replacement identity while building keeps published metadata separate.
-	kvState          kvstorage.Store
-	draftKVState     kvstorage.Store
+	kvState          *imcCheckpoint
+	draftKVState     *imcCheckpoint
 	pendingH         []float32
 	allocatedContext int
 	snapshotBytes    int // Retained target, draft, and pending-H capacity, safe to read while the stores are rebuilt.
@@ -116,7 +123,7 @@ type imcSystemCache struct {
 	building         bool // Exclusive rebuild reservation; planners must not restore this entry while true.
 }
 
-func (s *imcSession) logicalPosition() int {
+func (s *tokenCache) logicalPosition() int {
 	if s.nextLogicalPos > 0 {
 		return s.nextLogicalPos
 	}
@@ -208,7 +215,8 @@ type Model struct {
 	pendingDecode    bool // Protected by decodeMu; submitted target work may still be executing.
 	graphAllocations graphAllocationLog
 	cacheMu          sync.RWMutex
-	imcSessions      []*imcSession     // IMC session pool, sized by IMCSessionCapacity; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	tokenCaches      []*tokenCache     // Lightweight matching index, one-to-one with resident sessions in RAM-only mode.
+	imcSessions      []*imcSession     // Resident checkpoint pool; buffers grow lazily in internal RAM.
 	imcSystemCaches  []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
 	addBOSToken      bool              // Whether to add BOS token (from model metadata)
 	pool             *contextPool      // Context pool for parallel embed/rerank
@@ -822,25 +830,24 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan inter
 	// larger warm conversation working set. Config validation keeps the identity
 	// count at least as large as generation admission capacity. Actual decode
 	// concurrency stays capped at nSlots.
-	// Sessions
-	// externalize their KV state via SessionStore so any session can
-	// run on any free slot. The SessionStore backing buffer is
-	// allocated lazily on first use, so unused sessions cost only the
-	// imcSession struct itself.
+	// Sessions retain their KV state in RAM so any session can run on any free
+	// slot. Checkpoint buffers are allocated lazily on first use.
 	if m.cfg.IncrementalCache() {
 		nSessions := m.cfg.IMCSessionCapacity()
+		m.tokenCaches = make([]*tokenCache, nSessions)
 		m.imcSessions = make([]*imcSession, nSessions)
 		m.imcSystemCaches = make([]*imcSystemCache, nSessions)
 		for i := range nSessions {
-			store, err := newSessionStore(ctx, m.cfg)
-			if err != nil {
-				return m.cleanupGenerationRuntime(ctx, fmt.Errorf("init-generation-runtime: session-store: %w", err))
-			}
-			m.imcSessions[i] = &imcSession{
+			cache := tokenCache{id: i}
+			session := imcSession{
 				id:      i,
+				cache:   &cache,
 				seqID:   imcSeqIDUnbound,
-				kvState: store,
+				kvState: &imcCheckpoint{},
 			}
+			cache.session = &session
+			m.tokenCaches[i] = &cache
+			m.imcSessions[i] = &session
 			m.imcSystemCaches[i] = &imcSystemCache{id: i}
 		}
 	}
@@ -906,11 +913,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan inter
 	_, externalizesDraftKV := m.draft.(draftKVExternalizer)
 	if m.cfg.IncrementalCache() && externalizesDraftKV {
 		for _, sess := range m.imcSessions {
-			store, err := newSessionStore(ctx, m.cfg)
-			if err != nil {
-				return m.cleanupGenerationRuntime(ctx, fmt.Errorf("init-generation-runtime: draft session-store: %w", err))
-			}
-			sess.draftKVState = store
+			sess.draftKVState = &imcCheckpoint{}
 		}
 	}
 
@@ -975,6 +978,7 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 			}
 		}
 	}
+	m.tokenCaches = nil
 	m.imcSessions = nil
 	m.imcSystemCaches = nil
 	m.parser = nil
@@ -1376,7 +1380,7 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.mem = 0
 	}
 
-	// Release per-session SessionStore resources (e.g. RAM or on-disk files).
+	// Release per-session RAM checkpoint resources.
 	// Errors are logged and otherwise ignored — the model is going away.
 	for i, sess := range m.imcSessions {
 		if sess == nil {

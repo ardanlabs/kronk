@@ -45,9 +45,9 @@ func (e *batchEngine) logDecodeError(ctx context.Context, ret int32, err error) 
 
 	e.model.cacheMu.RLock()
 	for _, sess := range e.model.imcSessions {
-		if sess.totalTokensCached > 0 {
-			imcInfo = append(imcInfo, fmt.Sprintf("imc[%d,seq=%d]=%d", sess.id, sess.seqID, sess.totalTokensCached))
-			totalKV += sess.totalTokensCached
+		if sess.cache != nil && sess.cache.totalTokensCached > 0 {
+			imcInfo = append(imcInfo, fmt.Sprintf("imc[%d,seq=%d]=%d", sess.id, sess.seqID, sess.cache.totalTokensCached))
+			totalKV += sess.cache.totalTokensCached
 		}
 	}
 	e.model.cacheMu.RUnlock()

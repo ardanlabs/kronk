@@ -44,12 +44,21 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	renderFingerprint, fingerprintOK := m.imcRenderFingerprint(d, dMessages(d))
 
 	m.cacheMu.Lock()
-	var match, empty, lru *imcSession
-	for _, session := range m.imcSessions {
-		if session.reserved {
+	var match *tokenCache
+	var empty, lru *imcSession
+	var unbound, reserved, emptyCount, missingCheckpoint, incompatible, prefixMismatch, fingerprintMismatch, matches int
+	for _, cache := range m.tokenCaches {
+		session := cache.session
+		if session == nil {
+			unbound++
 			continue
 		}
-		if session.totalTokensCached == 0 {
+		if session.reserved {
+			reserved++
+			continue
+		}
+		if cache.totalTokensCached == 0 {
+			emptyCount++
 			if empty == nil {
 				empty = session
 			}
@@ -58,33 +67,50 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		if lru == nil || session.lastUsed.Before(lru.lastUsed) {
 			lru = session
 		}
-		mediaAnchor := validMediaAnchorSession(session) && stable.hasPrefix(session.promptPlan)
+		if session.kvState == nil || session.kvState.Len() == 0 {
+			missingCheckpoint++
+			continue
+		}
+		validMediaAnchor := validMediaAnchorSession(session)
+		mediaAnchor := validMediaAnchor && stable.hasPrefix(cache.promptPlan)
 		textAnchor := validTextToMediaAnchorSession(session, stable)
 		if !mediaAnchor && !textAnchor {
+			if validMediaAnchor || (!cache.hasMedia && len(cache.cachedTokens) == cache.totalTokensCached && cache.logicalPosition() == cache.totalTokensCached) {
+				prefixMismatch++
+			} else {
+				incompatible++
+			}
 			continue
 		}
-		if mediaAnchor && stable.equal(session.promptPlan) && !exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK) {
+		if mediaAnchor && stable.equal(cache.promptPlan) && !exactRenderFingerprintMatches(cache.cachedRenderInputHash, renderFingerprint, fingerprintOK) {
+			fingerprintMismatch++
 			continue
 		}
-		extensionHasMedia := slices.ContainsFunc(stable.units[len(session.promptPlan.units):], func(unit promptUnit) bool {
+		extensionHasMedia := slices.ContainsFunc(stable.units[len(cache.promptPlan.units):], func(unit promptUnit) bool {
 			return unit.isMedia
 		})
-		if extensionHasMedia && (session.useNonCausal || (session.hasMedia && len(session.mediaNativeChunks) == 0)) {
+		if extensionHasMedia && (cache.useNonCausal || (cache.hasMedia && len(cache.mediaNativeChunks) == 0)) {
+			incompatible++
 			continue
 		}
 		actualTail, actualTextOnly := actual.textTail(stable)
 		if !actualTextOnly || len(actualTail) == 0 {
+			incompatible++
 			continue
 		}
-		if match == nil || session.logicalPosition() > match.logicalPosition() {
-			match = session
+		matches++
+		if match == nil || cache.logicalPosition() > match.logicalPosition() {
+			match = cache
 		}
 	}
 
-	selected := match
+	var selected *imcSession
 	matchKind := "rebuild"
 	matchReason := "no-exact-media-plan"
+	selection := "matched-prefix"
+	previousTokens := 0
 	if match != nil {
+		selected = match.session
 		extension := stable.units[len(match.promptPlan.units):]
 		extensionHasMedia := slices.ContainsFunc(extension, func(unit promptUnit) bool {
 			return unit.isMedia
@@ -125,19 +151,26 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 				result.imcSamplerPromptTokens = slices.Clone(result.imcMediaSamplerTokens)
 				result.imcSamplerPromptTokens = append(result.imcSamplerPromptTokens, result.imcTailTokens...)
 			}
-			match.reserved = true
+			selected.reserved = true
 		}
 	}
 	if selected == nil {
 		selected = empty
+		selection = "empty"
 		if selected == nil {
 			selected = lru
+			selection = "lru-eviction"
 		}
 		if selected == nil {
 			m.cacheMu.Unlock()
+			m.log(ctx, "imc-media-cache", "status", "plan-unavailable", "reason", "no-available-resident",
+				"candidates_unbound", unbound, "candidates_reserved", reserved, "candidates_empty", emptyCount,
+				"candidates_missing_checkpoint", missingCheckpoint, "candidates_incompatible", incompatible,
+				"candidates_prefix_mismatch", prefixMismatch, "candidates_fingerprint_mismatch", fingerprintMismatch, "candidates_matching", matches)
 			result.err = fmt.Errorf("imc: server busy processing other requests, try again shortly")
 			return result
 		}
+		previousTokens = selected.cache.totalTokensCached
 		selected.reserved = true
 		m.cacheMu.Unlock()
 		resetErr := resetSessionStores(ctx, selected)
@@ -146,7 +179,10 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		selected.reserved = true
 		if resetErr != nil {
 			selected.reserved = false
+			tokenCacheID := selected.cache.id
 			m.cacheMu.Unlock()
+			m.log(ctx, "imc-media-cache", "status", "plan-reset-failed", "token_cache_id", tokenCacheID,
+				"imc_cache_entry", selected.id, "selection", selection, "previous_cached_tokens", previousTokens, "err", resetErr)
 			result.err = fmt.Errorf("imc: reset session store: %w", resetErr)
 			return result
 		}
@@ -169,16 +205,17 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	result.imcSession = selected
 	result.imcSessionID = selected.id
 	result.imcMatchKind = matchKind
-	result.imcExpectedHash = selected.cachedMsgsHash
-	result.imcExpectedCachedMsgs = selected.cachedMsgCount
-	result.imcExpectedTokens = selected.totalTokensCached
-	result.imcExpectedPosition = selected.logicalPosition()
-	result.imcExpectedPromptPlan = selected.promptPlan
+	result.imcExpectedHash = selected.cache.cachedMsgsHash
+	result.imcExpectedCachedMsgs = selected.cache.cachedMsgCount
+	result.imcExpectedTokens = selected.cache.totalTokensCached
+	result.imcExpectedPosition = selected.cache.logicalPosition()
+	result.imcExpectedPromptPlan = selected.cache.promptPlan
 	if fingerprintOK {
 		result.imcExpectedRenderHash = renderFingerprint
 	}
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = result.imcReadOnlyReservation
+	tokenCacheID := selected.cache.id
 	m.cacheMu.Unlock()
 
 	extensionText := len(result.imcNewCacheTokens)
@@ -194,6 +231,10 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		}
 	}
 	m.log(ctx, "imc-media-cache", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
+		"token_cache_id", tokenCacheID, "selection", selection, "previous_cached_tokens", previousTokens,
+		"candidates_unbound", unbound, "candidates_reserved", reserved, "candidates_empty", emptyCount,
+		"candidates_missing_checkpoint", missingCheckpoint, "candidates_incompatible", incompatible,
+		"candidates_prefix_mismatch", prefixMismatch, "candidates_fingerprint_mismatch", fingerprintMismatch, "candidates_matching", matches,
 		"imc_cache_entry", selected.id, "media_count", stable.mediaCount, "logical_units", len(stable.units), "text_tokens", stable.textTokens,
 		"match_kind", matchKind, "match_reason", matchReason, "reusable_logical_position", result.cacheIdx, "anchor_physical_kv", result.imcExpectedTokens,
 		"anchor_logical_position", result.imcExpectedPosition, "replay_text_tokens", len(result.imcTailTokens), "extension_text", extensionText,
@@ -203,43 +244,50 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 }
 
 func validMediaAnchorSession(session *imcSession) bool {
-	if session == nil || !session.hasMedia || session.totalTokensCached <= 0 ||
-		session.promptPlan.mediaCount == 0 || session.kvState == nil || session.kvState.Len() == 0 ||
-		len(session.mediaKVCounts) < session.promptPlan.mediaCount || len(session.samplerPromptTokens) == 0 {
+	if session == nil || session.cache == nil || session.kvState == nil || session.kvState.Len() == 0 {
+		return false
+	}
+	cache := session.cache
+	if !cache.hasMedia || cache.totalTokensCached <= 0 || cache.promptPlan.mediaCount == 0 ||
+		len(cache.mediaKVCounts) < cache.promptPlan.mediaCount || len(cache.samplerPromptTokens) == 0 {
 		return false
 	}
 
 	mediaCells := 0
-	for _, count := range session.mediaKVCounts {
+	for _, count := range cache.mediaKVCounts {
 		if count <= 0 {
 			return false
 		}
 		mediaCells += count
 	}
-	if mediaCells > session.totalTokensCached {
+	if mediaCells > cache.totalTokensCached {
 		return false
 	}
 
 	switch {
-	case session.useMRoPE:
-		return session.nextLogicalPos > 0
+	case cache.useMRoPE:
+		return cache.nextLogicalPos > 0
 	default:
-		return session.logicalPosition() == session.totalTokensCached
+		return cache.logicalPosition() == cache.totalTokensCached
 	}
 }
 
 func validTextToMediaAnchorSession(session *imcSession, stable promptPlan) bool {
-	if session == nil || session.hasMedia || session.totalTokensCached <= 0 ||
-		len(session.cachedTokens) != session.totalTokensCached || session.logicalPosition() != session.totalTokensCached ||
-		session.kvState == nil || session.kvState.Len() == 0 || len(session.cachedTokens) >= len(stable.units) {
+	if session == nil || session.cache == nil || session.kvState == nil || session.kvState.Len() == 0 {
+		return false
+	}
+	cache := session.cache
+	if cache.hasMedia || cache.totalTokensCached <= 0 ||
+		len(cache.cachedTokens) != cache.totalTokensCached || cache.logicalPosition() != cache.totalTokensCached ||
+		len(cache.cachedTokens) >= len(stable.units) {
 		return false
 	}
 
-	if !stable.hasTextPrefix(session.cachedTokens) {
+	if !stable.hasTextPrefix(cache.cachedTokens) {
 		return false
 	}
 
-	return slices.ContainsFunc(stable.units[len(session.cachedTokens):], func(unit promptUnit) bool {
+	return slices.ContainsFunc(stable.units[len(cache.cachedTokens):], func(unit promptUnit) bool {
 		return unit.isMedia
 	})
 }
