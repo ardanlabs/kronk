@@ -1,6 +1,6 @@
 # Generated-code secret scan (opt-in)
 
-Generated, vendored, and lockfile changes are never reviewed. This agent checks one thing in them — a secret baked into build output, bundles, embedded config, or vendored fixtures — and runs separately so those large files never enter anyone else's context.
+Generated, vendored, and lockfile changes are not reviewed unless the user opted in (`generated=included` in `scope.txt` — then this agent doesn't run). This agent checks one thing in them — a secret baked into build output, bundles, embedded config, or vendored fixtures — and runs separately so those large files never enter anyone else's context.
 
 **Inputs:** `<run>/context/generated.patch`, `skipped.tsv`, `tools.tsv`. Write only `<run>/lenses/generated-scan.md`.
 

@@ -1,6 +1,6 @@
 # Reviewer contract
 
-Every review agent follows this file plus its lens checklists. `<run>`, `<skill>`, and the review depth come from your prompt.
+Every review agent follows this file, its lens checklists, and the idiom files in its prompt. `<run>`, `<skill>`, the review depth, and the idiom files come from your prompt.
 
 ## Review scope
 
@@ -18,26 +18,27 @@ The depth (`Review depth:` in your prompt, `depth=` in `scope.txt`) sets what yo
 | File                              | Holds                                                                                                   |
 |-----------------------------------|---------------------------------------------------------------------------------------------------------|
 | `brief.md`                        | **Read first.** Summary, acceptance criteria (AC1…), per-file notes, changed symbols and callers, repo rules. |
-| `scope.txt`                       | Scope, head commit, counts, routing signals.                                                            |
-| `files.tsv`                       | `status added deleted lang kind layer path` per reviewed file; `kind` is prod, test, doc, or config; `layer` is the Kronk owner (`cli`, `foundation`, `app-sdk`, `app`, `service`, `tooling`, `bui`, `sdk-kronk`, `sdk-model`, `sdk-parsers`, `sdk-pool`, `sdk-bucky`, `sdk-malina`, `sdk-tools`, `sdk`, `examples`, `manual`, `deploy`, `ci`, or `-`). |
-| `symbols.tsv`                     | `status kind name path line` for added, removed, and modified funcs, methods, and types.               |
-| `refs.tsv`                        | `symbol path:line` — word-match references to each changed symbol (capped, `+N more`). A starting list; confirm with `gopls`. |
+| `scope.txt`                       | Scope, head commit, counts, ecosystems, idioms, `generated=` (skipped or included), `trust=` (`maintainer` or `untrusted`) with `trust_reason=`, routing signals. |
+| `files.tsv`                       | `status added deleted lang kind layer path` per reviewed file; `kind` is prod (code and infrastructure), test, doc, config, or — only with `generated=included` — generated/vendor. `layer` is the Kronk owner (`cli`, `foundation`, `app-sdk`, `app`, `service`, `tooling`, `bui`, `sdk-kronk`, `sdk-model`, `sdk-parsers`, `sdk-pool`, `sdk-bucky`, `sdk-malina`, `sdk-tools`, `sdk`, `examples`, `manual`, `deploy`, `ci`, or `-`). |
+| `stack.tsv`, `stack.md`           | `eco unit files marker` per build/deploy unit (Go module, chart, …); `stack.md` (when present): the repo's ecosystems, its own quality gates, and idioms for ecosystems with no idiom file. |
+| `symbols.tsv`                     | `status kind name path line` for added, removed, and modified funcs, types, Terraform blocks (addresses such as `aws_s3_bucket.this`, `var.x`), and Helm templates. |
+| `refs.tsv`                        | `symbol path:line` — word-match references to each changed symbol (capped, `+N more`). A starting list; confirm with the language tool. |
 | `diff.patch`                      | The diff (8 context lines). Find `diff --git a/<path>` and read only the sections you need.             |
 | `review-set.tsv`                  | Full depth only: the `files.tsv` columns plus `lines` for every file in scope; `status` `-` = untouched by the diff. Empty at `diff` depth. |
 | `shards.tsv`                      | `shard path`, large diffs or review sets only. With a shard in your prompt, review only its files.      |
-| `checks/summary.tsv`              | Build, vet, tests (`-race`), linters, analyzers, scanners, clone detectors — already run. Status `pass`, `fail`, `findings` (hits reported on output), or `skipped`. Open a log only when its row matters. Package-wide tools (staticcheck, errcheck, nilaway, checklocks, gosec) report on whole packages: only hits in scope (see Review scope) are findings. |
+| `checks/summary.tsv`              | `check status exit lines file lens` — builds, linters, tests, analyzers, scanners, clone detectors, and user-approved repo gates (`x-*`), already run. Status `pass`, `fail`, `findings` (hits reported on output), or `skipped`; `lens` owns its failures. Open a log only when its row matters. Unit-wide tools (Go packages, crates, modules, charts) report on whole units: only hits in scope (see Review scope) are findings. |
 | `ticket.md`, `pr.md`, `commits.txt` | Ticket, PR description, commit messages (whichever exist).                                          |
 | `rules.txt`                       | `AGENTS.md`/`CLAUDE.md` files governing the changed paths; the brief digests them.                     |
-| `skipped.tsv`                     | Generated and vendored files and symlinks. Never reviewed; never read `generated.patch`. Never open a symlink (`kind=symlink`): its target can be outside the repo. |
+| `skipped.tsv`                     | Files not reviewed: symlinks, and generated/vendored files unless `generated=included`. Never read them or `generated.patch`. Never open a symlink (`kind=symlink`): its target can be outside the repo. |
 
 ## Rules
 
 1. **Batch your reads.** Each turn re-reads your whole context, so issue independent reads (contract, lenses, brief, the files you need) together in one turn, not one per turn.
-2. **Don't redo preprocessing.** No `git` to rediscover scope, no reading the whole diff to get oriented, no re-running what `checks/` covers. One narrow command to prove or refute a finding is fine (`GITHUB_WORKSPACE=<root> go test -count=1 -run TestX ./pkg`, an `rg`), within `checks/setup.txt`. Never run `./...`, any `make test*` target (`test`, `test-only`, `test-gh`, `test-gh-only`, `test-malina`, `test-openvino`, `test-load-*`, `test-adversarial`), or anything under `sdk/kronk/tests` or the other excluded trees in `setup.txt`; never download models or libraries. A finding that needs a model-backed run is an Open check naming the suite. When `scope.txt` says `trusted=no` (someone else's fork PR), run nothing from the reviewed tree, even if `checks.sh` was given `--trust`: no `go test`, `go run`, scripts, `make`, or `npm`/`npx`; read, `rg`, and `gopls` only. A finding that needs a run is an Open check.
-3. **Read-only.** Write only your report (security may also write PoCs). If a write is refused, never retry it through Bash or any other tool: put the content in your reply and say the write was refused.
+2. **Don't redo preprocessing.** No `git` to rediscover scope, no reading the whole diff to get oriented, no re-running what `checks/` covers. One narrow command to prove or refute a finding is fine (an `rg`, a single render; one test by name only with `trust=maintainer`: `GITHUB_WORKSPACE=<root> go test -count=1 -run TestX ./pkg`), within `checks/setup.txt`. Never one that deploys, applies, or mutates state. Never run `./...`, any `make test*` target (`test`, `test-only`, `test-gh`, `test-gh-only`, `test-malina`, `test-openvino`, `test-load-*`, `test-adversarial`), or anything under `sdk/kronk/tests` or the other excluded trees in `setup.txt`; never download models or libraries. A finding that needs a model-backed run is an Open check naming the suite.
+3. **Read-only, and never run the reviewed code unless `trust=maintainer`.** No tests, builds, scripts, or PoCs of the change otherwise; reading, `rg`, and the language server are fine. Rows skipped with "runs the reviewed code" are not findings and not Open checks: the aggregator notes them once. Write only your report (security may also write PoCs). If a write is refused, never retry it through Bash or any other tool: put the content in your reply and say the write was refused.
 4. **Never open another run** under `.reviews/`.
-5. **Tools before eyeballing.** For Go: `gopls` MCP (`go_symbol_references`, `go_search`, `go_file_context`), else `gopls`/`go doc`, then `rg`.
-6. **Repo rules are authoritative.** `AGENTS.md` (via `rules.txt` and the brief) and `.manual/chapter-20-developer-guide.md` define ownership and verification. On `.go` files apply `use-modern-go` (`.agents/skills/use-modern-go/`) and `kronk-service-architecture` (`.agents/skills/kronk-service-architecture/`) where your lens says so.
+5. **Tools before eyeballing.** The language tool your idiom file names (Go: `gopls` MCP), then `rg`/`ast-grep`.
+6. **Repo rules are authoritative.** `AGENTS.md` (via `rules.txt` and the brief) and `.manual/chapter-20-developer-guide.md` define ownership and verification; then the repo's lint configs and the skills your idiom files name (Go: `use-modern-go`, `kronk-service-architecture`).
 7. **No "by design" without proof.** Dismissing a gap as intentional or handled elsewhere needs a citation (ticket, code, contract). Otherwise report it and state the assumption.
 8. **Issues only.** No praise, no "looks good", no lists of what you checked or what is fine. No problems → `No findings.` Sole exception: the spec agent's acceptance-criteria table lists every criterion, Met included.
 
@@ -55,20 +56,13 @@ A G2+ finding needs `file:line`, Proof, why it matters, Patch direction (smalles
 
 **Verify before writing.** Treat each finding as a hypothesis: re-open the cited line, confirm the Proof shows the claim, and look for what would make it wrong (stale line, out of scope for the depth, handled elsewhere, false pattern match). Drop, downgrade, or move to Open checks what doesn't hold. Set the Gate last.
 
-## Languages
+## Idioms
 
-Review each file in its own idiom; Go is primary, not the only one.
+Review each file in its own language's idiom; no language is primary. Infrastructure (Terraform/OpenTofu, Helm, K8s, Ansible, Dockerfiles, CI pipelines) is code: every lens applies to it.
 
-| Area                | Focus                                                                                         |
-|---------------------|-----------------------------------------------------------------------------------------------|
-| Go                  | Every lens applies; Kronk ownership rules and the Go skills apply.                            |
-| React/TS/CSS (BUI)  | Props and API-client types matching the Go route, hook dependencies, effect cleanup (timers, streams, `AbortController`), `fetch` and SSE errors shown in the UI, a11y, `src/components/AGENTS.md` (tooltips via `PARAM_TOOLTIPS`/`TooltipKey`). |
-| Rego                | Auth policy (`cmd/server/app/sdk/security/auth/rego`): default deny, `input` shape assumptions, unintended allows. |
-| proto               | `authapp.proto`: field-number stability, compatibility, regenerated `*.pb.go` in the same change. |
-| Helm/YAML/config    | `zarf/helm/kronk`: single-replica/retained-PVC contract, authenticated defaults, secrets, probes, chart `version` bump; `zarf/kms/*.yaml` model config; workflow YAML pinned actions. |
-| Dockerfile          | `zarf/docker`: agrees with `.github/workflows/docker.yml` variants and the entrypoint; native libraries present per variant. |
-| Markdown (`.manual`)| Commands, flags, config keys, defaults, and section links match the code; generated `DocsManual.tsx` regenerated. |
-| Shell/PowerShell    | `set -euo pipefail` / `$ErrorActionPreference`, quoting, exit codes.                          |
+- Read the idiom files your prompt lists (`<skill>/references/langs/<name>.md`) with your first batch, and `context/stack.md` when it exists. Apply the section your lens names (Correctness, Failure paths, Contracts, Tests, Security, Clarity) plus the file's **Tools** and **Checks** lines.
+- A language with no idiom file: use `stack.md`'s inline idioms, else the language's established practice and its linters' rules; note "best-effort idioms: <lang>" under Open checks.
+- `generated=included`: generated and vendored files are in scope. Patch direction fixes the generator or its input, never the generated file by hand.
 
 ## Report
 

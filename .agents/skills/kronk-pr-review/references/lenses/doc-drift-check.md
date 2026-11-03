@@ -8,11 +8,9 @@ Flag comments that contradict the code, promise behavior it lacks, omit an impor
 
 ## Language lens
 
-- **Go** — exported identifiers documented, starting with the identifier's name (they become BUI SDK docs); type-set docs state the zero value; comments on lifecycle code state who owns release.
-- **Markdown (`.manual`)** — each chapter's own section index matches its headings; Chapter 20 stays orientation (no per-function narration); the `AGENTS.md` manual index matches chapter titles.
-- **React/TS** — component comments and `PARAM_TOOLTIPS` text match the real parameter behavior.
-- **Rego / proto / Helm / Dockerfile** — headers and inline comments describe what the file actually does; `zarf/helm/kronk/README.md` matches changed values.
-- **All** — comments describe behavior, errors, side effects, ordering, invariants; examples still compile against the current API; TODOs are still true and actionable.
+- The **Clarity** section of each idiom file in your prompt (doc conventions such as Go's exported-identifier comments, chart READMEs).
+- **Markdown (`.manual`)** — each chapter's own section index matches its headings; Chapter 20 stays orientation (no per-function narration); the `AGENTS.md` manual index matches chapter titles; user-facing chapters follow the `AGENTS.md` Documentation Rules (semantics and exact commands, not internals).
+- **All** — comments describe behavior, errors, side effects, ordering, invariants; examples still compile or render against the current API; TODOs are still true and actionable.
 
 ## Patrol route
 

@@ -2,7 +2,7 @@
 
 Propose the smallest changes that make the in-scope code (the diff, at `diff` depth) easier to read, test, and maintain, with behavior exactly unchanged. Optimize for obvious control flow and clear names, not fewer lines; explicit beats clever.
 
-For `.go` files apply `use-modern-go` and `kronk-service-architecture`. Elsewhere follow the language's idioms and the patterns already in that part of the repo.
+Apply the **Clarity** section and the skills of each idiom file in your prompt (Go: `use-modern-go`, `kronk-service-architecture`) and the patterns already in that part of the repo.
 
 ## Leave alone
 
@@ -10,9 +10,9 @@ Don't propose behavior or public-contract changes, merging unrelated concerns, d
 
 ## Patrol route
 
-1. **Control flow.** Nested conditionals → guard clauses; branch chains the diff adds or rewrites → default-first assignment or a naked switch (`kronk-service-architecture` `references/branching.md`; G1, and an existing `else if` chain is never a finding); tangled success/error paths.
+1. **Control flow.** Nested conditionals → guard clauses; branch chains the diff adds or rewrites → the idiom file's preferred form (Go: default-first assignment or a naked switch, `kronk-service-architecture` `references/branching.md`; G1, and an existing `else if` chain is never a finding); tangled success/error paths; deeply nested templates in infrastructure code.
 2. **Noise.** Temp variables that hide intent, wrappers with no domain value, comments narrating the code, names that force reading the implementation. (Duplication belongs to Clone Hunter.)
-3. **Dead code.** `deadcode` in `checks/` lists functions in the reviewed files that neither a `main` nor a test reaches. Report ones the diff added or left unreachable (G2), and at full depth ones already dead; an exported function of a library package may be public API — say so instead of calling it dead.
+3. **Dead code.** `lens=straight-line-pass` rows in `checks/` (Go `deadcode`) and dead-code lints in the linter logs. Report what the diff added or left unreachable (G2) — including unused variables, outputs, values keys, templates, or tasks — and at full depth what is already dead; a public function of a library may be API — say so instead of calling it dead.
 4. **Preservation.** For each suggestion, say why observable behavior is unchanged.
 
 ## Gates

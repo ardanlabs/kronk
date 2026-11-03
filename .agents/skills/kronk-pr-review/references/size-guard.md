@@ -18,4 +18,4 @@ Show a compact table (flag, path, metric, ~tokens) with `diff_tokens_est` (and `
 - **Split the PR** — suggest splits from `shards.tsv` (package groups) and stop. At full depth `shards.tsv` splits the review set, so base the split on `files.tsv` areas instead.
 - **Narrow the depth** — only for `big-review-set`: re-run the preview with a smaller `--depth` (project → packages → files) and confirm. A whole-project Kronk review is ~3M tokens before agents read anything.
 
-When only `noise` is flagged, don't ask — say "N generated/vendored files and symlinks skipped" and move on. Secret-scanning them is a separate opt-in (SKILL.md step 3).
+When only `noise` is flagged, don't ask — say "N generated/vendored files and symlinks skipped" and move on. Secret-scanning or reviewing them is a separate opt-in (SKILL.md step 3).

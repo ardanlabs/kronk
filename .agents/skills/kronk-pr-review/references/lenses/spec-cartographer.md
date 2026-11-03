@@ -15,7 +15,7 @@ For each criterion, find **every** site that must implement it, then prove each 
 ## Patrol route
 
 1. **Decompose** each criterion into Given/When/Then scenarios, including failure and edge states. "All / every / always / at access time" means several sites.
-2. **Enumerate all sites from the codebase, not the diff** — every entry point, reader, writer, handler, and layer of that kind. Start from `refs.tsv` and the callers in `brief.md`, then `gopls` (`go_symbol_references`, `go_search`) and `rg` for parallel call shapes. Keep the list as a checklist.
+2. **Enumerate all sites from the codebase, not the diff** — every entry point, reader, writer, handler, and layer of that kind; for infrastructure, every environment, overlay, values file, module instance, and pipeline the criterion covers. Start from `refs.tsv` and the callers in `brief.md`, then the language tool (Go: `gopls` `go_symbol_references`, `go_search`) and `rg` for parallel shapes. Keep the list as a checklist.
 3. **Check each site, changed or not.** An unchanged site the criterion covers is the most valuable finding; cite the line that should have changed.
 4. **Follow data to the end.** For "stored / isolated / scoped" criteria, trace every downstream copy and derived artifact.
 5. **Safe ≠ complete.** Name any compensating control (SDK validation, middleware, downstream check) and say whether it meets the criterion's intent.

@@ -11,6 +11,7 @@ Focused Mermaid diagrams, at least:
 1. **Data types** the change adds or alters — `classDiagram` (or `flowchart` when relations matter more than fields).
 2. **Client interaction** — the call sequence from the caller's side (`sequenceDiagram`).
 3. **Inner workings** — the internal flow across packages and layers (`flowchart`).
+4. **Infrastructure** the change adds or alters — resources, modules, charts, workloads, and pipeline jobs with their dependencies, exposure (ingress, IAM, RBAC), and data stores (`flowchart`). Replaced or destroyed resources are `removed` + `added` nodes.
 
 Show unchanged elements only for context, unstyled. Skip a diagram whose subject the change doesn't touch. If the change alters no type, contract, or flow, write a one-line `diagrams.md` saying so.
 

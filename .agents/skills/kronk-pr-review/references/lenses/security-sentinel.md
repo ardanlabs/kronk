@@ -22,7 +22,7 @@ Start here; trace the in-scope code to these sinks.
 
 ## Tools
 
-Scanner results are in `checks/summary.tsv`: secrets (`gitleaks`/`trufflehog`, or a `secrets` row saying none is installed), `gosec`, `govulncheck` (CI runs it too), linters. Start there. You may run another installed tool from `tools.tsv` on in-scope files only (e.g. `osv-scanner` on a changed `package-lock.json`, `opa test` on Rego, `hadolint` on a Dockerfile). Trace taint with `gopls`/LSP; `rg` sweeps supplement, never replace. A missing tool goes to Open checks — the concern still gets a manual pass.
+Scanner results are the `lens=security-sentinel` rows of `checks/summary.tsv`: secrets (`gitleaks`/`trufflehog`, or a `secrets` row saying none is installed), language scanners and advisories (`gosec`, `govulncheck` — CI runs it too), IaC misconfiguration (`iac-scan`: trivy or checkov over charts, manifests, Dockerfiles), `zizmor` (GitHub Actions), `semgrep` (only with a repo config). Start there, then apply the **Security** section of each idiom file in your prompt. You may run another installed tool from `tools.tsv` on in-scope files only (e.g. `osv-scanner` on a changed `package-lock.json`, `opa test` on Rego). Trace taint with the language tool; `rg` sweeps supplement, never replace. A missing tool goes to Open checks — the concern still gets a manual pass.
 
 ## Patrol route
 
@@ -31,7 +31,7 @@ Scanner results are in `checks/summary.tsv`: secrets (`gitleaks`/`trufflehog`, o
 3. **Injection and input.** Command/template injection (Jinja chat templates), shell interpolation, path traversal, SSRF, unsafe deserialization, XSS in the BUI (rendered Markdown, model output). Trace source (request, header, file, env, model output) to sink.
 4. **AuthN/AuthZ.** Routes without access middleware, endpoint names missing from rate limits or Rego rules, Rego failing open, checks after side effects, skipped or weak JWT/signature verification, one caller reaching another's IMC session by guessable cache ID.
 5. **Crypto and transport.** MD5/SHA1 for security, DES/ECB, fixed IVs/salts, non-crypto randomness for tokens, disabled TLS verification, `*` CORS with credentials, weak headers, insecure cookies.
-6. **Config and supply chain.** Auth disabled or admin enabled by default, debug server or pprof exposed, Helm defaults weakened, new or unpinned dependencies (typosquats, known CVEs), unpinned action SHAs, CI secrets echoed, `curl | sh`.
+6. **Config, infrastructure, and supply chain.** Auth disabled or admin enabled by default, debug server or pprof exposed, Helm defaults weakened, default creds, broad RBAC, public network exposure, privileged containers, secrets in values or variables, exposed admin ports, new or unpinned dependencies, images, or actions (typosquats, known CVEs, unpinned action SHAs), CI injection, secrets echoed or reachable from forks, `curl | sh`.
 
 ## Fan-out (from your prompt)
 
@@ -43,7 +43,7 @@ Sub-agents are read-only except for PoCs.
 
 ## Running the project
 
-Only when static reading is inconclusive, and only as the project interaction guide in your prompt allows. Without one, write "needs project interaction guide: <what>" under Open checks. Local/test instances only; nothing destructive, no real data, no model or library downloads.
+Only with `Trust: maintainer` in your prompt, only when static reading is inconclusive, and only as the project interaction guide in your prompt allows. Otherwise never run the project or a PoC: write the PoC if it helps and say under Open checks that it was not run. Without one, write "needs project interaction guide: <what>" under Open checks. Local/test instances only; nothing destructive, no real data, no model or library downloads.
 
 ## Intent
 
@@ -51,7 +51,7 @@ When a finding hinges on intent (meant to be public? deliberately unauthenticate
 
 ## PoCs (optional)
 
-Only when a code citation isn't proof enough. Write under `<run>/security-issues/poc/<name>/` — `<name>` is one segment, no `/` or `..`, never overwrite. Minimal, non-destructive, no external hosts or real data, with a one-line header saying what it proves and how to run it. Cite the path in Proof. When `scope.txt` says `trusted=no`, PoCs stay static: never build, run, or start a server from the reviewed tree.
+Only when a code citation isn't proof enough. Write under `<run>/security-issues/poc/<name>/` — `<name>` is one segment, no `/` or `..`, never overwrite. Minimal, non-destructive, no external hosts or real data, with a one-line header saying what it proves and how to run it. Cite the path in Proof.
 
 ## Gates
 

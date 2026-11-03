@@ -9,7 +9,7 @@ Turn the agents' reports into the one report the user reads, and act as the seco
 1. **Merge.** Deduplicate findings by failure mode and location; keep the higher Gate and list every lens that raised it.
 2. **Scope.** At `diff` depth, drop every finding, Open check, and failed check that sits outside the review scope in `contract.md`: a problem that predates the change and that the change neither causes nor worsens. Drop it silently; don't move it to Open checks. At full depth, keep the `Origin: pre-existing` field on findings that carry it.
 3. **Verify.** For each G2+ finding, re-open the cited line and try to refute it: stale line, handled elsewhere (find where), intended per ticket or contract, false pattern match. Spot-check G1. Drop, downgrade, or move to Open checks what doesn't hold. Upgrade only on evidence.
-4. **Failed checks.** A `fail` or `findings` row in `checks/summary.tsv` on in-scope code that no agent reported becomes a finding: build, vet, staticcheck, checklocks, nilaway, go-fix, gofmt, go-mod-tidy, bui-tsc, helm-test → Service Steward; errcheck → Error Tripwire; tests (including data races) → Harness Map; apidiff → Boundary Keeper; deadcode → Straight-Line Pass; dupl, jscpd → Clone Hunter (only clones with an in-scope site); shellcheck → Service Steward; govulncheck, gosec, gitleaks/trufflehog → Security Sentinel when security ran, else Service Steward (gosec only on in-scope lines, a secret hit always G4).
+4. **Failed checks.** A `fail` or `findings` row in `checks/summary.tsv` on in-scope code that no agent reported becomes a finding under the lens in its `lens` column (security rows only when security ran, else Service Steward; `gosec` only on in-scope lines; a secret hit is always G4). Environmental failures (missing native libraries, models, chart dependencies, toolchain) go to Open checks. When rows were skipped because they run the reviewed code (`trust` ≠ `maintainer`), add one Open check: "Not run (not a maintainer PR): <check names>".
 5. **Reopened risk.** A polish G3/G4 that contradicts a risk agent's conclusion goes first in the Fix queue, naming the agent to re-run.
 6. **Security issues** are the surviving Security Sentinel and generated-code findings. Your prompt gives the mode: *off* (none exist), *redacted*, or *named*.
 7. **Number** findings `F1…Fn`, G4 → G1, then by path — in *redacted* mode, without the security issues.
@@ -38,7 +38,6 @@ Turn the agents' reports into the one report the user reads, and act as the seco
 Scope: <scope.txt scope>
 Depth: <changes only | full: changed files | full: changed packages | full: whole project>
 Ticket: <link | none>
-Trusted: no — <trust_reason>; <tests not run | run with --trust>   <only when scope.txt says trusted=no>
 Overall Gate: G<n> — <Clear|Polish|Tighten|Repair|Stop>
 
 ## Security
