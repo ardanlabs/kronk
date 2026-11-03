@@ -7,7 +7,7 @@ import (
 )
 
 // imcCheckpoint holds native sequence bytes in RAM. Its backing array grows
-// lazily and retains capacity across snapshots and session rebinds.
+// lazily and normally retains capacity across snapshots and session rebinds.
 // It is not safe for concurrent use; the IMC scheduler serializes access
 // through session reservations and System-cache build/restore ownership.
 //
@@ -16,6 +16,14 @@ type imcCheckpoint struct {
 	buf      []byte
 	length   int
 	prepared int
+
+	// Allocation-owned evidence survives session metadata resets, but never
+	// moves to a replacement array. Only published working checkpoints count.
+	baselineBytes    int
+	baselineMessages int
+	lastMessages     int
+	smallerSnapshots int
+	replacement      bool
 }
 
 // Len returns the number of valid bytes currently held in the store.
@@ -25,7 +33,7 @@ func (s *imcCheckpoint) Len() int {
 }
 
 // Cap returns the current backing-array capacity. Useful for
-// diagnostics and tests that want to verify the never-shrink invariant.
+// diagnostics and allocation-retention decisions.
 func (s *imcCheckpoint) Cap() int {
 	return cap(s.buf)
 }
@@ -81,7 +89,7 @@ func (s *imcCheckpoint) Prepare(ctx context.Context, size int) ([]byte, error) {
 		// Add 25% headroom over the previous capacity, but never less
 		// than the requested size. Integer math: oldCap/4 is +25%.
 		newCap := max(oldCap+oldCap/4, size)
-		s.buf = make([]byte, size, newCap)
+		*s = imcCheckpoint{buf: make([]byte, size, newCap), prepared: size}
 	} else {
 		s.buf = s.buf[:size]
 	}
@@ -124,12 +132,55 @@ func (s *imcCheckpoint) Reset(ctx context.Context) error {
 	return nil
 }
 
+// observe records successful working-prefix publication. A replacement history
+// must reach the allocation's original message count and demonstrate 25% lower
+// requirements at three increasing message counts. Repeats cannot qualify it.
+func (s *imcCheckpoint) observe(messages int) {
+	if s == nil || s.length == 0 {
+		return
+	}
+	if s.baselineBytes == 0 {
+		s.baselineBytes = s.length
+		s.baselineMessages = messages
+		return
+	}
+	// Round 75% down without overflowing. The original requirement is no
+	// larger than capacity, so this also guarantees at least 25% spare capacity.
+	limit := s.baselineBytes/4*3 + s.baselineBytes%4*3/4
+	if s.length > limit {
+		s.smallerSnapshots = 0
+		s.lastMessages = 0
+		return
+	}
+	if s.replacement && messages >= s.baselineMessages && messages > s.lastMessages {
+		s.smallerSnapshots = min(s.smallerSnapshots+1, 3)
+		s.lastMessages = messages
+	}
+}
+
+// reuse runs only after a successful planner reset, while the session is
+// reserved. Discard qualified spare capacity only for a shorter incoming
+// history. Otherwise keep the array, but do not combine unfinished evidence
+// from different histories.
+func (s *imcCheckpoint) reuse(incomingMessages, outgoingMessages int) {
+	if s == nil {
+		return
+	}
+	if s.smallerSnapshots == 3 && incomingMessages < s.baselineMessages && incomingMessages < outgoingMessages {
+		*s = imcCheckpoint{}
+		return
+	}
+	if s.smallerSnapshots < 3 {
+		s.smallerSnapshots = 0
+	}
+	s.lastMessages = 0
+	s.replacement = true
+}
+
 // Close releases the backing array. Always returns nil. There are no file
 // descriptors or external resources to release — Go's garbage collector reclaims
 // the backing array once no caller retains a reference.
 func (s *imcCheckpoint) Close() error {
-	s.buf = nil
-	s.length = 0
-	s.prepared = 0
+	*s = imcCheckpoint{}
 	return nil
 }

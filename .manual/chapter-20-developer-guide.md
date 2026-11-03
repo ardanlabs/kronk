@@ -467,6 +467,33 @@ operations and must not perform storage I/O. Kronk serializes one store through 
 session reservation. Stores for different sessions may run concurrently. The RAM
 store is not a replaceable SDK extension and does not provide restart recovery.
 
+Working-checkpoint reclamation evidence belongs to the `imcCheckpoint` backing
+allocation, not the session's current prefix metadata. `Prepare` growth and `Close`
+clear it; ordinary metadata resets do not. The first successful publication records
+the allocation's checkpoint-byte and cached-input-message baseline. After planner
+reassignment, three publications at increasing message counts at or above that
+baseline must each require no more than 75% of the original bytes, rounded down.
+The baseline requirement cannot exceed capacity, so this also establishes at least
+25% spare capacity. Higher demand clears qualification. A planner reassignment
+clears unfinished evidence, but preserves completed qualification until it is
+disqualified or the array is released or replaced.
+
+Only `resetSessionForRequest` may reclaim a qualified allocation: it runs under the
+planner's exclusive reservation, requires successful target/draft resets, and compares
+the incoming message count with both the allocation baseline and outgoing cached
+message count before prefix metadata is cleared. Both comparisons must be strictly
+smaller. `Reset` itself still clears bytes and retains capacity; invalidation and
+failure resets must not trigger reclamation. Eligible arrays are released without
+copying a live checkpoint, and snapshot-capacity accounting is refreshed during
+metadata reset. No background worker, memory-budget eviction, or new configuration
+is involved.
+
+Observe target and draft allocations independently at successful publication; absent
+or invalid draft snapshots must not count. Staged media advancement publishes a new
+target allocation with fresh evidence, never the old target's evidence. System stores
+do not participate. See [Chapter 5](https://www.kronkai.com/manual#built-in-ram-storage)
+for the user-visible policy and limitations.
+
 The session's `reserved` state serializes mutation and hides the session from competing
 selection until metadata and snapshot bytes agree. The reservation begins in prompt
 planning and survives the queue wait and restore; exact read-only hits keep it through
@@ -497,8 +524,8 @@ Prefix-stable templates normally append from a working session. Reasoning-aware 
 look-ahead templates may retroactively change an earlier assistant or tool turn; a
 matching System entry then provides a conservative restart point.
 
-Native sequence snapshots can consume hundreds of megabytes, RAM stores retain peak
-backing capacity, and own-KV MTP configurations may require matching draft state. Do
+Native sequence snapshots can consume hundreds of megabytes, RAM stores normally
+retain backing capacity, and own-KV MTP configurations may require matching draft state. Do
 not create System entries for empty or below-threshold system-only renderings, and do
 not add user-turn or progressive checkpoint roles.
 

@@ -105,7 +105,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 		}
 		selected.reserved = true
 		m.cacheMu.Unlock()
-		resetErr := resetSessionStores(ctx, selected)
+		resetErr := resetSessionForRequest(ctx, selected, messageCount(d))
 		m.cacheMu.Lock()
 		resetSessionMetadata(selected)
 		selected.reserved = true
