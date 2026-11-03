@@ -91,13 +91,17 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 		}
 		return false
 	}
-	rolledBack := func(id string, marker int) bool {
-		for _, record := range test.ModelEvents()[marker:] {
-			if record.Message == "speculative" && record.Attributes["status"] == "target-rollback" && record.Attributes["id"] == id {
-				return true
+	rollbackCount := func(snapshot model.BatchEngineSnapshot, id string) uint64 {
+		for _, slot := range snapshot.Slots {
+			if slot.RequestID == id {
+				var total uint64
+				for _, count := range slot.SpeculativeRollbacks {
+					total += count
+				}
+				return total
 			}
 		}
-		return false
+		return 0
 	}
 	idle := func(t *testing.T) {
 		t.Helper()
@@ -142,7 +146,7 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 		wait(t, "content delivered before generation completes", 20*time.Second, func(s model.BatchEngineSnapshot) bool {
 			for _, slot := range s.Slots {
 				if slot.RequestID == first.ID && slot.Phase == "generation" && krn.ActiveStreams() > 0 &&
-					(!requireRollback || rolledBack(first.ID, 0)) {
+					(!requireRollback || rollbackCount(s, first.ID) > 0) {
 					return true
 				}
 			}
@@ -154,7 +158,11 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 	if slots == 2 {
 		t.Run("cancel-with-surviving-peer", func(t *testing.T) {
 			holder, id := hold(t)
-			marker := len(test.ModelEvents())
+			before, ok := krn.BatchEngineSnapshot()
+			if !ok {
+				t.Fatal("missing generation diagnostics")
+			}
+			beforeRollbacks := rollbackCount(before, id)
 			peer := start(t, longRequest("peer"))
 			wait(t, "two occupied slots", 20*time.Second, func(s model.BatchEngineSnapshot) bool {
 				occupied := 0
@@ -163,7 +171,7 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 						occupied++
 					}
 				}
-				return occupied == 2 && krn.ActiveStreams() == 2 && (!requireRollback || rolledBack(id, marker))
+				return occupied == 2 && krn.ActiveStreams() == 2 && (!requireRollback || rollbackCount(s, id) > beforeRollbacks)
 			})
 			holder.cancel()
 			holder.interrupted(t)
