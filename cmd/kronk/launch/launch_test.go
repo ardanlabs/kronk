@@ -1,15 +1,19 @@
 package launch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	agentdefaults "github.com/ardanlabs/kronk/.agents/default"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -79,7 +83,8 @@ func TestPrepareOpenCode(t *testing.T) {
 		filepath.Join(root, "config", "opencode", "opencode.jsonc"),
 		filepath.Join(root, "config", "opencode", "tui.jsonc"),
 		filepath.Join(root, "config", "opencode", "AGENTS.md"),
-		filepath.Join(root, "config", "opencode", "skills", "writing-go", "SKILL.md"),
+		filepath.Join(root, "config", "opencode", "skills", "use-modern-go", "SKILL.md"),
+		filepath.Join(root, "config", "opencode", "skills", "use-modern-go", "scripts", "guidelines.sh"),
 		filepath.Join(root, "config", "opencode", "skills", "kronk-mcp", "SKILL.md"),
 	} {
 		if _, err := os.Stat(path); err != nil {
@@ -122,6 +127,21 @@ func TestPrepareOpenCode(t *testing.T) {
 	}
 	if settings["apiKey"] != "{env:KRONK_TOKEN}" {
 		t.Errorf("apiKey: got %v, want {env:KRONK_TOKEN}", settings["apiKey"])
+	}
+
+	skills := filepath.ToSlash(filepath.Join(root, "config", "opencode", "skills")) + "/**"
+	rules := make(map[string]any)
+	for _, r := range content["permissions"].([]any) {
+		rule := r.(map[string]any)
+		if rule["resource"] == skills {
+			rules[rule["action"].(string)] = rule["effect"]
+		}
+	}
+	if rules["external_directory"] != "allow" {
+		t.Errorf("external_directory %s: got %v, want allow", skills, rules["external_directory"])
+	}
+	if rules["edit"] != "deny" {
+		t.Errorf("edit %s: got %v, want deny", skills, rules["edit"])
 	}
 
 	data, err := os.ReadFile(filepath.Join(root, "config", "opencode", "opencode.jsonc"))
@@ -276,6 +296,59 @@ func TestVerifyServer(t *testing.T) {
 	if err := verifyServer(context.Background(), server.URL, "owner/missing/AGENT"); err == nil {
 		t.Fatal("expected unavailable model error, got nil")
 	}
+}
+
+// TestUseModernGoCopiesMatch keeps the shipped OpenCode skill identical to the
+// repository's own copy in .agents/skills, which coding agents in this repo load.
+func TestUseModernGoCopiesMatch(t *testing.T) {
+	shipped, err := fs.Sub(agentdefaults.Files, "skills/use-modern-go")
+	if err != nil {
+		t.Fatalf("embedded skill: %v", err)
+	}
+	repo := os.DirFS(filepath.Join("..", "..", "..", ".agents", "skills", "use-modern-go"))
+
+	want := skillFiles(t, shipped)
+	got := skillFiles(t, repo)
+
+	for name, data := range want {
+		other, ok := got[name]
+		switch {
+		case !ok:
+			t.Errorf("%s: missing from .agents/skills/use-modern-go", name)
+		case !bytes.Equal(data, other):
+			t.Errorf("%s: .agents/skills/use-modern-go differs from .agents/default/skills/use-modern-go", name)
+		}
+	}
+	for name := range got {
+		if _, ok := want[name]; !ok {
+			t.Errorf("%s: missing from .agents/default/skills/use-modern-go", name)
+		}
+	}
+}
+
+func skillFiles(t *testing.T, fsys fs.FS) map[string][]byte {
+	t.Helper()
+
+	files := make(map[string][]byte)
+	err := fs.WalkDir(fsys, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			return nil
+		}
+		data, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return err
+		}
+		files[path] = data
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("reading skill files: %v", err)
+	}
+
+	return files
 }
 
 func envMap(env []string) map[string]string {

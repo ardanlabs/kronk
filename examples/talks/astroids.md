@@ -1,6 +1,6 @@
 ### Browser Asteroids Game
 
-Implement a small, complete Asteroids-style browser game served by a Go web service and use the `writing-go` skill for
+Implement a small, complete Asteroids-style browser game served by a Go web service and use the `use-modern-go` skill for
 the Go parts.
 
 Keep the implementation focused. The game needs only:
@@ -463,7 +463,7 @@ After implementation:
    gofmt -s -w asteroids/main.go
    ```
 
-2. Run the Go checks required by the `writing-go` skill against the changed package.
+2. Run `go vet` and, if installed, `staticcheck` against the changed package.
 
 3. Verify compilation with:
 

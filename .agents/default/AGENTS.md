@@ -3,7 +3,7 @@
 Each line is non-negotiable. If the trigger applies, call
 `skill({ name: "..." })` BEFORE writing code or running tools.
 
-- **Any `.go` file (read, write, modify)** → `skill({ name: "writing-go" })`
+- **Any `.go` file (read, write, modify)** → `skill({ name: "use-modern-go" })`
 - **Web research, or fallback edit when the host's exact-match edit fails** → `skill({ name: "kronk-mcp" })`
 
 Optional skills: `building-skills` (authoring a new skill),
@@ -17,3 +17,4 @@ Optional skills: `building-skills` (authoring a new skill),
 - Use the host's native edit tool first; fall back to Kronk MCP `fuzzy_edit` only on exact-match failure.
 - Use Kronk MCP `web_search` for all web research.
 - Never call `http://localhost:9000/mcp` directly (curl/wget/fetch). If `kronk-mcp` fails, stop and report.
+- After editing Go, on each changed package by exact path (not `./...`): `gofmt -s -w <changed files>`, `go vet ./<pkg>`, `staticcheck ./<pkg>` if installed, then `go test ./<pkg>`. Fix the code; don't suppress diagnostics. The project's own `AGENTS.md` wins (env vars, forbidden test dirs).

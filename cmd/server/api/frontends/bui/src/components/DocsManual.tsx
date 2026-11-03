@@ -4181,7 +4181,8 @@ kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0`}</code></pre>
             <li>registered coding models and a default model;</li>
             <li>direct access to the Kronk and gopls MCP servers;</li>
             <li>local API-key credentials;</li>
-            <li>project instructions and the <code>kronk-mcp</code> and <code>writing-go</code> skills; and</li>
+            <li>project instructions and the <code>kronk-mcp</code> and <code>use-modern-go</code> skills (<code>use-modern-go</code> runs a small <code>sh</code> or <code>pwsh</code> script from its skill directory);</li>
+            <li>permission to read, but not edit, files in the installed <code>skills/</code> directory; and</li>
             <li>terminal UI preferences.</li>
           </ul>
           <p>The Kronk MCP service starts with the model server and listens at <code>http://localhost:9000/mcp</code> by default. Its <code>web_search</code> tool requires a Brave Search API key; <code>fuzzy_edit</code> does not. See Chapter 16 for configuration.</p>
