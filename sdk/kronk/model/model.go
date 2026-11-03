@@ -79,6 +79,7 @@ type imcSession struct {
 	inputTokens      int            // Complete input token count from the latest request, including the generation-template tail.
 	outputTokens     int            // Generated reasoning and completion tokens from the latest request.
 	usageVersion     uint64         // Request generation used to prevent an older completion from replacing newer diagnostics.
+	completedHistory D              // Owned request document with the finalized assistant message appended; not part of the KV prefix.
 	samplingSeed     uint32         // Concrete master sampling seed retained for this conversation.
 	hasSamplingSeed  bool           // True once samplingSeed has been generated or explicitly supplied.
 }

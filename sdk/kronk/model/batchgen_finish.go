@@ -235,6 +235,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if elapsed.Seconds() > 0 && outputTokens > 1 {
 		tokensPerSecond = float64(outputTokens-1) / elapsed.Seconds()
 	}
+
 	usage := Usage{
 		PromptTokens: s.nPrompt,
 		PromptTokensDetails: PromptTokensDetails{
@@ -447,6 +448,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		attribute.Int("draft_accepted_tokens", s.specAcceptedTotal),
 		attribute.Int("draft_covered_tokens", s.specCoveredTotal),
 	)
+
 	if toolCallErr != nil && s.finishReason != FinishReasonLength && s.stopSource != "request-stop" {
 		err = toolCallErr
 		s.span.RecordError(err)
@@ -464,25 +466,41 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.stopSource == "" {
 		s.stopSource = "unknown"
 	}
+
 	var deliveryErr error
 	if s.job.params.Stream && lengthTerminatedToolContent != "" {
 		deliveryErr = e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, lengthTerminatedToolContent, ChannelAnswer, s.reasonTokens, outputTokens, nil)
 	}
+
 	if s.job.params.Stream && invalidToolCallContent != "" && deliveryErr == nil {
 		deliveryErr = e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, invalidToolCallContent, ChannelAnswer, s.reasonTokens, outputTokens, nil)
 	}
+
 	var terminalToolCallDeltas []ResponseToolCallDelta
 	if s.job.params.Stream {
 		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, startedToolCalls)
 	}
+
 	finalChannel := slotChannel(s)
 	if lengthTerminatedToolOutput || invalidToolCallContent != "" {
 		finalChannel = ChannelAnswer
 	}
+
+	history, historyErr := prepareIMCCompletedHistory(s.job.imcRequest, ResponseMessage{
+		Role:      RoleAssistant,
+		Content:   s.finalContent.String(),
+		Reasoning: s.finalReasoning.String(),
+		ToolCalls: s.respToolCalls,
+	})
+	if historyErr != nil {
+		e.model.log(ctx, "imc", "status", "completion-history-failed", "imc_cache_entry", s.job.imcSessionID, "err", historyErr)
+	}
+
 	if deliveryErr == nil {
 		deliveryErr = e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
 			&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, finalChannel, bufferedToolBytes, s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
 	}
+
 	if deliveryErr != nil {
 		err = deliveryErr
 		status := "error"
@@ -500,6 +518,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 		return
 	}
+
+	e.model.imcRecordCompletedHistory(s.job.imcSession, s.job.imcUsageVersion, history)
 
 	s.span.SetAttributes(attribute.String("request_status", "ok"))
 	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)

@@ -31,6 +31,7 @@ type chatJob struct {
 	// Request Content
 
 	d                   D             // Original request document (messages, parameters)
+	imcRequest          D             // Owned, unnormalized request retained for completed IMC history.
 	object              string        // Request type: ObjectChatText or ObjectChatMedia
 	prompt              string        // Templated prompt string ready for tokenization
 	media               [][]byte      // Raw media bytes (images/audio) for vision/audio models

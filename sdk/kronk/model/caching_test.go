@@ -2,7 +2,9 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -927,6 +929,79 @@ func TestIMCSessions(t *testing.T) {
 func TestIMCSeqIDUnboundSentinel(t *testing.T) {
 	if imcSeqIDUnbound != -1 {
 		t.Errorf("imcSeqIDUnbound = %d, want -1", imcSeqIDUnbound)
+	}
+}
+
+func TestIMCCompletedHistory(t *testing.T) {
+	request := D{
+		"messages": []D{
+			{"role": RoleUser, "content": []D{{"type": "text", "text": "Look up Paris weather."}}},
+		},
+		"tools":       []D{{"type": "function", "function": D{"name": "weather"}}},
+		"temperature": 0.7,
+	}
+	message := ResponseMessage{
+		Role: RoleAssistant, Content: "Checking now.", Reasoning: "Use the weather tool.",
+		ToolCalls: []ResponseToolCall{{ID: "call_paris", Type: "function", Function: ResponseToolCallFunction{
+			Name: "weather", Arguments: ToolCallArguments{"city": "Paris", "days": 3},
+		}}},
+	}
+	session := &imcSession{
+		cache:   &tokenCache{cachedTokens: []llama.Token{17, 23}, totalTokensCached: 2, cachedMsgCount: 1},
+		kvState: populatedTestSessionStore(t),
+	}
+	m := Model{imcSessions: []*imcSession{session}}
+	version := m.imcBeginRequestUsage(session)
+	history, err := prepareIMCCompletedHistory(request.Clone(), message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.imcRecordCompletedHistory(session, version, history)
+
+	// Neither the submitted request nor the delivered response owns retained
+	// history. In particular, tool-call argument maps must not remain aliased.
+	request["messages"].([]D)[0]["content"].([]D)[0]["text"] = "changed input"
+	message.ToolCalls[0].Function.Arguments["city"] = "Rome"
+	message.ToolCalls[0].ID = "changed call"
+	got, err := json.Marshal(session.completedHistory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"messages":[{"role":"user","content":[{"type":"text","text":"Look up Paris weather."}]},{"role":"assistant","content":"Checking now.","reasoning_content":"Use the weather tool.","tool_calls":[{"id":"call_paris","type":"function","function":{"name":"weather","arguments":"{\"city\":\"Paris\",\"days\":3}"}}]}],"tools":[{"type":"function","function":{"name":"weather"}}],"temperature":0.7}`
+	var gotDocument, wantDocument any
+	if err := json.Unmarshal(got, &gotDocument); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(want), &wantDocument); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(gotDocument, wantDocument) {
+		t.Errorf("completed history: got %s, want %s", got, want)
+	}
+	if session.cache.totalTokensCached != 2 || session.cache.cachedMsgCount != 1 || !reflect.DeepEqual(session.cache.cachedTokens, []llama.Token{17, 23}) {
+		t.Errorf("checkpoint prefix changed after completion: %+v", session.cache)
+	}
+
+	// A new request's supplied history replaces the previous record, rather
+	// than accumulating another copy of the previous assistant response.
+	nextVersion := m.imcBeginRequestUsage(session)
+	if session.completedHistory != nil {
+		t.Fatal("new request retained the preceding completed history")
+	}
+	next, err := prepareIMCCompletedHistory(D{"messages": []D{{"role": RoleUser, "content": "Different branch."}}}, ResponseMessage{Role: RoleAssistant, Content: "New answer."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.imcRecordCompletedHistory(session, nextVersion, next)
+	m.imcRecordCompletedHistory(session, version, history)
+	if msgs := session.completedHistory["messages"].([]D); len(msgs) != 2 || msgs[1]["content"] != "New answer." {
+		t.Errorf("latest history: got %+v, want different branch and new answer", msgs)
+	}
+
+	resetSessionMetadata(session)
+	m.imcRecordCompletedHistory(session, nextVersion, next)
+	if session.completedHistory != nil {
+		t.Fatal("reset resident accepted the preceding completed history")
 	}
 }
 

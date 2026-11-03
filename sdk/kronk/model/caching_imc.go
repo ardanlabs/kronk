@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -103,6 +104,7 @@ func (m *Model) imcBeginRequestUsage(session *imcSession) uint64 {
 
 	m.cacheMu.Lock()
 	session.usageVersion++
+	session.completedHistory = nil
 	version := session.usageVersion
 	m.cacheMu.Unlock()
 
@@ -123,6 +125,43 @@ func (m *Model) imcRecordRequestUsage(session *imcSession, version uint64, input
 	session.inputMessages = inputMessages
 	session.inputTokens = inputTokens
 	session.outputTokens = outputTokens
+}
+
+// prepareIMCCompletedHistory consumes the job-owned request and detaches the
+// finalized assistant message before response delivery exposes it to the caller.
+// The history includes output, but never changes the checkpoint's token prefix.
+func prepareIMCCompletedHistory(request D, message ResponseMessage) (D, error) {
+	if request == nil {
+		return nil, nil
+	}
+
+	data, err := json.Marshal(message)
+	if err != nil {
+		return nil, fmt.Errorf("encode completed assistant message: %w", err)
+	}
+	var assistant map[string]any
+	if err := json.Unmarshal(data, &assistant); err != nil {
+		return nil, fmt.Errorf("decode completed assistant message: %w", err)
+	}
+
+	messages := request["messages"].([]D)
+	request["messages"] = append(messages, MapToModelD(assistant))
+	return request, nil
+}
+
+func (m *Model) imcRecordCompletedHistory(session *imcSession, version uint64, history D) {
+	if session == nil || history == nil {
+		return
+	}
+
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+	// A newer request can already own this resident, or a failed snapshot may
+	// have invalidated its prefix. Never attach an old response to either state.
+	if version == 0 || session.usageVersion != version || session.cache.totalTokensCached == 0 {
+		return
+	}
+	session.completedHistory = history
 }
 
 // decodeTokensIntoCache decodes tokens into a cache sequence starting at startPos.
@@ -190,6 +229,7 @@ func resetCurrentSessionMetadata(s *imcSession) {
 
 	cache := s.cache
 	*cache = tokenCache{id: cache.id, session: s}
+	s.completedHistory = nil
 	clear(s.pendingH[:cap(s.pendingH)])
 	s.pendingH = s.pendingH[:0]
 	s.snapshotBytes = imcSnapshotBytes(s.kvState, s.draftKVState, s.pendingH)
