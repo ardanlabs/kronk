@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ func TestClassicDraftSamplingTransitions(t *testing.T) {
 	if err := kronk.Init(); err != nil {
 		t.Fatal(err)
 	}
+	var summaryMu sync.Mutex
 	var summary map[string]uint64
 	var summaries int
 	log := func(_ context.Context, msg string, args ...any) {
@@ -41,8 +43,10 @@ func TestClassicDraftSamplingTransitions(t *testing.T) {
 			t.Error("unexpected per-round rollback log")
 		}
 		if msg == "batch-engine" && fields["status"] == "slot-finished" {
+			summaryMu.Lock()
 			summary, _ = fields["draft_target_rollbacks"].(map[string]uint64)
 			summaries++
+			summaryMu.Unlock()
 		}
 	}
 	krn, err := kronk.New(model.WithModelFiles(target.ModelFiles),
@@ -78,8 +82,10 @@ func TestClassicDraftSamplingTransitions(t *testing.T) {
 		if !ok {
 			t.Fatal("missing generation diagnostics")
 		}
+		summaryMu.Lock()
 		summary = nil
 		summaries = 0
+		summaryMu.Unlock()
 		if !t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 			defer cancel()
@@ -143,18 +149,40 @@ func TestClassicDraftSamplingTransitions(t *testing.T) {
 		}) {
 			t.FailNow()
 		}
-		after, ok := krn.BatchEngineSnapshot()
-		if !ok {
-			t.Fatal("missing completed generation diagnostics")
+
+		// Cancellation can close the public stream before the batch engine
+		// finishes the slot. Wait for both its log and completed diagnostics.
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		ticker := time.NewTicker(time.Millisecond)
+		var after model.BatchEngineSnapshot
+		var gotSummary map[string]uint64
+		var gotSummaries int
+		for {
+			summaryMu.Lock()
+			gotSummary, gotSummaries = summary, summaries
+			summaryMu.Unlock()
+			after, ok = krn.BatchEngineSnapshot()
+			if ok && gotSummaries > 0 && after.Iteration > before.Iteration && after.Slots[0].Phase == "idle" {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				cancel()
+				t.Fatalf("%s: slot did not finish after stream ended", tc.name)
+			case <-ticker.C:
+			}
 		}
+		ticker.Stop()
+		cancel()
 		want := make(map[string]uint64)
 		for strategy, total := range after.SpeculativeRollbacks {
 			if count := total - before.SpeculativeRollbacks[strategy]; count > 0 {
 				want[strategy] = count
 			}
 		}
-		if summaries != 1 || !maps.Equal(summary, want) {
-			t.Fatalf("%s: got %d summaries with counts %v, want one with %v", tc.name, summaries, summary, want)
+		if gotSummaries != 1 || !maps.Equal(gotSummary, want) {
+			t.Fatalf("%s: got %d summaries with counts %v, want one with %v", tc.name, gotSummaries, gotSummary, want)
 		}
 		if tc.name == "stochastic" && want["attention-suffix"] == 0 {
 			t.Fatal("stochastic request did not exercise successful target rollback")
