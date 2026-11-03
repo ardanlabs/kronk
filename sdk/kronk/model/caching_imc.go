@@ -256,6 +256,17 @@ func resetSessionStores(ctx context.Context, s *imcSession) error {
 	return errors.Join(errs...)
 }
 
+// resetSessionForRequest is the only reset that may release oversized arrays.
+// The planner owns the reservation and has not yet cleared the outgoing prefix.
+func resetSessionForRequest(ctx context.Context, s *imcSession, incomingMessages int) error {
+	if err := resetSessionStores(ctx, s); err != nil {
+		return err
+	}
+	s.kvState.reuse(incomingMessages, s.cache.cachedMsgCount)
+	s.draftKVState.reuse(incomingMessages, s.cache.cachedMsgCount)
+	return nil
+}
+
 // resetSessionMetadata clears all metadata on an IMC session, returning it to
 // an empty state. The session's pool index (id) is preserved; seqID is
 // reset to imcSeqIDUnbound because a reset session is no longer bound
@@ -407,6 +418,10 @@ func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, 
 		session.pendingH = session.pendingH[:0]
 	}
 	session.updatePrefixHash()
+	session.kvState.observe(cachedMsgCount)
+	if draftSnapshotOK {
+		session.draftKVState.observe(cachedMsgCount)
+	}
 	m.cacheMu.Unlock()
 
 	return oldStore
@@ -424,6 +439,10 @@ func (m *Model) imcPublishSession(session *imcSession) {
 
 	m.cacheMu.Lock()
 	session.updatePrefixHash()
+	session.kvState.observe(session.cache.cachedMsgCount)
+	if len(session.pendingH) > 0 {
+		session.draftKVState.observe(session.cache.cachedMsgCount)
+	}
 	session.allocatedContext = max(session.allocatedContext, session.cache.totalTokensCached)
 	session.snapshotBytes = imcSnapshotBytes(session.kvState, session.draftKVState, session.pendingH)
 	session.highWaterContext = max(session.highWaterContext, session.cache.totalTokensCached)

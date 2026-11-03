@@ -140,7 +140,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		}
 		selected.reserved = true
 		m.cacheMu.Unlock()
-		resetErr := resetSessionStores(ctx, selected)
+		resetErr := resetSessionForRequest(ctx, selected, messageCount(d))
 		m.cacheMu.Lock()
 		resetSessionMetadata(selected)
 		selected.reserved = true

@@ -538,12 +538,44 @@ need to compare behavior without prompt caching.
 ### Built-in RAM storage
 
 IMC keeps snapshots in process memory. Storage is not replaceable through
-server configuration or the SDK. Each session buffer
-grows as needed and retains its peak allocation for reuse. Actual memory use
+server configuration or the SDK. Each session's snapshot storage grows as
+needed and normally retains its allocation for reuse. Actual memory use
 depends on the model, cached conversation lengths, KV data types, and number of
 sessions that have been used. Budget for peak conversation state across the
 branches you expect to keep warm, not just the `nseq-max` requests that can run
 simultaneously.
+
+Kronk can release an oversized working-session allocation when that session is
+already being reset to rebuild a shorter history. This does not shrink or
+discard a reusable checkpoint merely to reclaim memory. The automatic policy
+uses the following rules:
+
+- The baseline is the checkpoint byte requirement and cached-input message
+  count first successfully saved for the current allocation. A new or enlarged
+  allocation starts a fresh baseline.
+- A replacement history must produce three successful saved checkpoints at
+  strictly increasing message counts, each at least the baseline message
+  count. Each checkpoint must need at least 25% fewer bytes than the baseline
+  requirement, which also guarantees at least 25% of the allocation is unused.
+  Repeated requests at the same message count and exact cache hits do not add
+  evidence. A checkpoint exceeding the byte threshold clears the evidence.
+- Partial evidence from different replacement histories is not combined.
+  Completed qualification remains until higher demand clears it or the
+  allocation is released or replaced.
+- Release occurs only at a later successful rebuild reset whose incoming
+  history has fewer messages than both the baseline history and the outgoing
+  cached history. The next saved checkpoint allocates storage as needed.
+
+Target and compatible MTP draft snapshots qualify independently. System caches
+are excluded. Message counts refer to the cached input, not the generated
+assistant response. The policy has no configuration setting, timer, or idle
+sweep: an inactive session can retain spare capacity indefinitely. A shorter
+history alone does not qualify an allocation for release.
+
+This is allocation reuse with conservative reclamation, not a memory budget,
+checkpoint compression, or a limit on native execution memory. A later large
+request may allocate again, and releasing an allocation does not guarantee an
+immediate decrease in process memory reported by the operating system.
 
 Some MTP configurations maintain draft-model cached state and saved hidden
 state in addition to the target model snapshot. Account for this extra storage
