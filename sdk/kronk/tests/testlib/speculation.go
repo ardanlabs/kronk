@@ -3,7 +3,6 @@ package testlib
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -33,8 +32,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 				cfg.Speculation = model.SpeculationDisabled
 			}
 			var mu sync.Mutex
-			var loaded, rejected bool
-			rollbacks := make(map[string]int)
+			var loaded bool
 			var disableReason string
 			log := cfg.Log
 			cfg.Log = func(ctx context.Context, msg string, args ...any) {
@@ -54,15 +52,6 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 					loaded = backend == "classic-own-kv" || fields["backend"] == backend &&
 						((backend == "qwen35-own-kv" && fields["source"] == "auto-detected") ||
 							(backend == "gemma-shared-kv" && fields["source"] == "mtp-drafter-file" && fields["file"] == cfg.MTPDrafterFile))
-				}
-				if msg == "speculative" && fields["status"] == "target-rollback" && fields["backend"] == backend && fields["strategy"] == strategy {
-					accepted, aerr := strconv.Atoi(fields["accepted"])
-					drafted, derr := strconv.Atoi(fields["drafted"])
-					_, serr := strconv.Atoi(fields["slot"])
-					if aerr == nil && derr == nil && serr == nil && fields["id"] != "" && accepted >= 0 && drafted > accepted {
-						rejected = true
-						rollbacks[fields["id"]]++
-					}
 				}
 			}
 			WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
@@ -110,9 +99,10 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 					check(t, resp.Usage)
 				})
 				t.Run("LongContinuation", func(t *testing.T) {
-					mu.Lock()
-					rejected = false
-					mu.Unlock()
+					before, ok := krn.BatchEngineSnapshot()
+					if !ok {
+						t.Fatal("missing generation diagnostics")
+					}
 					ctx, cancel := context.WithTimeout(context.Background(), TestDuration)
 					defer cancel()
 					d := model.D{"messages": []model.D{{"role": "user", "content": "Write a detailed numbered list of 40 distinct practical tips for maintaining a vegetable garden. Explain each tip in two sentences."}}, "max_tokens": 768, "enable_thinking": false, "temperature": 0.7, "stream_options": model.D{"include_usage": true}}
@@ -132,9 +122,11 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 						// Continue using actual output, never compare stochastic text.
 						d["messages"] = append(d["messages"].([]model.D), model.D{"role": "assistant", "content": text}, model.D{"role": "user", "content": "Continue with more detailed gardening advice."})
 					}
-					mu.Lock()
-					gotRejected := rejected
-					mu.Unlock()
+					after, ok := krn.BatchEngineSnapshot()
+					if !ok {
+						t.Fatal("missing completed generation diagnostics")
+					}
+					gotRejected := after.SpeculativeRollbacks[strategy] > before.SpeculativeRollbacks[strategy]
 					if !disabled && requireDraftEvidence && !gotRejected {
 						t.Errorf("long workload produced no successful rejected-round rollback: backend=%s strategy=%s", backend, strategy)
 					}
@@ -180,9 +172,13 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 					}
 					var peer <-chan model.ChatResponse
 					if cfg.NSeqMax() > 1 {
-						mu.Lock()
-						before := rollbacks[victimID]
-						mu.Unlock()
+						before, _ := krn.BatchEngineSnapshot()
+						var victimRollbacks uint64
+						for _, slot := range before.Slots {
+							if slot.RequestID == victimID {
+								victimRollbacks = slot.SpeculativeRollbacks[strategy]
+							}
+						}
 						request := StateRequest("SILVER", "ECHO", 404)
 						request["messages"].([]model.D)[1]["content"] = "Ignore this padding: " +
 							strings.Repeat("red green blue orange violet yellow ", 900) + " What is your first code word?"
@@ -195,14 +191,15 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 						for {
 							snapshot, ok := krn.BatchEngineSnapshot()
 							occupied := 0
+							rolledBack := false
 							for _, slot := range snapshot.Slots {
 								if slot.RequestID != "" {
 									occupied++
 								}
+								if slot.RequestID == victimID {
+									rolledBack = slot.SpeculativeRollbacks[strategy] > victimRollbacks
+								}
 							}
-							mu.Lock()
-							rolledBack := rollbacks[victimID] > before
-							mu.Unlock()
 							if ok && occupied == 2 && (disabled || !requireDraftEvidence || rolledBack) {
 								t.Logf("observed native peer overlap; victim rollback=%t slots=%+v", rolledBack, snapshot.Slots)
 								break
@@ -259,10 +256,16 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 						if backend != "classic-own-kv" && disableReason != "" {
 							t.Errorf("MTP disabled during IMC/isolation/workload: %s", disableReason)
 						}
-						if !rejected {
+						snapshot, ok := krn.BatchEngineSnapshot()
+						if !ok || snapshot.SpeculativeRollbacks[strategy] == 0 {
 							t.Errorf("missing successful rejected-round rollback: backend=%s strategy=%s", backend, strategy)
 						}
 					})
+				} else {
+					snapshot, ok := krn.BatchEngineSnapshot()
+					if !ok || len(snapshot.SpeculativeRollbacks) != 0 {
+						t.Errorf("disabled control rollback diagnostics: got %v (available=%t), want no rollbacks", snapshot.SpeculativeRollbacks, ok)
+					}
 				}
 			})
 		})

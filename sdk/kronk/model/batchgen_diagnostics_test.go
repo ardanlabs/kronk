@@ -15,6 +15,7 @@ func TestBatchEngineSnapshotPublishesSlotAndSelectorState(t *testing.T) {
 		batch:                     &extendedBatch{capacity: 64},
 		prefillNext:               1,
 		imcPrepNext:               0,
+		specTargetRollbacks:       map[string]uint64{"attention-suffix": 7, "recurrent-native": 2},
 		diagnosticPrefillStart:    0,
 		diagnosticPrefillSelected: 1,
 		diagnosticIMCStart:        1,
@@ -38,11 +39,12 @@ func TestBatchEngineSnapshotPublishesSlotAndSelectorState(t *testing.T) {
 				nPrefilled:    20,
 			},
 			{
-				id:               2,
-				active:           true,
-				job:              &chatJob{id: "generation-request", requestStart: now.Add(-time.Second)},
-				prefillDone:      true,
-				completionTokens: 7,
+				id:                  2,
+				active:              true,
+				job:                 &chatJob{id: "generation-request", requestStart: now.Add(-time.Second)},
+				prefillDone:         true,
+				completionTokens:    7,
+				specTargetRollbacks: map[string]uint64{"attention-suffix": 3},
 			},
 			{
 				id:           3,
@@ -99,10 +101,31 @@ func TestBatchEngineSnapshotPublishesSlotAndSelectorState(t *testing.T) {
 	if got.Slots[4].Phase != "media-prefill" {
 		t.Errorf("slot 4 phase = %q, want media-prefill", got.Slots[4].Phase)
 	}
+	if got.SpeculativeRollbacks["attention-suffix"] != 7 || got.SpeculativeRollbacks["recurrent-native"] != 2 ||
+		got.Slots[2].SpeculativeRollbacks["attention-suffix"] != 3 || len(got.Slots[1].SpeculativeRollbacks) != 0 {
+		t.Errorf("rollback counts: got engine %v, generating slot %v, prefill slot %v; want 7/2, 3, empty",
+			got.SpeculativeRollbacks, got.Slots[2].SpeculativeRollbacks, got.Slots[1].SpeculativeRollbacks)
+	}
 
 	got.EligiblePrefillSlots[0] = 99
+	got.SpeculativeRollbacks["attention-suffix"] = 99
+	got.Slots[2].SpeculativeRollbacks["attention-suffix"] = 99
+	// Engine progress must not mutate an already published snapshot either.
+	e.specTargetRollbacks["attention-suffix"]++
+	e.slots[2].specTargetRollbacks["attention-suffix"]++
 	again, _ := m.BatchEngineSnapshot()
 	if again.EligiblePrefillSlots[0] != 1 {
 		t.Errorf("snapshot mutation changed stored eligible slots: got %v, want [1]", again.EligiblePrefillSlots)
+	}
+	if again.SpeculativeRollbacks["attention-suffix"] != 7 || again.Slots[2].SpeculativeRollbacks["attention-suffix"] != 3 {
+		t.Errorf("published rollback counts mutated: got engine %v, slot %v; want 7, 3",
+			again.SpeculativeRollbacks, again.Slots[2].SpeculativeRollbacks)
+	}
+	e.slots[2].reset()
+	e.publishDiagnostics(true)
+	completed, _ := m.BatchEngineSnapshot()
+	if completed.SpeculativeRollbacks["attention-suffix"] != 8 || len(completed.Slots[2].SpeculativeRollbacks) != 0 {
+		t.Errorf("completed rollback counts: got engine %v, slot %v; want 8, empty",
+			completed.SpeculativeRollbacks, completed.Slots[2].SpeculativeRollbacks)
 	}
 }

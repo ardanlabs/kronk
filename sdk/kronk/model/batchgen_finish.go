@@ -66,6 +66,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		draftTokens := s.specDraftedTotal
 		draftAcceptedTokens := s.specAcceptedTotal
 		draftCoveredTokens := s.specCoveredTotal
+		targetRollbacks := s.specTargetRollbacks
 		disableReason := s.mtp.DisableReason
 
 		s.span.End()
@@ -142,6 +143,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 				"draft_acceptance_rate", fmt.Sprintf("%.2f", rate),
 				"draft_coverage", fmt.Sprintf("%.2f", coverage),
 				"draft_resume_source", mtpResumeSource,
+				"draft_target_rollbacks", targetRollbacks,
 			)
 			if disableReason != "" {
 				args = append(args, "draft_disable_reason", disableReason)
@@ -159,6 +161,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"elapsed", lifecycleElapsed.String(),
 			"err", err,
 		)
+
+		// Publish completed recovery counts before the caller can observe EOF.
+		e.publishDiagnostics(true)
 		close(jobCh)
 	}()
 

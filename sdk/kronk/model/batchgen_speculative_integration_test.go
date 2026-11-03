@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -27,11 +28,28 @@ func TestClassicDraftSamplingTransitions(t *testing.T) {
 	if err := kronk.Init(); err != nil {
 		t.Fatal(err)
 	}
+	var summary map[string]uint64
+	var summaries int
+	log := func(_ context.Context, msg string, args ...any) {
+		fields := make(map[string]any)
+		for i := 0; i+1 < len(args); i += 2 {
+			if key, ok := args[i].(string); ok {
+				fields[key] = args[i+1]
+			}
+		}
+		if msg == "speculative" && fields["status"] == "target-rollback" {
+			t.Error("unexpected per-round rollback log")
+		}
+		if msg == "batch-engine" && fields["status"] == "slot-finished" {
+			summary, _ = fields["draft_target_rollbacks"].(map[string]uint64)
+			summaries++
+		}
+	}
 	krn, err := kronk.New(model.WithModelFiles(target.ModelFiles),
 		model.WithDraftModel(&model.DraftModelConfig{ModelFiles: draft.ModelFiles, NDraft: 4}),
 		model.WithSpeculationMode(model.SpeculationClassic), model.WithNSeqMax(1),
 		model.WithContextWindow(8192), model.WithPrefillBatchSize(512),
-		model.WithCacheTypeK(model.GGMLTypeQ8_0), model.WithCacheTypeV(model.GGMLTypeQ8_0))
+		model.WithCacheTypeK(model.GGMLTypeQ8_0), model.WithCacheTypeV(model.GGMLTypeQ8_0), model.WithLog(log))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +74,12 @@ func TestClassicDraftSamplingTransitions(t *testing.T) {
 		{"cancel-stochastic", .7, "", true},
 		{"greedy-after-cancellation", 0, "DELTA", false},
 	} {
+		before, ok := krn.BatchEngineSnapshot()
+		if !ok {
+			t.Fatal("missing generation diagnostics")
+		}
+		summary = nil
+		summaries = 0
 		if !t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 			defer cancel()
@@ -118,6 +142,25 @@ func TestClassicDraftSamplingTransitions(t *testing.T) {
 			}
 		}) {
 			t.FailNow()
+		}
+		after, ok := krn.BatchEngineSnapshot()
+		if !ok {
+			t.Fatal("missing completed generation diagnostics")
+		}
+		want := make(map[string]uint64)
+		for strategy, total := range after.SpeculativeRollbacks {
+			if count := total - before.SpeculativeRollbacks[strategy]; count > 0 {
+				want[strategy] = count
+			}
+		}
+		if summaries != 1 || !maps.Equal(summary, want) {
+			t.Fatalf("%s: got %d summaries with counts %v, want one with %v", tc.name, summaries, summary, want)
+		}
+		if tc.name == "stochastic" && want["attention-suffix"] == 0 {
+			t.Fatal("stochastic request did not exercise successful target rollback")
+		}
+		if len(after.Slots[0].SpeculativeRollbacks) != 0 {
+			t.Fatalf("completed request retained per-slot rollback counts: %v", after.Slots[0].SpeculativeRollbacks)
 		}
 	}
 }
