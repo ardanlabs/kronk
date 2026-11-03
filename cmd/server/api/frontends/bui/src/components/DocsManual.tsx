@@ -1686,51 +1686,6 @@ models:
           <p>Evaluate IMC using a representative conversation workload rather than a single prompt benchmark. The benefit grows with reusable prefix length and follow-up frequency.</p>
           <h2 id="57-observability">5.7 Observability</h2>
           <p>IMC planning events identify the selected <code>match_kind</code> (<code>exact</code>, <code>append</code>, or <code>rebuild</code>) and report reusable, extension, stable, and tail token counts. Media planning events also identify <code>media-append</code> and System-preload append decisions. The server emits these through its Info logger; embedded application logging depends on the configured logger. Request-completion events include whether IMC participated and whether a prior snapshot was restored.</p>
-          <p>For text and media requests, <code>plan-ready</code> also reports <code>token_cache_id</code> (the matching-metadata entry) and <code>imc_cache_entry</code> (its resident checkpoint entry). These are local, reusable identities, not durable conversation IDs. <code>selection</code> distinguishes <code>matched-prefix</code>, <code>empty</code>, and <code>lru-eviction</code>. <code>previous_cached_tokens</code> reports the physical cached-cell count discarded when preparing an empty/LRU destination; it is zero for a matched prefix. A System-preload append can still use an empty or LRU destination: consult <code>match_reason=system-cache-prefix</code> separately from <code>selection</code>.</p>
-          <p>Candidate summaries count each scanned entry once, at its first failed eligibility check or as an eligible match:</p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Field</th>
-                <th>Meaning</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><code>candidates_unbound</code></td>
-                <td>No resident checkpoint entry is bound.</td>
-              </tr>
-              <tr>
-                <td><code>candidates_reserved</code></td>
-                <td>The resident is reserved by another request.</td>
-              </tr>
-              <tr>
-                <td><code>candidates_empty</code></td>
-                <td>No prefix is currently cached.</td>
-              </tr>
-              <tr>
-                <td><code>candidates_missing_checkpoint</code></td>
-                <td>Nonempty metadata has no committed checkpoint bytes.</td>
-              </tr>
-              <tr>
-                <td><code>candidates_incompatible</code></td>
-                <td>Metadata or the requested text/media transition is unsuitable for this planner.</td>
-              </tr>
-              <tr>
-                <td><code>candidates_prefix_mismatch</code></td>
-                <td>The cached token/media prefix cannot serve this request.</td>
-              </tr>
-              <tr>
-                <td><code>candidates_fingerprint_mismatch</code></td>
-                <td>An exact prefix has incompatible rendering inputs.</td>
-              </tr>
-              <tr>
-                <td><code>candidates_matching</code></td>
-                <td>Eligible prefixes, including matches not selected because another is longer.</td>
-              </tr>
-            </tbody>
-          </table>
-          <p><code>plan-unavailable</code> includes the same counts when no resident can be selected. <code>plan-reset-failed</code> identifies the selected cache/resident, selection source, discarded prefix size, and reset error. These diagnostics contain identities, counts, and reasons—not prompt content or raw token IDs. Below-threshold text plans and media <code>plan-fallback</code> events do not scan candidates and do not include a selection summary.</p>
           <p>Text preparation emits <code>imc-preparation-queued</code>, <code>imc-preparation-chunk</code>, and <code>imc-cache-ready</code> events. Chunk progress and elapsed time distinguish a large cache build from a request waiting for execution. Media preparation has corresponding media-specific events. Compare these with generation activity and end-to-end request latency when investigating responsiveness.</p>
           <p>The Prometheus counters <code>imc_snapshot_skipped_total</code> and <code>imc_pure_hit_stale_session_total</code> expose exact-hit snapshot skips and rejected stale-session races. A rising rebuild rate usually means clients are changing earlier prompt content, media, tools, or rendering inputs rather than appending to a stable conversation.</p>
           <p>Per-working-entry gauges expose token/allocation values, latest-request input/output/context, peak context, and context-window utilization. The BUI <strong>IMC Sessions</strong> page exposes working sessions and model-owned System caches on separate tabs. These are bounded current-state views, not a history of every conversation transition.</p>
@@ -6141,8 +6096,8 @@ make benchmark-codegen \\
           <h3 id="206-core-inference-invariants">20.6 Core Inference Invariants</h3>
           <h4 id="2061-imc-sessions-slots-and-external-storage">20.6.1 IMC sessions, slots, and external storage</h4>
           <p>Incremental Message Cache (IMC) sessions are cache identities, not execution slots. A stable cache/session identifier allows a conversation prefix to survive movement between batch slots. A slot is short-lived compute capacity; binding a session to a slot would reduce concurrency and make slot reuse unsafe.</p>
-          <p>The model owns separate <code>tokenCaches</code> and <code>imcSessions</code> collections. A lightweight <code>tokenCache</code> contains a local cache identity, cached tokens, render fingerprint, and text/media prefix metadata, but no native checkpoint buffers. Planners search this collection and resolve a match through its explicit resident-session binding; cache IDs and collection positions are not used as resident-session indices. The resident <code>imcSession</code> owns RAM checkpoints, execution binding, reservations, and usage accounting, with a reference back to its TokenCache. RAM-only caching keeps equal capacities and one-to-one bindings. Reset clears the bound metadata in place without changing those references; there is no disk recovery yet.</p>
-          <p>The model's concrete <code>imcCheckpoint</code> buffer holds each session's native KV snapshot. There is no replaceable checkpoint-storage interface. The model layer owns when a snapshot is read, prepared, committed, reset, and closed. TokenCache metadata and the committed snapshot must describe the same prefix. Do not update one independently and call the session valid.</p>
+          <p>The model's <code>imcSessions</code> collection is the sole working-prefix lookup pool. Each resident <code>imcSession</code> owns its prefix length and SHA-256 hash, RAM checkpoints, execution binding, reservations, and usage accounting. Its <code>imcPrefix</code> holds cached tokens, the render fingerprint, and text/media verification metadata. Hashes only reject candidates; a hash match still requires exact prefix verification before reuse. Publication refreshes the hash for the committed input prefix, and reset clears it. There is no separate message-cache index or disk recovery.</p>
+          <p>The model's concrete <code>imcCheckpoint</code> buffer holds each session's native KV snapshot. There is no replaceable checkpoint-storage interface. The model layer owns when a snapshot is read, prepared, committed, reset, and closed. Prefix metadata and the committed snapshot must describe the same prefix. Do not update one independently and call the session valid.</p>
           <p>Store slices are borrowed rather than transferred. Treat <code>Bytes</code> results as read-only, and do not retain a <code>Bytes</code> or <code>Prepare</code> result across the next prepare, commit, reset, or close operation. <code>Prepare</code> invalidates the committed length until <code>Commit</code> succeeds; a partial or failed snapshot must never become readable. <code>Len</code> and <code>Cap</code> are metadata operations and must not perform storage I/O. Kronk serializes one store through the session reservation. Stores for different sessions may run concurrently. The RAM store is not a replaceable SDK extension and does not provide restart recovery.</p>
           <p>The session's <code>reserved</code> state serializes mutation and hides the session from competing selection until metadata and snapshot bytes agree. The reservation begins in prompt planning and survives the queue wait and restore; exact read-only hits keep it through generation, while a successfully published text build/extension can release it after the stable snapshot is committed. Restore only a committed snapshot whose complete token or media plan and expected version still match. Ordinary text build/extension prepares and commits through the session's existing store; if snapshot publication fails, invalidate that current state so later work rebuilds it rather than claiming the old or partial state is valid.</p>
           <p>Text planning compares complete token sequences and searches every working session for exact or append reuse before considering System. Each model owns a separate RAM-only System cache pool with the same capacity as its working-session pool. Entries contain only independently rendered, nonempty, cache-worthy system prefixes whose complete token sequences prefix the stable request. They include target KV and compatible own-KV MTP state and never advance.</p>

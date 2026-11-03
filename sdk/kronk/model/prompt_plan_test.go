@@ -81,10 +81,9 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 			if tt.noNative {
 				session.cache.mediaNativeChunks = nil
 			}
-			log, events := capturePlanLogs(t)
 			m := &Model{
 				imcSessions: []*imcSession{session},
-				log:         log,
+				log:         func(context.Context, string, ...any) {},
 			}
 			publishTestIMCPrefixes(m)
 			d := D{"messages": []D{{"role": "user", "content": "test"}}}
@@ -93,15 +92,6 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 			if result.imcMatchKind != tt.wantMatch {
 				t.Fatalf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
 			}
-			wantSelection, wantPrevious, wantMatching := "matched-prefix", 0, 1
-			if tt.wantMatch == "rebuild" {
-				wantSelection, wantPrevious, wantMatching = "lru-eviction", 3, 0
-			}
-			assertPlanLogFields(t, events["plan-ready"], map[string]any{
-				"token_cache_id": 0, "imc_cache_entry": 0, "selection": wantSelection,
-				"previous_cached_tokens": wantPrevious, "candidates_matching": wantMatching,
-				"match_kind": tt.wantMatch,
-			})
 			var wantSamplerTokens []llama.Token
 			switch tt.wantMatch {
 			case "exact":
@@ -509,7 +499,7 @@ func TestPromptPlanEqual(t *testing.T) {
 	}
 }
 
-func TestMediaPlannerIncompatibleDiagnostics(t *testing.T) {
+func TestMediaPlannerRebuildsIncompatibleSessions(t *testing.T) {
 	for _, scenario := range []string{"invalid metadata", "non-causal append", "missing native chunks", "media tail", "empty tail"} {
 		t.Run(scenario, func(t *testing.T) {
 			base := mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true})
@@ -535,18 +525,11 @@ func TestMediaPlannerIncompatibleDiagnostics(t *testing.T) {
 			case "empty tail":
 				actual = stable
 			}
-			log, events := capturePlanLogs(t)
 			session := &imcSession{id: 0, cache: cache, kvState: populatedTestSessionStore(t)}
-			m := Model{log: log, imcSessions: []*imcSession{session}}
+			m := Model{log: func(context.Context, string, ...any) {}, imcSessions: []*imcSession{session}}
 			publishTestIMCPrefixes(&m)
 			d := D{"messages": []D{{"role": "user", "content": "private media"}}}
 			result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{9}, nil, time.Now())
-			assertPlanLogFields(t, events["plan-ready"], map[string]any{
-				"token_cache_id": 0, "imc_cache_entry": 0, "selection": "lru-eviction", "previous_cached_tokens": 11,
-				"candidates_reserved": 0, "candidates_empty": 0,
-				"candidates_missing_checkpoint": 0, "candidates_incompatible": 1,
-				"candidates_prefix_mismatch": 0, "candidates_fingerprint_mismatch": 0, "candidates_matching": 0,
-			})
 			if result.err != nil || result.imcMatchKind != "rebuild" || result.cacheIdx != 0 || !result.imcMediaBuild || !session.reserved {
 				t.Errorf("incompatible plan: got error %v kind %s prefix %d build %t reserved %t, want nil/rebuild/0/true/true", result.err, result.imcMatchKind, result.cacheIdx, result.imcMediaBuild, session.reserved)
 			}

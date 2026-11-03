@@ -445,19 +445,17 @@ A stable cache/session identifier allows a conversation prefix to survive moveme
 between batch slots. A slot is short-lived compute capacity; binding a session to a
 slot would reduce concurrency and make slot reuse unsafe.
 
-The model owns separate `tokenCaches` and `imcSessions` collections. A lightweight
-`tokenCache` contains a local cache identity, cached tokens, render fingerprint,
-and text/media prefix metadata, but no native checkpoint buffers. Planners search
-this collection and resolve a match through its explicit resident-session binding;
-cache IDs and collection positions are not used as resident-session indices.
-The resident `imcSession` owns RAM checkpoints, execution binding, reservations,
-and usage accounting, with a reference back to its TokenCache. RAM-only caching
-keeps equal capacities and one-to-one bindings. Reset clears the bound metadata
-in place without changing those references; there is no disk recovery yet.
+The model's `imcSessions` collection is the sole working-prefix lookup pool.
+Each resident `imcSession` owns its prefix length and SHA-256 hash, RAM checkpoints,
+execution binding, reservations, and usage accounting. Its `imcPrefix` holds cached
+tokens, the render fingerprint, and text/media verification metadata. Hashes only
+reject candidates; a hash match still requires exact prefix verification before
+reuse. Publication refreshes the hash for the committed input prefix, and reset
+clears it. There is no separate message-cache index or disk recovery.
 
 The model's concrete `imcCheckpoint` buffer holds each session's native KV snapshot.
 There is no replaceable checkpoint-storage interface. The model
-layer owns when a snapshot is read, prepared, committed, reset, and closed. TokenCache
+layer owns when a snapshot is read, prepared, committed, reset, and closed. Prefix
 metadata and the committed snapshot must describe the same prefix. Do not update
 one independently and call the session valid.
 

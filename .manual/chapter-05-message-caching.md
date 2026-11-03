@@ -599,36 +599,6 @@ logger; embedded application logging depends on the configured logger.
 Request-completion events include whether IMC participated
 and whether a prior snapshot was restored.
 
-For text and media requests, `plan-ready` also reports `token_cache_id`
-(the matching-metadata entry) and `imc_cache_entry` (its resident checkpoint
-entry). These are local, reusable identities, not durable conversation IDs.
-`selection` distinguishes `matched-prefix`, `empty`, and `lru-eviction`.
-`previous_cached_tokens` reports the physical cached-cell count discarded
-when preparing an empty/LRU destination; it is zero for a matched prefix.
-A System-preload append can still use an empty or LRU destination: consult
-`match_reason=system-cache-prefix` separately from `selection`.
-
-Candidate summaries count each scanned entry once, at its first failed
-eligibility check or as an eligible match:
-
-| Field | Meaning |
-| ----- | ------- |
-| `candidates_unbound` | No resident checkpoint entry is bound. |
-| `candidates_reserved` | The resident is reserved by another request. |
-| `candidates_empty` | No prefix is currently cached. |
-| `candidates_missing_checkpoint` | Nonempty metadata has no committed checkpoint bytes. |
-| `candidates_incompatible` | Metadata or the requested text/media transition is unsuitable for this planner. |
-| `candidates_prefix_mismatch` | The cached token/media prefix cannot serve this request. |
-| `candidates_fingerprint_mismatch` | An exact prefix has incompatible rendering inputs. |
-| `candidates_matching` | Eligible prefixes, including matches not selected because another is longer. |
-
-`plan-unavailable` includes the same counts when no resident can be selected.
-`plan-reset-failed` identifies the selected cache/resident, selection source,
-discarded prefix size, and reset error. These diagnostics contain identities,
-counts, and reasons—not prompt content or raw token IDs. Below-threshold
-text plans and media `plan-fallback` events do not scan candidates and do not
-include a selection summary.
-
 Text preparation emits `imc-preparation-queued`, `imc-preparation-chunk`, and
 `imc-cache-ready` events. Chunk progress and elapsed time distinguish a large
 cache build from a request waiting for execution. Media preparation has

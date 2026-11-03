@@ -413,47 +413,7 @@ func populatedTestSessionStore(t testing.TB) *imcCheckpoint {
 	return store
 }
 
-// capturePlanLogs checks the structured log boundary, not planner call order.
-func capturePlanLogs(t *testing.T) (applog.Logger, map[string]map[string]any) {
-	t.Helper()
-	events := make(map[string]map[string]any)
-	return func(_ context.Context, _ string, args ...any) {
-		t.Helper()
-		if len(args)%2 != 0 {
-			t.Fatalf("log arguments: got %d, want key/value pairs", len(args))
-		}
-		fields := make(map[string]any)
-		for i := 0; i < len(args); i += 2 {
-			key, ok := args[i].(string)
-			if !ok {
-				t.Fatalf("log key: got %T, want string", args[i])
-			}
-			switch key {
-			case "tokens", "messages", "content", "prompt", "cached_tokens", "cached_messages":
-				t.Errorf("log contains private payload field %q", key)
-			}
-			switch args[i+1].(type) {
-			case []llama.Token, []D, D, promptPlan:
-				t.Errorf("log field %q contains private payload type %T", key, args[i+1])
-			}
-			fields[key] = args[i+1]
-		}
-		if status, ok := fields["status"].(string); ok {
-			events[status] = fields
-		}
-	}, events
-}
-
-func assertPlanLogFields(t *testing.T, got, want map[string]any) {
-	t.Helper()
-	for key, value := range want {
-		if !reflect.DeepEqual(got[key], value) {
-			t.Errorf("log %s: got %v (%T), want %v (%T)", key, got[key], got[key], value, value)
-		}
-	}
-}
-
-func TestTokenCachePlannerDiagnostics(t *testing.T) {
+func TestIMCPlannerSessionSelection(t *testing.T) {
 	for _, media := range []bool{false, true} {
 		name := "text"
 		if media {
@@ -462,8 +422,7 @@ func TestTokenCachePlannerDiagnostics(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for _, scenario := range []string{"matching", "empty", "lru-eviction", "busy", "reset-failed"} {
 				t.Run(scenario, func(t *testing.T) {
-					log, events := capturePlanLogs(t)
-					m := Model{cfg: Config{PtrCacheMinTokens: new(1)}, log: log}
+					m := Model{cfg: Config{PtrCacheMinTokens: new(1)}, log: applog.DiscardLogger}
 					d := D{"messages": []D{{"role": "user", "content": "private message"}}}
 					stableTokens := []llama.Token{1, 2, 3}
 					actualTokens := []llama.Token{1, 2, 3, 9}
@@ -488,13 +447,7 @@ func TestTokenCachePlannerDiagnostics(t *testing.T) {
 						session.updatePrefixHash()
 						return session
 					}
-					want := map[string]any{
-						"candidates_reserved": 1, "candidates_empty": 0,
-						"candidates_missing_checkpoint": 0, "candidates_incompatible": 0,
-						"candidates_prefix_mismatch": 0, "candidates_fingerprint_mismatch": 0, "candidates_matching": 0,
-					}
-					// An empty, checkpoint-less reserved session counts once,
-					// even though later rejection criteria also apply.
+					// Reserved sessions cannot be selected, even when empty.
 					busy := add()
 					busy.reserved, busy.cache.totalTokensCached, busy.kvState = true, 0, nil
 					var selected *imcSession
@@ -502,37 +455,30 @@ func TestTokenCachePlannerDiagnostics(t *testing.T) {
 						missing := add()
 						missing.kvState = nil
 						missing.cache.cachedTokens = []llama.Token{8}
-						want["candidates_missing_checkpoint"] = 1
 						invalid := add()
 						if media {
 							invalid.cache.mediaKVCounts = nil
 						} else {
 							invalid.cache.hasMedia = true
 						}
-						want["candidates_incompatible"] = 1
 						divergent := add()
 						divergent.cache.cachedTokens = []llama.Token{8}
 						divergent.cache.promptPlan = mediaPlan(promptUnit{token: 8}, promptUnit{isMedia: true})
-						want["candidates_prefix_mismatch"] = 1
 						changed := add()
 						changed.cache.cachedTokens = slices.Clone(stableTokens)
 						changed.cache.promptPlan = stable
 						changed.cache.cachedRenderInputHash = fingerprint + "changed"
-						want["candidates_fingerprint_mismatch"] = 1
 						selected = add()
 						selected.lastUsed = time.Now().Add(-time.Hour)
 						switch scenario {
 						case "matching":
-							add() // All eligible matches count, not only the winner.
-							want["candidates_matching"] = 2
+							add() // Equal-length matches retain the first eligible session.
 						case "empty":
 							selected.cache.totalTokensCached = 0
 							selected.kvState = nil
-							want["candidates_empty"] = 1
 						default:
 							selected.cache.cachedTokens = []llama.Token{8, 9}
 							selected.cache.promptPlan = divergent.cache.promptPlan
-							want["candidates_prefix_mismatch"] = 2
 						}
 					}
 					for _, session := range m.imcSessions {
@@ -554,34 +500,14 @@ func TestTokenCachePlannerDiagnostics(t *testing.T) {
 						if result.err == nil {
 							t.Error("busy error: got nil, want non-nil")
 						}
-						want["reason"] = "no-available-resident"
-						assertPlanLogFields(t, events["plan-unavailable"], want)
 						return
-					}
-					want["token_cache_id"], want["imc_cache_entry"] = selected.id, selected.id
-					want["selection"], want["previous_cached_tokens"] = scenario, 0
-					if scenario == "matching" {
-						want["selection"] = "matched-prefix"
-					}
-					if scenario == "lru-eviction" || scenario == "reset-failed" {
-						want["previous_cached_tokens"] = 2
-						if media {
-							want["previous_cached_tokens"] = 12
-						}
 					}
 					if scenario == "reset-failed" {
-						want["selection"] = "lru-eviction"
-						fields := events["plan-reset-failed"]
-						for _, key := range []string{"token_cache_id", "imc_cache_entry", "selection", "previous_cached_tokens"} {
-							assertPlanLogFields(t, fields, map[string]any{key: want[key]})
-						}
-						loggedErr, _ := fields["err"].(error)
-						if !errors.Is(result.err, context.Canceled) || !errors.Is(loggedErr, context.Canceled) || selected.reserved {
-							t.Errorf("reset failure: got result %v log %v reserved %t, want canceled/canceled/false", result.err, loggedErr, selected.reserved)
+						if !errors.Is(result.err, context.Canceled) || selected.reserved {
+							t.Errorf("reset failure: got result %v reserved %t, want canceled/false", result.err, selected.reserved)
 						}
 						return
 					}
-					assertPlanLogFields(t, events["plan-ready"], want)
 					if result.err != nil || result.imcSession != selected || !selected.reserved {
 						t.Fatalf("plan: got error %v resident %p reserved %t, want nil/%p/true", result.err, result.imcSession, selected.reserved, selected)
 					}

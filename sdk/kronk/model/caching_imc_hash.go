@@ -100,20 +100,20 @@ func (s *imcSession) matchesPrefixHash(hashes map[int][sha256.Size]byte) bool {
 	return ok && digest == s.prefixHash
 }
 
-// imcRebuildSession selects compute/checkpoint capacity independently of which
-// message identities were searched. The caller reserves the result under cacheMu.
-func (m *Model) imcRebuildSession() (*imcSession, string) {
+// imcRebuildSession selects an empty or LRU session for rebuilding.
+// The caller reserves the result under cacheMu.
+func (m *Model) imcRebuildSession() *imcSession {
 	var lru *imcSession
 	for _, s := range m.imcSessions {
 		if s.reserved {
 			continue
 		}
 		if s.cache.totalTokensCached == 0 {
-			return s, "empty"
+			return s
 		}
 		if lru == nil || s.lastUsed.Before(lru.lastUsed) {
 			lru = s
 		}
 	}
-	return lru, "lru-eviction"
+	return lru
 }

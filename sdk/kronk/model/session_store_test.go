@@ -13,10 +13,9 @@ func TestProcessIMCTokenPlanReturnsResetError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	wantErr := context.Canceled
-	log, events := capturePlanLogs(t)
 	m := Model{
 		cfg: Config{PtrCacheMinTokens: new(1)},
-		log: log,
+		log: func(context.Context, string, ...any) {},
 		imcSessions: []*imcSession{{
 			id:      0,
 			kvState: &imcCheckpoint{},
@@ -31,10 +30,6 @@ func TestProcessIMCTokenPlanReturnsResetError(t *testing.T) {
 	if m.imcSessions[0].reserved {
 		t.Error("session remained reserved after reset failure")
 	}
-	assertPlanLogFields(t, events["plan-reset-failed"], map[string]any{
-		"selection": "empty", "previous_cached_tokens": 0,
-		"token_cache_id": m.imcSessions[0].id, "imc_cache_entry": 0,
-	})
 }
 
 func TestPrepareSessionSnapshotRejectsSizeOverflow(t *testing.T) {

@@ -45,30 +45,18 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	hashes := m.imcCandidateHashes(target, nil)
 	var best *imcSession
 	var bestLen int
-	var reserved, emptyCount, missingCheckpoint, incompatible, prefixMismatch, fingerprintMismatch, matches int
 	for _, session := range m.imcSessions {
 		cache := session.cache
 		if session.reserved {
-			reserved++
 			continue
 		}
 		if cache.totalTokensCached == 0 {
-			emptyCount++
 			continue
 		}
 		currentExact := len(cache.cachedTokens) == len(target)
 		currentFingerprintOK := !currentExact || exactRenderFingerprintMatches(cache.cachedRenderInputHash, renderFingerprint, fingerprintOK)
-		switch {
-		case cache.hasMedia || len(cache.cachedTokens) == 0:
-			incompatible++
-		case session.kvState == nil || session.kvState.Len() == 0:
-			missingCheckpoint++
-		case !session.matchesPrefixHash(hashes) || !tokensHavePrefix(target, cache.cachedTokens):
-			prefixMismatch++
-		case !currentFingerprintOK:
-			fingerprintMismatch++
-		default:
-			matches++
+		if !cache.hasMedia && len(cache.cachedTokens) > 0 && session.kvState != nil && session.kvState.Len() > 0 &&
+			session.matchesPrefixHash(hashes) && tokensHavePrefix(target, cache.cachedTokens) && currentFingerprintOK {
 			if len(cache.cachedTokens) > bestLen {
 				best = session
 				bestLen = len(cache.cachedTokens)
@@ -89,8 +77,6 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	reusable := 0
 	extension := target
 	clearSeq := true
-	selection := "matched-prefix"
-	previousTokens := 0
 	var selected *imcSession
 	if best != nil {
 		selected = best
@@ -108,20 +94,15 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 		}
 		selected.lastUsed = time.Now()
 	} else {
-		selected, selection = m.imcRebuildSession()
+		selected = m.imcRebuildSession()
 		if selected == nil {
 			if systemCache != nil {
 				systemCache.activeRestores--
 			}
 			m.cacheMu.Unlock()
-			m.log(ctx, "imc", "status", "plan-unavailable", "reason", "no-available-resident",
-				"candidates_reserved", reserved, "candidates_empty", emptyCount,
-				"candidates_missing_checkpoint", missingCheckpoint, "candidates_incompatible", incompatible,
-				"candidates_prefix_mismatch", prefixMismatch, "candidates_fingerprint_mismatch", fingerprintMismatch, "candidates_matching", matches)
 			result.err = fmt.Errorf("imc: server busy processing other requests, try again shortly")
 			return result
 		}
-		previousTokens = selected.cache.totalTokensCached
 		selected.reserved = true
 		m.cacheMu.Unlock()
 		resetErr := resetSessionStores(ctx, selected)
@@ -133,10 +114,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 			if systemCache != nil {
 				systemCache.activeRestores--
 			}
-			tokenCacheID := selected.id
 			m.cacheMu.Unlock()
-			m.log(ctx, "imc", "status", "plan-reset-failed", "token_cache_id", tokenCacheID,
-				"imc_cache_entry", selected.id, "selection", selection, "previous_cached_tokens", previousTokens, "err", resetErr)
 			result.err = fmt.Errorf("imc: reset session store: %w", resetErr)
 			return result
 		}
@@ -172,14 +150,9 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	if systemCache == nil && len(system) >= m.cfg.CacheMinTokens() && reusable == 0 && len(system) < targetLen && tokensHavePrefix(target, system) {
 		result.imcSystemBoundaryTokens = len(system)
 	}
-	tokenCacheID := selected.id
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
-		"token_cache_id", tokenCacheID, "selection", selection, "previous_cached_tokens", previousTokens,
-		"candidates_reserved", reserved, "candidates_empty", emptyCount,
-		"candidates_missing_checkpoint", missingCheckpoint, "candidates_incompatible", incompatible,
-		"candidates_prefix_mismatch", prefixMismatch, "candidates_fingerprint_mismatch", fingerprintMismatch, "candidates_matching", matches,
 		"imc_cache_entry", selected.id, "match_kind", matchKind, "match_reason", matchReason, "reusable_tokens", reusable,
 		"system_boundary_tokens", result.imcSystemBoundaryTokens,
 		"full_input_snapshot_tokens", targetLen, "full_input_snapshot_messages", messageCount(d),
