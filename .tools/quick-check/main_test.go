@@ -53,10 +53,15 @@ func TestAnswerFacts(t *testing.T) {
 // configuration permutations are checked without replaying this fixture.
 func TestQuickCheckCommand(t *testing.T) {
 	releaseTestRepo(t)
-	for _, defect := range []string{"", "content-append", "foreign-session", "interrupt", "images", "images-no-publication", "images-rebuild"} {
+	for _, defect := range []string{"", "benchmark-identity", "content-append", "foreign-session", "interrupt", "images", "images-no-publication", "images-rebuild"} {
 		t.Run(defect, func(t *testing.T) {
+			identity := ""
+			if defect == "benchmark-identity" {
+				identity = "linux-vulkan"
+			}
+			t.Setenv("QUICK_CHECK_BENCHMARK_ID", identity)
 			images := strings.HasPrefix(defect, "images")
-			wantPass := defect == "" || defect == "images"
+			wantPass := defect == "" || defect == "images" || defect == "benchmark-identity"
 			root := t.TempDir()
 			logPath := filepath.Join(root, "server.log")
 			log, err := os.Create(logPath)
@@ -82,7 +87,7 @@ func TestQuickCheckCommand(t *testing.T) {
 					defer mu.Unlock()
 					switch req.URL.Path {
 					case "/v1/liveness":
-						fmt.Fprint(w, `{"vcs_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","vcs_time":"2026-10-26T00:00:00Z"}`)
+						fmt.Fprint(w, `{"host":"actual-container","os":"linux","vcs_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","vcs_time":"2026-10-26T00:00:00Z"}`)
 					case "/v1/kronk/libs", "/v1/devices":
 						fmt.Fprint(w, `{}`)
 					case "/v1/tokenize":
@@ -277,6 +282,9 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			cell := summary.Cells[cellIndex]
+			if summary.BenchmarkIdentity != identity || cell.BenchmarkIdentity != identity || summary.Machine["host"] != "actual-container" {
+				t.Fatalf("lost benchmark identity or actual hostname: %s", data)
+			}
 			if defect == "interrupt" {
 				if summary.Status != "INTERRUPTED" || cell.Status != "PASS" || cell.Measurements == nil || summary.Cells[2].Status != "FAIL" || summary.Cells[2].Measurements != nil || summary.Cells[3].Status != "NOT_RUN" {
 					t.Fatalf("lost completed/partial cells: %s", data)
@@ -316,7 +324,7 @@ func TestQuickCheckCommand(t *testing.T) {
 }
 
 func TestQuickCheckModelConfig(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), ".tools", "model_config_tools.yaml"))
+	data, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "zarf", "kms", "model_config.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +455,7 @@ func TestReleaseHistory(t *testing.T) {
 		}
 	}
 	out := filepath.Join(t.TempDir(), "output")
-	history := filepath.Join(filepath.Dir(out), "release-history.log")
+	history := filepath.Join(filepath.Dir(out), "release-history-macos-metal.log")
 	args := []string{"-baseline", paths[0], "-candidate", paths[1], "-out", out}
 	for _, flag := range []string{"unknown", "no"} {
 		var output bytes.Buffer

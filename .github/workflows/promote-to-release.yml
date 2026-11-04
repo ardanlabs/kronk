@@ -8,14 +8,14 @@ on:
         required: true
         type: string
       commit:
-        description: Full tested SHA from an available nightly artifact (normally latest main)
+        description: Full tested SHA available in both macOS and Linux Vulkan evidence
         required: true
         type: string
 
-# Promote the selected nightly evidence before publishing the next day's release.
-# Share the measurement lock while reading evidence and updating release storage.
+# Serializes promotions only. Nightly workflows read immutable artifacts and
+# independently fetch either the outgoing or incoming baseline.
 concurrency:
-  group: quick-check-pacha
+  group: quick-check-promotion
   cancel-in-progress: false
 
 permissions:
@@ -39,9 +39,28 @@ jobs:
         with:
           go-version-file: .go-version
 
-      - name: Promote tested evidence and save release baseline
+      # Prepare both platforms completely before either results branch is written.
+      - name: Prepare both release baselines
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE: ${{ inputs.release }}
           COMMIT: ${{ inputs.commit }}
-        run: bash .github/scripts/quick-check.sh promote
+        run: |
+          QUICK_CHECK_PLATFORM=macos-metal bash .github/scripts/quick-check.sh stage-promotion
+          QUICK_CHECK_PLATFORM=linux-vulkan bash .github/scripts/quick-check.sh stage-promotion
+
+      - name: Publish macOS Metal baseline and history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+          COMMIT: ${{ inputs.commit }}
+          QUICK_CHECK_PLATFORM: macos-metal
+        run: bash .github/scripts/quick-check.sh publish-promotion
+
+      - name: Publish Linux Vulkan baseline and history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+          COMMIT: ${{ inputs.commit }}
+          QUICK_CHECK_PLATFORM: linux-vulkan
+        run: bash .github/scripts/quick-check.sh publish-promotion

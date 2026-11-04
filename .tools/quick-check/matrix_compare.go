@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"os"
 	"path/filepath"
@@ -116,6 +117,9 @@ func readFullComparison(dir string) (matrixInput, error) {
 		} else {
 			attempted++
 			failed = failed || cell.Status == "FAIL"
+			if cell.BenchmarkIdentity != input.summary.BenchmarkIdentity {
+				return input, fmt.Errorf("%s: cell and run benchmark identity disagree", cell.ID)
+			}
 			if cell.ServerRevision != r.ServerRevision || cell.ServerCommitTime != r.ServerCommitTime || cell.ReleaseTag != r.ReleaseTag || cell.TestStartedAt != r.TestStartedAt {
 				return input, fmt.Errorf("%s: cell and run provenance disagree", cell.ID)
 			}
@@ -202,6 +206,17 @@ func compareMatrices(aDir, bDir string, a, b matrixInput) matrixComparison {
 }
 
 func (c matrixComparison) writeText(out io.Writer) error {
+	machineWarning := c.writeDetails(out)
+	if err := c.writeTable(out); err != nil {
+		return err
+	}
+	if machineWarning != "" {
+		fmt.Fprintln(out, "\n"+machineWarning)
+	}
+	return nil
+}
+
+func (c matrixComparison) writeDetails(out io.Writer) string {
 	fmt.Fprintf(out, "Comparison status: %s\nSaved-run checks: baseline %s / candidate %s\nBaseline: %s\nBaseline commit: %s\nCandidate: %s\nCandidate commit: %s\n",
 		c.Status, c.Baseline.Status, c.Candidate.Status, c.Baseline.Directory, c.Baseline.Version, c.Candidate.Directory, c.Candidate.Version)
 	if c.Baseline.Release != "" {
@@ -259,11 +274,43 @@ func (c matrixComparison) writeText(out io.Writer) error {
 			}
 		}
 	}
-	if err := c.writeTable(out); err != nil {
-		return err
+	return machineWarning
+}
+
+func (c matrixComparison) writeMarkdown(out io.Writer) error {
+	escape := func(s string) string {
+		return strings.NewReplacer("\\", "\\\\", "|", "\\|", "*", "\\*", "_", "\\_", "`", "\\`", "[", "\\[", "]", "\\]", "\r", " ", "\n", " ").Replace(html.EscapeString(s))
 	}
-	if machineWarning != "" {
-		fmt.Fprintln(out, "\n"+machineWarning)
+	var details strings.Builder
+	c.writeDetails(&details)
+	fmt.Fprint(out, "### Release comparison\n\n")
+	for line := range strings.SplitSeq(details.String(), "\n") {
+		if line == "" {
+			fmt.Fprintln(out)
+			continue
+		}
+		fmt.Fprintln(out, escape(line)+"  ")
+	}
+	fmt.Fprintln(out, "| Cell | Metric | Baseline median [SD] | Candidate median [SD] | Change |")
+	fmt.Fprintln(out, "| --- | --- | ---: | ---: | ---: |")
+	for _, cell := range c.Cells {
+		if cell.Status == "NOT_RUN" {
+			fmt.Fprintf(out, "| %s | NOT_RUN (baseline %s / candidate %s) | | | |\n", escape(cell.Cell), escape(cell.SavedRunChecks["baseline"]), escape(cell.SavedRunChecks["candidate"]))
+			continue
+		}
+		var rows strings.Builder
+		cell.writeRows(&rows)
+		for row := range strings.SplitSeq(rows.String(), "\n") {
+			if strings.TrimSpace(row) == "" {
+				continue
+			}
+			for field := range strings.SplitSeq(row, "\t") {
+				fmt.Fprintf(out, "| %s ", escape(field))
+			}
+			if _, err := fmt.Fprintln(out, "|"); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

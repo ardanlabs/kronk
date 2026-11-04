@@ -69,8 +69,8 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.DurationVar(&cfg.Timeout, "timeout", 30*time.Minute, "per-request timeout")
 	fs.Int64Var(&cfg.Seed, "seed", 42, "deterministic sampling seed")
 
-	fs.StringVar(&cfg.MTPEmbeddedModel, "mtp-embedded-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT", "embedded-MTP model")
-	fs.StringVar(&cfg.MTPCompanionModel, "mtp-companion-model", "unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT", "companion own-KV MTP model")
+	fs.StringVar(&cfg.MTPEmbeddedModel, "mtp-embedded-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON", "embedded-MTP model")
+	fs.StringVar(&cfg.MTPCompanionModel, "mtp-companion-model", "unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-ON-IMC-ON", "companion own-KV MTP model")
 	fs.StringVar(&cfg.MTPProfile, "mtp-profile", "all", "MTP profile: embedded, companion, or all")
 	fs.IntVar(&cfg.MTPRequests, "mtp-requests", 0, "concurrent MTP requests (0 uses every configured slot)")
 	fs.IntVar(&cfg.MTPPromptTokens, "mtp-prompt-tokens", 2200, "calibrated MTP prompt tokens")
@@ -78,13 +78,13 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.MTPEmbeddedSlots, "mtp-embedded-slots", 4, "expected embedded-MTP slots")
 	fs.IntVar(&cfg.MTPCompanionSlots, "mtp-companion-slots", 2, "expected companion-MTP slots")
 
-	fs.StringVar(&cfg.HybridModel, "hybrid-model", "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT", "single-slot hybrid model")
+	fs.StringVar(&cfg.HybridModel, "hybrid-model", "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-ON", "single-slot hybrid model")
 
-	fs.StringVar(&cfg.LongContextModel, "long-context-model", "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT", "long-context model")
+	fs.StringVar(&cfg.LongContextModel, "long-context-model", "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-ON", "long-context model")
 	fs.StringVar(&stages, "long-context-stages", "4096,8192,16384,32768,65536,131072", "comma-separated long-context token targets")
 	fs.IntVar(&cfg.LongContextMaxTokens, "long-context-max-tokens", 96, "maximum long-context completion tokens")
 
-	fs.StringVar(&cfg.BatchModel, "batch-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT", "multi-slot batch model")
+	fs.StringVar(&cfg.BatchModel, "batch-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON", "multi-slot batch model")
 	fs.IntVar(&cfg.BatchTurns, "batch-turns", 21, "synchronized turns per conversation")
 	fs.IntVar(&cfg.BatchTargetTokens, "batch-target-tokens", 30000, "minimum final prompt tokens")
 	fs.IntVar(&cfg.BatchTokensPerTurn, "batch-tokens-per-turn", 1400, "target tokens added per turn")
@@ -92,7 +92,7 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.BatchSlots, "batch-slots", 4, "expected generation slots")
 	fs.IntVar(&cfg.BatchConversations, "batch-conversations", 5, "conversations; values above slots exercise queue pressure")
 
-	fs.StringVar(&cfg.MediaModel, "media-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT", "multimodal model")
+	fs.StringVar(&cfg.MediaModel, "media-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON", "multimodal model")
 	fs.StringVar(&cfg.MediaProfile, "media-profile", "all", "media profile: correctness, prefill, or all")
 	fs.StringVar(&cfg.MediaImage, "media-image", "examples/samples/giraffe.jpg", "probe image")
 	fs.StringVar(&expectedTerms, "media-expect", "giraffe", "comma-separated expected subject terms")

@@ -35,7 +35,7 @@
 //
 // Installed servers use ~/.kronk/models/model_config.yaml by default. The
 // source-based reliability workflow selects
-// .tools/model_config_tools.yaml explicitly; see .make/tools.mk.
+// zarf/kms/model_config.yaml explicitly; see .make/tools.mk.
 //
 // Optional environment variables:
 //

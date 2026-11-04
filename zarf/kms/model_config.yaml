@@ -281,6 +281,110 @@ models:
       top_k: 20
       top_p: 0.95
 
+  # Quick-check fixtures: one/two-slot text/image workloads, IMC and MTP modes.
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK: &quick
+    nseq-max: 1
+    context-window: 32768
+    queue-depth: 2
+    incremental-cache: true
+    speculation: mtp
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP:
+    <<: *quick
+    speculation: disabled
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC:
+    <<: *quick
+    incremental-cache: false
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP:
+    <<: *quick
+    incremental-cache: false
+    speculation: disabled
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-2S:
+    <<: *quick
+    nseq-max: 2
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP-2S:
+    <<: *quick
+    nseq-max: 2
+    speculation: disabled
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-2S:
+    <<: *quick
+    nseq-max: 2
+    incremental-cache: false
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP-2S:
+    <<: *quick
+    nseq-max: 2
+    incremental-cache: false
+    speculation: disabled
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK:
+    <<: *quick
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-MTP:
+    <<: *quick
+    speculation: disabled
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC:
+    <<: *quick
+    incremental-cache: false
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC-NO-MTP:
+    <<: *quick
+    incremental-cache: false
+    speculation: disabled
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-2S:
+    <<: *quick
+    nseq-max: 2
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-MTP-2S:
+    <<: *quick
+    nseq-max: 2
+    speculation: disabled
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC-2S:
+    <<: *quick
+    nseq-max: 2
+    incremental-cache: false
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC-NO-MTP-2S:
+    <<: *quick
+    nseq-max: 2
+    incremental-cache: false
+    speculation: disabled
+
+  # Reliability aliases preserve tool sizing without changing /AGENT defaults.
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON:
+    nseq-max: 4
+    context-window: 131072
+    queue-depth: 2
+    incremental-cache: true
+
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-ON-IMC-ON:
+    nseq-max: 2
+    context-window: 131072
+    queue-depth: 2
+    incremental-cache: true
+
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-ON:
+    nseq-max: 1
+    context-window: 131072
+    queue-depth: 2
+    incremental-cache: true
+
+  # Separate lifecycle probe; intentionally excluded from test-load-all.
+  unsloth/Qwen3-0.6B-Q8_0:
+    nseq-max: 1
+    context-window: 8192
+    queue-depth: 2
+    admission-timeout: 100ms
+    incremental-cache: true
+
 bucky-models:
   # Two independent states let the server process two audio requests at once.
   tiny.en:

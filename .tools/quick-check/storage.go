@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -109,18 +110,34 @@ func savedRuns(parent string) ([]storedRun, error) {
 	return runs, nil
 }
 
-func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matrixInput, c matrixComparison) error {
+func releaseHistoryPath(parent, history string) string {
+	if history != "" {
+		return history
+	}
+	return filepath.Join(filepath.Dir(parent), "release-history-macos-metal.log")
+}
+
+func recordReleaseComparison(path, baselineTag, candidateTag string, a, b matrixInput, c matrixComparison) error {
 	// The compact history has no diagnostics or room for two machine descriptions.
 	// Keep mismatched/unknown machines in comparison.log only. Failed runs retain
 	// their recorded verdicts and unavailable metrics rather than being certified.
 	host, _ := b.summary.Machine["host"].(string)
+	aMachine, bMachine := a.summary.Machine, b.summary.Machine
+	if a.summary.BenchmarkIdentity != "" || b.summary.BenchmarkIdentity != "" {
+		if a.summary.BenchmarkIdentity == "" || a.summary.BenchmarkIdentity != b.summary.BenchmarkIdentity {
+			return nil
+		}
+		host = b.summary.BenchmarkIdentity
+		aMachine, bMachine = maps.Clone(aMachine), maps.Clone(bMachine)
+		delete(aMachine, "host")
+		delete(bMachine, "host")
+	}
 	systemOS, _ := b.summary.Machine["os"].(string)
 	ram, vram := eventInt(b.summary.Machine, "system_ram_bytes"), eventInt(b.summary.Machine, "gpu_total_bytes")
 	unified, knownUnified := b.summary.Machine["unified_memory"].(bool)
-	if !reflect.DeepEqual(a.summary.Machine, b.summary.Machine) || host == "" || ram <= 0 || vram <= 0 || !knownUnified {
+	if !reflect.DeepEqual(aMachine, bMachine) || host == "" || ram <= 0 || vram <= 0 || !knownUnified {
 		return nil
 	}
-	path := filepath.Join(filepath.Dir(parent), "release-history.log")
 	const title = "Release comparison: "
 	const referenceIDLabel = "; reference ID: "
 	var sections []string
@@ -205,8 +222,7 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matr
 	return os.Rename(f.Name(), path)
 }
 
-func recordReleaseStart(parent, release string, input matrixInput) error {
-	path := filepath.Join(filepath.Dir(parent), "release-history.log")
+func recordReleaseStart(path, release string, input matrixInput) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
@@ -219,7 +235,7 @@ func recordReleaseStart(parent, release string, input matrixInput) error {
 			m.Baseline, m.Delta, m.Percent = nil, nil, nil
 		}
 	}
-	return recordReleaseComparison(parent, "", release, input, input, c)
+	return recordReleaseComparison(path, "", release, input, input, c)
 }
 
 // Keep only the latest finalized attempt and the explicitly promoted release.

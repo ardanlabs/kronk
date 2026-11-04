@@ -50,6 +50,7 @@ type report struct {
 	ConfiguredSlots      []int                  `json:"configured_slots"`
 	ReferenceTokens      normalizationReference `json:"normalization_reference"`
 	Host                 string                 `json:"host"`
+	BenchmarkIdentity    string                 `json:"benchmark_identity,omitempty"`
 	HarnessRevision      string                 `json:"harness_revision"`
 	ServerRevision       string                 `json:"server_revision"`
 	ServerCommitTime     string                 `json:"server_commit_time"`
@@ -75,6 +76,7 @@ type report struct {
 // then repetitions and their requests.
 type runSummary struct {
 	ID                   string                            `json:"cell_id"`
+	BenchmarkIdentity    string                            `json:"benchmark_identity,omitempty"`
 	Machine              map[string]any                    `json:"machine"`
 	ServerVersion        string                            `json:"server_version"`
 	ServerRevision       string                            `json:"server_revision"`
@@ -128,6 +130,7 @@ func (r report) summary() runSummary {
 			"gpu_total_bytes":  hardware["gpu_total_bytes"],
 			"unified_memory":   hardware["unified_memory"],
 		},
+		BenchmarkIdentity:    r.BenchmarkIdentity,
 		ServerVersion:        r.serverVersion(),
 		ServerRevision:       r.ServerRevision,
 		ServerCommitTime:     r.ServerCommitTime,
@@ -594,6 +597,7 @@ func run(o options) (runErr error) {
 		}
 		cr := &r.Cells[i]
 		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, TwoSlots: cell.twoSlots, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)}
+		cr.BenchmarkIdentity = os.Getenv("QUICK_CHECK_BENCHMARK_ID")
 		if cr.isDense() {
 			// Calibrate against the chosen Dense fixture, never MoE token volumes.
 			cr.ReferenceTokens = denseReferenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)
@@ -651,6 +655,7 @@ func executeCell(o options, c *client, r *report, log func(string, ...any)) (run
 	for i := 1; i <= o.repetitions; i++ {
 		log("repetition=%d/%d", i, o.repetitions)
 		repetition := report{ID: r.ID, Status: "FAIL", Workload: r.Workload, Model: r.Model, Images: o.images, TargetOnly: r.TargetOnly, NoCache: r.NoCache, TwoSlots: r.TwoSlots, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
+		repetition.BenchmarkIdentity = r.BenchmarkIdentity
 		repetition.ReferenceTokens = r.ReferenceTokens
 		repetition.SharedWarmupFrom = r.SharedWarmupFrom
 		c.traces = make(map[string]string)
