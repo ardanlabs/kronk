@@ -6,7 +6,7 @@
 # detached server log during the invocation and retains high-value events whose
 # trace IDs match its requests. Use a unique RELIABILITY_OUT to preserve a run.
 #
-# Run against the current source with the tools-specific model configuration:
+# Run against the current source with the shared model configuration:
 #
 #   make server-for-tools
 #   make test-load-all # Or another tool wanted
@@ -14,11 +14,11 @@
 #   make kronk-server-stop
 #
 # The tools validate the active model configuration but never modify it or
-# manage the server. Restart the server after editing model_config_tools.yaml.
+# manage the server. Restart the server after editing zarf/kms/model_config.yaml.
 #
 # Further analysis with some harness: provide summary.json,
 # events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
-# model_config_tools.yaml for the expected runtime settings. Do not provide the
+# zarf/kms/model_config.yaml for the expected runtime settings. Do not provide the
 # full ~/.kronk/kronk.log unless the curated evidence is unavailable or a
 # failure needs deeper investigation. Each invocation replaces RELIABILITY_OUT;
 # preserve separate runs with, for example:
@@ -32,8 +32,11 @@
 #   from trace-correlated server evidence, and report failures or evidence gaps.
 
 # API-only tools server: compile current Go code without regenerating docs/BUI.
+# Preserve the tools' download/logging defaults; explicit environment values win.
 server-for-tools: ## Start a detached API server for probes
-	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/model_config_tools.yaml" \
+	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/zarf/kms/model_config.yaml" \
+		KRONK_DOWNLOAD_ENABLED="$${KRONK_DOWNLOAD_ENABLED:-false}" \
+		KRONK_INSECURE_LOGGING="$${KRONK_INSECURE_LOGGING:-false}" \
 		go run -buildvcs=true ./cmd/kronk server start --detach --web-admin-enabled=false
 
 QUICK_CHECK_ARGS ?=
@@ -57,21 +60,21 @@ RELIABILITY_TIMEOUT ?= 30m
 RELIABILITY_SEED ?= 42
 RELIABILITY_ARGS ?=
 
-RELIABILITY_MTP_EMBEDDED_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
-RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT
+RELIABILITY_MTP_EMBEDDED_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON
+RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-ON-IMC-ON
 RELIABILITY_MTP_REQUESTS ?= 0
 RELIABILITY_MTP_PROMPT_TOKENS ?= 2200
 RELIABILITY_MTP_MAX_TOKENS ?= 256
 RELIABILITY_MTP_EMBEDDED_SLOTS ?= 4
 RELIABILITY_MTP_COMPANION_SLOTS ?= 2
 
-RELIABILITY_HYBRID_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
+RELIABILITY_HYBRID_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-ON
 
-RELIABILITY_LONG_CONTEXT_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
+RELIABILITY_LONG_CONTEXT_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-ON
 RELIABILITY_LONG_CONTEXT_STAGES ?= 4096,8192,16384,32768,65536,131072
 RELIABILITY_LONG_CONTEXT_MAX_TOKENS ?= 96
 
-RELIABILITY_BATCH_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+RELIABILITY_BATCH_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON
 RELIABILITY_BATCH_TURNS ?= 21
 RELIABILITY_BATCH_TARGET_TOKENS ?= 30000
 RELIABILITY_BATCH_TOKENS_PER_TURN ?= 1400
@@ -79,7 +82,7 @@ RELIABILITY_BATCH_MAX_TOKENS ?= 128
 RELIABILITY_BATCH_SLOTS ?= 4
 RELIABILITY_BATCH_CONVERSATIONS ?= 5
 
-RELIABILITY_MEDIA_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+RELIABILITY_MEDIA_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON
 RELIABILITY_MEDIA_IMAGE ?= examples/samples/giraffe.jpg
 RELIABILITY_MEDIA_EXPECT ?= giraffe
 RELIABILITY_MEDIA_MAX_TOKENS ?= 128
