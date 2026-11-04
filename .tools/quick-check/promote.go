@@ -43,6 +43,7 @@ func promoteCommand(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("quick-check promote", flag.ContinueOnError)
 	flags.SetOutput(out)
 	parent := flags.String("out", ".tools/quick-check/output", "retained run queue")
+	history := flags.String("history", "", "release history log (default: release-history-macos-metal.log beside the output directory)")
 	release := flags.String("release", "", "release baseline label (vX.Y.Z); no tag is created or required")
 	commit := flags.String("commit", "", "full tested commit SHA to promote")
 	if err := flags.Parse(args); err != nil {
@@ -50,7 +51,7 @@ func promoteCommand(args []string, out io.Writer) error {
 	}
 	_, shaErr := hex.DecodeString(*commit)
 	if flags.NArg() != 0 || !releasePattern.MatchString(*release) || shaErr != nil || (len(*commit) != 40 && len(*commit) != 64) {
-		return fmt.Errorf("usage: quick-check promote -release vX.Y.Z -commit FULL_SHA [-out DIR]")
+		return fmt.Errorf("usage: quick-check promote -release vX.Y.Z -commit FULL_SHA [-out DIR] [-history PATH]")
 	}
 	lock := filepath.Join(*parent, ".quick-check.lock")
 	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
@@ -91,7 +92,7 @@ func promoteCommand(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if err := recordReleaseStart(*parent, *release, input); err != nil {
+		if err := recordReleaseStart(releaseHistoryPath(*parent, *history), *release, input); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "%s already represents tested commit %s\n", *release, *commit)
@@ -135,7 +136,7 @@ func promoteCommand(args []string, out io.Writer) error {
 		}
 	}()
 	if previous != "" {
-		if err := compareCommand([]string{"-baseline", previous, "-candidate", destination, "-out", *parent}, out); err != nil {
+		if err := compareCommand([]string{"-baseline", previous, "-candidate", destination, "-out", *parent, "-history", *history}, out); err != nil {
 			if !errors.Is(err, errComparisonFindings) {
 				return err
 			}
@@ -148,7 +149,7 @@ func promoteCommand(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if err := recordReleaseStart(*parent, *release, input); err != nil {
+		if err := recordReleaseStart(releaseHistoryPath(*parent, *history), *release, input); err != nil {
 			return err
 		}
 	}

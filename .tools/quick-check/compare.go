@@ -67,13 +67,13 @@ func compareCommand(args []string, out io.Writer) error {
 	baseline := flags.String("baseline", "", "baseline run directory (supply both paths or neither)")
 	candidate := flags.String("candidate", "", "candidate run directory (supply both paths or neither)")
 	parent := flags.String("out", ".tools/quick-check/output", "comparison output directory and run parent for automatic selection")
+	history := flags.String("history", "", "release history log (default: release-history-macos-metal.log beside the output directory)")
 	asJSON := flags.Bool("json", false, "write the full comparison as JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	historyParent := *parent
 	if (*baseline == "") != (*candidate == "") || flags.NArg() != 0 {
-		return fmt.Errorf("usage: quick-check compare [-baseline DIR -candidate DIR] [-out DIR] [-json]; supply both paths or neither")
+		return fmt.Errorf("usage: quick-check compare [-baseline DIR -candidate DIR] [-out DIR] [-history PATH] [-json]; supply both paths or neither")
 	}
 	if *baseline == "" {
 		stored, err := savedRuns(*parent)
@@ -145,7 +145,7 @@ func compareCommand(args []string, out io.Writer) error {
 		return err
 	}
 	if baselineTag != "" && candidateTag != "" && a.summary.ServerRevision != b.summary.ServerRevision {
-		if err := recordReleaseComparison(historyParent, baselineTag, candidateTag, a, b, c); err != nil {
+		if err := recordReleaseComparison(releaseHistoryPath(*parent, *history), baselineTag, candidateTag, a, b, c); err != nil {
 			return err
 		}
 	}
@@ -228,7 +228,7 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	}
 	if s.ID != r.ID || s.Status != r.Status || s.Workload != r.Workload || s.Model != r.Model ||
 		s.Cell != r.cell() || s.ReferenceTokens != r.ReferenceTokens || s.SharedWarmupFrom != r.SharedWarmupFrom ||
-		s.ServerRevision != r.ServerRevision || s.TestStartedAt != r.TestStartedAt ||
+		s.ServerRevision != r.ServerRevision || s.TestStartedAt != r.TestStartedAt || s.BenchmarkIdentity != r.BenchmarkIdentity ||
 		s.RepetitionsRequested != r.RepetitionsRequested || s.RepetitionsExecuted != len(r.Repetitions) ||
 		len(s.Repetitions) != len(r.Repetitions) || !slices.Equal(s.Findings, r.Findings) ||
 		!reflect.DeepEqual(s.Measurements, r.measurements()) {
@@ -236,6 +236,9 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	}
 	for i, rep := range r.Repetitions {
 		summary := s.Repetitions[i]
+		if rep.BenchmarkIdentity != r.BenchmarkIdentity {
+			return input, fmt.Errorf("repetition %d benchmark identity disagrees with cell", i+1)
+		}
 		if rep.ReferenceTokens != r.ReferenceTokens || rep.Images != r.Images || rep.TargetOnly != r.TargetOnly || rep.NoCache != r.NoCache || rep.TwoSlots != r.TwoSlots || rep.SharedWarmupFrom != r.SharedWarmupFrom || summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
 			summary.SystemTokens != rep.SystemTokens || summary.SystemSHA256 != rep.SystemSHA256 ||
 			summary.WorkloadSeconds != rep.WorkloadSeconds || summary.CancelReleaseSeconds != rep.CancelReleaseSeconds {
@@ -456,7 +459,12 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 	} else {
 		c.Matches = append(c.Matches, "effective native parameters")
 	}
-	for _, key := range []string{"host", "os", "system_ram_bytes", "gpu_total_bytes", "unified_memory"} {
+	if a.summary.BenchmarkIdentity != "" || b.summary.BenchmarkIdentity != "" {
+		check("machine.benchmark_identity", a.summary.BenchmarkIdentity, b.summary.BenchmarkIdentity)
+	} else {
+		check("machine.host", a.summary.Machine["host"], b.summary.Machine["host"])
+	}
+	for _, key := range []string{"os", "system_ram_bytes", "gpu_total_bytes", "unified_memory"} {
 		check("machine."+key, a.summary.Machine[key], b.summary.Machine[key])
 	}
 	// Compare only stable model identity/configuration, not creation times or VRAM estimates.

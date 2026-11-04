@@ -9,10 +9,13 @@ no separate Dense MTP file is needed.
 
 ## Run
 
-In GitHub Actions, **Quick-check** runs daily at 02:00 Miami time (including DST),
-or manually through **Run workflow**. It tests latest `main`, skipping if its SHA
-matches the latest saved run, including a failed or interrupted attempt. Review
-the release comparison in the job logs; download the run's artifact to investigate.
+In GitHub Actions, **Quick-check macOS Metal** and **Quick-check Linux Vulkan**
+run independently daily at 02:00 Miami time (including DST), or manually through
+**Run workflow**. Each tests latest `main`, skipping if its SHA matches that
+workflow's latest saved run, including a failed or interrupted attempt. Review
+the release comparison in the run summary or job logs; download the run's artifact
+to investigate.
+
 
 Install the model and compatible native libraries first. From the repository root,
 start a dedicated test server and run:
@@ -88,28 +91,43 @@ Every finalized attempt replaces `new`; only Promote replaces `release`, even
 when the same commit is tested again. Local archives under `output/saved_local_runs/`
 remain outside retention. Older `old-*` directories are no longer managed.
 
-Actions saves each run's full evidence and comparison reports as a
-`quick-check-run-<run-id>-<attempt>` artifact with a requested retention of 10 days; repository limits may
-shorten availability. The `quick-check-results` branch stores only the compact
-release snapshot, promotion metadata, and `release-history.log`. Nightly runs
-read that branch but never write it. Without a baseline, testing still runs and
-the release comparison is skipped. Missing/expired artifacts cannot be promoted.
+Actions saves full evidence and comparison reports as `quick-check-macos-metal-run-<run-id>-<attempt>`
+(macOS) or `quick-check-linux-vulkan-run-<run-id>-<attempt>` (Linux), requesting
+10-day retention; repository limits may shorten availability. Each platform has
+its own latest run and promoted release baseline:
+
+| Platform | Results branch | History document under `.tools/quick-check/` |
+| --- | --- | --- |
+| macOS Metal | `quick-check-results-macos-metal` | `release-history-macos-metal.log` |
+| Linux Vulkan | `quick-check-results-linux-vulkan` | `release-history-linux-vulkan.log` |
+
+Results branches hold only compact release snapshots, promotion metadata, and
+history/recovery documents. Nightlies never write them. Actions uses separate queues:
+`output/linux-vulkan/` and `output/macos-metal/`. The manual commands above retain
+their default `output/`; use `-out` to select a platform queue. Existing local
+evidence is not automatically moved. Without a baseline, testing still
+runs and comparison is skipped. 
+
 
 ## Promote to Release
 
 In GitHub Actions, select **Promote to Release → Run workflow** and enter the
-release label (`vX.Y.Z`) and full tested commit SHA from the good night-run.
-Do this before publishing the release. Promotion downloads the saved run,
-compares it against the outgoing release baseline, and saves its compact snapshot
-to `quick-check-results`. Updated history is pushed in a separate later commit
-that changes only `.tools/quick-check/release-history.log`, at the same path as
-the tracked copy on `main`. Manually cherry-pick that history commit into the code
-branch before publishing the release; Promotion does not update `main`.
-The first promotion records a starting baseline. No tests are rerun and no
-release/tag is created; the measured commit remains unchanged.
+release label (`vX.Y.Z`) and full tested commit SHA available from **both** workflows.
+Do this before publishing the release. Promotion prepares both saved runs against
+their respective outgoing baselines before writing either branch. Missing or
+expired evidence blocks a new promotion; an already-promoted matching baseline
+can be reused on retry.
 
-If the baseline push succeeds but the history push fails, rerun the promotion
-with the same inputs to finish saving history. No force-push is used.
+For each platform, the baseline is pushed first, then history in a separate,
+document-only commit. The summary identifies **both history commits**. Manually
+cherry-pick them into the code branch before publishing the release; Promotion
+does not update `main`. No tests are
+rerun and no release/tag is created; the measured commit remains unchanged.
+
+The two branches are not updated atomically. If a baseline/history push or the
+second platform fails, rerun with the same inputs to finish the remaining writes
+without duplicate entries. No force-push is used. Promotions serialize with each
+other, not with the independent nightly workflows.
 
 **Not needed for Actions.** Optional local promotion only; does not change the remote queue:
 
@@ -131,9 +149,17 @@ make quick-compare-against-release \
 ```
 
 Release labels come only from explicit promotion, not Git tag discovery.
-Same-machine release-to-release comparisons update `release-history.log`;
-Actions promotion preserves it on the results branch. Local history stays at
-`.tools/quick-check/release-history.log`.
+Same-environment release comparisons update history. 
+For the default local `output/` queue, history defaults to
+`.tools/quick-check/release-history-macos-metal.log`; `compare` and `promote`
+accept `-history PATH` to select another document. When selecting a platform queue
+with `-out`, also select its history explicitly, as Actions does:
+
+```sh
+go run ./.tools/quick-check compare -out .tools/quick-check/output/linux-vulkan \
+  -history .tools/quick-check/release-history-linux-vulkan.log
+```
+
 The initial v1.33.1 entry is included once in the code branch. Machine descriptions
 include the operating system recorded by the test server.
 `References updated` indicates whether the reference token values or compared

@@ -55,6 +55,7 @@ func readSnapshot(dir string) (comparisonSnapshot, error) {
 	for _, cell := range s.Summary.Cells {
 		c, ok := s.Cells[cell.ID]
 		if !ok || seen[cell.ID] || cell.ID == "" || c.Identity.Status != cell.Status ||
+			(cell.Status != "NOT_RUN" && cell.BenchmarkIdentity != s.Summary.BenchmarkIdentity) ||
 			c.Identity.ReferenceTokens != cell.ReferenceTokens || c.Identity.Executed != cell.RepetitionsExecuted || c.Identity.Requested != cell.RepetitionsRequested ||
 			c.Identity.Version != cell.ServerVersion ||
 			(cell.Status != "NOT_RUN" && len(c.Identity.Problems) == 0 && cell.ServerRevision != s.Summary.ServerRevision) ||

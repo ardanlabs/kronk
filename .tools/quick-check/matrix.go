@@ -92,16 +92,17 @@ type matrixReport struct {
 }
 
 type matrixSummary struct {
-	Machine          map[string]any `json:"machine"`
-	ServerVersion    string         `json:"server_version"`
-	ServerRevision   string         `json:"server_revision"`
-	ServerCommitTime string         `json:"server_commit_time"`
-	ReleaseTag       string         `json:"release_tag,omitempty"`
-	TestStartedAt    string         `json:"test_started_at"`
-	InstalledLibrary any            `json:"installed_library"`
-	Status           string         `json:"status"`
-	Findings         []string       `json:"findings"`
-	Cells            []runSummary   `json:"cells"`
+	BenchmarkIdentity string         `json:"benchmark_identity,omitempty"`
+	Machine           map[string]any `json:"machine"`
+	ServerVersion     string         `json:"server_version"`
+	ServerRevision    string         `json:"server_revision"`
+	ServerCommitTime  string         `json:"server_commit_time"`
+	ReleaseTag        string         `json:"release_tag,omitempty"`
+	TestStartedAt     string         `json:"test_started_at"`
+	InstalledLibrary  any            `json:"installed_library"`
+	Status            string         `json:"status"`
+	Findings          []string       `json:"findings"`
+	Cells             []runSummary   `json:"cells"`
 }
 
 func (r matrixReport) serverVersion() string {
@@ -119,6 +120,7 @@ func (r matrixReport) summary() matrixSummary {
 		cs := cell.summary()
 		if s.Machine == nil && cell.Status != "NOT_RUN" {
 			s.Machine, s.InstalledLibrary = cs.Machine, cs.InstalledLibrary
+			s.BenchmarkIdentity = cs.BenchmarkIdentity
 		}
 		s.Cells = append(s.Cells, cs)
 	}

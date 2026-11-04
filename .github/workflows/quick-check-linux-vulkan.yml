@@ -1,16 +1,14 @@
-name: Quick-check
+name: Quick-check Linux Vulkan
 
 on:
   workflow_dispatch:
   schedule:
-    # Miami local time; GitHub advances a skipped spring-forward hour to 03:00.
     - cron: '0 2 * * *'
       timezone: America/New_York
 
-# Serializes Quick-check and Promote to Release, not other work on Pacha.
-# Do not cancel an existing measurement when another invocation is queued.
+# Independent of macOS; unrelated Linux jobs can still use the same GPU.
 concurrency:
-  group: quick-check-pacha
+  group: quick-check-linux-vulkan
   cancel-in-progress: false
 
 permissions:
@@ -19,11 +17,13 @@ permissions:
 
 env:
   GOTOOLCHAIN: local
-  KRONK_PROCESSOR: metal
+  KRONK_PROCESSOR: vulkan
+  QUICK_CHECK_PLATFORM: linux-vulkan
+  QUICK_CHECK_BENCHMARK_ID: linux-vulkan-runner
 
 jobs:
   matrix:
-    runs-on: [self-hosted, macOS, ARM64, sand, metal]
+    runs-on: [self-hosted, Linux, X64, gpu, vulkan]
     timeout-minutes: 180
     steps:
       - name: Checkout tested code
@@ -31,6 +31,10 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Check workflow tools
+        run: |
+          for tool in gh jq unzip; do command -v "$tool"; done
 
       - name: Check latest finalized nightly evidence
         id: prepare
@@ -54,19 +58,13 @@ jobs:
 
       - name: Build and start tools server
         if: steps.prepare.outputs.skip == 'false'
-        env:
-          # Scope injection to the server, not quick-check's machine probes.
-          DYLD_INSERT_LIBRARIES: ${{ runner.temp }}/LumeMetalCapabilities.dylib
-          LUME_METAL_APPLE_FAMILY_MAX: "1009"
-          LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
         run: bash .github/scripts/quick-check.sh start
 
       - name: Run complete matrix
         id: check
         if: steps.prepare.outputs.skip == 'false'
-        run: make quick-check-this-code
+        run: make quick-check-this-code QUICK_CHECK_ARGS='-out .tools/quick-check/output/linux-vulkan'
 
-      # All artifact preparation and transfers happen outside server/tool time.
       - name: Stop server and collect diagnostics
         if: ${{ always() && steps.prepare.outputs.skip == 'false' }}
         env:
@@ -78,7 +76,6 @@ jobs:
         if: ${{ !cancelled() && (steps.check.outcome == 'success' || steps.check.outcome == 'failure') }}
         run: bash .github/scripts/quick-check.sh compare
 
-      # Preserve full finalized evidence, including failed/interrupted results.
       - name: Package nightly evidence
         id: snapshot
         if: ${{ always() && steps.check.outcome != 'skipped' && steps.check.outcome != '' }}
@@ -88,7 +85,7 @@ jobs:
         if: ${{ always() && steps.snapshot.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: quick-check-run-${{ github.run_id }}-${{ github.run_attempt }}
+          name: quick-check-linux-vulkan-run-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/quick-check-run.tgz
           retention-days: 10
           if-no-files-found: error

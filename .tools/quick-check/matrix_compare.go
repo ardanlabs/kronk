@@ -117,6 +117,9 @@ func readFullComparison(dir string) (matrixInput, error) {
 		} else {
 			attempted++
 			failed = failed || cell.Status == "FAIL"
+			if cell.BenchmarkIdentity != input.summary.BenchmarkIdentity {
+				return input, fmt.Errorf("%s: cell and run benchmark identity disagree", cell.ID)
+			}
 			if cell.ServerRevision != r.ServerRevision || cell.ServerCommitTime != r.ServerCommitTime || cell.ReleaseTag != r.ReleaseTag || cell.TestStartedAt != r.TestStartedAt {
 				return input, fmt.Errorf("%s: cell and run provenance disagree", cell.ID)
 			}
