@@ -19,6 +19,7 @@ func TestCompareAutomaticSelection(t *testing.T) {
 		t.Helper()
 		r := comparisonFixture([]float64{2, 6})
 		if strings.HasPrefix(name, "new-") {
+			r = comparisonFixture([]float64{4, 8})
 			r.TestStartedAt = "2026-10-20T16:00:00Z"
 		}
 		dir := filepath.Join(parent, name)
@@ -43,6 +44,15 @@ func TestCompareAutomaticSelection(t *testing.T) {
 	}
 	if got.Baseline.Directory != older || got.Candidate.Directory != newer || got.Status != "PASS" {
 		t.Fatalf("incorrect automatic ordering: %+v", got)
+	}
+	markdown, err := os.ReadFile(filepath.Join(parent, "comparison.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"### Release comparison", "Comparison status: PASS", "Release labels: v1.0.0", "| Cell | Metric | Baseline median [SD] | Candidate median [SD] | Change |", `| Workload (s) | 4.00 \[2.83\] | 6.00 \[2.83\] | +50.00% |`, "| Normalized (s) |"} {
+		if !strings.Contains(string(markdown), want) {
+			t.Fatalf("Markdown report missing %q:\n%s", want, markdown)
+		}
 	}
 	add("20261021T190000Z-5")
 	if err := compareCommand([]string{"-out", parent}, &out); err == nil {

@@ -133,7 +133,7 @@ case "${1:-}" in
     jq -e '.status == "PASS" or .status == "FAIL" or .status == "INTERRUPTED"' "${candidates[0]}/summary.json" >/dev/null
     [[ -f "${candidates[0]}/events.ndjson" && -f "${candidates[0]}/tool.log" ]] || die 'Candidate evidence is incomplete'
     files=("${candidates[0]##*/}")
-    for report in compare-release comparison.json comparison.log; do
+    for report in compare-release comparison.json comparison.log comparison.md; do
       [[ ! -e "$output/$report" ]] || files+=("$report")
     done
     COPYFILE_DISABLE=1 tar -czf "$RUNNER_TEMP/quick-check-run.tgz" -C "$output" "${files[@]}"
@@ -161,15 +161,22 @@ case "${1:-}" in
     baselines=("$output"/release-*)
     if [[ ! -d "${baselines[0]}" ]]; then
       echo 'Skipping release comparison: no release baseline.'
+      printf '\n### Release comparison\n\nSkipped: no release baseline is available.\n' >> "${GITHUB_STEP_SUMMARY:?}"
       exit 0
     fi
     mkdir -p "$output/compare-release"
     status=0
     go run ./.tools/quick-check compare -out "$output" > "$output/compare-release/terminal.log" 2>&1 || status=$?
-    for report in comparison.json comparison.log; do
+    for report in comparison.json comparison.log comparison.md; do
       [[ ! -f "$output/$report" ]] || mv "$output/$report" "$output/compare-release/$report"
     done
     cat "$output/compare-release/terminal.log"
+    if [[ -f "$output/compare-release/comparison.md" ]]; then
+      printf '\n' >> "${GITHUB_STEP_SUMMARY:?}"
+      cat "$output/compare-release/comparison.md" >> "$GITHUB_STEP_SUMMARY"
+    else
+      printf '\n### Release comparison\n\nNo comparison report could be generated (exit status %s). See the comparison step logs and run artifact for details.\n' "$status" >> "${GITHUB_STEP_SUMMARY:?}"
+    fi
     exit "$status"
     ;;
   promote)
@@ -237,7 +244,6 @@ case "${1:-}" in
       echo '## Quick-check'
       printf '\nTested commit: `%s`\n' "$(git rev-parse HEAD)"
       printf '\nRunner: `%s`; check step: **%s**\n' "$RUNNER_IDENTITY" "${CHECK_OUTCOME:-not run}"
-      printf '\nOther workflows or host workloads may affect performance.\n'
     } >> "$GITHUB_STEP_SUMMARY"
     ;;
   *) echo "Usage: $0 restore|prepare|package|start|compare|promote|finish" >&2; exit 2 ;;

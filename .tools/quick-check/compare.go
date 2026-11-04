@@ -137,6 +137,13 @@ func compareCommand(args []string, out io.Writer) error {
 	if err := os.WriteFile(filepath.Join(*parent, "comparison.log"), []byte(summary.String()), 0600); err != nil {
 		return err
 	}
+	var markdown strings.Builder
+	if err := c.writeMarkdown(&markdown); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(*parent, "comparison.md"), []byte(markdown.String()), 0600); err != nil {
+		return err
+	}
 	if baselineTag != "" && candidateTag != "" && a.summary.ServerRevision != b.summary.ServerRevision {
 		if err := recordReleaseComparison(historyParent, baselineTag, candidateTag, a, b, c); err != nil {
 			return err
