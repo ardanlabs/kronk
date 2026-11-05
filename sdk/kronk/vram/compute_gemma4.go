@@ -34,11 +34,18 @@ func gemma4Workspace(input Input) (gpu, cpu int64) {
 	if batch <= 0 {
 		batch = DefaultNUBatch
 	}
-	batch = min(batch, max(input.ContextWindow, 1)*max(input.Slots, 1))
-	cells := ((max(input.ContextWindow, 1) + 255) / 256) * 256
+	slots := max(input.Slots, 1)
+	batch = min(batch, max(input.ContextWindow, 1)*slots)
+	capacity := max(input.ContextWindow, 1)
+	sequences := int64(1)
+	if input.KVUnified {
+		capacity *= slots
+		sequences = slots
+	}
+	cells := ((capacity + 255) / 256) * 256
 	swaCells := cells
 	if input.SlidingWindow > 0 && !input.SWAFull {
-		swaCells = ((min(cells, input.SlidingWindow+batch) + 255) / 256) * 256
+		swaCells = ((min(cells, input.SlidingWindow*sequences+batch) + 255) / 256) * 256
 	}
 	maskWidth := int64(2)
 	if input.VTransposed {

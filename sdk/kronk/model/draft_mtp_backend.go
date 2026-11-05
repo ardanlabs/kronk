@@ -62,7 +62,7 @@ func (b ownKVMTPBackend) load(req mtpLoadRequest) (drafter, error) {
 			return nil, nil
 		}
 		if !yzmaspec.Available() {
-			const reason = "target GGUF declares MTP (nextn_predict_layers>0) but the loaded llama library does not export the NextN hidden-state APIs required by Yzma. MTP speculative decoding is DISABLED for this model. Install the llama.cpp version pinned for this Kronk release."
+			const reason = "target GGUF declares MTP (nextn_predict_layers>0) but Yzma could not resolve the required NextN hidden-state APIs in the loaded llama library. MTP speculative decoding is DISABLED for this model. Check that the loaded llama.cpp libraries and Yzma version are compatible."
 			req.log(req.ctx, "draft-model-mtp", "status", "DISABLED",
 				"backend", b.name(), "nextn-layers", nLayers, "reason", reason)
 			return nil, nil
@@ -85,7 +85,7 @@ func (b ownKVMTPBackend) load(req mtpLoadRequest) (drafter, error) {
 
 	case mtpArtifactCompanion:
 		if !yzmaspec.Available() {
-			const reason = "MTPDrafterFile is a Qwen own-KV MTP head but the loaded llama library does not export the NextN hidden-state APIs required by Yzma. MTP speculative decoding is DISABLED for this model."
+			const reason = "MTPDrafterFile is a Qwen own-KV MTP head but Yzma could not resolve the required NextN hidden-state APIs in the loaded llama library. MTP speculative decoding is DISABLED for this model. Check that the loaded llama.cpp libraries and Yzma version are compatible."
 			req.log(req.ctx, "draft-model-mtp-separate", "status", "DISABLED", "backend", b.name(), "reason", reason)
 			return nil, nil
 		}
@@ -111,7 +111,7 @@ func (gemmaSharedKVBackend) sharedKV() bool           { return true }
 func (gemmaSharedKVBackend) fixedDraftPosition() bool { return true }
 func (b gemmaSharedKVBackend) load(req mtpLoadRequest) (drafter, error) {
 	if !yzmaspec.Available() {
-		const reason = "MTPDrafterFile is a gemma4-assistant MTP head but the loaded llama library does not export the NextN hidden-state APIs required by Yzma. MTP speculative decoding is DISABLED for this model."
+		const reason = "MTPDrafterFile is a gemma4-assistant MTP head but Yzma could not resolve the required NextN hidden-state APIs in the loaded llama library. MTP speculative decoding is DISABLED for this model. Check that the loaded llama.cpp libraries and Yzma version are compatible."
 		req.log(req.ctx, "draft-model-mtp-shared", "status", "DISABLED", "backend", b.name(), "reason", reason)
 		return nil, nil
 	}

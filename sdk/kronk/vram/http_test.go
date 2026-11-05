@@ -472,13 +472,16 @@ func TestFromBytesLlamaWorkspace(t *testing.T) {
 	const mib int64 = 1 << 20
 	for _, tt := range []struct {
 		name, backend, blocks, hidden, width string
-		slots, cacheMiB, gpuMiB, cpuMiB      int64
+		slots, cacheMiB                      int64
+		gpuMiB, cpuMiB                       float64
 		unified                              bool
 	}{
 		{"8B", "metal", "32", "4096", "128", 1, 16384, 1536, 640, false},
 		{"1B", "metal", "16", "2048", "64", 1, 4096, 1152, 576, false},
 		{"8B two slots", "metal", "32", "4096", "128", 2, 32768, 2112, 640, false},
-		{"8B shared two slots", "metal", "32", "4096", "128", 2, 32768, 2624, 1152, true},
+		// Shared rows add 2048 MiB of gathers, 16.25 MiB of sliced
+		// reduction scratch, and 2 MiB of host/device I32 lists.
+		{"8B shared two slots", "metal", "32", "4096", "128", 2, 32768, 4690.25, 1154, true},
 		{"1B CUDA control", "cuda", "16", "2048", "64", 1, 4096, 896, 576, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -514,7 +517,7 @@ func TestFromBytesLlamaWorkspace(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			gpu, cpu := tt.gpuMiB*mib, tt.cpuMiB*mib
+			gpu, cpu := int64(tt.gpuMiB*float64(mib)), int64(tt.cpuMiB*float64(mib))
 			gpu, cpu = gpu+gpu/10, cpu+cpu/10
 			if result.SlotMemory != tt.cacheMiB*mib || result.ComputeBufferEst != gpu || result.ComputeBufferCPU != cpu {
 				t.Fatalf("cache/GPU compute/CPU compute: got %d/%d/%d, want %d/%d/%d", result.SlotMemory, result.ComputeBufferEst, result.ComputeBufferCPU, tt.cacheMiB*mib, gpu, cpu)
