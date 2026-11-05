@@ -22,32 +22,29 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
 
+var errExtractionMismatch = errors.New("extraction does not match source or profile")
+
+type extraction struct {
+	SourceHash string             `json:"source_hash"`
+	Profile    string             `json:"profile"`
+	Document   providers.Document `json:"document"`
+}
+
 // Run extracts a document and caches it by source identity and extractor settings
 // inside the execution workspace. After successful cache publication, retries do
 // not upload again. Failed or interrupted conversion may be repeated.
 func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, openSource func(context.Context) (io.ReadCloser, error), workspace *os.Root) (providers.Document, error) {
-	profile := "tuning-text-v1"
-	if sourceInfo.Format == ".pdf" || sourceInfo.Format == ".docx" {
-		if extractor == nil {
-			return providers.Document{}, fmt.Errorf("%w: PDF/DOCX extraction is not configured", preparation.ErrInvalidArgument)
-		}
-		profile = extractor.ExtractionProfile()
+	profile, err := extractionProfile(extractor, sourceInfo)
+	if err != nil {
+		return providers.Document{}, err
 	}
-	type extraction struct {
-		SourceHash string             `json:"source_hash"`
-		Profile    string             `json:"profile"`
-		Document   providers.Document `json:"document"`
-	}
-	cache := "extraction.json"
-	if data, err := workspace.ReadFile(cache); err == nil {
-		var saved extraction
-		if err := json.Unmarshal(data, &saved); err != nil {
-			return providers.Document{}, err
-		}
-		if saved.SourceHash == sourceInfo.SHA256 && saved.Profile == profile {
-			return saved.Document, nil
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	cached, err := Read(ctx, extractor, sourceInfo, workspace)
+	switch {
+	case err == nil:
+		return cached, nil
+	case errors.Is(err, os.ErrNotExist), errors.Is(err, errExtractionMismatch):
+		// Only Run may convert a missing or stale extraction.
+	default:
 		return providers.Document{}, err
 	}
 	// Extractors accept a path and may reopen it. Snapshot through the confined
@@ -100,10 +97,47 @@ func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInf
 	if strings.TrimSpace(document.Markdown) == "" || !utf8.ValidString(document.Markdown) || !json.Valid(document.StructuredJSON) {
 		return providers.Document{}, fmt.Errorf("extractor returned invalid or empty document content")
 	}
-	if err := tmprl.WriteJSON(workspace, cache, extraction{sourceInfo.SHA256, profile, document}); err != nil {
+	if err := tmprl.WriteJSON(workspace, "extraction.json", extraction{sourceInfo.SHA256, profile, document}); err != nil {
 		return providers.Document{}, err
 	}
 	return document, nil
+}
+
+// Read returns saved extraction for the exact source and extraction profile.
+// It never opens or converts the source document and never writes extraction.
+func Read(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, workspace *os.Root) (providers.Document, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.Document{}, err
+	}
+	profile, err := extractionProfile(extractor, sourceInfo)
+	if err != nil {
+		return providers.Document{}, err
+	}
+	data, err := workspace.ReadFile("extraction.json")
+	if err != nil {
+		return providers.Document{}, fmt.Errorf("read extracted document: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return providers.Document{}, err
+	}
+	var saved extraction
+	if err := json.Unmarshal(data, &saved); err != nil {
+		return providers.Document{}, fmt.Errorf("decode extracted document: %w", err)
+	}
+	if saved.SourceHash != sourceInfo.SHA256 || saved.Profile != profile {
+		return providers.Document{}, fmt.Errorf("%w: %w", preparation.ErrInvalidArgument, errExtractionMismatch)
+	}
+	return saved.Document, nil
+}
+
+func extractionProfile(extractor preparation.DocumentExtractor, sourceInfo uploads.File) (string, error) {
+	if sourceInfo.Format == ".pdf" || sourceInfo.Format == ".docx" {
+		if extractor == nil {
+			return "", fmt.Errorf("%w: PDF/DOCX extraction is not configured", preparation.ErrInvalidArgument)
+		}
+		return extractor.ExtractionProfile(), nil
+	}
+	return "tuning-text-v1", nil
 }
 
 // Passages selects bounded, source-quoted candidates and counts excluded pieces.

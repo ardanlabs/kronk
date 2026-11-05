@@ -2086,6 +2086,64 @@ tr.selected:hover td {
     text-transform: uppercase;
 }
 
+.training-job-page {
+    display: grid;
+    gap: 20px;
+}
+
+.training-job-page .fine-page-header,
+.training-job-page .fine-run-heading {
+    flex-wrap: wrap;
+}
+
+.training-job-page h3 {
+    overflow-wrap: anywhere;
+}
+
+.training-evaluation {
+    overflow-wrap: anywhere;
+}
+
+.training-evaluation .fine-panel-heading {
+    flex-wrap: wrap;
+}
+
+.training-job-stages {
+    display: grid;
+    gap: 24px;
+    margin: 24px 0 0;
+    padding-left: 24px;
+}
+
+.training-job-stage {
+    min-width: 0;
+    padding-left: 12px;
+    border-left: 2px solid var(--color-gray-200);
+}
+
+.training-job-stage .fine-panel-heading {
+    margin-bottom: 12px;
+}
+
+.training-job-stage > .fine-review-panel {
+    margin-block: 16px;
+}
+
+.training-job-stage .fine-review-panel .fine-panel-heading {
+    flex-wrap: wrap;
+}
+
+.fine-review-panel > ul {
+    padding-left: 20px;
+    margin-bottom: 16px;
+}
+
+.training-job-caption {
+    text-align: left;
+    padding-bottom: 8px;
+    color: var(--color-gray-600);
+}
+
 .fine-empty-run {
     display: flex;
     gap: 20px;
@@ -2219,6 +2277,16 @@ tr.selected:hover td {
 }
 
 @media (max-width: 560px) {
+    .fine-run-card:has(.training-evaluation),
+    .training-evaluation {
+        padding: 12px;
+    }
+
+    .fine-run-card:has(.fine-review-panel),
+    .training-job-stage > .fine-review-panel {
+        padding: 12px;
+    }
+
     .fine-tabs .tab {
         flex: 1;
         padding-inline: 8px;

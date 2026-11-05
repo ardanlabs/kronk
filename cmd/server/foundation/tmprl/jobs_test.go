@@ -3,8 +3,12 @@ package tmprl_test
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +16,300 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"go.temporal.io/sdk/temporal"
 )
+
+func awaitCheckpointState(t *testing.T, ctx context.Context, j *tmprl.Jobs[string, []string], e tmprl.Execution, match func(tmprl.Run[string, []string]) bool) tmprl.Run[string, []string] {
+	t.Helper()
+	for {
+		run, err := j.Get(ctx, e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if match(run) {
+			return run
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("state never matched: %+v: %v", run, ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+func TestDecisionValidate(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		decision tmprl.Decision
+		valid    bool
+	}{
+		{"empty payload", tmprl.Decision{CheckpointID: "checkpoint", SubmissionID: "submission"}, true},
+		{"limits", tmprl.Decision{CheckpointID: strings.Repeat("c", 512), SubmissionID: strings.Repeat("s", 200), Payload: json.RawMessage(`"` + strings.Repeat("p", (64<<10)-2) + `"`)}, true},
+		{"missing checkpoint", tmprl.Decision{SubmissionID: "submission"}, false},
+		{"missing submission", tmprl.Decision{CheckpointID: "checkpoint"}, false},
+		{"blank submission", tmprl.Decision{CheckpointID: "checkpoint", SubmissionID: " "}, false},
+		{"checkpoint too long", tmprl.Decision{CheckpointID: strings.Repeat("c", 513), SubmissionID: "s"}, false},
+		{"submission too long", tmprl.Decision{CheckpointID: "c", SubmissionID: strings.Repeat("s", 201)}, false},
+		{"payload too long", tmprl.Decision{CheckpointID: "c", SubmissionID: "s", Payload: json.RawMessage(`"` + strings.Repeat("p", (64<<10)-1) + `"`)}, false},
+		{"malformed payload", tmprl.Decision{CheckpointID: "c", SubmissionID: "s", Payload: json.RawMessage(`{`)}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.decision.Validate()
+			if tc.valid && err != nil || !tc.valid && !errors.Is(err, tmprl.ErrInvalidArgument) {
+				t.Fatalf("Validate = %v; valid %t", err, tc.valid)
+			}
+		})
+	}
+}
+
+func TestJobsStageCheckpoint(t *testing.T) {
+	for _, action := range []string{"accept", "stop", "reservation-expired"} {
+		t.Run(action, func(t *testing.T) {
+			env := newTestEnvironment(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			handler := tmprl.StepFunc[string, []string](func(_ context.Context, in tmprl.StepContext[string, []string]) (tmprl.StepResult[[]string], error) {
+				return tmprl.StepResult[[]string]{Artifacts: append(slices.Clone(in.Request.Artifacts), in.Request.Stage)}, nil
+			})
+			j, err := tmprl.New(env.Client, tmprl.Config[string, []string]{
+				Names:     tmprl.Names{Workflow: "example.StageGate", Activity: "example.StageStep", Memo: "stage.snapshot", Query: "stage-query", Control: "stage-control"},
+				TaskQueue: env.TaskQueue, StorageRoot: t.TempDir(), StorageDirectory: "stage-gates", Log: env.Log,
+				Steps: map[string]tmprl.StepHandler[string, []string]{"work/commit": handler, "next/finish": handler},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := j.NewWorker()
+			if err := w.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(w.Stop)
+			plan := recoveryPlan()
+			first := &plan.Stages[0]
+			last := first.Steps[1]
+			first.Steps, first.WaitAfter, first.Timeout = first.Steps[:1], "next-stage", time.Second
+			plan.Stages = append(plan.Stages, tmprl.Stage{Name: "next", Timeout: time.Minute, Steps: []tmprl.Step{last}})
+			if action == "reservation-expired" {
+				plan.ReservationTimeout = 3 * time.Second
+			}
+			run, err := j.Submit(ctx, "stage-"+rand.Text(), tmprl.JobInput[string]{Job: &plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			waiting := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status == tmprl.StatusWaiting })
+			if waiting.Checkpoint.Step != "" || waiting.Stages[0].Status != tmprl.StatusCompleted || waiting.Stages[0].ClosedAt.IsZero() || !waiting.Stages[1].StartedAt.IsZero() {
+				t.Fatalf("stage boundary: %+v", waiting)
+			}
+			if err := j.Resume(ctx, run.Execution); err != nil {
+				t.Fatal(err)
+			}
+			// Advance past the completed stage's budget; waiting belongs to the
+			// reservation, not to the already-finished stage.
+			wait, stop := context.WithDeadline(ctx, waiting.Stages[0].Deadline.Add(100*time.Millisecond))
+			<-wait.Done()
+			stop()
+			still, err := j.Get(ctx, run.Execution)
+			if err != nil || still.Status != tmprl.StatusWaiting || !slices.Equal(still.Artifacts, []string{"work"}) {
+				t.Fatalf("stage wait: %+v, %v", still, err)
+			}
+			switch action {
+			case "accept":
+				_, err = j.Decide(ctx, run.Execution, tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "next"})
+			case "stop":
+				err = j.Stop(ctx, run.Execution)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := j.Wait(ctx, run.Execution)
+			if action == "accept" {
+				if err != nil || !slices.Equal(result.Artifacts, []string{"work", "next"}) {
+					t.Fatalf("continued: %+v, %v", result, err)
+				}
+			} else if err == nil || errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("expected terminal cancellation/expiry: %v", err)
+			}
+		})
+	}
+}
+
+func TestJobsCheckpoints(t *testing.T) {
+	for _, mode := range []string{"accept", "stop", "stage-expired", "reservation-expired"} {
+		t.Run(mode, func(t *testing.T) {
+			env := newTestEnvironment(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			entered, release := make(chan struct{}), make(chan struct{})
+			handler := tmprl.StepFunc[string, []string](func(ctx context.Context, in tmprl.StepContext[string, []string]) (tmprl.StepResult[[]string], error) {
+				if in.Request.Step == "commit" {
+					close(entered)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return tmprl.StepResult[[]string]{}, ctx.Err()
+					}
+				}
+				if in.Request.Request != "immutable" {
+					return tmprl.StepResult[[]string]{}, errors.New("request changed")
+				}
+				for _, decision := range in.Request.Decisions {
+					if string(decision.Payload) != `{"accepted":"sample-a"}` {
+						return tmprl.StepResult[[]string]{}, errors.New("accepted input was lost")
+					}
+				}
+				return tmprl.StepResult[[]string]{Artifacts: append(slices.Clone(in.Request.Artifacts), fmt.Sprintf("%s:%d", in.Request.Step, len(in.Request.Decisions)))}, nil
+			})
+			j, err := tmprl.New(env.Client, tmprl.Config[string, []string]{
+				Names:     tmprl.Names{Workflow: "example.Checkpoints", Activity: "example.CheckpointStep", Memo: "example.checkpoints", Query: "checkpoint-state", Control: "checkpoint-control"},
+				TaskQueue: env.TaskQueue, StorageRoot: t.TempDir(), StorageDirectory: "checkpoints", Log: env.Log,
+				Steps: map[string]tmprl.StepHandler[string, []string]{"work/commit": handler, "work/review": handler, "work/finish": handler},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := j.NewWorker()
+			if err := w.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(w.Stop)
+			plan := recoveryPlan()
+			plan.Stages[0].Steps[0].WaitAfter = "first-review"
+			review := plan.Stages[0].Steps[0]
+			review.Name, review.WaitAfter = "review", "second-review"
+			plan.Stages[0].Steps = []tmprl.Step{plan.Stages[0].Steps[0], review, plan.Stages[0].Steps[1]}
+			if mode == "stage-expired" {
+				plan.Stages[0].Timeout = 2 * time.Second
+			}
+			if mode == "reservation-expired" {
+				plan.ReservationTimeout = 2 * time.Second
+			}
+			run, err := j.Submit(ctx, "checkpoint-"+rand.Text(), tmprl.JobInput[string]{Job: &plan, Request: "immutable"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-entered:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			if mode == "accept" {
+				if _, err := j.Decide(ctx, run.Execution, tmprl.Decision{CheckpointID: "not-pending", SubmissionID: "early"}); err == nil {
+					t.Fatal("accepted a premature decision")
+				}
+				wrong, err := tmprl.New(env.Client, tmprl.Config[string, []string]{
+					Names:     tmprl.Names{Workflow: "example.Other", Activity: "other.Step", Memo: "other.memo", Query: "other-query", Control: "other-control"},
+					TaskQueue: env.TaskQueue, StorageRoot: t.TempDir(), StorageDirectory: "other", Log: env.Log,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := wrong.Decide(ctx, run.Execution, tmprl.Decision{CheckpointID: "c", SubmissionID: "s"}); !errors.Is(err, tmprl.ErrUnsupportedWorkflow) {
+					t.Fatalf("wrong workflow type: %v", err)
+				}
+			}
+			close(release)
+			waiting := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status == tmprl.StatusWaiting })
+			if waiting.Checkpoint == nil || waiting.Checkpoint.Name != "first-review" || waiting.Status.Terminal() || !slices.Equal(waiting.Artifacts, []string{"commit:0"}) || waiting.Stages[0].Steps[0].Status != tmprl.StatusCompleted || waiting.Stages[0].Steps[1].Status != tmprl.StatusQueued {
+				t.Fatalf("invalid boundary: %+v", waiting)
+			}
+			if mode != "accept" {
+				if mode == "stop" {
+					if err := j.Stop(ctx, run.Execution); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := j.Wait(ctx, run.Execution); err == nil || errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("expected terminal stop/deadline: %v", err)
+				}
+				closed, err := j.Get(ctx, run.Execution)
+				if err != nil || closed.Checkpoint != nil || !slices.Equal(closed.Artifacts, []string{"commit:0"}) || closed.Stages[0].Steps[1].Status != tmprl.StatusQueued {
+					t.Fatalf("closed boundary: %+v, %v", closed, err)
+				}
+				return
+			}
+			// A plain Resume, including a pause/resume pair, cannot release review.
+			if err := j.Pause(ctx, run.Execution); err != nil {
+				t.Fatal(err)
+			}
+			if err := j.Resume(ctx, run.Execution); err != nil {
+				t.Fatal(err)
+			}
+			// Query observes both preceding signals on this execution before assertions.
+			var live tmprl.Run[string, []string]
+			if err := tmprl.Query(ctx, env.Client, run.Execution, "checkpoint-state", &live); err != nil {
+				t.Fatal(err)
+			}
+			if live.Checkpoint == nil || live.Status != tmprl.StatusWaiting || !slices.Equal(live.Artifacts, waiting.Artifacts) {
+				t.Fatalf("resume bypassed review: %+v", live)
+			}
+			decision := tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "accept-first", Payload: json.RawMessage(`{"accepted":"sample-a"}`)}
+			bad := decision
+			bad.CheckpointID += "-stale"
+			if _, err := j.Decide(ctx, run.Execution, bad); err == nil {
+				t.Fatal("accepted stale checkpoint")
+			}
+			if err := j.Pause(ctx, run.Execution); err != nil {
+				t.Fatal(err)
+			}
+			if err := tmprl.Query(ctx, env.Client, run.Execution, "checkpoint-state", &live); err != nil {
+				t.Fatal(err)
+			}
+			var wg sync.WaitGroup
+			for range 2 {
+				wg.Go(func() {
+					receipt, err := j.Decide(ctx, run.Execution, decision)
+					if err != nil || !reflect.DeepEqual(receipt, decision) {
+						t.Errorf("receipt: %+v, %v", receipt, err)
+					}
+				})
+			}
+			wg.Wait()
+			paused := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status == tmprl.StatusPaused })
+			if paused.Checkpoint != nil || len(paused.Decisions) != 1 || !slices.Equal(paused.Artifacts, waiting.Artifacts) {
+				t.Fatalf("acceptance bypassed pause: %+v", paused)
+			}
+			bad = decision
+			bad.Payload = json.RawMessage(`{"accepted":"changed"}`)
+			if _, err := j.Decide(ctx, run.Execution, bad); err == nil {
+				t.Fatal("accepted conflicting payload")
+			}
+			bad = decision
+			bad.SubmissionID = "different"
+			if _, err := j.Decide(ctx, run.Execution, bad); err == nil {
+				t.Fatal("accepted conflicting submission")
+			}
+			if err := j.Resume(ctx, run.Execution); err != nil {
+				t.Fatal(err)
+			}
+			second := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool {
+				return s.Checkpoint != nil && s.Checkpoint.Name == "second-review"
+			})
+			if !slices.Equal(second.Artifacts, []string{"commit:0", "review:1"}) {
+				t.Fatalf("lost input or duplicated work: %+v", second)
+			}
+			if _, err := j.Decide(ctx, run.Execution, decision); err != nil {
+				t.Fatal(err)
+			}
+			if err := tmprl.Query(ctx, env.Client, run.Execution, "checkpoint-state", &live); err != nil {
+				t.Fatal(err)
+			}
+			if live.Checkpoint == nil || live.Checkpoint.ID != second.Checkpoint.ID {
+				t.Fatal("old receipt released the next checkpoint")
+			}
+			canceled, stop := context.WithCancel(ctx)
+			stop()
+			decision.CheckpointID, decision.SubmissionID = second.Checkpoint.ID, "accept-second"
+			if _, err := j.Decide(canceled, run.Execution, decision); err == nil {
+				t.Fatal("canceled caller unexpectedly succeeded")
+			}
+			if _, err := j.Decide(ctx, run.Execution, decision); err != nil {
+				t.Fatal(err)
+			}
+			result, err := j.Wait(ctx, run.Execution)
+			if err != nil || result.Request != "immutable" || result.Status != tmprl.StatusCompleted || len(result.Decisions) != 2 || result.Checkpoint != nil || !slices.Equal(result.Artifacts, []string{"commit:0", "review:1", "finish:2"}) {
+				t.Fatalf("completed: %+v, %v", result, err)
+			}
+		})
+	}
+}
 
 // TestJobsLifecycle exercises the production runner against real Temporal with
 // controlled handlers. Each job has two stages with two steps apiece.

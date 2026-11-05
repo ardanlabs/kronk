@@ -12,7 +12,7 @@ import (
 
 // KMSCompleter requests structured output through the host's KMS model pool.
 type KMSCompleter struct {
-	chat func(context.Context, string, model.D) (model.ChatResponse, error)
+	chat func(context.Context, string, model.D) (model.ChatResponse, int, error)
 }
 
 // NewKMSCompleter constructs a model-pool-backed structured completer.
@@ -23,12 +23,13 @@ func NewKMSCompleter(modelPool *pool.Pool) (*KMSCompleter, error) {
 	}
 
 	c := KMSCompleter{
-		chat: func(ctx context.Context, modelID string, request model.D) (model.ChatResponse, error) {
+		chat: func(ctx context.Context, modelID string, request model.D) (model.ChatResponse, int, error) {
 			krn, err := modelPool.AquireModel(ctx, modelID)
 			if err != nil {
-				return model.ChatResponse{}, fmt.Errorf("acquire completion model: %w", err)
+				return model.ChatResponse{}, 0, fmt.Errorf("acquire completion model: %w", err)
 			}
-			return krn.Chat(ctx, request)
+			response, err := krn.Chat(ctx, request)
+			return response, krn.ModelConfig().ContextWindow(), err
 		},
 	}
 	return &c, nil
@@ -47,17 +48,19 @@ func (c KMSCompleter) Complete(ctx context.Context, request CompletionRequest) (
 		"temperature":           0.2,
 		"top_p":                 0.9,
 		"seed":                  request.Seed,
-		"enable_thinking":       false,
-		"response_format": model.D{
+		"enable_thinking":       request.EnableThinking,
+	}
+	if request.ResponseSchema != nil {
+		chatRequest["response_format"] = model.D{
 			"type": "json_schema",
 			"json_schema": model.D{
 				"name":   "structured_output",
 				"strict": true,
 				"schema": request.ResponseSchema,
 			},
-		},
+		}
 	}
-	response, err := c.chat(ctx, request.Model, chatRequest)
+	response, contextWindow, err := c.chat(ctx, request.Model, chatRequest)
 	if err != nil {
 		return Completion{}, fmt.Errorf("complete model request: %w", err)
 	}
@@ -83,6 +86,14 @@ func (c KMSCompleter) Complete(ctx context.Context, request CompletionRequest) (
 	}
 	if completion.Content == "" {
 		return completion, fmt.Errorf("complete model request: model returned empty content")
+	}
+	if request.EnableThinking {
+		switch {
+		case response.Usage == nil:
+			return completion, fmt.Errorf("complete model request: missing usage for context-budget validation")
+		case response.Usage.PromptTokens > contextWindow-request.MaxTokens:
+			return completion, fmt.Errorf("complete model request: insufficient context budget: prompt=%d, reserved_output=%d, context_window=%d", response.Usage.PromptTokens, request.MaxTokens, contextWindow)
+		}
 	}
 	return completion, nil
 }

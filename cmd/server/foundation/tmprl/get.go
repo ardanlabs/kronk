@@ -61,6 +61,12 @@ func (j *Jobs[R, A]) Get(ctx context.Context, e Execution) (Run[R, A], error) {
 			return Run[R, A]{}, err
 		}
 		switch event.GetEventType() {
+		case enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
+			if payload := event.GetWorkflowPropertiesModifiedEventAttributes().GetUpsertedMemo().GetFields()[j.cfg.Names.Memo]; payload != nil {
+				if err := converter.GetDefaultDataConverter().FromPayload(payload, &result); err != nil {
+					return Run[R, A]{}, err
+				}
+			}
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
 			var input JobInput[R]
 			if err := converter.GetDefaultDataConverter().FromPayloads(event.GetWorkflowExecutionStartedEventAttributes().GetInput(), &input); err != nil {

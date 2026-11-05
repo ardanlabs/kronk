@@ -1,8 +1,10 @@
 package tmprl
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -42,6 +44,7 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 	log.Info("job started", "job", input.Job.Name, "stages", len(state.Stages), "reservation_timeout", input.Job.ReservationTimeout)
 	defer func() {
 		state.ClosedAt = workflow.Now(ctx)
+		state.Checkpoint = nil
 		if err != nil {
 			state.Status = StatusFailed
 			if ctx.Err() != nil {
@@ -68,6 +71,20 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 	defer cancelWork()
 	paused, reserved := false, false
 	var controlErr error
+	checkpointEnabled := false
+	for _, stage := range input.Job.Stages {
+		checkpointEnabled = checkpointEnabled || stage.WaitAfter != ""
+		for _, step := range stage.Steps {
+			checkpointEnabled = checkpointEnabled || step.WaitAfter != ""
+		}
+	}
+	if checkpointEnabled {
+		if err := workflow.SetUpdateHandler(work, names.Control+".decide", func(ctx workflow.Context, decision Decision) (Decision, error) {
+			return acceptCheckpointDecision(ctx, names, &state, &paused, decision)
+		}); err != nil {
+			return Run[R, A]{}, err
+		}
+	}
 	controls := workflow.GetSignalChannel(work, names.Control)
 	workflow.Go(work, func(ctx workflow.Context) {
 		for {
@@ -82,12 +99,17 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 				}
 				paused = true
 				state.Status = StatusPauseRequested
+				if state.Checkpoint != nil {
+					state.Status = StatusWaiting
+				}
 			case "resume":
 				if !paused {
 					continue
 				}
 				paused = false
 				switch {
+				case state.Checkpoint != nil:
+					state.Status = StatusWaiting
 				case reserved:
 					state.Status = StatusRunning
 				case state.SessionAttempt > 1:
@@ -177,11 +199,63 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 		}
 		state.Error = "worker lost; recovering unfinished step"
 		stage := &state.Stages[stageIndex]
-		stage.Status = StatusRecovering
-		stage.Steps[stepIndex].Status, stage.Steps[stepIndex].LastError = StatusRecovering, state.Error
+		if stage.Status != StatusCompleted {
+			stage.Status = StatusRecovering
+		}
+		if stepIndex < len(stage.Steps) && stage.Steps[stepIndex].Status != StatusCompleted {
+			stage.Steps[stepIndex].Status, stage.Steps[stepIndex].LastError = StatusRecovering, state.Error
+		}
 		log.Warn("job worker lost", "stage", state.Stage, "step", state.Step, "session_attempt", attempt)
 	}
 	return Run[R, A]{}, fmt.Errorf("job worker recovery exhausted")
+}
+
+func acceptCheckpointDecision[R, A any](ctx workflow.Context, names Names, state *Run[R, A], paused *bool, decision Decision) (Decision, error) {
+	if err := decision.Validate(); err != nil {
+		return Decision{}, err
+	}
+	for _, accepted := range state.Decisions {
+		if accepted.CheckpointID == decision.CheckpointID {
+			if accepted.SubmissionID == decision.SubmissionID && bytes.Equal(accepted.Payload, decision.Payload) {
+				return accepted, nil
+			}
+			return Decision{}, fmt.Errorf("%w: checkpoint decision conflicts with its accepted receipt", ErrInvalidArgument)
+		}
+	}
+	if state.Checkpoint == nil || state.Checkpoint.ID != decision.CheckpointID || state.Status.Terminal() {
+		return Decision{}, fmt.Errorf("%w: decision does not match a pending checkpoint", ErrInvalidArgument)
+	}
+	previous := *state
+	decision.Payload = bytes.Clone(decision.Payload)
+	state.Decisions = append(slices.Clone(state.Decisions), decision)
+	state.Checkpoint = nil
+	state.Status = StatusRunning
+	if *paused {
+		state.Status = StatusPaused
+	}
+	if err := PersistRun(ctx, names.Memo, state); err != nil {
+		*state = previous
+		return Decision{}, err
+	}
+	return decision, nil
+}
+
+func awaitCheckpoint[R, A any](ctx workflow.Context, names Names, state *Run[R, A], paused *bool, stage, step, name string) error {
+	id := state.RunID + "/" + stage + "/" + step + "/" + name
+	for _, accepted := range state.Decisions {
+		if accepted.CheckpointID == id {
+			return awaitJobResume(ctx, names, state, paused)
+		}
+	}
+	state.Checkpoint = &Checkpoint{ID: id, Name: name, Stage: stage, Step: step}
+	state.Status, state.Step, state.Error = StatusWaiting, step, ""
+	if err := PersistRun(ctx, names.Memo, state); err != nil {
+		return err
+	}
+	if err := workflow.Await(ctx, func() bool { return state.Checkpoint == nil }); err != nil {
+		return err
+	}
+	return awaitJobResume(ctx, names, state, paused)
 }
 
 func awaitJobResume[R, A any](ctx workflow.Context, names Names, state *Run[R, A], paused *bool) error {
@@ -201,6 +275,16 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 		plan := input.Job.Stages[*stageIndex]
 		stage := &state.Stages[*stageIndex]
 		state.Stage = stage.Name
+		// A completed stage awaiting authorization must not restart its steps or
+		// its deadline when the worker session is replaced.
+		if plan.WaitAfter != "" && stage.Status == StatusCompleted {
+			if err := awaitCheckpoint(ctx, names, state, paused, plan.Name, "", plan.WaitAfter); err != nil {
+				return err
+			}
+			(*stageIndex)++
+			*stepIndex = 0
+			continue
+		}
 		if stage.StartedAt.IsZero() {
 			if err := awaitJobResume(ctx, names, state, paused); err != nil {
 				return err
@@ -236,6 +320,11 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 		}
 		stage.Status, stage.ClosedAt = StatusCompleted, workflow.Now(ctx)
 		workflow.GetLogger(ctx).Info("job stage committed", "stage", stage.Name, "elapsed", stage.ClosedAt.Sub(stage.StartedAt))
+		if plan.WaitAfter != "" && !state.Status.Terminal() {
+			if err := awaitCheckpoint(ctx, names, state, paused, plan.Name, "", plan.WaitAfter); err != nil {
+				return err
+			}
+		}
 		(*stageIndex)++
 		*stepIndex = 0
 		if state.Status.Terminal() {
@@ -250,11 +339,18 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 
 func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state *Run[R, A], stage *StageState, paused *bool, index *int) error {
 	for *index < len(plan.Steps) {
+		policy := plan.Steps[*index]
+		step := &stage.Steps[*index]
+		if policy.WaitAfter != "" && step.Status == StatusCompleted {
+			if err := awaitCheckpoint(ctx, names, state, paused, plan.Name, policy.Name, policy.WaitAfter); err != nil {
+				return err
+			}
+			(*index)++
+			continue
+		}
 		if err := awaitJobResume(ctx, names, state, paused); err != nil {
 			return err
 		}
-		policy := plan.Steps[*index]
-		step := &stage.Steps[*index]
 		state.Status, state.Step, state.Error = StatusRunning, policy.Name, ""
 		step.Status = StatusRunning
 		if step.StartedAt.IsZero() {
@@ -268,7 +364,7 @@ func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state 
 			StartToCloseTimeout: policy.Timeout, HeartbeatTimeout: policy.HeartbeatTimeout, WaitForCancellation: true,
 			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: policy.Retry.MaximumAttempts, InitialInterval: policy.Retry.InitialInterval, BackoffCoefficient: policy.Retry.BackoffCoefficient, MaximumInterval: policy.Retry.MaximumInterval},
 		})
-		request := StepRequest[R, A]{Execution: state.Execution, Key: state.RunID + "/" + plan.Name + "/" + policy.Name, Stage: plan.Name, Step: policy.Name, Request: state.Request, Artifacts: state.Artifacts}
+		request := StepRequest[R, A]{Execution: state.Execution, Key: state.RunID + "/" + plan.Name + "/" + policy.Name, Stage: plan.Name, Step: policy.Name, Request: state.Request, Artifacts: state.Artifacts, Decisions: state.Decisions}
 		var output StepResult[A]
 		if err := workflow.ExecuteActivity(stepCtx, names.Activity, request).Get(ctx, &output); err != nil {
 			return err
@@ -276,11 +372,17 @@ func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state 
 		state.Artifacts = output.Artifacts
 		step.Status, step.Attempt, step.ClosedAt = StatusCompleted, output.Attempt, workflow.Now(ctx)
 		workflow.GetLogger(ctx).Info("job step committed", "stage", plan.Name, "step", policy.Name, "attempt", output.Attempt, "elapsed", step.ClosedAt.Sub(step.StartedAt), "outcome", output.Status)
-		(*index)++
 		if output.Status != "" {
+			(*index)++
 			state.Status = output.Status
 			return nil
 		}
+		if policy.WaitAfter != "" {
+			if err := awaitCheckpoint(ctx, names, state, paused, plan.Name, policy.Name, policy.WaitAfter); err != nil {
+				return err
+			}
+		}
+		(*index)++
 		if err := PersistRun(ctx, names.Memo, state); err != nil {
 			return err
 		}

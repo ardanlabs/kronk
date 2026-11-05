@@ -16,9 +16,13 @@ export const PARAM_TOOLTIPS = {
   summarySequence: 'Attention-only, hybrid attention/recurrent, or recurrent sequence processing, independently of Dense or MoE parameter activation.',
 
   // Fine-tuning
-  fineTuningSource: 'A PDF or DOCX document containing the source material used to create grounded training examples. Files can be up to 100 MiB.',
+  trainingWorkflowID: 'Workflow identifier returned when a training job is submitted. Use it together with the run ID to retrieve that exact execution.',
+  trainingRunID: 'Run identifier returned when a training job is submitted. This selects one execution of the workflow, not its latest run.',
+  fineTuningInputKind: 'Start with a source document to prepare examples, or use an already prepared JSONL dataset to enter training directly.',
+  fineTuningSource: 'A PDF, DOCX, Markdown, or text document containing the source material used to create grounded training examples. The server enforces the upload size limit.',
   fineTuningDataset: 'A training-ready JSONL file containing validated prompt, target, and evidence records. Use this directly when dataset preparation is already complete.',
   fineTuningGoal: 'The kind of behavior the prepared examples should teach: answering questions, assigning categories, predicting numbers, or generating text.',
+  fineTuningPreparationModel: 'The installed catalog chat model used to generate and verify preparation examples. It does not select the base model for adapter training.',
   fineTuningModel: 'The installed model used to generate and verify preparation examples, and later selected as the base model for fine-tuning.',
   fineTuningPreviewCount: 'Number of examples generated for review before building the complete training dataset. Choose between 1 and 5.',
   fineTuningDatasetInstructions: 'Instructions that guide which source-grounded examples are created, including their audience, topic emphasis, question style, and answer detail.',

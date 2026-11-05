@@ -23,14 +23,16 @@ type Job struct {
 
 // Stage contains the ordered steps executed within its timeout.
 type Stage struct {
-	Name    string        `json:"name" yaml:"name"`
-	Timeout time.Duration `json:"timeout" yaml:"timeout"`
-	Steps   []Step        `json:"steps" yaml:"steps"`
+	Name      string        `json:"name" yaml:"name"`
+	WaitAfter string        `json:"wait_after,omitzero" yaml:"wait_after,omitempty"`
+	Timeout   time.Duration `json:"timeout" yaml:"timeout"`
+	Steps     []Step        `json:"steps" yaml:"steps"`
 }
 
 // Step contains one operation's timeout, heartbeat, and retry policies.
 type Step struct {
 	Name             string        `json:"name" yaml:"name"`
+	WaitAfter        string        `json:"wait_after,omitzero" yaml:"wait_after,omitempty"`
 	Timeout          time.Duration `json:"timeout" yaml:"timeout"`
 	HeartbeatTimeout time.Duration `json:"heartbeat_timeout" yaml:"heartbeat_timeout"`
 	Retry            Retry         `json:"retry" yaml:"retry"`
@@ -92,6 +94,7 @@ func (j Job) Validate() error {
 	}
 
 	names := make(map[string]bool, len(j.Stages))
+	checkpoints := make(map[string]bool)
 	for i, stage := range j.Stages {
 		if !ValidName(stage.Name) {
 			return fmt.Errorf("stages[%d].name: invalid name", i)
@@ -106,6 +109,12 @@ func (j Job) Validate() error {
 		if len(stage.Steps) == 0 {
 			return fmt.Errorf("stage %q steps: must not be empty", stage.Name)
 		}
+		if stage.WaitAfter != "" {
+			if !ValidName(stage.WaitAfter) || checkpoints[stage.WaitAfter] || i == len(j.Stages)-1 {
+				return fmt.Errorf("stage %q: invalid, duplicate, or final-stage checkpoint %q", stage.Name, stage.WaitAfter)
+			}
+			checkpoints[stage.WaitAfter] = true
+		}
 
 		steps := make(map[string]bool, len(stage.Steps))
 		for k, step := range stage.Steps {
@@ -116,6 +125,12 @@ func (j Job) Validate() error {
 				return fmt.Errorf("stage %q steps[%d].name: duplicate %q", stage.Name, k, step.Name)
 			}
 			steps[step.Name] = true
+			if step.WaitAfter != "" {
+				if !ValidName(step.WaitAfter) || checkpoints[step.WaitAfter] {
+					return fmt.Errorf("stage %q step %q: invalid or duplicate checkpoint %q", stage.Name, step.Name, step.WaitAfter)
+				}
+				checkpoints[step.WaitAfter] = true
+			}
 			if err := validateStep(step); err != nil {
 				return fmt.Errorf("stage %q step %q: %w", stage.Name, step.Name, err)
 			}

@@ -36,6 +36,40 @@ Adding/removing stages or steps changes only the application definition and
 its handler registration. The runner does not dispatch on application names.
 Keep implementations available while submitted plans still reference them.
 
+## Decisions after steps and stages
+
+A step can declare `wait_after: review` (a unique safe name within the job).
+After that step commits, the run exposes `StatusWaiting` and a `Checkpoint`
+containing its exact run-bound ID, name, stage and step. The next step does not
+start until `Jobs.Decide(ctx, execution, decision)` accepts input for that ID.
+`Resume` alone cannot release this gate. Accepting a decision while manually
+paused preserves the pause until `Resume`.
+
+A non-final stage can also declare `wait_after`. Its checkpoint has an empty
+step name, and the stage is already completed with its deadline stopped before
+the wait begins. Acceptance authorizes the next stage; it does not rerun the
+completed stage. Checkpoint names must be unique across both steps and stages.
+
+`Decision` contains `CheckpointID`, a caller-chosen `SubmissionID`, and optional
+JSON `Payload`. IDs are limited to 512 and 200 bytes respectively; the payload
+is limited to 64 KiB. The foundation validates the envelope only. Applications
+must validate reviewed examples and other business rules before submitting.
+The original job request remains immutable; later steps receive accepted input
+through `StepRequest.Decisions`. Applications opt in through their captured job
+definitions and expose their own business-validated decision methods.
+
+`Decide` waits for a durable acceptance receipt, not subsequent work completion.
+On an ambiguous timeout, retry the same submission ID and exact payload bytes,
+or inspect `Get`. Identical retries return the saved receipt; conflicting input
+is rejected. An old receipt cannot release a different checkpoint. Closed runs
+cannot accept updates; use `Get` to read their retained receipts.
+
+Both gates survive replay and worker replacement without repeating committed
+steps. Waiting retains the worker reservation and consumes its budget. A step
+gate also consumes the active stage budget; a gate after a completed stage does
+not. Stop or budget expiry clears the pending checkpoint but preserves committed
+artifacts and accepted receipts. Foundation has no training-specific transitions.
+
 ## Infrastructure guarantees and limits
 
 - One session reserves one worker for the entire job. Stages and steps run

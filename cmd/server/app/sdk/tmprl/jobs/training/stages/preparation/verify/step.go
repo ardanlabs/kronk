@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/internal/checkpoint"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
@@ -49,6 +50,14 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}
+	var documentContext string
+	if state.Verified < len(state.Records) {
+		document, err := extract.Read(ctx, p.Extractor, p.Source, input.Workspace)
+		if err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+		documentContext = document.Markdown
+	}
 	report := func() {
 		if input.Publish != nil {
 			input.Publish(tmprl.Progress{Completed: state.Verified, Total: len(state.Records), Message: "Verifying prepared records"})
@@ -61,8 +70,8 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		}
 		end := min(state.Verified+5, len(state.Records))
 		// Reviewed examples and held-out questions retain independent batches.
-		if state.Verified < len(p.Input.Request.ReviewedRecords) {
-			end = min(end, len(p.Input.Request.ReviewedRecords))
+		if state.Verified < state.ReviewedCount {
+			end = min(end, state.ReviewedCount)
 		} else {
 			for i := state.Verified; i < end; i++ {
 				if state.Records[i].ValidationPrompt || state.Records[i].IndependentPrompt {
@@ -71,7 +80,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 				}
 			}
 		}
-		warnings, usage, err := Run(ctx, p.Completer, p.Input.Request, state.Records[state.Verified:end])
+		warnings, usage, err := Run(ctx, p.Completer, p.Input.Request, documentContext, state.Records[state.Verified:end])
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}

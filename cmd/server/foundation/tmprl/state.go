@@ -1,6 +1,7 @@
 package tmprl
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -16,6 +17,7 @@ const (
 	StatusRecovering     Status = "recovering"
 	StatusPauseRequested Status = "pause_requested"
 	StatusPaused         Status = "paused"
+	StatusWaiting        Status = "waiting"
 	StatusCompleted      Status = "completed"
 	StatusStopped        Status = "stopped"
 	StatusFailed         Status = "failed"
@@ -25,7 +27,7 @@ const (
 // own terminal outcomes; lifecycle names are reserved by the runner.
 func (s Status) Terminal() bool {
 	switch s {
-	case "", StatusQueued, StatusRunning, StatusRecovering, StatusPauseRequested, StatusPaused:
+	case "", StatusQueued, StatusRunning, StatusRecovering, StatusPauseRequested, StatusPaused, StatusWaiting:
 		return false
 	default:
 		return true
@@ -48,6 +50,8 @@ type Run[R, A any] struct {
 	Stage               StageName    `json:"stage,omitzero"`
 	Step                string       `json:"step,omitzero"`
 	Artifacts           A            `json:"artifacts"`
+	Checkpoint          *Checkpoint  `json:"checkpoint,omitzero"`
+	Decisions           []Decision   `json:"decisions,omitzero"`
 	Progress            *Progress    `json:"progress,omitzero"`
 	StartedAt           time.Time    `json:"started_at"`
 	ClosedAt            time.Time    `json:"closed_at,omitzero"`
@@ -97,11 +101,28 @@ type Progress struct {
 // StepRequest carries a stable idempotency key and the incoming artifact set.
 type StepRequest[R, A any] struct {
 	Execution
-	Key       string `json:"key"`
-	Stage     string `json:"stage"`
-	Step      string `json:"step"`
-	Request   R      `json:"request"`
-	Artifacts A      `json:"artifacts"`
+	Key       string     `json:"key"`
+	Stage     string     `json:"stage"`
+	Step      string     `json:"step"`
+	Request   R          `json:"request"`
+	Artifacts A          `json:"artifacts"`
+	Decisions []Decision `json:"decisions,omitzero"`
+}
+
+// Checkpoint identifies a required decision after a committed step.
+type Checkpoint struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Stage string `json:"stage"`
+	Step  string `json:"step"`
+}
+
+// Decision carries application-validated input separately from the job request.
+// Retry the same submission ID and payload to retrieve its acceptance receipt.
+type Decision struct {
+	CheckpointID string          `json:"checkpoint_id"`
+	SubmissionID string          `json:"submission_id"`
+	Payload      json.RawMessage `json:"payload,omitzero"`
 }
 
 // StepResult commits artifacts and optionally ends the job with a terminal outcome.

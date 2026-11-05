@@ -54,20 +54,24 @@ import type {
   EfficiencyResponse,
   DecisionRequest,
   DecisionResponse,
-  FineTuningBuildRequest,
-  FineTuningBuildResponse,
-  FineTuningDatasetResponse,
-  FineTuningHistoryResponse,
-  FineTuningPreparationProgress,
-  FineTuningPreparationModelsResponse,
-  FineTuningPreviewRequest,
-  FineTuningPreviewResponse,
-  FineTuningRecipeResponse,
-  FineTuningRun,
-  FineTuningTrainingConfig,
+  NewTrainingRun,
+  TrainingUpload,
+  TrainingRun,
+  TrainingEvaluation,
+  TrainingRunsResponse,
+  ContinueTrainingPreview,
+  StartPreparedTraining,
+  TrainingDecisionReceipt,
 } from '../types';
 
 export const SESSION_EXPIRED_EVENT = 'kronk:session-expired';
+
+export class ApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 
 class ApiService {
   private baseUrl = '/v1';
@@ -113,7 +117,7 @@ class ApiService {
     });
 
     if (!response.ok) {
-      throw new Error(await this.parseErrorMessage(response));
+      throw new ApiError(response.status, await this.parseErrorMessage(response));
     }
 
     if (response.status === 204) {
@@ -1280,15 +1284,13 @@ class ApiService {
     });
   }
 
-  // ── Fine-tuning app ──
+  // ── Training app ──
 
-  async uploadFineTuningDataset(file: File | File[], signal?: AbortSignal): Promise<FineTuningDatasetResponse> {
+  async uploadTrainingDataset(file: File, signal?: AbortSignal): Promise<TrainingUpload> {
     const form = new FormData();
-    const files = Array.isArray(file) ? file : [file];
-    const field = Array.isArray(file) ? 'files' : 'file';
-    files.forEach((item) => form.append(field, item, item.name));
+    form.append('file', file, file.name);
 
-    const response = await this.fetch(`${this.baseUrl}/fine-tuning/datasets`, {
+    const response = await this.fetch(`${this.baseUrl}/training/uploads`, {
       method: 'POST',
       body: form,
       signal,
@@ -1299,61 +1301,62 @@ class ApiService {
     return response.json();
   }
 
-  async fineTuningPreparationModels(): Promise<FineTuningPreparationModelsResponse> {
-    return this.request<FineTuningPreparationModelsResponse>('/fine-tuning/prepare/models');
-  }
-
-  async fineTuningRecipe(modelID: string): Promise<FineTuningRecipeResponse> {
-    return this.request<FineTuningRecipeResponse>(`/fine-tuning/recipe?model_id=${encodeURIComponent(modelID)}`);
-  }
-
-  async currentFineTuningPreparation(): Promise<FineTuningPreparationProgress> {
-    return this.request<FineTuningPreparationProgress>('/fine-tuning/prepare/current');
-  }
-
-  async stopFineTuningPreparation(): Promise<void> {
-    await this.request('/fine-tuning/prepare/current/stop', { method: 'POST' });
-  }
-
-  async previewFineTuningDataset(request: FineTuningPreviewRequest, signal?: AbortSignal): Promise<FineTuningPreviewResponse> {
-    return this.request<FineTuningPreviewResponse>('/fine-tuning/prepare/preview', {
+  async startTrainingRun(request: NewTrainingRun): Promise<TrainingRun> {
+    return this.request<TrainingRun>('/training/runs', {
       method: 'POST',
       body: JSON.stringify(request),
-      signal,
     });
   }
 
-  async buildFineTuningDataset(request: FineTuningBuildRequest, signal?: AbortSignal): Promise<FineTuningBuildResponse> {
-    return this.request<FineTuningBuildResponse>('/fine-tuning/prepare/build', {
+  async continueTrainingPreview(workflowID: string, runID: string, review: ContinueTrainingPreview): Promise<TrainingDecisionReceipt> {
+    return this.request<TrainingDecisionReceipt>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/preview/continue`, {
+      method: 'POST',
+      body: JSON.stringify(review),
+      signal: AbortSignal.timeout(30_000),
+    });
+  }
+
+  async startPreparedTraining(workflowID: string, runID: string, request: StartPreparedTraining): Promise<TrainingDecisionReceipt> {
+    return this.request<TrainingDecisionReceipt>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/start-training`, {
       method: 'POST',
       body: JSON.stringify(request),
+      signal: AbortSignal.timeout(30_000),
+    });
+  }
+
+  async trainingRuns(nextPageToken = '', signal?: AbortSignal, since = ''): Promise<TrainingRunsResponse> {
+    const query = new URLSearchParams();
+    if (nextPageToken) query.set('next_page_token', nextPageToken);
+    if (since) query.set('since', since);
+    return this.request<TrainingRunsResponse>(`/training/runs${query.size ? `?${query}` : ''}`, {
       signal,
+      cache: 'no-store',
     });
   }
 
-  async startFineTuningRun(datasetID: string, modelID: string, training: FineTuningTrainingConfig): Promise<FineTuningRun> {
-    return this.request<FineTuningRun>('/fine-tuning/runs', {
-      method: 'POST',
-      body: JSON.stringify({ dataset_id: datasetID, model_id: modelID, ...training }),
+  async trainingRun(workflowID: string, runID: string, signal?: AbortSignal): Promise<TrainingRun> {
+    return this.request<TrainingRun>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}`, {
+      signal,
+      cache: 'no-store',
     });
   }
 
-  async currentFineTuningRun(): Promise<FineTuningRun> {
-    return this.request<FineTuningRun>('/fine-tuning/runs/current');
-  }
-
-  async fineTuningHistory(): Promise<FineTuningHistoryResponse> {
-    return this.request<FineTuningHistoryResponse>('/fine-tuning/runs');
-  }
-
-  async resumeFineTuningRun(id: string): Promise<FineTuningRun> {
-    return this.request<FineTuningRun>(`/fine-tuning/runs/${encodeURIComponent(id)}/resume`, {
-      method: 'POST',
+  async trainingEvaluation(workflowID: string, runID: string, signal?: AbortSignal): Promise<TrainingEvaluation> {
+    return this.request<TrainingEvaluation>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/evaluation`, {
+      signal,
+      cache: 'no-store',
     });
   }
 
-  async stopFineTuningRun(): Promise<void> {
-    await this.request('/fine-tuning/runs/current/stop', { method: 'POST' });
+  async downloadTrainingAdapter(workflowID: string, runID: string, signal?: AbortSignal): Promise<Blob> {
+    const response = await this.fetch(`${this.baseUrl}/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/adapter`, {
+      signal,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      throw new ApiError(response.status, await this.parseErrorMessage(response));
+    }
+    return response.blob();
   }
 
 }

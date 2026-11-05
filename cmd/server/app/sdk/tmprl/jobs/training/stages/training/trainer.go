@@ -58,7 +58,7 @@ func computationJob(job TrainingJob) providers.TrainingJob {
 	}
 	return providers.TrainingJob{
 		ModelID: job.ModelID, Model: job.Model, Workdir: job.Workdir,
-		Training: providers.Training(job.Training), PredictionTokens: 192,
+		Training: providers.Training(job.Training), PredictionTokens: 512,
 		Dataset: providers.TrainingDataset{
 			Train: records(job.Dataset.Train), Validation: records(job.Dataset.Validation), Test: test,
 		},

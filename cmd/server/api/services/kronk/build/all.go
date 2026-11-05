@@ -8,7 +8,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/decisionapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/downapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/embedapp"
-	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/imageapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/playgroundapp"
@@ -16,23 +15,28 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/respapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/tokenapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/trainapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
 
-// Routes constructs the all value which provides the implementation of
-// of RouteAdder for specifying what routes to bind to this instance.
-func Routes(fineConfigs ...fineapp.Config) all {
-	var fineConfig fineapp.Config
-	if len(fineConfigs) > 0 {
-		fineConfig = fineConfigs[0]
+// Config supplies host-owned optional training capabilities.
+type Config struct {
+	Training trainapp.Config
+}
+
+// Routes constructs the RouteAdder for this instance.
+func Routes(configs ...Config) all {
+	var cfg Config
+	if len(configs) > 0 {
+		cfg = configs[0]
 	}
 
-	return all{fineConfig: fineConfig}
+	return all{cfg: cfg}
 }
 
 type all struct {
-	fineConfig fineapp.Config
+	cfg Config
 }
 
 // Add implements the RouterAdder interface.
@@ -42,12 +46,11 @@ func (routes all) Add(app *web.App, cfg mux.Config) {
 		Log:   cfg.Log,
 	})
 
-	fineConfig := routes.fineConfig
-	fineConfig.AuthClient = cfg.AuthClient
-	fineConfig.Models = cfg.Models
-	fineConfig.PreparationModels = cfg.Models
-	fineConfig.AuthorizationMode = cfg.AuthorizationMode
-	fineapp.Routes(app, fineConfig)
+	if trainConfig := routes.cfg.Training; trainConfig.Job != nil {
+		trainConfig.AuthClient = cfg.AuthClient
+		trainConfig.AuthorizationMode = cfg.AuthorizationMode
+		trainapp.Routes(app, trainConfig)
+	}
 
 	toolapp.Routes(app, toolapp.Config{
 		Log:               cfg.Log,

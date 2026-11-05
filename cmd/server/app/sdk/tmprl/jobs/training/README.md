@@ -12,7 +12,7 @@ as a reference, not as a dependency or an alternative execution path in this job
 | `input.go` | Nonretryable input and step error helpers |
 | `job.yaml` | Embedded ordered stages, steps, deadlines and retry policies |
 | `foundation/tmprl/uploads` | Generic confined upload storage, metadata and integrity checks |
-| `stages/preparation/` | Preparation contracts; extract, generate and verify steps |
+| `stages/preparation/` | Preparation contracts; extract, preview, generate and verify steps |
 | `stages/training/` | Record/trainer contracts, split policy; split, train, evaluate and publish steps |
 | `foundation/tmprl/providers` | In-process KMS completion, Docling conversion, and GoMLX computation |
 | `stages/training/trainer.go` | Stage-to-provider translation, protected-answer isolation and prediction token budget |
@@ -61,11 +61,46 @@ There are no stage-specific provider subpackages or compatibility aliases.
 - Read deliverables with `job.Evaluation` and `job.OpenAdapter`.
 
 Select exactly one input: `Request.Prepare` for an imported document, or
-`Request.DatasetID` for prepared JSONL. Documents run both stages; prepared JSONL
-skips preparation. This job does not depend on a standalone preparation workflow.
+`Request.DatasetID` for prepared JSONL. Documents enter Preparation first; prepared
+JSONL skips preparation. This job does not depend on a standalone preparation workflow.
 The validated request and effective definition are captured in Temporal input.
 Each submission parses a fresh copy of the embedded YAML, so returned snapshots
 cannot mutate future execution plans.
+
+## Document review and training authorization
+
+Preparation has four ordered steps: Extract → Preview → Generate → Verify.
+Preview reads the committed extraction, creates up to three examples, and stays
+at the `preview-review` checkpoint for user review. Missing or mismatched
+extraction fails rather than reopening the source. Review and Continue belong to
+Preview; they are not additional stages or steps.
+
+Read `Run.Artifacts.Preview` and the exact `Run.Checkpoint.ID` through `Jobs().Get`.
+Submit edited records in `preparation.Review` as the `Decision.Payload` to
+`Job.ContinuePreview`. Only prompts and targets may change: example count, order,
+evidence and source associations are retained. The SDK normalizes and validates
+the records, marks them user-approved, and recomputes fact identities. This input
+does not modify the original request. New document submissions must not supply
+`PreparationRequest.ReviewedRecords` up front.
+
+Continue releases Generate, not Training. Generate seeds the accepted examples
+once, excludes their passages from further generation, and resumes committed
+batches after interruption. Verify checks the complete dataset, including edited
+examples, before publishing it. Acceptance of edits is not a claim that their
+content has passed model verification.
+
+When Preparation finishes, its stage is completed and the same job waits at
+`start-training`. `Job.StartTraining` accepts a payload-free decision only for
+that pending checkpoint and a published, training-ready dataset. Training never
+starts automatically for document input. Identical retries of either public
+decision method return the retained receipt, even after the job closes;
+conflicting submissions fail. An old Preview receipt cannot release Training.
+
+Manual Pause remains independent of review: Continue while paused accepts the
+records but does not resume work. Waiting for Preview counts toward Preparation's
+24-hour budget. Waiting after completed Preparation does not restart its budget;
+both waits retain the worker and count toward the 168-hour reservation budget.
+These SDK controls still need application endpoints and BUI wiring.
 
 Each leaf step has `Step.Name` and `Step.Execute` in `step.go`. To add an operation,
 implement the appropriate stage contract, register it in `training.go`, and add it
@@ -83,7 +118,9 @@ deadlines; cancellation is cooperative. Incomplete provider work can repeat on r
 
 The public API tests run the embedded plan and real steps against Temporal with
 controlled computation. They cover document-to-adapter execution, prepared input,
-retry, permanent failure, evaluation rejection and protected test-data isolation.
+Preview edits and decision retries/conflicts, explicit Training authorization,
+interrupted generation without duplicate accepted records, permanent failure,
+evaluation rejection and protected test-data isolation.
 Foundation's own tests cover the reusable controls, deadlines and recovery.
 Local `_test.go` helpers start or reuse the static Docker container
 `moxie-tmprl-test`, retain it after tests, and print buffered application/Temporal
