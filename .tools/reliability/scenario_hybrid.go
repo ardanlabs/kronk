@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 )
@@ -17,7 +18,7 @@ func runHybridState(rc *runContext) scenarioResult {
 	}
 	result.Details["loaded_model"] = loaded
 	if loaded.Slots != 1 {
-		appendFailure(&result.Failures, "selected hybrid model must have exactly one slot; got %d", loaded.Slots)
+		appendFailure(&result.Failures, "selected text-state model must have exactly one slot; got %d", loaded.Slots)
 	}
 	engine, err := rc.engine(model)
 	if err != nil {
@@ -32,7 +33,33 @@ func runHybridState(rc *runContext) scenarioResult {
 	if len(engine.Slots) != 1 {
 		appendFailure(&result.Failures, "scheduler reports %d slots, want 1", len(engine.Slots))
 	}
+	if len(result.Failures) > 0 {
+		return result
+	}
+	cycles := make([]scenarioResult, 0, rc.cfg.RecoveryCycles)
+	for cycle := range rc.cfg.RecoveryCycles {
+		rc.artifacts.logf("text-state recovery cycle %d/%d", cycle+1, rc.cfg.RecoveryCycles)
+		current := runHybridStateCycle(rc, model, engine)
+		current.Name, current.Status = fmt.Sprintf("cycle-%d", cycle+1), "PASS"
+		if len(current.Failures) > 0 {
+			current.Status = "FAIL"
+		}
+		cycles = append(cycles, current)
+		for _, failure := range current.Failures {
+			appendFailure(&result.Failures, "cycle %d: %s", cycle+1, failure)
+		}
+		if rc.cfg.RecoveryCycles == 1 {
+			maps.Copy(result.Details, current.Details)
+		}
+	}
+	if rc.cfg.RecoveryCycles > 1 {
+		result.Details["cycles"] = cycles
+	}
+	return result
+}
 
+func runHybridStateCycle(rc *runContext, model string, engine *engineDiagnostic) scenarioResult {
+	result := scenarioResult{Details: map[string]any{}}
 	runID := fmt.Sprint(time.Now().UnixNano())
 	baseMarker := "HYBRID-BASE-" + runID
 	var prompt strings.Builder
@@ -53,10 +80,10 @@ func runHybridState(rc *runContext) scenarioResult {
 	if repeatErr != nil {
 		appendFailure(&result.Failures, "exact repeat: %v", repeatErr)
 	} else {
-		if repeat.Content != cold.Content {
-			result.Failures = append(result.Failures, "exact deterministic repeat differed from cold response")
+		if strings.TrimSpace(repeat.Content) != baseMarker {
+			appendFailure(&result.Failures, "repeat response did not exactly match %s", baseMarker)
 		}
-		if repeat.Usage.PromptTokensDetails.CachedTokens <= 0 {
+		if rc.cfg.IMC == "on" && repeat.Usage.PromptTokensDetails.CachedTokens <= 0 {
 			result.Failures = append(result.Failures, "exact repeat reported no cached tokens")
 		}
 	}
@@ -74,7 +101,7 @@ func runHybridState(rc *runContext) scenarioResult {
 		if strings.TrimSpace(appended.Content) != appendMarker {
 			appendFailure(&result.Failures, "appended response did not exactly match %s", appendMarker)
 		}
-		if appended.Usage.PromptTokensDetails.CachedTokens <= 0 {
+		if rc.cfg.IMC == "on" && appended.Usage.PromptTokensDetails.CachedTokens <= 0 {
 			result.Failures = append(result.Failures, "appended turn reported no cached tokens")
 		}
 	}
@@ -93,7 +120,7 @@ func runHybridState(rc *runContext) scenarioResult {
 			"content": fmt.Sprintf("Output %s on every line and continue until the output limit. Do not output anything else.", staleMarker),
 		}},
 	}
-	cancelled, cancelErr := rc.client.stream(rc, rc.scenario, cancelBody, func(chunk chatChunk, _ time.Time) error {
+	cancelled, cancelErr := rc.stream(rc, cancelBody, func(chunk chatChunk, _ time.Time) error {
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			return errStopStream
 		}
@@ -155,7 +182,7 @@ func runHybridState(rc *runContext) scenarioResult {
 		"mode":              map[bool]string{true: "mtp", false: "target-only"}[engine.MTP],
 		"completion_tokens": completionTokens, "draft_tokens": draftTokens, "draft_coverage": coverage,
 	}
-	rc.artifacts.logf("hybrid-state: cold_cached=%d repeat_cached=%d appended_cached=%d cancelled_chars=%d recovery_chars=%d mode=%s",
+	rc.artifacts.logf("text-state: cold_cached=%d repeat_cached=%d appended_cached=%d cancelled_chars=%d recovery_chars=%d mode=%s",
 		cold.Usage.PromptTokensDetails.CachedTokens, repeat.Usage.PromptTokensDetails.CachedTokens,
 		appended.Usage.PromptTokensDetails.CachedTokens, cancelled.ContentCharacters, recovery.Characters,
 		map[bool]string{true: "mtp", false: "target-only"}[engine.MTP])
