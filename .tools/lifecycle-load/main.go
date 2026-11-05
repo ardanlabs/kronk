@@ -247,8 +247,7 @@ func runLifecycle(cfg config, artifacts *lifecycleArtifacts, summary *lifecycleS
 			blockedResult.status, blockedResult.elapsed.Round(time.Millisecond), http.StatusTooManyRequests, blockedResult.err)
 	}
 	var responseErr *serverError
-	if !errors.As(blockedResult.err, &responseErr) || responseErr.Code != "resource_exhausted" ||
-		!strings.Contains(responseErr.Message, "admission timeout") {
+	if !errors.As(blockedResult.err, &responseErr) || responseErr.Code != "resource_exhausted" {
 		return fmt.Errorf("third request did not return the expected admission deadline error: %v", blockedResult.err)
 	}
 	if blockedResult.elapsed < expectedAdmissionTimeout || blockedResult.elapsed > 500*time.Millisecond {

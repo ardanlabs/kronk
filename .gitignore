@@ -14,6 +14,7 @@ zarf/docker/openwebui/
 .tools/adversarial/output/
 .tools/codegen-benchmark/output/
 .tools/reliability/output/
+.tools/reliability/development-findings.md
 .tools/lifecycle-load/output/
 
 # Quick-check artifacts and local archives.
@@ -32,6 +33,8 @@ zarf/docker/openwebui/
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
+!/.tools/reliability/coverage.csv
+!/.tools/reliability/coverage.md
 *.coverprofile
 profile.cov
 

@@ -1,20 +1,27 @@
 ##@ Probes and benchmarks
 
 # Consolidated batch-engine, MTP, IMC, long-context, and media reliability
-# probes. Each invocation replaces RELIABILITY_OUT with summary.json,
-# events.ndjson, and tool.log. The runner reads only bytes appended to the
-# detached server log during the invocation and retains high-value events whose
-# trace IDs match its requests. Use a unique RELIABILITY_OUT to preserve a run.
+# probes.
 #
 # Run against the current source with the shared model configuration:
 #
 #   make server-for-tools
-#   make test-load-all # Or another tool wanted
+#   make test-load-batch-text RELIABILITY_CELLS='Dense/Att/Nslot/IMC+/MTP-/img-'
 #   make kronk-server-logs  # Optional: follow the detached server log.
 #   make kronk-server-stop
 #
 # The tools validate the active model configuration but never modify it or
 # manage the server. Restart the server after editing zarf/kms/model_config.yaml.
+#
+# Select profiles and explicit single-GPU paths (or use all). Cells accept
+# whitespace-separated identities; quoted multiline lists put one cell per line.
+#   make test-load-all RELIABILITY_PROFILES=batch-text RELIABILITY_CELLS='Dense/Att/Nslot/IMC+/MTP-/img-'
+#   make test-load-batch-text RELIABILITY_CELLS='Dense/Att/Nslot/IMC+/MTP-/img-'
+# Selection resolves pressure and media execution automatically; no extra flags:
+#   make test-load-image-prefill RELIABILITY_CELLS='MoE/Hyb/Nslot/IMC+/MTP-/img+'
+# Cell 41 runs shared and forced-isolated phases; cell 57 runs oversized IMC.
+# Low-level custom investigations still accept explicit SCENARIOS and MATRIX.
+
 #
 # Further analysis with some harness: provide summary.json,
 # events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
@@ -23,8 +30,8 @@
 # failure needs deeper investigation. Each invocation replaces RELIABILITY_OUT;
 # preserve separate runs with, for example:
 #
-#   make test-load-mtp RELIABILITY_OUT=/tmp/kronk-tools/mtp
-#   make test-load-batch RELIABILITY_OUT=/tmp/kronk-tools/batch
+#   make test-load-mtp-embedded RELIABILITY_CELLS='MoE/Hyb/Nslot/IMC-/MTP-/img-' RELIABILITY_OUT=/tmp/kronk-tools/mtp
+#   make test-load-batch-text RELIABILITY_CELLS='MoE/Hyb/Nslot/IMC-/MTP-/img-' RELIABILITY_OUT=/tmp/kronk-tools/batch
 #
 # Suggested analysis prompt:
 #   Analyze MTP drafting and acceptance, IMC exact and append reuse, and batch
@@ -32,11 +39,9 @@
 #   from trace-correlated server evidence, and report failures or evidence gaps.
 
 # API-only tools server: compile current Go code without regenerating docs/BUI.
-# Preserve the tools' download/logging defaults; explicit environment values win.
+# Use the shared configuration, with normal environment/flag precedence.
 server-for-tools: ## Start a detached API server for probes
 	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/zarf/kms/model_config.yaml" \
-		KRONK_DOWNLOAD_ENABLED="$${KRONK_DOWNLOAD_ENABLED:-false}" \
-		KRONK_INSECURE_LOGGING="$${KRONK_INSECURE_LOGGING:-false}" \
 		go run -buildvcs=true ./cmd/kronk server start --detach --web-admin-enabled=false
 
 QUICK_CHECK_ARGS ?=
@@ -58,39 +63,58 @@ RELIABILITY_OUT ?= .tools/reliability/output
 RELIABILITY_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
 RELIABILITY_TIMEOUT ?= 30m
 RELIABILITY_SEED ?= 42
+RELIABILITY_REPETITIONS ?= 1
+RELIABILITY_RUN_LABEL ?=
 RELIABILITY_ARGS ?=
+RELIABILITY_MATRIX ?=
+RELIABILITY_SCENARIOS ?=
+RELIABILITY_PROFILES ?=
+RELIABILITY_CELLS ?=
 
-RELIABILITY_MTP_EMBEDDED_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON
-RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-ON-IMC-ON
+RELIABILITY_MTP_EMBEDDED_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
+RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL
 RELIABILITY_MTP_REQUESTS ?= 0
 RELIABILITY_MTP_PROMPT_TOKENS ?= 2200
 RELIABILITY_MTP_MAX_TOKENS ?= 256
 RELIABILITY_MTP_EMBEDDED_SLOTS ?= 4
 RELIABILITY_MTP_COMPANION_SLOTS ?= 2
 
-RELIABILITY_HYBRID_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-ON
+RELIABILITY_TEXT_STATE_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL
 
-RELIABILITY_LONG_CONTEXT_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-ON
+RELIABILITY_LONG_CONTEXT_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL
 RELIABILITY_LONG_CONTEXT_STAGES ?= 4096,8192,16384,32768,65536,131072
 RELIABILITY_LONG_CONTEXT_MAX_TOKENS ?= 96
 
-RELIABILITY_BATCH_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON
+RELIABILITY_BATCH_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
 RELIABILITY_BATCH_TURNS ?= 21
 RELIABILITY_BATCH_TARGET_TOKENS ?= 30000
 RELIABILITY_BATCH_TOKENS_PER_TURN ?= 1400
 RELIABILITY_BATCH_MAX_TOKENS ?= 128
 RELIABILITY_BATCH_SLOTS ?= 4
 RELIABILITY_BATCH_CONVERSATIONS ?= 5
+RELIABILITY_BATCH_IMAGES ?= examples/samples/giraffe.jpg,examples/samples/adetailer-face.png
+RELIABILITY_BATCH_IMAGE_SUBJECTS ?= giraffe,astronaut
 
-RELIABILITY_MEDIA_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON
-RELIABILITY_MEDIA_IMAGE ?= examples/samples/giraffe.jpg
-RELIABILITY_MEDIA_EXPECT ?= giraffe
-RELIABILITY_MEDIA_MAX_TOKENS ?= 128
-RELIABILITY_MEDIA_GENERATION_MAX_TOKENS ?= 512
-RELIABILITY_MEDIA_IMAGE_MAX_TOKENS ?= 64
-RELIABILITY_MEDIA_MAX_GENERATION_GAP ?= 1s
+RELIABILITY_IMAGE_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
+RELIABILITY_IMAGE ?= examples/samples/giraffe.jpg
+RELIABILITY_IMAGE_EXPECT ?= giraffe
+RELIABILITY_IMAGE_STATE_MAX_TOKENS ?= 128
+RELIABILITY_IMAGE_PREFILL_GENERATION_MAX_TOKENS ?= 512
+RELIABILITY_IMAGE_PREFILL_MAX_TOKENS ?= 64
+RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP ?= 1s
+
+reliability_profiles_test-load-mtp = mtp-embedded,mtp-companion
+reliability_profiles_test-load-batch = batch-text,batch-images
+reliability_profiles_test-load-images = image-state,image-prefill
 
 define run_reliability
+	$(if $(strip $(RELIABILITY_CELLS) $(RELIABILITY_PROFILES)),go run ./.tools/reliability \
+		-profiles "$(if $(RELIABILITY_PROFILES),$(RELIABILITY_PROFILES),$(if $(filter test-load-all,$@),,$(if $(reliability_profiles_$@),$(reliability_profiles_$@),$(patsubst test-load-%,%,$@))))" \
+		-cells "$(strip $(RELIABILITY_CELLS))" \
+		-host "$(RELIABILITY_HOST)" -out "$(RELIABILITY_OUT)" \
+		-server-log "$(RELIABILITY_SERVER_LOG)" -timeout "$(RELIABILITY_TIMEOUT)" \
+		-seed "$(RELIABILITY_SEED)" -repetitions "$(RELIABILITY_REPETITIONS)" \
+		-run-label "$(RELIABILITY_RUN_LABEL)" $(RELIABILITY_ARGS),\
 	go run ./.tools/reliability \
 		-scenario "$(1)" \
 		-host "$(RELIABILITY_HOST)" \
@@ -98,6 +122,9 @@ define run_reliability
 		-server-log "$(RELIABILITY_SERVER_LOG)" \
 		-timeout "$(RELIABILITY_TIMEOUT)" \
 		-seed "$(RELIABILITY_SEED)" \
+		-repetitions "$(RELIABILITY_REPETITIONS)" \
+		-run-label "$(RELIABILITY_RUN_LABEL)" \
+		-matrix "$(RELIABILITY_MATRIX)" \
 		-mtp-embedded-model "$(RELIABILITY_MTP_EMBEDDED_MODEL)" \
 		-mtp-companion-model "$(RELIABILITY_MTP_COMPANION_MODEL)" \
 		-mtp-requests "$(RELIABILITY_MTP_REQUESTS)" \
@@ -105,7 +132,7 @@ define run_reliability
 		-mtp-max-tokens "$(RELIABILITY_MTP_MAX_TOKENS)" \
 		-mtp-embedded-slots "$(RELIABILITY_MTP_EMBEDDED_SLOTS)" \
 		-mtp-companion-slots "$(RELIABILITY_MTP_COMPANION_SLOTS)" \
-		-hybrid-model "$(RELIABILITY_HYBRID_MODEL)" \
+		-text-state-model "$(RELIABILITY_TEXT_STATE_MODEL)" \
 		-long-context-model "$(RELIABILITY_LONG_CONTEXT_MODEL)" \
 		-long-context-stages "$(RELIABILITY_LONG_CONTEXT_STAGES)" \
 		-long-context-max-tokens "$(RELIABILITY_LONG_CONTEXT_MAX_TOKENS)" \
@@ -116,71 +143,81 @@ define run_reliability
 		-batch-max-tokens "$(RELIABILITY_BATCH_MAX_TOKENS)" \
 		-batch-slots "$(RELIABILITY_BATCH_SLOTS)" \
 		-batch-conversations "$(RELIABILITY_BATCH_CONVERSATIONS)" \
-		-media-model "$(RELIABILITY_MEDIA_MODEL)" \
-		-media-image "$(RELIABILITY_MEDIA_IMAGE)" \
-		-media-expect "$(RELIABILITY_MEDIA_EXPECT)" \
-		-media-max-tokens "$(RELIABILITY_MEDIA_MAX_TOKENS)" \
-		-media-generation-max-tokens "$(RELIABILITY_MEDIA_GENERATION_MAX_TOKENS)" \
-		-media-image-max-tokens "$(RELIABILITY_MEDIA_IMAGE_MAX_TOKENS)" \
-		-media-max-generation-gap "$(RELIABILITY_MEDIA_MAX_GENERATION_GAP)" \
-		$(2) $(RELIABILITY_ARGS)
+		-batch-images "$(RELIABILITY_BATCH_IMAGES)" \
+		-batch-image-subjects "$(RELIABILITY_BATCH_IMAGE_SUBJECTS)" \
+		-image-model "$(RELIABILITY_IMAGE_MODEL)" \
+		-image-file "$(RELIABILITY_IMAGE)" \
+		-image-expect "$(RELIABILITY_IMAGE_EXPECT)" \
+		-image-state-max-tokens "$(RELIABILITY_IMAGE_STATE_MAX_TOKENS)" \
+		-image-prefill-generation-max-tokens "$(RELIABILITY_IMAGE_PREFILL_GENERATION_MAX_TOKENS)" \
+		-image-prefill-max-tokens "$(RELIABILITY_IMAGE_PREFILL_MAX_TOKENS)" \
+		-image-prefill-max-generation-gap "$(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)" \
+		$(2) $(RELIABILITY_ARGS))
 endef
 
 # -------------------------------
 
-# Both embedded-head and separate companion/own-KV MTP profiles.
-test-load-mtp: ## Run mtp reliability probes
-	$(call run_reliability,mtp,-mtp-profile all)
-
-# Embedded-head MTP probe. Calibrates one distinct prompt per slot, releases all
-# requests together, and verifies scheduler activation and per-request drafting.
-test-load-mtp-embedded: ## Run mtp embedded reliability probes
-	$(call run_reliability,mtp,-mtp-profile embedded)
-
-# Separate companion/own-KV MTP probe. Verifies the catalog-provided companion
-# activates and produces draft coverage across every configured slot.
-test-load-mtp-companion: ## Run mtp companion reliability probes
-	$(call run_reliability,mtp,-mtp-profile companion)
-
-# -------------------------------
-
-# Single-slot hybrid state-integrity probe. Exercises deterministic cold/repeat
+# Single-slot text state-integrity probe for Hybrid and Attention-only models.
+# Exercises deterministic cold/repeat
 # generation, exact and append IMC reuse, cancellation, and recovery.
-test-load-hybrid: ## Run hybrid reliability probes
-	$(call run_reliability,hybrid-state,)
+# With IMC off, reuse is forbidden; state correctness checks remain active.
+test-load-text-state: ## Run text state and recovery probes
+	$(call run_reliability,text-state,)
+
+# Image correctness, replay/append, cancellation, slot release, and image/text recovery.
+test-load-image-state: ## Run image state and recovery probes
+	$(call run_reliability,images,-image-profile state)
 
 # Staged begin/middle/end marker retrieval and warm-IMC probe. Targets beyond
 # the model's configured context window are reported as skipped.
+# With IMC off, the repeat tests full-prefill correctness instead of reuse.
 test-load-long-context: ## Run long context reliability probes
 	$(call run_reliability,long-context,)
 
-# Long-running multi-slot batch-isolation probe. Exercises every slot plus queue
-# pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
-test-load-batch: ## Run batch reliability probes
-	$(call run_reliability,batch,)
+# Concurrent image prefill during generation, with bounded text gaps and
+# request-correlated evidence of the selected image execution path.
+test-load-image-prefill: ## Run image prefill responsiveness probes
+	$(call run_reliability,images,-image-profile prefill)
 
 # -------------------------------
 
-# Media group and independently selectable subprofiles.
-test-load-media: ## Run media reliability probes
-	$(call run_reliability,media,-media-profile all)
+# Text and image batch profiles. Exercises every slot plus queue
+# pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
+test-load-batch: ## Run batch reliability probes
+	$(call run_reliability,batch,-batch-profile all)
 
-# Multimodal correctness probe. Verifies subject recognition, deterministic
-# replay, media IMC reuse, and isolation from a following text-only request.
-test-load-media-correctness: ## Run media correctness reliability probes
-	$(call run_reliability,media,-media-profile correctness)
+# Text-only batch histories and isolation.
+test-load-batch-text: ## Run text batch reliability probes
+	$(call run_reliability,batch,-batch-profile text)
 
-# Media-prefill concurrency probe. Requires at least two slots and verifies
-# scheduler-observed media-prefill/generation overlap with bounded text gaps.
-test-load-media-prefill: ## Run media prefill reliability probes
-	$(call run_reliability,media,-media-profile prefill)
+# Batch with image history, subject changes, and replays; no output-equality check.
+test-load-batch-images: ## Run image batch reliability probes
+	$(call run_reliability,batch,-batch-profile images)
+
+# -------------------------------
+
+# Image state and prefill group; each profile remains independently selectable.
+test-load-images: ## Run image state and prefill probes
+	$(call run_reliability,images,-image-profile all)
+
+# Both embedded-head and companion/own-KV MTP profiles.
+# With MTP off these are concurrent target-only controls, not drafter tests.
+test-load-mtp: ## Run embedded and companion MTP probes
+	$(call run_reliability,mtp,-mtp-profile all)
+
+# Calibrated requests, supplied-value/session isolation and post-wave recovery.
+test-load-mtp-embedded: ## Run embedded MTP pressure and recovery probes
+	$(call run_reliability,mtp,-mtp-profile embedded)
+
+test-load-mtp-companion: ## Run companion MTP pressure and recovery probes
+	$(call run_reliability,mtp,-mtp-profile companion)
 
 # -------------------------------
 
 # Runs only load/reliability scenarios, sequentially in one artifact set.
 # The separately configured lifecycle probe is intentionally excluded.
-test-load-all: ## Run all reliability probes
-	$(call run_reliability,all,)
+test-load-all: ## Run explicitly selected reliability profiles and cells
+	$(call run_reliability,$(RELIABILITY_SCENARIOS),)
 
 # ==============================================================================
 

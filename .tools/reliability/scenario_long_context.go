@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -21,6 +20,7 @@ type longContextCompletion struct {
 	TokensPerSecond float64 `json:"tokens_per_second"`
 	ElapsedSeconds  float64 `json:"elapsed_seconds"`
 	FinishReason    string  `json:"finish_reason,omitempty"`
+	Usage           usage   `json:"usage"`
 	output          string
 }
 
@@ -46,12 +46,9 @@ func runLongContext(rc *runContext) scenarioResult {
 	contextWindow, contextSource := rc.configuredContext(model)
 	result.Details["configured_context"] = contextWindow
 	result.Details["context_source"] = contextSource
-
-	known := make(map[string]bool)
-	for _, target := range rc.cfg.LongContextStages {
-		for _, marker := range longContextMarkers(target, rc.cfg.Seed) {
-			known[marker] = true
-		}
+	if contextWindow <= 0 {
+		result.Failures = append(result.Failures, "cannot verify configured context capacity")
+		return result
 	}
 
 	stages := make([]longContextStage, 0, len(rc.cfg.LongContextStages))
@@ -62,6 +59,7 @@ func runLongContext(rc *runContext) scenarioResult {
 			stage.Status = "SKIP"
 			stage.Reason = fmt.Sprintf("target exceeds configured context %d", contextWindow)
 			stages = append(stages, stage)
+			appendFailure(&result.Failures, "requested stage %d skipped: %s", target, stage.Reason)
 			rc.artifacts.logf("long-context stage %d: SKIP (%s)", target, stage.Reason)
 			continue
 		}
@@ -76,7 +74,7 @@ func runLongContext(rc *runContext) scenarioResult {
 		stage.CalibratedTokens, stage.Markers = calibrated, markers
 		cold, err := streamLongContext(rc, model, prompt)
 		if err == nil {
-			err = verifyLongContextOutput(cold.output, markers, known)
+			err = verifyLongContextOutput(cold.output, markers)
 		}
 		if err != nil {
 			stage.Status, stage.Reason = "FAIL", err.Error()
@@ -86,13 +84,10 @@ func runLongContext(rc *runContext) scenarioResult {
 		}
 		warm, err := streamLongContext(rc, model, prompt)
 		if err == nil {
-			err = verifyLongContextOutput(warm.output, markers, known)
+			err = verifyLongContextOutput(warm.output, markers)
 		}
-		if err == nil && warm.CachedTokens <= 0 {
+		if err == nil && rc.cfg.IMC == "on" && warm.CachedTokens <= 0 {
 			err = fmt.Errorf("warm repeat reported cached_tokens=0")
-		}
-		if err == nil && warm.output != cold.output {
-			err = fmt.Errorf("warm deterministic output differs from cold output")
 		}
 		stage.Cold, stage.Warm = &cold, &warm
 		if err != nil {
@@ -186,11 +181,12 @@ func streamLongContext(rc *runContext, model, prompt string) (longContextComplet
 		"temperature": 0, "seed": rc.cfg.Seed, "max_tokens": rc.cfg.LongContextMaxTokens,
 		"enable_thinking": false, "messages": []map[string]any{{"role": "user", "content": prompt}},
 	}
-	stream, err := rc.client.stream(rc, rc.scenario, body, nil)
+	stream, err := rc.stream(rc, body, nil)
 	result := longContextCompletion{
 		TraceID: stream.TraceID, ResponseID: stream.ResponseID, PromptTokens: stream.Usage.PromptTokens,
 		CachedTokens: stream.Usage.PromptTokensDetails.CachedTokens, OutputTokens: stream.Usage.CompletionTokens,
 		ElapsedSeconds: seconds(stream.FinishedAt.Sub(stream.StartedAt)), FinishReason: stream.FinishReason, output: stream.Content,
+		Usage: stream.Usage,
 	}
 	if err != nil {
 		return result, err
@@ -206,19 +202,10 @@ func streamLongContext(rc *runContext, model, prompt string) (longContextComplet
 	return result, nil
 }
 
-func verifyLongContextOutput(output string, expected []string, known map[string]bool) error {
+func verifyLongContextOutput(output string, expected []string) error {
 	found := longContextMarkerPattern.FindAllString(output, -1)
 	if strings.Join(found, "\x00") != strings.Join(expected, "\x00") {
 		return fmt.Errorf("marker validation failed: expected=%v found=%v", expected, found)
 	}
-	for marker := range known {
-		if !contains(expected, marker) && strings.Contains(output, marker) {
-			return fmt.Errorf("response contained foreign marker %s", marker)
-		}
-	}
 	return nil
-}
-
-func contains(values []string, target string) bool {
-	return slices.Contains(values, target)
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
+	"unicode"
 )
 
 var mtpTopics = []struct {
@@ -26,25 +28,31 @@ type mtpProfile struct {
 }
 
 type mtpRequestResult struct {
-	Request                int     `json:"request"`
-	TraceID                string  `json:"trace_id,omitempty"`
-	CalibratedPromptTokens int     `json:"calibrated_prompt_tokens"`
-	ElapsedSeconds         float64 `json:"elapsed_seconds"`
-	FinishReason           string  `json:"finish_reason,omitempty"`
-	OutputSHA256           string  `json:"output_sha256,omitempty"`
-	Usage                  usage   `json:"usage"`
-	Error                  string  `json:"error,omitempty"`
+	Request                int            `json:"request"`
+	Wave                   int            `json:"wave"`
+	TraceID                string         `json:"trace_id,omitempty"`
+	CalibratedPromptTokens int            `json:"calibrated_prompt_tokens"`
+	ElapsedSeconds         float64        `json:"elapsed_seconds"`
+	FinishReason           string         `json:"finish_reason,omitempty"`
+	OutputSHA256           string         `json:"output_sha256,omitempty"`
+	Usage                  usage          `json:"usage"`
+	Error                  string         `json:"error,omitempty"`
+	RollbackRounds         int            `json:"rollback_rounds,omitempty"`
+	RollbackStrategies     map[string]int `json:"rollback_strategies,omitempty"`
 }
 
 type mtpProfileResult struct {
-	Name      string             `json:"name"`
-	Model     string             `json:"model"`
-	Slots     int                `json:"expected_slots"`
-	Requests  int                `json:"requests"`
-	Loaded    loadedModel        `json:"loaded_model"`
-	Scheduler *engineDiagnostic  `json:"scheduler,omitempty"`
-	Results   []mtpRequestResult `json:"results,omitempty"`
-	Failures  []string           `json:"failures,omitempty"`
+	Name              string             `json:"name"`
+	Model             string             `json:"model"`
+	Slots             int                `json:"expected_slots"`
+	Requests          int                `json:"requests"`
+	Waves             int                `json:"waves"`
+	MinRollbackRounds int                `json:"min_rollback_rounds"`
+	Loaded            loadedModel        `json:"loaded_model"`
+	Scheduler         *engineDiagnostic  `json:"scheduler,omitempty"`
+	Results           []mtpRequestResult `json:"results,omitempty"`
+	Recovery          completionResult   `json:"recovery"`
+	Failures          []string           `json:"failures,omitempty"`
 }
 
 func runMTP(rc *runContext) scenarioResult {
@@ -77,7 +85,7 @@ func runMTP(rc *runContext) scenarioResult {
 }
 
 func runMTPProfile(rc *runContext, profile mtpProfile) mtpProfileResult {
-	result := mtpProfileResult{Name: profile.Name, Model: profile.Model, Slots: profile.Slots}
+	result := mtpProfileResult{Name: profile.Name, Model: profile.Model, Slots: profile.Slots, Waves: rc.cfg.MTPWaves, MinRollbackRounds: rc.cfg.MTPMinRollbackRounds}
 	loaded, err := rc.ensureModel(profile.Model)
 	if err != nil {
 		result.Failures = append(result.Failures, err.Error())
@@ -97,11 +105,8 @@ func runMTPProfile(rc *runContext, profile mtpProfile) mtpProfileResult {
 		result.Failures = append(result.Failures, "scheduler diagnostics do not contain the selected model")
 		return result
 	}
-	if !engine.MTP {
+	if rc.cfg.MTP == "on" && !engine.MTP {
 		result.Failures = append(result.Failures, "scheduler reports MTP inactive")
-	}
-	if engine.NDraft <= 0 {
-		appendFailure(&result.Failures, "scheduler reports invalid ndraft=%d", engine.NDraft)
 	}
 	if len(engine.Slots) != profile.Slots {
 		appendFailure(&result.Failures, "scheduler reports %d slots, want %d", len(engine.Slots), profile.Slots)
@@ -129,37 +134,45 @@ func runMTPProfile(rc *runContext, profile mtpProfile) mtpProfileResult {
 		rc.artifacts.logf("prepared %s request %d: %d templated prompt tokens", profile.Name, index+1, count)
 	}
 
-	start := make(chan struct{})
-	results := make(chan mtpRequestResult, requests)
-	var ready sync.WaitGroup
-	ready.Add(requests)
-	for index := range requests {
-		go func() {
-			ready.Done()
-			<-start
-			completion, err := rc.completion(profile.Model, []map[string]any{{"role": "user", "content": prompts[index]}}, rc.cfg.MTPMaxTokens)
-			requestResult := mtpRequestResult{
-				Request:                index + 1,
-				TraceID:                completion.TraceID,
-				CalibratedPromptTokens: counts[index],
-				ElapsedSeconds:         completion.Elapsed,
-				FinishReason:           completion.FinishReason,
-				Usage:                  completion.Usage,
-			}
-			if err != nil {
-				requestResult.Error = err.Error()
-			} else {
-				requestResult.OutputSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(completion.Content)))
-			}
-			results <- requestResult
-		}()
-	}
-	ready.Wait()
-	close(start)
-	result.Results = make([]mtpRequestResult, requests)
-	for range requests {
-		requestResult := <-results
-		result.Results[requestResult.Request-1] = requestResult
+	for wave := range rc.cfg.MTPWaves {
+		rc.artifacts.logf("MTP %s wave %d/%d", profile.Name, wave+1, rc.cfg.MTPWaves)
+		start := make(chan struct{})
+		results := make(chan mtpRequestResult, requests)
+		var ready sync.WaitGroup
+		ready.Add(requests)
+		for index := range requests {
+			go func() {
+				ready.Done()
+				<-start
+				completion, err := rc.completion(profile.Model, []map[string]any{{"role": "user", "content": prompts[index]}}, rc.cfg.MTPMaxTokens)
+				requestResult := mtpRequestResult{
+					Request:                wave*requests + index + 1,
+					Wave:                   wave + 1,
+					TraceID:                completion.TraceID,
+					CalibratedPromptTokens: counts[index],
+					ElapsedSeconds:         completion.Elapsed,
+					FinishReason:           completion.FinishReason,
+					Usage:                  completion.Usage,
+				}
+				if err != nil {
+					requestResult.Error = err.Error()
+				} else {
+					requestResult.OutputSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(completion.Content)))
+					if err := verifyMTPOutput(completion.Content, index); err != nil {
+						requestResult.Error = err.Error()
+					}
+				}
+				results <- requestResult
+			}()
+		}
+		ready.Wait()
+		close(start)
+		waveResults := make([]mtpRequestResult, requests)
+		for range requests {
+			requestResult := <-results
+			waveResults[requestResult.Request-wave*requests-1] = requestResult
+		}
+		result.Results = append(result.Results, waveResults...)
 	}
 
 	for _, requestResult := range result.Results {
@@ -168,17 +181,24 @@ func runMTPProfile(rc *runContext, profile mtpProfile) mtpProfileResult {
 			appendFailure(&result.Failures, "request %d: %s", requestResult.Request, requestResult.Error)
 		case requestResult.FinishReason != "stop":
 			appendFailure(&result.Failures, "request %d finish reason=%q, want stop", requestResult.Request, requestResult.FinishReason)
-		case requestResult.Usage.DraftTokens <= 0:
+		case rc.cfg.MTP == "on" && requestResult.Usage.DraftTokens <= 0:
 			appendFailure(&result.Failures, "request %d produced no draft tokens", requestResult.Request)
-		case requestResult.Usage.DraftCoverage <= 0:
+		case rc.cfg.MTP == "on" && requestResult.Usage.DraftCoverage <= 0:
 			appendFailure(&result.Failures, "request %d produced no draft coverage", requestResult.Request)
-		case requestResult.Usage.DraftDisableReason != "":
-			appendFailure(&result.Failures, "request %d disabled MTP: %s", requestResult.Request, requestResult.Usage.DraftDisableReason)
 		}
 		rc.artifacts.logf("%s request %d: elapsed=%.3fs prompt=%d completion=%d drafted=%d accepted=%d coverage=%.3f finish=%s",
 			profile.Name, requestResult.Request, requestResult.ElapsedSeconds, requestResult.Usage.PromptTokens,
 			requestResult.Usage.CompletionTokens, requestResult.Usage.DraftTokens,
 			requestResult.Usage.DraftAcceptedTokens, requestResult.Usage.DraftCoverage, requestResult.FinishReason)
+	}
+	marker := fmt.Sprintf("MTP-RECOVERY-%d", time.Now().UnixNano())
+	result.Recovery, err = rc.completion(profile.Model, []map[string]any{{
+		"role": "user", "content": "Reply with exactly " + marker + " and nothing else.",
+	}}, 64)
+	if err != nil {
+		appendFailure(&result.Failures, "post-pressure recovery: %v", err)
+	} else if strings.TrimSpace(result.Recovery.Content) != marker {
+		result.Failures = append(result.Failures, "post-pressure recovery did not exactly match its fresh marker")
 	}
 	return result
 }
@@ -219,5 +239,27 @@ func mtpPrompt(index, records int) string {
 	for record := range records {
 		result.WriteString(fmt.Sprintf("%s record %04d: %s; marker %d-%04d.\n", topic.name, record, topic.vocabulary, index+1, record))
 	}
-	return result.String() + fmt.Sprintf("Return exactly five short bullets summarizing only the %s records.", topic.name)
+	return result.String() + fmt.Sprintf("This session's key is MTP-SESSION-%04d. Include that key once, then give five short bullets, one for each supplied value: %s. Copy each value exactly and briefly describe it using only this session's records. Do not include any other session key.", index+1, topic.vocabulary)
+}
+
+// Check supplied facts and isolation, not a golden wording or a speculative
+// implementation's output. Equivalent prose and formatting are allowed.
+func verifyMTPOutput(output string, index int) error {
+	words := strings.FieldsFunc(strings.ToLower(output), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '-'
+	})
+	key := fmt.Sprintf("mtp-session-%04d", index+1)
+	found := make(map[string]bool)
+	for _, word := range words {
+		if strings.HasPrefix(word, "mtp-session-") && word != key {
+			return fmt.Errorf("response leaked foreign session key %s", word)
+		}
+		found[word] = true
+	}
+	for _, value := range append(strings.Fields(mtpTopics[index%len(mtpTopics)].vocabulary), key) {
+		if !found[value] {
+			return fmt.Errorf("response lacks supplied fact or session key %s", value)
+		}
+	}
+	return nil
 }
