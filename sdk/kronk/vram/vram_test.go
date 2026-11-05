@@ -11,6 +11,60 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
+func TestCalculateUnifiedLFM2Reservation(t *testing.T) {
+	input := Input{
+		Architecture: "lfm2", ComputeKind: modelprofile.ComputeLFM2, ComputeBackend: "metal",
+		ContextWindow: 4096, Slots: 3, NUBatch: 256, OutputRows: 3,
+		BlockCount: 16, EmbeddingLength: 1536, VocabularySize: 65536,
+		HeadCount: 24, HeadCountKV: 8, KeyLength: 64, ValueLength: 64,
+		BytesPerElement: 2, KVUnified: true,
+	}
+	result := Calculate(input)
+	// b12125 reserves 129.3531 MiB for this public configuration. The
+	// previous 123.2 MiB reservation missed Metal's per-slice row gathers.
+	const nativeArena int64 = 135636557
+	if result.ComputeBufferEst < nativeArena {
+		t.Fatalf("GPU compute reservation: got %d, must cover native arena %d", result.ComputeBufferEst, nativeArena)
+	}
+}
+
+func TestCalculateUnifiedAttentionWorkspace(t *testing.T) {
+	// With three slices, 95 queries reserve 96 rows. K and V have
+	// different widths, so confusing their extents changes the result.
+	// Full extent = 1536; original K/V scratch = 1179648 bytes;
+	// gathered K/V = 3538944; extra sliced reduction = 8519680;
+	// row lists + rounded mask query = 21504, on host and device.
+	for _, tt := range []struct {
+		name, backend                string
+		unified, nonFlash, recurrent bool
+		layers, contexts, gpu, cpu   int64
+	}{
+		{"shared Metal", "metal", true, false, false, 0, 1, 13843456, 410624},
+		{"independent contexts", "metal", true, false, false, 0, 2, 27686912, 821248},
+		{"partitioned control", "metal", false, false, false, 0, 1, 1568768, 194560},
+		{"dense control", "metal", true, true, false, 0, 1, 10214400, 680960},
+		{"CUDA has no Metal gathers", "cuda", true, false, false, 0, 1, 605184, 410624},
+		{"host layers", "metal", true, false, false, -1, 1, 583680, 410624},
+		{"output layer only", "metal", true, false, false, 1, 1, 583680, 410624},
+		{"recurrent layers", "metal", true, false, true, 0, 1, 583680, 389120},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Calculate(Input{
+				ComputeKind: modelprofile.ComputeLFM2, ComputeBackend: tt.backend,
+				ContextWindow: 512, Slots: 3, NUBatch: 95, OutputRows: 1,
+				BlockCount: 3, EmbeddingLength: 64, VocabularySize: 16,
+				HeadCount: 8, HeadCountKV: 2, KeyLength: 64, ValueLength: 128,
+				RecurrentPattern: []bool{tt.recurrent, tt.recurrent, tt.recurrent},
+				GPULayers:        tt.layers, ComputeContexts: tt.contexts,
+				KVUnified: tt.unified, VTransposed: tt.nonFlash, BytesPerElement: 2,
+			})
+			if result.ComputeMemory.WorkspaceGPU != tt.gpu || result.ComputeMemory.WorkspaceCPU != tt.cpu {
+				t.Fatalf("GPU/CPU workspace: got %d/%d, want %d/%d", result.ComputeMemory.WorkspaceGPU, result.ComputeMemory.WorkspaceCPU, tt.gpu, tt.cpu)
+			}
+		})
+	}
+}
+
 func TestCalculateGemmaWorkspaceScaling(t *testing.T) {
 	const mib int64 = 1 << 20
 	for _, tt := range []struct {
@@ -52,15 +106,18 @@ func TestCalculateGemmaWorkspaceScaling(t *testing.T) {
 func TestCalculateGemmaMetalWorkspace(t *testing.T) {
 	const mib int64 = 1 << 20
 	for _, tt := range []struct {
-		name, backend                    string
-		slots, batch, swaValue, phaseMiB int64
-		unified, cpuWeights, cpuCache    bool
+		name, backend                 string
+		slots, batch, swaValue        int64
+		phaseMiB                      float64
+		unified, cpuWeights, cpuCache bool
 	}{
 		{"one slot logits peak", "metal", 1, 2052, 256, 2052, false, false, false},
 		{"two slots attention peak", "metal", 2, 2056, 256, 3076, false, false, false},
 		{"three slots attention peak", "metal", 3, 2060, 256, 4102, false, false, false},
 		{"unequal K and V", "metal", 2, 2056, 128, 2564, false, false, false},
-		{"unified KV pool", "metal", 2, 2056, 256, 2056, true, false, false},
+		// Aggregate cache: 2056 MiB masks + 2048 MiB original scratch.
+		// Rows add 4096 MiB gathers, 16.125 MiB reduction, 4 MiB lists.
+		{"unified KV pool", "metal", 2, 2056, 256, 8220.125, true, false, false},
 		{"CUDA control", "cuda", 2, 2056, 256, 2056, false, false, false},
 		{"CPU control", "metal", 2, 2056, 256, 2056, false, true, false},
 		{"CPU KV control", "metal", 2, 2056, 256, 2056, false, false, true},
@@ -87,7 +144,7 @@ func TestCalculateGemmaMetalWorkspace(t *testing.T) {
 			// two F16 masks plus scratch for the largest layer, not all
 			// layers. SWA has 8 heads; full attention has only 2.
 			activation := tt.batch * 2816 * (32 + 8*(tt.slots-1))
-			wantWorkspace := activation + tt.phaseMiB*mib
+			wantWorkspace := activation + int64(tt.phaseMiB*float64(mib))
 			wantGPU := wantWorkspace + 256*mib
 			wantGPU += wantGPU / 10
 			if result.ComputeMemory.WorkspaceGPU != wantWorkspace || result.ComputeBufferEst != wantGPU {
@@ -166,7 +223,9 @@ func TestCalculateGPTOSSWorkspace(t *testing.T) {
 		{"compact SWA", "metal", 1, 0, 131072, true, false, 1213 * mib, 611 * mib},
 		{"two streams", "metal", 2, 0, 131072, false, false, 2017 * mib, 1114 * mib},
 		{"padded per-stream context", "metal", 2, 0, 131073, false, false, 2020 * mib, 1116 * mib},
-		{"unified pool", "metal", 2, 0, 131072, false, true, 3041 * mib, 2138 * mib},
+		// Rows add 1024 MiB gathers, 16.5 MiB sliced reduction and
+		// 4 MiB host/device row lists to the dense-fallback reserve.
+		{"unified pool", "metal", 2, 0, 131072, false, true, 4085*mib + mib/2, 2142 * mib},
 		{"CUDA control", "cuda", 1, 0, 131072, false, false, 1460 * mib, 1114 * mib},
 		// Only the trailing SWA layer is offloaded: scratch uses its
 		// compact extent, not the host full-attention layer's extent.

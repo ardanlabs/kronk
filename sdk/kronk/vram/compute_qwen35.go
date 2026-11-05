@@ -32,7 +32,11 @@ func qwen35Workspace(input Input) (gpu, cpu int64) {
 		batch = DefaultNUBatch
 	}
 	batch = min(batch, max(input.ContextWindow, 1)*max(input.Slots, 1))
-	cells := ((max(input.ContextWindow, 1) + 255) / 256) * 256
+	capacity := max(input.ContextWindow, 1)
+	if input.KVUnified {
+		capacity *= max(input.Slots, 1)
+	}
+	cells := ((capacity + 255) / 256) * 256
 	maskWidth := int64(2)
 	if input.VTransposed {
 		maskWidth = 4

@@ -36,7 +36,15 @@ func EstimateComputeBuffer(input Input) int64 {
 }
 
 func estimateComputeMemory(input Input) ComputeMemory {
-	return selectMemoryPolicy(input).compute(input)
+	memory := selectMemoryPolicy(input).compute(input)
+	gpu, cpu := unifiedAttentionWorkspace(input)
+	if gpu != 0 || cpu != 0 {
+		memory.WorkspaceGPU += gpu
+		memory.WorkspaceCPU += cpu
+		memory.MarginGPU = (memory.WorkspaceGPU + memory.RuntimeAllowanceGPU) / 10
+		memory.MarginCPU = memory.WorkspaceCPU / 10
+	}
+	return memory
 }
 
 // memoryPolicy keeps architecture selection consistent across compute, persistent
