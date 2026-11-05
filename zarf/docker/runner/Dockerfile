@@ -1,8 +1,8 @@
 # GitHub Actions self-hosted runner image for the Linux CI box
 # (kronk-linux-gpu-1, AMD Ryzen AI MAX+ 395 w/ Radeon 8060S).
 #
-# Base is ubuntu-noble (24.04) to match kronk's own runtime image
-# (zarf/docker/kronk/Dockerfile) and GitHub's ubuntu-latest.
+# Base is ubuntu-resolute (26.04) to match kronk's own runtime image
+# (zarf/docker/kronk/Dockerfile) and Malina's glibc 2.43 requirement.
 #
 # STAGES
 #
@@ -76,7 +76,7 @@
 # Retiring a fleet means dropping its matrix entry in
 # .github/workflows/gpu.yml in the same change.
 
-ARG RUNNER_TAG="ubuntu-noble"
+ARG RUNNER_TAG="ubuntu-resolute"
 
 # -----------------------------------------------------------------------------
 # base
@@ -99,7 +99,7 @@ RUN apt-get update \
         clinfo \
         curl \
         ffmpeg \
-        libcurl4 \
+        libcurl4t64 \
         libffi8 \
         libgomp1 \
         libnuma1 \
@@ -174,7 +174,7 @@ RUN set -eux; \
     rm /tmp/rocm.gpg.key; \
     printf '%s\n' \
         'Types: deb' \
-        'URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu2404/' \
+        'URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu2604/' \
         'Suites: stable' \
         'Components: main' \
         'Architectures: amd64' \

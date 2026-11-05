@@ -47,6 +47,11 @@ Models download automatically on first use.
 | `latest-rocm`   | AMD ROCm                                          | `linux/amd64`                |
 | `latest-all`    | All backends bundled (CPU, CUDA, Vulkan, ROCm)    | `linux/amd64`, `linux/arm64` |
 
+Standard images use Ubuntu 26.04, providing glibc 2.43 for Malina's Linux
+amd64 CPU/Vulkan bundles. This is a container userspace requirement, not a
+requirement to upgrade the host distribution. GPU images still require
+compatible host drivers. The optional Jetson build retains its L4T base.
+
 **Tag scheme:**
 
 - `latest-<variant>` (e.g. `latest-cuda`) floats to the newest release of that
@@ -217,7 +222,7 @@ CUDA and all-backend image builds include both Bucky CUDA 12 (`cuda`) and
 CUDA 13 (`cuda13`) bundles. Automatic Linux selection requires the matching
 driver, visible-GPU capabilities, and runtime/cuBLAS libraries; a driver that
 advertises CUDA 13 alone is not sufficient. The amd64 CUDA runtime stage
-installs CUDA 13 user-space libraries. Jetson's separate L4T build remains on
+installs CUDA 13.3 user-space libraries. Jetson's separate L4T build remains on
 CUDA 12; do not select CUDA 13 unless its JetPack/runtime supports it. See
 [Bucky library installation](.manual/chapter-18-bucky.md#182-install-whisper-libraries)
 for explicit bundle selection and runtime requirements.

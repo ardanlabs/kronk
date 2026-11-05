@@ -63,6 +63,10 @@ Use `--list-combinations` for the installed release's current list. The macOS
 directory alone does not force CPU execution. This pin has no Linux CUDA or
 Linux/Windows arm64 bundle.
 
+The Linux CPU and Vulkan bundles require Ubuntu 26.04 or a compatible system
+with glibc 2.43 or newer. CPU fallback does not remove this requirement. The
+ROCm archive is built on Ubuntu 24.04 and requires its matching ROCm runtime.
+
 | Variable | Purpose |
 | -------- | ------- |
 | `KRONK_BASE_PATH` | Select the data root without migrating existing files |
@@ -81,6 +85,12 @@ necessarily ABI-compatible; upgrade bindings and libraries together. Offline
 managed installations must match the requested pin and platform. Installation
 is staged so a failed download does not replace the working bundle. Restart
 after changing the selected libraries; the process does not hot-reload them.
+
+After upgrading Kronk, run `kronk malina libs --local` again. A managed bundle
+recorded for the previous pin is replaced, even if its files still exist; an
+arbitrary newer build is not accepted by default either. User-managed library
+paths are never upgraded automatically. Rebuild or replace those libraries
+from the pinned revision, especially when an upgrade changes the native ABI.
 
 With default verification enabled, installation or verification failures stop
 server startup. Repair the managed bundle locally, then restart. A later native
@@ -270,6 +280,9 @@ The server exposes basic text-to-image and image-to-image only. ControlNet,
 ADetailer, video, upscaling, and AVI encoding remain SDK workflows. A feature
 in upstream stable-diffusion.cpp does not establish a supported Kronk workflow
 or a curated, licensed model bundle. The catalog is intentionally bounded.
+
+SDK video results retain the effective frame rate, generated audio, and
+generation metadata; AVI encoding remains video-only.
 
 Use the generated Malina SDK reference and `examples/malina*` for application
 development. Source-checkout targets include `make example-malina`,

@@ -252,8 +252,10 @@ func TestRerankIntegrity(t *testing.T, id string, rerank func(context.Context, m
 			}
 			for j, result := range responses[i].Data {
 				want := references[i][j]
-				if result.Index != want.Index || math.Abs(float64(result.RelevanceScore-want.RelevanceScore)) > 1e-3 {
-					t.Fatalf("query[%d] rank[%d]: got index=%d score=%g, want index=%d score=%g within 1e-3", i, j, result.Index, result.RelevanceScore, want.Index, want.RelevanceScore)
+				// Allow small score differences between isolated and batched
+				// inference on Vulkan while keeping document ordering exact.
+				if result.Index != want.Index || math.Abs(float64(result.RelevanceScore-want.RelevanceScore)) > 2e-3 {
+					t.Fatalf("query[%d] rank[%d]: got index=%d score=%g, want index=%d score=%g within 2e-3", i, j, result.Index, result.RelevanceScore, want.Index, want.RelevanceScore)
 				}
 			}
 		}
