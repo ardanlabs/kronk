@@ -112,12 +112,26 @@ Here are some of the known compatible versions:
 
 | kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.33.2 | v1.32.0 | b12125    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
+| 1.33.2 | v1.32.0 | b12125    | v1.1.5 | v1.9.5      | v1.2.0 | master-1052-f5df5f8  |
 | 1.33.1 | 18f0b31 | b11960    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
 | 1.33.0 | 4e61a12 | b11797    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
 | 1.32.9 | 1a800a2 | b11513    | v1.1.4 | v1.9.5      | v1.1.5 | master-929-3f8527a   |
 | 1.32.8 | c25d400 | b11331    | v1.1.3 | v1.9.4      | v1.1.5 | master-929-3f8527a   |
 | 1.32.6 | ece4890 | b10896    | v1.1.2 | v1.9.3      | v1.1.0 | master-849-d04e895   |
+
+The exact authenticated Malina native pin is
+`master-1052-f5df5f8@sha256:f3ed77571fd835ec2b712733fabbf7fe8e7fbe1f7e46493779a2d829548e5d0a`.
+Run `kronk malina libs --local` after upgrading to replace an older managed
+bundle, then restart. User-managed native builds are never replaced; use a
+build of the pinned revision. Native ABI changes require rebuilding or
+replacing those libraries together with the bindings, not just updating Go
+dependencies.
+
+Malina v1.2.0 keeps the public native ABI unchanged, but its Linux CPU/Vulkan
+bundles now require glibc 2.43 or newer (Ubuntu 26.04). Standard Docker images
+use Ubuntu 26.04; the optional Jetson image retains its JetPack-compatible L4T
+base. See the [Malina manual](.manual/chapter-19-malina.md)
+for the published platform matrix and installation requirements.
 
 ## Documentation and Examples
 

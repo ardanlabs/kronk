@@ -2,11 +2,11 @@
 
 ## Index
 
-- [Unreleased](#unreleased)
-  - [Internal RAM IMC Storage](#unreleased-internal-ram-imc-storage)
-  - [Speculative Rollback Diagnostics](#unreleased-speculative-rollback-diagnostics)
 - [v1.33.2](#v1332)
   - [Browser Admin Session Lifetime](#v1332-browser-admin-session-lifetime)
+  - [Internal RAM IMC Storage](#unreleased-internal-ram-imc-storage)
+  - [Speculative Rollback Diagnostics](#unreleased-speculative-rollback-diagnostics)
+  - [Malina Linux Runtime Minimum](#v1332-malina-linux-runtime-minimum)
 - [v1.33.1](#v1331)
   - [Bucky Segment Text Confidence](#v1331-bucky-segment-text-confidence)
   - [Malina Generation Result ABI](#v1331-malina-generation-result-abi)
@@ -50,9 +50,30 @@
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
-## Unreleased
+## v1.33.2
 
-### Unreleased: Internal RAM IMC Storage
+### v1.33.2: Browser Admin Session Lifetime
+
+Browser admin logins now default to a 12-hour lifetime instead of one hour.
+This extends the validity of both the admin JWT and its HttpOnly cookie,
+reducing authentication interruptions during long-running BUI test sweeps.
+Operators who rely on the previous one-hour security boundary must explicitly
+set the lifetime to `1h` using one of these options:
+
+- `kms.web.admin.session-duration` in `model_config.yaml`;
+- `KRONK_WEB_ADMIN_SESSION_DURATION`; or
+- `kronk server start --web-admin-session-duration 1h`.
+
+CLI flags override environment variables, which override the YAML setting.
+Durations use Go duration syntax and must be at least one second; zero does
+not disable expiration. The lifetime is absolute from login and is not renewed
+by activity. Changes apply to new logins, not existing sessions. CLI bearer
+tokens and inference request timeouts are unaffected.
+
+This change does not persist unfinished test runs across page refreshes or
+session expiry and does not add background execution or reattachment.
+
+### v1.33.2: Internal RAM IMC Storage
 
 IMC checkpoints now always use Kronk's internal RAM storage. Replacing that
 storage with a custom backend is no longer supported. This supersedes the
@@ -79,7 +100,7 @@ below refer to earlier releases, not the current source tree.
 Public SDK chat and pool APIs are unchanged. This change does not add durable
 session storage or recovery after restart.
 
-### Unreleased: Speculative Rollback Diagnostics
+### v1.33.2: Speculative Rollback Diagnostics
 
 `BatchEngineSnapshot` and `BatchSlotSnapshot` now expose
 `SpeculativeRollbacks map[string]uint64`. Engine counts accumulate since model
@@ -93,28 +114,21 @@ The existing `slot-finished` log includes the request's totals in
 `draft_target_rollbacks` when a drafter is configured. HTTP response shapes
 are unchanged.
 
-## v1.33.2
+### v1.33.2: Malina Linux Runtime Minimum
 
-### v1.33.2: Browser Admin Session Lifetime
+Malina v1.2.0 selects stable-diffusion.cpp `master-1052-f5df5f8`. Its published
+Linux amd64 CPU and Vulkan bundles require glibc 2.43 or newer (Ubuntu 26.04),
+replacing the previous Ubuntu 24.04 builds. CPU fallback does not support an
+older glibc. The ROCm archive remains an Ubuntu 24.04 build with separate
+runtime dependencies. This is an operating-system runtime requirement change,
+not a change to Malina's Go generation API or the public native C ABI.
 
-Browser admin logins now default to a 12-hour lifetime instead of one hour.
-This extends the validity of both the admin JWT and its HttpOnly cookie,
-reducing authentication interruptions during long-running BUI test sweeps.
-Operators who rely on the previous one-hour security boundary must explicitly
-set the lifetime to `1h` using one of these options:
-
-- `kms.web.admin.session-duration` in `model_config.yaml`;
-- `KRONK_WEB_ADMIN_SESSION_DURATION`; or
-- `kronk server start --web-admin-session-duration 1h`.
-
-CLI flags override environment variables, which override the YAML setting.
-Durations use Go duration syntax and must be at least one second; zero does
-not disable expiration. The lifetime is absolute from login and is not renewed
-by activity. Changes apply to new logins, not existing sessions. CLI bearer
-tokens and inference request timeouts are unaffected.
-
-This change does not persist unfinished test runs across page refreshes or
-session expiry and does not add background execution or reattachment.
+Run `kronk malina libs --local` to replace an older managed bundle and restart
+the process. Owners of user-managed builds must supply libraries built for
+their host. Standard Docker images and Linux CI runner images now use Ubuntu
+26.04. CUDA images install CUDA 13.3 user-space libraries from NVIDIA's Ubuntu
+26.04 repository; ROCm images use AMD's Ubuntu 26.04 repository. The optional
+Jetson image retains its JetPack-compatible L4T base.
 
 ## v1.33.1
 

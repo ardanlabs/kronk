@@ -5533,6 +5533,7 @@ kronk malina libs --list-installs --local`}</code></pre>
             </tbody>
           </table>
           <p>Use <code>--list-combinations</code> for the installed release's current list. The macOS <code>cpu</code> and <code>metal</code> choices use the same Metal-capable archive; selecting its CPU directory alone does not force CPU execution. This pin has no Linux CUDA or Linux/Windows arm64 bundle.</p>
+          <p>The Linux CPU and Vulkan bundles require Ubuntu 26.04 or a compatible system with glibc 2.43 or newer. CPU fallback does not remove this requirement. The ROCm archive is built on Ubuntu 24.04 and requires its matching ROCm runtime.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -5561,6 +5562,7 @@ kronk malina libs --list-installs --local`}</code></pre>
           </table>
           <p>An explicit library path is authoritative. A nonempty directory without <code>version.json</code> is a read-only user-managed build, not a managed installation. Default verified server startup requires managed metadata and can reject it. Using independently trusted custom builds requires an advanced verification exception; do not disable verification as routine recovery.</p>
           <p>Use the libraries pinned to this Kronk release. Newer native libraries are not necessarily ABI-compatible; upgrade bindings and libraries together. Offline managed installations must match the requested pin and platform. Installation is staged so a failed download does not replace the working bundle. Restart after changing the selected libraries; the process does not hot-reload them.</p>
+          <p>After upgrading Kronk, run <code>kronk malina libs --local</code> again. A managed bundle recorded for the previous pin is replaced, even if its files still exist; an arbitrary newer build is not accepted by default either. User-managed library paths are never upgraded automatically. Rebuild or replace those libraries from the pinned revision, especially when an upgrade changes the native ABI.</p>
           <p>With default verification enabled, installation or verification failures stop server startup. Repair the managed bundle locally, then restart. A later native initialization failure can instead leave Malina unavailable while the server continues; BUI repair is useful only if the server actually remains running.</p>
           <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
           <p>Use the curated catalog rather than an arbitrary repository layout:</p>
@@ -5769,6 +5771,7 @@ malina-models:
           <p>See Chapter 9 for API conventions and Chapter 15 for server logs and metrics.</p>
           <h3 id="198-limitations-and-developer-resources">19.8 Limitations and Developer Resources</h3>
           <p>The server exposes basic text-to-image and image-to-image only. ControlNet, ADetailer, video, upscaling, and AVI encoding remain SDK workflows. A feature in upstream stable-diffusion.cpp does not establish a supported Kronk workflow or a curated, licensed model bundle. The catalog is intentionally bounded.</p>
+          <p>SDK video results retain the effective frame rate, generated audio, and generation metadata; AVI encoding remains video-only.</p>
           <p>Use the generated Malina SDK reference and <code>examples/malina*</code> for application development. Source-checkout targets include <code>make example-malina</code>, <code>make example-malina-img2img</code>, <code>make example-malina-controlnet</code>, <code>make example-malina-adetailer</code>, <code>make example-malina-animatediff</code>, <code>make example-malina-s2v</code>, and <code>make example-malina-upscale</code>. These can download multi-gigabyte model bundles and execute native inference. They are not required steps for operating the HTTP server.</p>
           <h3 id="199-troubleshooting">19.9 Troubleshooting</h3>
           <table className="flags-table">

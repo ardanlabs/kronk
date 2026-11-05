@@ -8,7 +8,7 @@
 #   make deps-upgrade
 #
 # What gets updated:
-#   - ubuntu:24.04 image index digest (5 occurrences)
+#   - ubuntu:26.04 image index digest (5 occurrences)
 #   - nvcr.io/nvidia/l4t-cuda:<tag> image digest
 #   - NODE_SHA256_X64 / NODE_SHA256_ARM64 for the currently pinned NODE_VERSION
 #   - ROCM_KEY_FINGERPRINT from stable.repo.amd.com
@@ -91,15 +91,15 @@ url_sha256() {
 }
 
 # -----------------------------------------------------------------------------
-# 1. ubuntu:24.04 index digest
+# 1. ubuntu:26.04 index digest
 # -----------------------------------------------------------------------------
-log "Resolving ubuntu:24.04 digest"
-UBUNTU_DIGEST="$(docker_image_digest ubuntu:24.04)"
+log "Resolving ubuntu:26.04 digest"
+UBUNTU_DIGEST="$(docker_image_digest ubuntu:26.04)"
 [[ "$UBUNTU_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] \
-    || { echo "ubuntu:24.04 digest lookup failed: '$UBUNTU_DIGEST'" >&2; exit 1; }
+    || { echo "ubuntu:26.04 digest lookup failed: '$UBUNTU_DIGEST'" >&2; exit 1; }
 echo "    → $UBUNTU_DIGEST"
 sed_inplace \
-    "s|(ubuntu:24\.04@sha256:)[a-f0-9]{64}|\1${UBUNTU_DIGEST#sha256:}|g" \
+    "s|(ubuntu:26\.04@sha256:)[a-f0-9]{64}|\1${UBUNTU_DIGEST#sha256:}|g" \
     "$DOCKERFILE"
 
 # -----------------------------------------------------------------------------

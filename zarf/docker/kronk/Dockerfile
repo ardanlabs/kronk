@@ -470,16 +470,16 @@ ARG KRONK_VERSION="dev"
 # Stage 1 — builder
 #
 # One stage installs both Go (parsed from go.mod) and Node.js 22 onto an
-# Ubuntu 24.04 base. It generates BUI docs, builds the BUI bundle (which
+# Ubuntu 26.04 base. It generates BUI docs, builds the BUI bundle (which
 # Vite writes into cmd/server/api/services/kronk/static/), then cross-
 # compiles the kronk binary with the BUI assets embedded.
 # =============================================================================
 
 # Base image is pinned by digest for reproducible builds. To bump, run:
-#   docker buildx imagetools inspect ubuntu:24.04
+#   docker buildx imagetools inspect ubuntu:26.04
 # and copy the index digest from the `Digest:` line. The same digest is
 # reused for the libs-fetcher and runtime stages below.
-FROM --platform=$BUILDPLATFORM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS builder
+FROM --platform=$BUILDPLATFORM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS builder
 
 ARG BUILDPLATFORM
 ARG TARGETOS
@@ -639,7 +639,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # `kronk libs` is network-bound, not CPU-bound.
 # =============================================================================
 
-FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS libs-fetcher
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS libs-fetcher
 
 ARG TARGETARCH
 ARG LLAMA_PROCESSORS
@@ -650,6 +650,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
+        libffi8 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -694,7 +695,7 @@ RUN set -eux; \
 # llama libs-fetcher under BuildKit.
 # =============================================================================
 
-FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS bucky-libs-fetcher
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS bucky-libs-fetcher
 
 ARG TARGETARCH
 ARG BUCKY_PROCESSORS
@@ -705,6 +706,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
+        libffi8 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -745,7 +747,7 @@ RUN set -eux; \
 # layout and version records that the server checks at startup.
 # =============================================================================
 
-FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS malina-libs-fetcher
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS malina-libs-fetcher
 
 ARG TARGETARCH
 ARG MALINA_PROCESSORS
@@ -754,7 +756,7 @@ ARG MALINA_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates libffi8 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -786,13 +788,13 @@ RUN set -eux; \
 # =============================================================================
 # Stage 3 — runtime
 #
-# The slimmest viable runtime image. Ubuntu 24.04 is required because
+# Malina's CPU/Vulkan bundles require glibc 2.43, provided by Ubuntu 26.04.
 # llama.cpp's prebuilt bundles dynamically link against libstdc++, libgomp,
 # libcurl, libvulkan, libopenblas, and (for CUDA/ROCm) the host-mounted
 # driver libraries surfaced via NVIDIA_* / LD_LIBRARY_PATH.
 # =============================================================================
 
-FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS runtime
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS runtime
 
 ARG KRONK_VERSION
 ARG LLAMA_PROCESSORS
@@ -831,7 +833,8 @@ ENV ROCM_PATH="/opt/rocm/core-${ROCM_VERSION}"
 # `<major>-<minor>` (e.g. cuda-cudart-13-0), so this value must match the
 # bundle's CUDA major. Bump in lockstep if upstream advances the cuda
 # bundle to a new major.
-ARG CUDA_PKG_VERSION="13-0"
+# Ubuntu 26.04's NVIDIA repository starts at CUDA 13.3, retaining .so.13.
+ARG CUDA_PKG_VERSION="13-3"
 
 # Expected fingerprint of AMD's ROCm apt repo signing key. Verified
 # after fetching packages.gpg over HTTPS; build fails loudly if AMD
@@ -865,7 +868,8 @@ RUN apt-get update \
         ca-certificates \
         curl \
         ffmpeg \
-        libcurl4 \
+        libcurl4t64 \
+        libffi8 \
         libgomp1 \
         libnuma1 \
         libopenblas0 \
@@ -912,7 +916,7 @@ RUN set -eux; \
         rm /tmp/rocm.gpg.key; \
         printf '%s\n' \
             'Types: deb' \
-            'URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu2404/' \
+            'URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu2604/' \
             'Suites: stable' \
             'Components: main' \
             'Architectures: amd64' \
@@ -953,7 +957,7 @@ RUN set -eux; \
         apt-get update; \
         apt-get install -y --no-install-recommends gnupg; \
         curl -fsSL -o /tmp/cuda-keyring.deb \
-            https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb; \
+            https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb; \
         dpkg -i /tmp/cuda-keyring.deb; \
         rm -f /tmp/cuda-keyring.deb; \
         apt-get update; \
@@ -1030,21 +1034,25 @@ COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
 # Pre-baked stable-diffusion.cpp bundles (empty on unsupported arm64).
 COPY --from=malina-libs-fetcher /kronk/malina-libraries /kronk/malina-libraries
 
-# Malina's ROCm build may advance independently of llama.cpp's. Do not
-# publish an image whose installed ROCm runtime cannot resolve its HIP backend.
+# Check every Malina backend, including CPU/Vulkan's glibc requirements and
+# ROCm's independently versioned HIP runtime. Missing symbol versions must fail
+# the build, not only surface when a user first loads a model.
 RUN set -eux; \
-    if [ "${TARGETARCH}" = "amd64" ] && echo " ${MALINA_PROCESSORS} " | grep -q ' rocm '; then \
-        hip="$(find /kronk/malina-libraries/linux/amd64/rocm -name libggml-hip.so -print -quit)"; \
-        if [ -z "${hip}" ]; then \
-            echo "Malina rocm requested but no libggml-hip.so in the bundle" >&2; \
-            exit 1; \
-        fi; \
-        missing="$(ldd "${hip}" | awk '/not found/ {print $1}')"; \
-        if [ -n "${missing}" ]; then \
-            echo "ROCm runtime does not satisfy Malina ${hip}:" >&2; \
-            echo "${missing}" >&2; \
-            exit 1; \
-        fi; \
+    if [ "${TARGETARCH}" = "amd64" ]; then \
+        for processor in ${MALINA_PROCESSORS}; do \
+            bundle="/kronk/malina-libraries/linux/amd64/${processor}"; \
+            test -f "${bundle}/libstable-diffusion.so"; \
+            for library in $(find "${bundle}" -type f -name '*.so*'); do \
+                if ! linkage="$(LD_LIBRARY_PATH="${bundle}:${LD_LIBRARY_PATH:-}" ldd "${library}" 2>&1)"; then \
+                    echo "Unable to check Malina ${library}: ${linkage}" >&2; \
+                    exit 1; \
+                fi; \
+                if printf '%s\n' "${linkage}" | grep -q 'not found'; then \
+                    echo "Runtime does not satisfy Malina ${library}: ${linkage}" >&2; \
+                    exit 1; \
+                fi; \
+            done; \
+        done; \
     fi
 
 # Default model config, at the location kronk uses natively. A named volume
@@ -1128,7 +1136,7 @@ CMD ["server", "start", "--base-path", "/kronk"]
 # Stage 4 — runtime-jetson (optional)
 #
 # Alternative runtime image for NVIDIA Jetson Orin / Xavier devices
-# running JetPack 6 (L4T r36.x). Ubuntu 24.04 cannot be used as the
+# running JetPack 6 (L4T r36.x). The standard Ubuntu base cannot be used as the
 # base because the Jetson kernel ships an older glibc/CUDA pairing and
 # the NVIDIA Container Runtime injects Tegra-specific driver libraries
 # (`libcuda.so` from /usr/lib/aarch64-linux-gnu/tegra/) that are
