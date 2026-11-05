@@ -71,6 +71,62 @@ func TestParser_FinalChannel(t *testing.T) {
 	})
 }
 
+func TestParser_ConstrainedFinalEverySplitPoint(t *testing.T) {
+	for _, tt := range []struct {
+		name, header, answer string
+	}{
+		{"plain", "final", "answer body"},
+		{"inline code", "final code", "answer body"},
+		{"inline json", "final json", "answer body"},
+		{"explicit json", "final <|constrain|>json", "answer body"},
+		{"explicit code", "final <|constrain|>code", "answer body"},
+		{"constraint alphabet", "final X_9-test", "answer body"},
+		{"long constraint", "final <|constrain|>" + strings.Repeat("x", 65), "answer body"},
+		{"ASCII whitespace", "final\tcode", "answer body"},
+		{"not a final prefix", "finalize", ""},
+		{"invalid alphabet", "final code/type", ""},
+		{"multiple words", "final code extra", ""},
+		{"non-ASCII separator", "final\u00a0code", ""},
+		{"empty constraint", "final <|constrain|>", ""},
+		{"invalid explicit constraint", "final <|constrain|>code/type", ""},
+		{"duplicate constraint", "final code<|constrain|>json", ""},
+		{"constraint with recipient", "final code to=functions.echo", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stream := `<|channel|>analysis<|message|>Plan<|end|><|start|>assistant<|channel|>` + tt.header + `<|message|>answer body<|return|>`
+			// Two chunks at every byte boundary, then all one-byte chunks.
+			for split := range len(stream) + 2 {
+				var chunks []string
+				if split <= len(stream) {
+					chunks = []string{stream[:split], stream[split:]}
+				} else {
+					for i := range len(stream) {
+						chunks = append(chunks, stream[i:i+1])
+					}
+				}
+				c := Parser{}.NewStateMachine()
+				got := make(map[model.Channel]string)
+				var ended bool
+				for _, chunk := range chunks {
+					result, eog := c.Classify(chunk)
+					got[result.Channel] += result.Content
+					ended = ended || eog
+				}
+				flusher := c.(model.StateMachineFlusher)
+				for result := flusher.Flush(); result.Channel != model.ChannelNone; result = flusher.Flush() {
+					got[result.Channel] += result.Content
+				}
+				if got[model.ChannelReasoning] != "Plan" || got[model.ChannelAnswer] != tt.answer || got[model.ChannelTool] != "" {
+					t.Fatalf("split %d: got reasoning/answer/tool %q/%q/%q, want %q/%q/empty", split, got[model.ChannelReasoning], got[model.ChannelAnswer], got[model.ChannelTool], "Plan", tt.answer)
+				}
+				if tt.answer != "" && !ended {
+					t.Fatalf("split %d: final answer did not end generation", split)
+				}
+			}
+		})
+	}
+}
+
 // TestParser_AnalysisThenFinal covers the most common Harmony layout:
 // reasoning followed by an answer in two separate channel blocks.
 func TestParser_AnalysisThenFinal(t *testing.T) {

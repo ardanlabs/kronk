@@ -129,7 +129,8 @@ func (sm *stateMachine) consumeMarker(marker string) bool {
 
 	if sm.awaitingConstrain {
 		if marker == messageMarker {
-			if trimASCIIWhitespace(sm.constraintBuf.String()) != "json" {
+			constraint := trimASCIIWhitespace(sm.constraintBuf.String())
+			if constraint != "json" && (sm.status != model.ChannelAnswer || !validConstraintType(constraint)) {
 				sm.preserveMalformed(marker)
 				return false
 			}
@@ -225,6 +226,11 @@ func (sm *stateMachine) finishChannel(constrained bool) {
 	sm.status = model.ChannelNone
 
 	channel, recipient, hasRecipient := strings.Cut(name, " to=functions.")
+	if !constrained && !hasRecipient {
+		if idx := strings.IndexFunc(channel, isASCIIWhitespace); idx > 0 && channel[:idx] == "final" && validConstraintType(trimASCIIWhitespace(channel[idx:])) {
+			channel = "final"
+		}
+	}
 	if hasRecipient && (channel == "analysis" || channel == "commentary") {
 		sm.status = model.ChannelTool
 		sm.toolFuncName = recipient
@@ -247,6 +253,20 @@ func (sm *stateMachine) finishChannel(constrained bool) {
 	} else {
 		sm.beginMessage()
 	}
+}
+
+// validConstraintType matches Harmony's nonempty [A-Za-z0-9_-] label.
+func validConstraintType(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range name {
+		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (sm *stateMachine) beginMessage() {
