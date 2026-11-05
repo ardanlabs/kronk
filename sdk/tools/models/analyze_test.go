@@ -949,6 +949,21 @@ func TestAutoTuneSelectsTensorParallelForTwoROCmGPUs(t *testing.T) {
 			"qwen3.attention.value_length":  "128",
 		},
 	}
+	glm := ModelInfo{
+		ID: "GLM5-Next", Size: info.Size,
+		Metadata: map[string]string{
+			"general.architecture":              "glm5-next",
+			"glm5-next.block_count":             "4",
+			"glm5-next.context_length":          "32768",
+			"glm5-next.embedding_length":        "6144",
+			"glm5-next.attention.head_count":    "64",
+			"glm5-next.attention.head_count_kv": "[0 0 0 1]",
+			"glm5-next.attention.key_length":    "512",
+			"glm5-next.attention.value_length":  "512",
+			"glm5-next.ssm.conv_kernel":         "4",
+			"glm5-next.kda.head_dim":            "128",
+		},
+	}
 	rocm := devices.Devices{
 		GPUCount:           2,
 		SupportsGPUOffload: true,
@@ -966,6 +981,10 @@ func TestAutoTuneSelectsTensorParallelForTwoROCmGPUs(t *testing.T) {
 		want        *model.SplitMode
 	}{
 		{"two ROCm GPUs", info, rocm, ModelConfig{}, new(model.SplitModeTensor)},
+		{"GLM cache replication needs explicit TP", glm, rocm, ModelConfig{}, nil},
+		{"explicit GLM TP remains a constraint", glm, rocm, ModelConfig{
+			PtrSplitMode: new(model.SplitModeTensor),
+		}, new(model.SplitModeTensor)},
 		{"one selected ROCm GPU", info, rocm, ModelConfig{Devices: []string{"ROCm0"}}, nil},
 		{"three ROCm GPUs", info, devices.Devices{
 			GPUCount: 3, SupportsGPUOffload: true,

@@ -48,6 +48,7 @@ func TestNew_ClaimsGLM(t *testing.T) {
 		{"arch-glm", model.Fingerprint{Architecture: "glm"}, true},
 		{"arch-glm4", model.Fingerprint{Architecture: "glm4"}, true},
 		{"arch-glm5", model.Fingerprint{Architecture: "glm_moe_dsa"}, true},
+		{"arch-glm5-next", model.Fingerprint{Architecture: "glm5-next"}, true},
 		{"arch-chatglm", model.Fingerprint{Architecture: "chatglm"}, true},
 		{"arch-mixed-case", model.Fingerprint{Architecture: "GLM4"}, true},
 

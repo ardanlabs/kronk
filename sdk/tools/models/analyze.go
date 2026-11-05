@@ -665,6 +665,11 @@ func autoTensorParallel(profile modelprofile.Profile, devs devices.Devices, cfg 
 	if !profile.SupportsTensorParallel || cfg.PtrSplitMode != nil || devs.GPUCount != 2 {
 		return false
 	}
+	// Native GLM5 Next TP mirrors MLA/indexer caches on every device.
+	// Do not select it automatically while fit estimates divide that storage.
+	if profile.Architecture == "glm5-next" {
+		return false
+	}
 	if cfg.FlashAttention != nil && *cfg.FlashAttention == model.FlashAttentionDisabled {
 		return false
 	}
