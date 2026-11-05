@@ -25,7 +25,7 @@ func (j *Jobs[R, A]) List(ctx context.Context, options ListOptions) ([]Run[R, A]
 	}
 	for _, status := range options.Statuses {
 		switch status {
-		case StatusQueued, StatusRunning, StatusRecovering, StatusPauseRequested, StatusPaused, StatusCompleted, StatusStopped, StatusFailed:
+		case StatusQueued, StatusRunning, StatusRecovering, StatusPauseRequested, StatusPaused, StatusWaiting, StatusCompleted, StatusStopped, StatusFailed:
 		default:
 			if !slices.Contains(j.cfg.Outcomes, status) {
 				return nil, nil, fmt.Errorf("%w: unknown job status %q", ErrInvalidArgument, status)

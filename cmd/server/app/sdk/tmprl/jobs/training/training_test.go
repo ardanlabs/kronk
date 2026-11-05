@@ -86,9 +86,11 @@ func (t *trainer) Predict(ctx context.Context, _ optimization.TrainingJob, adapt
 	return answers, ctx.Err()
 }
 
-type completer struct{}
+type completer struct {
+	generationCalls *atomic.Int32
+}
 
-func (completer) Complete(_ context.Context, r providers.CompletionRequest) (providers.Completion, error) {
+func (c completer) Complete(_ context.Context, r providers.CompletionRequest) (providers.Completion, error) {
 	prompt := r.Messages[1].Content
 	var output any
 	switch {
@@ -110,6 +112,10 @@ func (completer) Complete(_ context.Context, r providers.CompletionRequest) (pro
 		}
 		output = map[string]string{"record_1": question}
 	default:
+		// Preview and one full batch succeed before a transient generation failure.
+		if c.generationCalls != nil && c.generationCalls.Add(1) == 3 {
+			return providers.Completion{}, errors.New("controlled generation interruption")
+		}
 		_, source, _ := strings.Cut(prompt, "SOURCE:\n")
 		var rows []map[string]any
 		for i, section := range strings.Split(source, "[PASSAGE ")[1:] {
@@ -147,6 +153,27 @@ func source(t *testing.T, document bool) (string, string) {
 	return "source.jsonl", data.String()
 }
 
+func waitForCheckpoint(t *testing.T, ctx context.Context, j *job.Job, e tmprl.Execution, name string) tmprl.Run[job.Request, job.Artifacts] {
+	t.Helper()
+	for {
+		run, err := j.Jobs().Get(ctx, e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.Checkpoint != nil && run.Checkpoint.Name == name {
+			return run
+		}
+		if run.Status.Terminal() {
+			t.Fatalf("closed before %s: %+v", name, run)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("waiting for %s: %v", name, ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
 // This exercises production submission, runner, and concrete steps on Temporal.
 // Only model computation is substituted; no model is loaded or trained.
 func TestTrainingJob(t *testing.T) {
@@ -157,6 +184,7 @@ func TestTrainingJob(t *testing.T) {
 		status   tmprl.Status
 	}{
 		{name: "document-to-published-adapter", document: true, status: tmprl.StatusCompleted},
+		{name: "document-with-generation-retry", document: true, mode: "generation-retry", status: tmprl.StatusCompleted},
 		{name: "prepared-input-with-retry", mode: "retry", status: tmprl.StatusCompleted},
 		{name: "evaluation-rejected", mode: "reject", status: optimization.StatusNeedsImprovement},
 		{name: "permanent-training-failure", mode: "fail", status: tmprl.StatusFailed},
@@ -180,7 +208,11 @@ func TestTrainingJob(t *testing.T) {
 				t.Fatal(err)
 			}
 			compute := &trainer{mode: test.mode}
-			trainingJob, err := job.New(env.Client, job.Config{TaskQueue: env.TaskQueue, Uploads: storage, StorageRoot: t.TempDir(), Models: map[string]string{"gemma": model}, Trainer: compute, Completer: completer{}, Log: env.Log})
+			completion := completer{}
+			if test.mode == "generation-retry" {
+				completion.generationCalls = new(atomic.Int32)
+			}
+			trainingJob, err := job.New(env.Client, job.Config{TaskQueue: env.TaskQueue, Uploads: storage, StorageRoot: t.TempDir(), Models: map[string]string{"gemma": model}, Trainer: compute, Completer: completion, Log: env.Log})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -217,6 +249,107 @@ func TestTrainingJob(t *testing.T) {
 			}
 			stopWorker := sync.OnceFunc(worker.Stop)
 			t.Cleanup(stopWorker)
+			var reviewDecision, trainingDecision tmprl.Decision
+			if test.document {
+				waiting := waitForCheckpoint(t, ctx, trainingJob, run.Execution, "preview-review")
+				if waiting.Stage != "preparation" || waiting.Step != "preview" || waiting.Status != tmprl.StatusWaiting || waiting.Artifacts.Preview == nil || len(waiting.Artifacts.Preview.Preview) != 3 || waiting.Artifacts.Preview.TrainingReady || waiting.Artifacts.Preparation != nil || compute.attempts.Load() != 0 {
+					t.Fatalf("preview boundary: %+v", waiting)
+				}
+				assertSteps(t, env, run.Execution, []string{"preparation/extract", "preparation/preview"})
+				review := preparation.Review{Records: slices.Clone(waiting.Artifacts.Preview.Preview)}
+				review.Records[0].Prompt = "Which calibration code is assigned to device 00?"
+				review.Records[0].Target = "Device 00 uses corrected calibration code C00."
+				payload, err := json.Marshal(review)
+				if err != nil {
+					t.Fatal(err)
+				}
+				decision := tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "review-1", Payload: payload}
+				reviewDecision = decision
+				trainingDecision = tmprl.Decision{CheckpointID: run.RunID + "/preparation//start-training", SubmissionID: "train-1"}
+				if _, err := trainingJob.StartTraining(ctx, run.Execution, trainingDecision); !errors.Is(err, tmprl.ErrInvalidArgument) {
+					t.Fatalf("premature Training: %v", err)
+				}
+				for _, invalid := range []json.RawMessage{nil, json.RawMessage(`null`), json.RawMessage(`{"records":[]}`), json.RawMessage(`{"records":[],"unexpected":true}`), json.RawMessage(`{} {}`)} {
+					bad := decision
+					bad.Payload = invalid
+					if _, err := trainingJob.ContinuePreview(ctx, run.Execution, bad); !errors.Is(err, tmprl.ErrInvalidArgument) {
+						t.Fatalf("invalid review accepted: %s, %v", invalid, err)
+					}
+				}
+				bad := decision
+				bad.CheckpointID += "-stale"
+				if _, err := trainingJob.ContinuePreview(ctx, run.Execution, bad); !errors.Is(err, tmprl.ErrInvalidArgument) {
+					t.Fatalf("stale review: %v", err)
+				}
+				if err := trainingJob.Jobs().Pause(ctx, run.Execution); err != nil {
+					t.Fatal(err)
+				}
+				var live tmprl.Run[job.Request, job.Artifacts]
+				if err := tmprl.Query(ctx, env.Client, run.Execution, "training-state", &live); err != nil {
+					t.Fatal(err)
+				}
+				receipt, err := trainingJob.ContinuePreview(ctx, run.Execution, decision)
+				if err != nil {
+					t.Fatal(err)
+				}
+				retry, err := trainingJob.ContinuePreview(ctx, run.Execution, decision)
+				if err != nil || !reflect.DeepEqual(receipt, retry) {
+					t.Fatalf("review retry: %+v, %v", retry, err)
+				}
+				bad = decision
+				bad.SubmissionID = "conflicting-review"
+				if _, err := trainingJob.ContinuePreview(ctx, run.Execution, bad); !errors.Is(err, tmprl.ErrInvalidArgument) {
+					t.Fatalf("review conflict: %v", err)
+				}
+				live = tmprl.Run[job.Request, job.Artifacts]{}
+				if err := tmprl.Query(ctx, env.Client, run.Execution, "training-state", &live); err != nil {
+					t.Fatal(err)
+				}
+				if live.Status != tmprl.StatusPaused || live.Checkpoint != nil || len(live.Decisions) != 1 || live.Request.Prepare.PreviewRecords != 0 || len(live.Request.Prepare.ReviewedRecords) != 0 {
+					t.Fatalf("accepted review changed request or bypassed pause: %+v", live)
+				}
+				if err := trainingJob.Jobs().Resume(ctx, run.Execution); err != nil {
+					t.Fatal(err)
+				}
+				prepared := waitForCheckpoint(t, ctx, trainingJob, run.Execution, "start-training")
+				if prepared.Artifacts.Preparation == nil || !prepared.Artifacts.Preparation.TrainingReady || prepared.Artifacts.Preparation.RecordCount != 50 || prepared.Stages[0].Status != tmprl.StatusCompleted || !prepared.Stages[1].StartedAt.IsZero() || compute.attempts.Load() != 0 {
+					t.Fatalf("preparation did not finish independently: %+v", prepared)
+				}
+				file, err := os.Open(prepared.Artifacts.Preparation.RecordsPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				records, readErr := optimization.ReadRecords(ctx, file)
+				if err := errors.Join(readErr, file.Close()); err != nil {
+					t.Fatal(err)
+				}
+				var accepted preparation.Review
+				if err := json.Unmarshal(receipt.Payload, &accepted); err != nil {
+					t.Fatal(err)
+				}
+				if len(records) != 50 || !slices.Equal(records[:3], accepted.Records) {
+					t.Fatalf("review edits lost or duplicated: %+v", records)
+				}
+				assertSteps(t, env, run.Execution, []string{"preparation/extract", "preparation/preview", "preparation/generate", "preparation/verify"})
+				if _, err := trainingJob.ContinuePreview(ctx, run.Execution, decision); err != nil {
+					t.Fatal(err)
+				}
+				still := waitForCheckpoint(t, ctx, trainingJob, run.Execution, "start-training")
+				if still.Checkpoint.ID != prepared.Checkpoint.ID {
+					t.Fatal("review retry released Training")
+				}
+				badStart := trainingDecision
+				badStart.Payload = json.RawMessage(`{}`)
+				if _, err := trainingJob.StartTraining(ctx, run.Execution, badStart); !errors.Is(err, tmprl.ErrInvalidArgument) {
+					t.Fatalf("unexpected Training payload: %v", err)
+				}
+				if _, err := trainingJob.StartTraining(ctx, run.Execution, trainingDecision); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := trainingJob.StartTraining(ctx, run.Execution, trainingDecision); err != nil {
+					t.Fatal(err)
+				}
+			}
 			result, err := trainingJob.Jobs().Wait(ctx, run.Execution)
 			if (err != nil) != (test.mode == "fail") {
 				t.Fatalf("Wait: got %v, want failure=%v", err, test.mode == "fail")
@@ -229,6 +362,9 @@ func TestTrainingJob(t *testing.T) {
 			}
 			if result.Status != test.status || result.Artifacts.Training.Dataset == "" || result.SessionAttempt != 1 || result.Definition.Stages[0].Name == "mutated" {
 				t.Fatalf("result: got %+v, want status=%s with locked dataset and one reservation", result, test.status)
+			}
+			if test.mode == "generation-retry" && result.Stages[0].Steps[2].Attempt != 2 {
+				t.Fatalf("Generate did not recover from the interrupted batch: %+v", result.Stages[0])
 			}
 			wantAttempts := int32(1)
 			if test.mode == "retry" {
@@ -269,9 +405,22 @@ func TestTrainingJob(t *testing.T) {
 				wantSteps = append(wantSteps, "training/publish")
 			}
 			if test.document {
-				wantSteps = append([]string{"preparation/extract", "preparation/generate", "preparation/verify"}, wantSteps...)
+				wantSteps = append([]string{"preparation/extract", "preparation/preview", "preparation/generate", "preparation/verify"}, wantSteps...)
 				if result.Artifacts.Preparation == nil || result.Artifacts.Preparation.RecordCount != 50 {
 					t.Fatalf("preparation: got %+v, want 50 records", result.Artifacts.Preparation)
+				}
+				if len(result.Decisions) != 2 {
+					t.Fatalf("lost receipts: %+v", result.Decisions)
+				}
+				if _, err := trainingJob.ContinuePreview(ctx, run.Execution, reviewDecision); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := trainingJob.StartTraining(ctx, run.Execution, trainingDecision); err != nil {
+					t.Fatal(err)
+				}
+				trainingDecision.SubmissionID = "another-start"
+				if _, err := trainingJob.StartTraining(ctx, run.Execution, trainingDecision); !errors.Is(err, tmprl.ErrInvalidArgument) {
+					t.Fatalf("conflicting Training authorization: %v", err)
 				}
 			}
 			assertSteps(t, env, run.Execution, wantSteps)

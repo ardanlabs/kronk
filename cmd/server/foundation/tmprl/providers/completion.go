@@ -13,13 +13,15 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// CompletionRequest requests structured model output.
+// CompletionRequest requests model output. A nil ResponseSchema leaves output
+// unconstrained by a grammar.
 type CompletionRequest struct {
 	Model          string         `json:"model"`
 	Messages       []Message      `json:"messages"`
 	ResponseSchema map[string]any `json:"response_schema"`
 	MaxTokens      int            `json:"max_tokens"`
 	Seed           uint32         `json:"seed"`
+	EnableThinking bool           `json:"enable_thinking,omitzero"`
 }
 
 // Completion contains generated content and model usage.

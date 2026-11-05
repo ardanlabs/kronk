@@ -41,6 +41,9 @@ func (j *Jobs[R, A]) reconcileRun(state *Run[R, A], info *workflowpb.WorkflowExe
 	if state.ClosedAt.IsZero() && info.GetCloseTime() != nil {
 		state.ClosedAt = info.GetCloseTime().AsTime()
 	}
+	if info.GetStatus() != enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING {
+		state.Checkpoint = nil
+	}
 	switch info.GetStatus() {
 	case enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING:
 		return

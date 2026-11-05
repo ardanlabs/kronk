@@ -1392,221 +1392,109 @@ export interface EfficiencyResponse {
 }
 
 // =============================================================================
-// Fine-tuning
+// Training
 
-export type FineTuningGoal =
-  | 'question_answer'
-  | 'classification'
-  | 'numeric_prediction'
-  | 'text_generation';
-
-export interface FineTuningDatasetResponse {
-  dataset_id: string;
-  source_name: string;
-  source_names?: string[];
-  documents?: FineTuningDatasetDocument[];
-}
-
-export interface FineTuningDatasetDocument {
+// Public trainapp transport. The job owns validation and training policy.
+export interface TrainingUpload {
   id: string;
   name: string;
+  format: string;
+  size_bytes: number;
+  sha256: string;
+  created_at: string;
 }
 
-export interface FineTuningPreparationModelsResponse {
-  models: string[];
-}
-
-export interface FineTuningRecipeResponse {
-  model_id: string;
-  method: string;
-  base_weights: string;
-  optimizer: string;
-  learning_rate: number;
-  weight_decay: number;
-  batch_size: number;
+export interface TrainingOptions {
   maximum_epochs: number;
+  batch_size: number;
+  learning_rate: number;
   seed: number;
-  early_stopping_patience: number;
-  lora: {
-    rank: number;
-    alpha: number;
-    scale: number;
-    target_modules: string[];
-  };
-  sequence: {
-    maximum_tokens: number;
-    source: string;
-    overflow: string;
-    padding: string;
-  };
-  loss: string;
-  checkpoint_selection: string;
-  output: {
-    format: string;
-    precision: string;
-    filename: string;
-  };
-}
-
-export interface FineTuningTrainingConfig {
-  maximum_epochs: number;
-  learning_rate: number;
-  batch_size: number;
   lora_rank: number;
   lora_alpha: number;
-  weight_decay: number;
-  early_stopping_patience: number;
-  seed: number;
 }
 
-export interface FineTuningRecord {
+export interface PreparationOptions {
+  model: string;
+  goal: 'question_answer' | 'classification' | 'numeric_prediction' | 'text_generation';
+  instructions: string;
+}
+
+export type NewTrainingRun = {
+  model: string;
+  training: TrainingOptions;
+} & ({ dataset_id: string; prepare?: never } | { prepare: PreparationOptions & { dataset_id: string }; dataset_id?: never });
+
+// Statuses and ordered stages/steps come from the job runner.
+export interface TrainingRunsResponse {
+  runs: TrainingRun[];
+  next_page_token?: string;
+  revision: string;
+}
+
+export interface TrainingPreviewRecord {
   prompt: string;
   target: string;
   evidence: string;
-  fact_id?: string;
-  source_document?: string;
-  source_chunk_id?: string;
-  validation_prompt?: boolean;
-  independent_prompt?: boolean;
+  source_document: string;
 }
 
-export interface FineTuningVerification {
-  record_number: number;
-  passed: boolean;
-  expected_target: string;
-  reason: string;
+export interface ContinueTrainingPreview {
+  checkpoint_id: string;
+  submission_id: string;
+  records: TrainingPreviewRecord[];
 }
 
-export interface FineTuningPreviewRequest {
-  dataset_id: string;
-  goal: FineTuningGoal;
-  model_id: string;
-  record_count: number;
-  dataset_instructions: string;
-  document_ids?: string[];
+export interface StartPreparedTraining {
+  checkpoint_id: string;
+  submission_id: string;
 }
 
-export interface FineTuningDocumentPreview {
-  id: string;
-  name: string;
-  records: FineTuningRecord[];
-  verified_records: FineTuningRecord[];
-  verification: FineTuningVerification[];
-  generation_attempts: number;
-  verification_attempts: number;
-  prompt_tokens: number;
-  completion_tokens: number;
+export interface TrainingDecisionReceipt {
+  checkpoint_id: string;
+  submission_id: string;
 }
 
-export interface FineTuningPreviewResponse {
-  dataset_id: string;
-  records: FineTuningRecord[];
-  verification: FineTuningVerification[];
-  generation_attempts: number;
-  verification_attempts: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  documents?: Omit<FineTuningDocumentPreview, 'verified_records'>[];
-}
-
-export interface FineTuningDocumentBuildRequest {
-  id: string;
-  reviewed_records: FineTuningRecord[];
-  verified_preview_records: FineTuningRecord[];
-}
-
-export interface FineTuningBuildRequest {
-  dataset_id: string;
-  goal: FineTuningGoal;
-  model_id: string;
-  dataset_instructions: string;
-  reviewed_records?: FineTuningRecord[];
-  verified_preview_records?: FineTuningRecord[];
-  documents?: FineTuningDocumentBuildRequest[];
-}
-
-export interface FineTuningDocumentBuildResponse {
-  id: string;
-  name: string;
-  fact_count: number;
-  record_count: number;
-}
-
-export interface FineTuningBuildResponse {
-  dataset_id: string;
-  record_count: number;
-  reviewed_record_count: number;
-  generated_record_count: number;
-  generation_attempts: number;
-  verification_attempts: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-  excluded_evidence: number;
-  documents?: FineTuningDocumentBuildResponse[];
-}
-
-export interface FineTuningPreparationProgress {
-  operation: 'extraction' | 'prepared-upload' | 'preview' | 'build';
-  status: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
-  stage: string;
-  phase?: 'analysis' | 'generation' | 'finalization';
-  completed: number;
-  total: number;
-  accepted_records: number;
-  completed_chunks?: number;
-  total_chunks?: number;
-  planned_records?: number;
-  estimated_remaining_seconds?: number;
-  documents?: FineTuningPreparationDocumentProgress[];
-  error?: string;
-  started_at: string;
-  updated_at: string;
-}
-
-export interface FineTuningPreparationDocumentProgress {
-  id?: string;
-  name: string;
-  status: 'queued' | 'extracting' | 'processing' | 'completed' | 'failed' | 'stopped';
-  stage: string;
-  phase?: 'analysis' | 'generation' | 'finalization';
-  accepted_records?: number;
-  accepted_facts?: number;
-  target_facts?: number;
-  completed_batches?: number;
-  total_batches?: number;
-  completed_chunks?: number;
-  total_chunks?: number;
-  planned_records?: number;
-  estimated_remaining_seconds?: number;
-  cached?: boolean;
-  error?: string;
-}
-
-export interface FineTuningProgress {
-  stage: string;
-  completed: number;
-  total: number;
-  message: string;
-  resumable?: boolean;
-  selected_epoch?: number;
-}
-
-export interface FineTuningRun {
-  id: string;
-  dataset_id: string;
-  model: string;
+export interface TrainingRun {
+  workflow_id: string;
+  run_id: string;
   status: string;
-  progress: FineTuningProgress;
-  error?: string;
-  resumable?: boolean;
-  has_adapter: boolean;
-  has_report: boolean;
-  selected_epoch?: number;
+  stage?: string;
+  step?: string;
+  state_stale: boolean;
+  evaluation_available: boolean;
+  adapter_available: boolean;
   started_at: string;
-  updated_at: string;
-  finished_at?: string;
+  updated_at?: string;
+  closed_at?: string;
+  stages: TrainingStage[];
+  progress?: { stage: string; step: string; completed: number; total: number };
+  checkpoint?: { id: string; name: string; stage: string; step?: string };
+  preview?: { records: TrainingPreviewRecord[]; warnings?: string[] };
 }
 
-export interface FineTuningHistoryResponse {
-  runs: FineTuningRun[];
+export interface TrainingEvaluation {
+  score_kind: 'normalized_exact_match';
+  base_correct: number;
+  adapter_correct: number;
+  total: number;
+  accepted: boolean;
+  answers: { prompt: string; expected: string; base_answer: string; adapter_answer: string }[];
+}
+
+export interface TrainingStage {
+  name: string;
+  status: string;
+  started_at?: string;
+  closed_at?: string;
+  deadline?: string;
+  steps: TrainingStep[];
+}
+
+export interface TrainingStep {
+  name: string;
+  status: string;
+  attempt: number;
+  started_at?: string;
+  closed_at?: string;
+  last_heartbeat_at?: string;
 }

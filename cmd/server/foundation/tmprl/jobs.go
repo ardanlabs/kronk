@@ -2,6 +2,7 @@ package tmprl
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -189,6 +190,40 @@ func (j *Jobs[R, A]) Pause(ctx context.Context, e Execution) error {
 // Resume continues the same run without repeating committed steps.
 func (j *Jobs[R, A]) Resume(ctx context.Context, e Execution) error {
 	return j.control(ctx, e, "resume")
+}
+
+// Validate checks the decision envelope, not application-specific approval rules.
+func (d Decision) Validate() error {
+	if strings.TrimSpace(d.CheckpointID) == "" || len(d.CheckpointID) > 512 || strings.TrimSpace(d.SubmissionID) == "" || len(d.SubmissionID) > 200 {
+		return fmt.Errorf("%w: checkpoint ID (1–512 bytes) and submission ID (1–200 bytes) are required", ErrInvalidArgument)
+	}
+	if len(d.Payload) > 64<<10 || len(d.Payload) > 0 && !json.Valid(d.Payload) {
+		return fmt.Errorf("%w: decision payload must be valid JSON of at most 64 KiB", ErrInvalidArgument)
+	}
+	return nil
+}
+
+// Decide returns a durable acceptance receipt, not completion of subsequent work.
+// A caller timeout is ambiguous: retry the same submission or read Get.
+func (j *Jobs[R, A]) Decide(ctx context.Context, e Execution, decision Decision) (Decision, error) {
+	if err := decision.Validate(); err != nil {
+		return Decision{}, err
+	}
+	if err := ValidateWorkflow(ctx, j.client, e, j.cfg.Names.Workflow); err != nil {
+		return Decision{}, err
+	}
+	handle, err := j.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID: e.WorkflowID, RunID: e.RunID, UpdateName: j.cfg.Names.Control + ".decide",
+		Args: []any{decision}, WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	if err != nil {
+		return Decision{}, err
+	}
+	var receipt Decision
+	if err := handle.Get(ctx, &receipt); err != nil {
+		return Decision{}, err
+	}
+	return receipt, nil
 }
 
 func (j *Jobs[R, A]) control(ctx context.Context, e Execution, command string) error {

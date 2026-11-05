@@ -1,14 +1,17 @@
 package gemma
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/gomlx/gomlx/core/tensors"
 	"github.com/gomlx/gomlx/ml/model"
 )
 
@@ -92,6 +95,113 @@ func TestTrainDatasetRunsDeterministicEpochsAndPreservesBase(t *testing.T) {
 	})
 	if equalVariableSnapshots(adapterBefore, adapterAfter) {
 		t.Fatal("training did not change LoRA weights")
+	}
+}
+
+func TestTrainDatasetValidationLossIsEpochLocal(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", cmp.Or(os.Getenv("GOMLX_BACKEND"), "go"))
+	path := filepath.Join(t.TempDir(), "gemma.gguf")
+	writeTestModel(t, path, testConfig(), "gemma3")
+	runtime, err := NewLoRARuntime(path, AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	// Distinct embedding directions make the synthetic checkpoint losses
+	// change measurably, unlike the shared fixture's nearly parallel vectors.
+	embedding := make([]float32, runtime.base.config.VocabSize*runtime.base.config.EmbeddingDimension)
+	for index := range embedding {
+		embedding[index] = float32(math.Sin(float64(index*17 + 3)))
+	}
+	for path, values := range map[string][]float32{
+		"/token_embed/embeddings": embedding,
+		"/output/dense/weights":   transpose(embedding, runtime.base.config.VocabSize, runtime.base.config.EmbeddingDimension),
+	} {
+		variable := runtime.base.store.GetVariable(path)
+		if err := variable.SetValue(tensors.FromFlatDataAndDimensions(values, variable.Shape().Dimensions...)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	baseBefore := snapshotVariables(t, runtime.base.store, func(*model.Variable) bool { return true })
+	dataset := PreparedDataset{
+		Training: []TrainingRecord{
+			{Tokens: []int32{1, 4, 5}, Targets: []int32{4, 5, 6}, LossMask: []bool{false, true, true}},
+			{Tokens: []int32{1, 7, 8, 9}, Targets: []int32{7, 8, 9, 10}, LossMask: []bool{false, false, true, true}},
+		},
+		Validation: []TrainingRecord{
+			{Tokens: []int32{1, 11, 12}, Targets: []int32{11, 12, 13}, LossMask: []bool{false, true, true}},
+			{Tokens: []int32{1, 14}, Targets: []int32{14, 15}, LossMask: []bool{false, true}},
+		},
+	}
+	var expected []float64
+	config := TrainingConfig{
+		Epochs: 3, LearningRate: 0.1, BatchSize: 1, Seed: 42,
+		AdapterCheckpointDirectory: filepath.Join(t.TempDir(), "checkpoints"),
+		PersistCheckpoint: func(result TrainingResult) error {
+			if len(result.Epochs) == len(expected) {
+				return nil
+			}
+			weights := func(variable *model.Variable) bool {
+				_, base := baseBefore[variable.Path()]
+				return base || strings.Contains(variable.Path(), "/lora/")
+			}
+			before := snapshotVariables(t, runtime.base.store, weights)
+			var total float64
+			var active int
+			for _, record := range dataset.Validation {
+				_, err := runtime.run(record.Tokens, func(values []float32) {
+					for position, use := range record.LossMask {
+						if !use {
+							continue
+						}
+						logits := values[position*runtime.base.config.VocabSize : (position+1)*runtime.base.config.VocabSize]
+						maximum := float64(slices.Max(logits))
+						var sum float64
+						for _, value := range logits {
+							sum += math.Exp(float64(value) - maximum)
+						}
+						total += maximum + math.Log(sum) - float64(logits[record.Targets[position]])
+						active++
+					}
+				})
+				if err != nil {
+					return err
+				}
+			}
+			if !equalVariableSnapshots(before, snapshotVariables(t, runtime.base.store, weights)) {
+				t.Fatal("measuring validation loss changed base or LoRA weights")
+			}
+			expected = append(expected, total/float64(active))
+			return nil
+		},
+	}
+	result, err := runtime.TrainDataset(t.Context(), dataset, config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Epochs) != config.Epochs || len(expected) != config.Epochs {
+		t.Fatalf("completed %d epochs and measured %d, want %d", len(result.Epochs), len(expected), config.Epochs)
+	}
+	best := 0
+	for index, epoch := range result.Epochs {
+		t.Logf("epoch %d validation loss: reported=%g independent=%g", epoch.Epoch, epoch.ValidationLoss, expected[index])
+		// The independent host reduction is F64, while the batched graph uses F32.
+		if math.IsNaN(expected[index]) || math.IsInf(expected[index], 0) || math.Abs(epoch.ValidationLoss-expected[index]) > 1e-5*math.Max(1, math.Abs(expected[index])) {
+			t.Errorf("epoch %d validation loss = %g, want current-checkpoint loss %g", epoch.Epoch, epoch.ValidationLoss, expected[index])
+		}
+		if expected[index] < expected[best] {
+			best = index
+		}
+	}
+	if result.BestEpoch != best+1 || math.Abs(result.BestValidationLoss-expected[best]) > 1e-5*math.Max(1, math.Abs(expected[best])) || result.BestCheckpoint != result.Epochs[best].Checkpoint {
+		t.Fatalf("selected checkpoint = %+v, want epoch %d with independent loss %g", result, best+1, expected[best])
+	}
+	baseAfter := snapshotVariables(t, runtime.base.store, func(variable *model.Variable) bool {
+		_, exists := baseBefore[variable.Path()]
+		return exists
+	})
+	if !equalVariableSnapshots(baseBefore, baseAfter) {
+		t.Fatal("training changed frozen base weights")
 	}
 }
 

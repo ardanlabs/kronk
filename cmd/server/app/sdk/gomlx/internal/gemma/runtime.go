@@ -234,6 +234,10 @@ func (runtime *Runtime) evaluate(records []TrainingRecord) (float64, error) {
 			return 0, err
 		}
 	}
+	// Each validation pass measures only the current checkpoint.
+	for _, metric := range runtime.trainer.EvalMetrics() {
+		metric.Reset(runtime.base.store.RootScope())
+	}
 	metrics, err := runtime.trainer.EvalStep(trainingBatch(records, runtime.base.config.MaxSequenceLength))
 	if err != nil {
 		return 0, fmt.Errorf("evaluate Gemma LoRA: %w", err)

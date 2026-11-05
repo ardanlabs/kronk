@@ -11,6 +11,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	historypb "go.temporal.io/api/history/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
@@ -19,7 +20,7 @@ import (
 )
 
 func TestJobsGetSnapshotWithoutWorker(t *testing.T) {
-	for _, status := range []tmprl.Status{tmprl.StatusQueued, tmprl.StatusRunning, tmprl.StatusRecovering, tmprl.StatusPauseRequested, tmprl.StatusPaused} {
+	for _, status := range []tmprl.Status{tmprl.StatusQueued, tmprl.StatusRunning, tmprl.StatusRecovering, tmprl.StatusPauseRequested, tmprl.StatusPaused, tmprl.StatusWaiting} {
 		t.Run(string(status), func(t *testing.T) {
 			c := new(mocks.Client)
 			j := newSnapshotJobs(t, c)
@@ -27,6 +28,10 @@ func TestJobsGetSnapshotWithoutWorker(t *testing.T) {
 				Status: status, Request: "immutable request", Artifacts: []string{"committed-a", "committed-c"},
 				Definition: &tmprl.Job{Name: "persisted-plan"}, SessionAttempt: 3, WorkerHost: "former-worker",
 				Stage: "publish", Step: "upload", UpdatedAt: time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC),
+			}
+			if status == tmprl.StatusWaiting {
+				state.Checkpoint = &tmprl.Checkpoint{ID: "run-snapshot/publish/upload/review", Name: "review", Stage: "publish", Step: "upload"}
+				state.Decisions = []tmprl.Decision{{CheckpointID: "previous", SubmissionID: "accepted"}}
 			}
 			info := snapshotInfo(t, "snapshot", enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, &state)
 			e := tmprl.Execution{WorkflowID: "export-snapshot", RunID: "run-snapshot"}
@@ -41,6 +46,39 @@ func TestJobsGetSnapshotWithoutWorker(t *testing.T) {
 			}
 			// Any worker query or history call is unexpected on this strict mock.
 		})
+	}
+}
+
+func TestJobsGetCheckpointFromHistory(t *testing.T) {
+	c := new(mocks.Client)
+	j := newSnapshotJobs(t, c)
+	e := tmprl.Execution{WorkflowID: "export-history", RunID: "run-history"}
+	info := snapshotInfo(t, "history", enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, nil)
+	state := tmprl.Run[string, []string]{
+		Status: tmprl.StatusWaiting, Request: "immutable", Artifacts: []string{"preview"},
+		Checkpoint: &tmprl.Checkpoint{ID: "run-history/prepare/preview/review", Name: "review", Stage: "prepare", Step: "preview"},
+		Decisions:  []tmprl.Decision{{CheckpointID: "previous", SubmissionID: "accepted"}},
+	}
+	payload, err := converter.GetDefaultDataConverter().ToPayload(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.On("DescribeWorkflowExecution", mock.Anything, e.WorkflowID, e.RunID).Return(&workflowservice.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: info}, nil)
+	c.On("QueryWorkflow", mock.Anything, e.WorkflowID, e.RunID, "example-query").Return(nil, errors.New("worker unavailable"))
+	it := mocks.NewHistoryEventIterator(t)
+	it.On("HasNext").Return(true).Once()
+	it.On("Next").Return(&historypb.HistoryEvent{
+		EventType: enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED,
+		Attributes: &historypb.HistoryEvent_WorkflowPropertiesModifiedEventAttributes{WorkflowPropertiesModifiedEventAttributes: &historypb.WorkflowPropertiesModifiedEventAttributes{
+			UpsertedMemo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"example.snapshot": payload}},
+		}},
+	}, nil).Once()
+	it.On("HasNext").Return(false).Once()
+	c.On("GetWorkflowHistory", mock.Anything, e.WorkflowID, e.RunID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT).Return(it)
+	got, err := j.Get(t.Context(), e)
+	state.Execution, state.StartedAt, state.UpdatedAt, state.StateStale = e, info.StartTime.AsTime(), info.StartTime.AsTime(), true
+	if err != nil || !reflect.DeepEqual(got, state) {
+		t.Fatalf("history checkpoint: got %+v, %v, want %+v", got, err, state)
 	}
 }
 

@@ -76,6 +76,13 @@ kms:
     mode: authenticated
   mcp:
     enabled: false
+  training:
+    enabled: true
+    address: yaml-temporal.example:7233
+    namespace: moxie
+    models:
+      - huggingface/model-a
+      - huggingface/model-b
   pool:
     budget-percent: 80
     ttl: 5m
@@ -94,6 +101,7 @@ kms:
 	t.Setenv("KRONK_LIB_DOWNLOAD_ENABLED", "false")
 	t.Setenv("KRONK_MEDIA_BACKENDS_ENABLED", "false")
 	t.Setenv("KRONK_LIB_VERIFY_ENABLED", "true")
+	t.Setenv("KRONK_TRAINING_ADDRESS", "env-temporal.example:7233")
 
 	cfg, err := loadConfig(false)
 	if err != nil {
@@ -108,6 +116,9 @@ kms:
 	}
 	if cfg.MCP.Enabled {
 		t.Error("MCP.Enabled: got true, want false")
+	}
+	if !cfg.Training.Enabled || cfg.Training.Address != "env-temporal.example:7233" || cfg.Training.Namespace != "moxie" || len(cfg.Training.Models) != 2 || cfg.Training.Models[0] != "huggingface/model-a" || cfg.Training.Models[1] != "huggingface/model-b" {
+		t.Errorf("Training: unexpected configuration %+v", cfg.Training)
 	}
 	if cfg.Pool.BudgetPercent != 75 {
 		t.Errorf("BudgetPercent: got %d, want %d", cfg.Pool.BudgetPercent, 75)
@@ -206,6 +217,30 @@ func TestLoadConfigVersionOneCompatibility(t *testing.T) {
 	}
 	if cfg.Pool.BudgetPercent != 80 {
 		t.Errorf("BudgetPercent: got %d, want 80", cfg.Pool.BudgetPercent)
+	}
+}
+
+func TestTrainingConfig(t *testing.T) {
+	cfg := newConfig().Training
+	if cfg.Enabled || cfg.Address != "127.0.0.1:7233" || cfg.Namespace != "default" || len(cfg.Models) != 0 {
+		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+	for _, test := range []struct {
+		name      string
+		cfg       trainingConfig
+		wantError bool
+	}{
+		{"disabled", trainingConfig{}, false},
+		{"enabled", trainingConfig{Enabled: true, Address: "localhost:7233", Namespace: "default", Models: []string{"huggingface/model"}}, false},
+		{"no-models", trainingConfig{Enabled: true, Address: "localhost:7233", Namespace: "default"}, true},
+		{"no-address", trainingConfig{Enabled: true, Namespace: "default", Models: []string{"huggingface/model"}}, true},
+		{"no-namespace", trainingConfig{Enabled: true, Address: "localhost:7233", Models: []string{"huggingface/model"}}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateTrainingConfig(test.cfg); (err != nil) != test.wantError {
+				t.Fatalf("validation: %v, want error %t", err, test.wantError)
+			}
+		})
 	}
 }
 

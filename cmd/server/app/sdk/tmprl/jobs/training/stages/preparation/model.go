@@ -49,6 +49,12 @@ type PreparationRequest struct {
 	ReviewedRecords []training.Record `json:"reviewed_records,omitzero"`
 }
 
+// Review carries the user's edits to the saved Preview examples.
+// It is accepted separately from the immutable preparation request.
+type Review struct {
+	Records []training.Record `json:"records"`
+}
+
 // PreparationResult identifies published records and preparation usage.
 type PreparationResult struct {
 	DatasetID        string            `json:"dataset_id"`
@@ -81,6 +87,7 @@ type ModelCompleter interface {
 
 // Artifacts contains only the outputs owned by preparation.
 type Artifacts struct {
+	Preview     *PreparationResult `json:"preview,omitzero"`
 	Preparation *PreparationResult `json:"preparation,omitzero"`
 }
 
@@ -95,6 +102,8 @@ type StepContext struct {
 	Preparation *PreparationContext
 	Workspace   *os.Root
 	Artifacts   Artifacts
+	Review      *Review
+	ReviewID    string
 	Publish     func(tmprl.Progress)
 }
 

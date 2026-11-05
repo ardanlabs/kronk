@@ -23,6 +23,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/generate"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/preview"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/verify"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training/evaluate"
@@ -54,6 +55,7 @@ type Request struct {
 
 // Artifacts retains the outputs owned by each stage of the job.
 type Artifacts struct {
+	Preview     *preparation.PreparationResult `json:"preview,omitzero"`
 	Preparation *preparation.PreparationResult `json:"preparation,omitzero"`
 	Training    optimization.Artifacts         `json:"training"`
 }
@@ -144,7 +146,8 @@ func New(c client.Client, cfg Config) (*Job, error) {
 func (j *Job) Jobs() *tmprl.Jobs[Request, Artifacts] { return j.jobs }
 
 // Start submits the embedded plan after validating and copying training inputs.
-// Prepared JSONL skips preparation; documents execute both stages on one worker.
+// Prepared JSONL skips preparation. Documents wait for Preview review and for
+// explicit authorization to enter Training, using one reserved worker.
 func (j *Job) Start(ctx context.Context, input Request) (tmprl.Run[Request, Artifacts], error) {
 	input, err := j.validate(ctx, input)
 	if err != nil {
@@ -161,6 +164,76 @@ func (j *Job) Start(ctx context.Context, input Request) (tmprl.Run[Request, Arti
 		input.ID = "training-" + rand.Text()
 	}
 	return j.jobs.Submit(ctx, input.ID, tmprl.JobInput[Request]{Job: &plan, Request: input})
+}
+
+// ContinuePreview accepts edits to the saved examples and releases Preview.
+// The receipt acknowledges accepted input, not completion of the full dataset.
+func (j *Job) ContinuePreview(ctx context.Context, e tmprl.Execution, decision tmprl.Decision) (tmprl.Decision, error) {
+	if err := decision.Validate(); err != nil {
+		return tmprl.Decision{}, err
+	}
+	run, err := j.jobs.Get(ctx, e)
+	if err != nil {
+		return tmprl.Decision{}, err
+	}
+	if run.Request.Prepare == nil || decision.CheckpointID != run.RunID+"/preparation/preview/preview-review" {
+		return tmprl.Decision{}, fmt.Errorf("%w: decision must identify this run's Preview", tmprl.ErrInvalidArgument)
+	}
+	review, err := preview.ValidateReview(*run.Request.Prepare, run.Artifacts.Preview, decision.Payload)
+	if err != nil {
+		return tmprl.Decision{}, err
+	}
+	decision.Payload, err = json.Marshal(review)
+	if err != nil {
+		return tmprl.Decision{}, err
+	}
+	for _, accepted := range run.Decisions {
+		if accepted.CheckpointID == decision.CheckpointID {
+			if accepted.SubmissionID == decision.SubmissionID && bytes.Equal(accepted.Payload, decision.Payload) {
+				return accepted, nil
+			}
+			return tmprl.Decision{}, fmt.Errorf("%w: Preview review conflicts with accepted input", tmprl.ErrInvalidArgument)
+		}
+	}
+	if run.Status.Terminal() || run.Checkpoint == nil || run.Checkpoint.ID != decision.CheckpointID || run.Checkpoint.Stage != "preparation" || run.Checkpoint.Step != "preview" {
+		return tmprl.Decision{}, fmt.Errorf("%w: Preview is not waiting for review", tmprl.ErrInvalidArgument)
+	}
+	return j.jobs.Decide(ctx, e, decision)
+}
+
+// StartTraining authorizes the Training stage only after document preparation
+// completes with a training-ready dataset. Decision has no application payload.
+func (j *Job) StartTraining(ctx context.Context, e tmprl.Execution, decision tmprl.Decision) (tmprl.Decision, error) {
+	if err := decision.Validate(); err != nil {
+		return tmprl.Decision{}, err
+	}
+	if len(decision.Payload) != 0 {
+		return tmprl.Decision{}, fmt.Errorf("%w: StartTraining does not accept a payload", tmprl.ErrInvalidArgument)
+	}
+	run, err := j.jobs.Get(ctx, e)
+	if err != nil {
+		return tmprl.Decision{}, err
+	}
+	if run.Request.Prepare == nil || decision.CheckpointID != run.RunID+"/preparation//start-training" {
+		return tmprl.Decision{}, fmt.Errorf("%w: decision must identify this run's completed Preparation", tmprl.ErrInvalidArgument)
+	}
+	for _, accepted := range run.Decisions {
+		if accepted.CheckpointID == decision.CheckpointID {
+			if accepted.SubmissionID == decision.SubmissionID && bytes.Equal(accepted.Payload, decision.Payload) {
+				return accepted, nil
+			}
+			return tmprl.Decision{}, fmt.Errorf("%w: Training authorization conflicts with accepted input", tmprl.ErrInvalidArgument)
+		}
+	}
+	if run.Status.Terminal() || run.Checkpoint == nil || run.Checkpoint.ID != decision.CheckpointID || run.Checkpoint.Stage != "preparation" || run.Checkpoint.Step != "" || !slices.ContainsFunc(run.Stages, func(stage tmprl.StageState) bool {
+		return stage.Name == "preparation" && stage.Status == tmprl.StatusCompleted
+	}) {
+		return tmprl.Decision{}, fmt.Errorf("%w: Preparation has not completed", tmprl.ErrInvalidArgument)
+	}
+	if _, err := j.records(ctx, run.Request, run.Artifacts, run.RunID); err != nil {
+		return tmprl.Decision{}, err
+	}
+	return j.jobs.Decide(ctx, e, decision)
 }
 
 // Evaluation reads the persisted report, including a rejected candidate's report.
@@ -208,6 +281,9 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 		return Request{}, fmt.Errorf("%w: invalid training hyperparameters", tmprl.ErrInvalidArgument)
 	}
 	if r.Prepare != nil {
+		if len(r.Prepare.ReviewedRecords) != 0 {
+			return Request{}, fmt.Errorf("%w: submit reviewed examples through ContinuePreview after Preview", tmprl.ErrInvalidArgument)
+		}
 		if j.cfg.Completer == nil {
 			return Request{}, fmt.Errorf("%w: document preparation requires a completer", tmprl.ErrInvalidArgument)
 		}
@@ -355,6 +431,7 @@ func (j *Job) trainingContext(ctx context.Context, input tmprl.StepContext[Reque
 func (j *Job) steps() map[string]tmprl.StepHandler[Request, Artifacts] {
 	return map[string]tmprl.StepHandler[Request, Artifacts]{
 		"preparation/extract":  j.prepare(extract.Step{}),
+		"preparation/preview":  j.prepare(preview.Step{}),
 		"preparation/generate": j.prepare(generate.Step{}),
 		"preparation/verify":   j.prepare(verify.Step{}),
 		"training/split":       j.optimize(split.Step{}),
@@ -374,17 +451,40 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 		if err != nil {
 			return tmprl.StepResult[Artifacts]{}, stepError(err)
 		}
+		request := *r.Request.Prepare
+		if step.Name() == "preview" {
+			request.PreviewRecords = 3
+			request.ReviewedRecords = nil
+		}
+		var review *preparation.Review
+		var reviewID string
+		if r.Artifacts.Preview != nil && (step.Name() == "generate" || step.Name() == "verify") {
+			for _, decision := range r.Decisions {
+				if decision.CheckpointID == r.RunID+"/preparation/preview/preview-review" {
+					accepted, err := preview.ValidateReview(request, r.Artifacts.Preview, decision.Payload)
+					if err != nil {
+						return tmprl.StepResult[Artifacts]{}, stepError(err)
+					}
+					review, reviewID = &accepted, decision.SubmissionID
+				}
+			}
+			if review == nil {
+				return tmprl.StepResult[Artifacts]{}, invalidInput("Preview review must be accepted before full preparation")
+			}
+		}
 		output, err := step.Execute(ctx, preparation.StepContext{
 			Preparation: &preparation.PreparationContext{
-				Input:  preparation.PreparationInput{Request: *r.Request.Prepare, Kind: preparation.PreparationFull},
+				Input:  preparation.PreparationInput{Request: request, Kind: preparation.PreparationFull},
 				Source: source, Extractor: j.cfg.Extractor, Completer: j.cfg.Completer,
 				OpenSource: func(ctx context.Context) (io.ReadCloser, error) {
 					return j.cfg.Uploads.Open(ctx, source.ID)
 				},
 			},
-			Workspace: input.Workspace, Artifacts: preparation.Artifacts{Preparation: r.Artifacts.Preparation}, Publish: input.Publish,
+			Workspace: input.Workspace, Artifacts: preparation.Artifacts{Preview: r.Artifacts.Preview, Preparation: r.Artifacts.Preparation},
+			Review: review, ReviewID: reviewID, Publish: input.Publish,
 		})
 		artifacts := r.Artifacts
+		artifacts.Preview = output.Artifacts.Preview
 		artifacts.Preparation = output.Artifacts.Preparation
 		return tmprl.StepResult[Artifacts]{Artifacts: artifacts, Status: output.Status}, stepError(err)
 	})

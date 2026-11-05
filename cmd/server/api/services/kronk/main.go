@@ -19,16 +19,16 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
-	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp"
-	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/finetune"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/trainapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
-	finetunegomlx "github.com/ardanlabs/kronk/cmd/server/app/sdk/gomlx"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -43,6 +43,7 @@ import (
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"go.temporal.io/sdk/client"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -98,6 +99,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 		return err
 	}
 	if err := validateTimeoutConfig(cfg.Web.InferenceTimeout, cfg.Web.WriteTimeout); err != nil {
+		return err
+	}
+	if err := validateTrainingConfig(cfg.Training); err != nil {
 		return err
 	}
 
@@ -610,35 +614,51 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	if err != nil {
 		return fmt.Errorf("locating fine-tuning data directory: %w", err)
 	}
-	trainingBackend := finetunegomlx.New()
-	fineTuner, err := finetune.NewManager(filepath.Join(home, ".moxie", "runs"), trainingBackend)
-	if err != nil {
-		return fmt.Errorf("initializing fine-tuning manager: %w", err)
-	}
-	if _, err := fineTuner.Recover(); err != nil {
-		return fmt.Errorf("recovering fine-tuning runs: %w", err)
-	}
-	documentPreparer, datasetBuilder, err := fineapp.NewPreparation(cfgMux.Pool.Kronk)
-	if err != nil {
-		return fmt.Errorf("initializing fine-tuning preparation: %w", err)
-	}
-	llamaServer := filepath.Join(llamaLibs.LibsPath(), "llama-server")
-	if runtime.GOOS == "windows" {
-		llamaServer += ".exe"
-	}
-	fineConfig := fineapp.Config{
-		DatasetsPath: filepath.Join(home, ".moxie", "datasets"),
-		Preparer:     documentPreparer,
-		Builder:      datasetBuilder,
-		FineTuner:    fineTuner,
-		Recipes:      trainingBackend,
-		Runtime: finetune.Runtime{
-			LlamaServer: llamaServer,
-			ContextSize: 512,
-		},
+	var trainConfig trainapp.Config
+	if cfg.Training.Enabled {
+		approvedModels := make(map[string]string, len(cfg.Training.Models))
+		for _, id := range cfg.Training.Models {
+			path, err := models.FullPath(id)
+			if err != nil {
+				return fmt.Errorf("resolving approved training model %q: %w", id, err)
+			}
+			if len(path.ModelFiles) != 1 || path.ModelFiles[0] == "" {
+				return fmt.Errorf("approved training model %q must resolve to one GGUF file", id)
+			}
+			approvedModels[id] = path.ModelFiles[0]
+		}
+		store, err := uploads.New(uploads.Config{Root: filepath.Join(home, ".moxie", "uploads")})
+		if err != nil {
+			return fmt.Errorf("initializing training uploads: %w", err)
+		}
+		dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		temporalClient, err := client.DialContext(dialCtx, client.Options{
+			HostPort: cfg.Training.Address, Namespace: cfg.Training.Namespace,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("connecting training Temporal client: %w", err)
+		}
+		defer temporalClient.Close()
+
+		job, err := training.New(temporalClient, training.Config{
+			Uploads: store, StorageRoot: filepath.Join(home, ".moxie"),
+			Models: approvedModels, ModelPool: p.Kronk, Log: log.Info,
+		})
+		if err != nil {
+			return fmt.Errorf("initializing training job: %w", err)
+		}
+		worker := job.Jobs().NewWorker()
+		if err := worker.Start(); err != nil {
+			return fmt.Errorf("starting training worker: %w", err)
+		}
+		defer worker.Stop()
+		trainConfig.Job = job
+		trainConfig.Uploads = store
+		log.Info(ctx, "startup", "status", "training worker started", "namespace", cfg.Training.Namespace)
 	}
 
-	webAPI := mux.WebAPI(cfgMux, build.Routes(fineConfig), options...)
+	webAPI := mux.WebAPI(cfgMux, build.Routes(build.Config{Training: trainConfig}), options...)
 
 	api := http.Server{
 		Addr:         cfg.Web.APIHost,

@@ -327,8 +327,8 @@ export default function Layout({ children }: LayoutProps) {
   const {
     preparationActivity: fineTuningPreparation,
     trainingActivity: fineTuningTraining,
+    uploading: fineTuningUploading,
     cancelPreparation: stopFineTuningPreparation,
-    stopRun: stopFineTuningTraining,
   } = useFineTuningRunner();
   const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
@@ -693,7 +693,7 @@ export default function Layout({ children }: LayoutProps) {
             {fineTuningPreparation && (
               <div className="download-indicator">
                 <div className="download-indicator-link autotest-indicator-link">
-                  <Link to={`${routeMap['fine-tuning']}?view=prepare`} className="autotest-indicator-top">
+                  <Link to={`${routeMap['fine-tuning']}?view=${fineTuningUploading ? 'configure' : 'run'}`} className="autotest-indicator-top">
                     <div className="download-indicator-header">
                       <span className="download-indicator-spinner" />
                       <span className="download-indicator-title">{fineTuningPreparation.title}</span>
@@ -702,15 +702,15 @@ export default function Layout({ children }: LayoutProps) {
                       {fineTuningProgress(fineTuningPreparation)}
                     </div>
                   </Link>
-                  <button
+                  {fineTuningUploading && <button
                     type="button"
                     className="autotest-indicator-stop"
                     onClick={stopFineTuningPreparation}
-                    aria-label="Stop dataset preparation"
-                    title="Stop dataset preparation"
+                    aria-label="Cancel dataset upload"
+                    title="Cancel dataset upload"
                   >
                     ■
-                  </button>
+                  </button>}
                 </div>
               </div>
             )}
@@ -726,15 +726,6 @@ export default function Layout({ children }: LayoutProps) {
                       {fineTuningProgress(fineTuningTraining)}
                     </div>
                   </Link>
-                  <button
-                    type="button"
-                    className="autotest-indicator-stop"
-                    onClick={stopFineTuningTraining}
-                    aria-label="Stop fine-tuning run"
-                    title="Stop fine-tuning run"
-                  >
-                    ■
-                  </button>
                 </div>
               </div>
             )}

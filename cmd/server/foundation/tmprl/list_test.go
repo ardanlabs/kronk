@@ -51,7 +51,7 @@ func snapshotInfo(t *testing.T, id string, status enumspb.WorkflowExecutionStatu
 }
 
 func TestJobsListStatusPages(t *testing.T) {
-	statuses := []tmprl.Status{tmprl.StatusQueued, tmprl.StatusRunning, tmprl.StatusRecovering, tmprl.StatusPauseRequested, tmprl.StatusPaused, tmprl.StatusCompleted, tmprl.StatusStopped, tmprl.StatusFailed, "rejected"}
+	statuses := []tmprl.Status{tmprl.StatusQueued, tmprl.StatusRunning, tmprl.StatusRecovering, tmprl.StatusPauseRequested, tmprl.StatusPaused, tmprl.StatusWaiting, tmprl.StatusCompleted, tmprl.StatusStopped, tmprl.StatusFailed, "rejected"}
 	var infos []*workflowpb.WorkflowExecutionInfo
 	for _, status := range statuses {
 		server := enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING
@@ -73,6 +73,7 @@ func TestJobsListStatusPages(t *testing.T) {
 	}{
 		{name: "unfiltered", infos: infos, want: statuses},
 		{name: "short-exact-running", filters: []tmprl.Status{tmprl.StatusRunning}, infos: infos, want: []tmprl.Status{tmprl.StatusRunning}},
+		{name: "waiting-not-running", filters: []tmprl.Status{tmprl.StatusWaiting}, infos: infos, want: []tmprl.Status{tmprl.StatusWaiting}},
 		{name: "empty-filtered", filters: []tmprl.Status{tmprl.StatusPaused}, infos: infos[:4], want: []tmprl.Status{}},
 		{name: "custom-outcome-not-completed", filters: []tmprl.Status{"rejected"}, infos: infos, want: []tmprl.Status{"rejected"}},
 		{name: "completed-not-custom-outcome", filters: []tmprl.Status{tmprl.StatusCompleted}, infos: infos, want: []tmprl.Status{tmprl.StatusCompleted}},
@@ -118,13 +119,16 @@ func TestJobsListTerminalMetadata(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := new(mocks.Client)
 			j := newSnapshotJobs(t, c)
-			info := snapshotInfo(t, "closed", test.server, &tmprl.Run[string, []string]{WorkflowID: "stale", RunID: "old", Status: tmprl.StatusRunning})
+			info := snapshotInfo(t, "closed", test.server, &tmprl.Run[string, []string]{WorkflowID: "stale", RunID: "old", Status: tmprl.StatusWaiting, Checkpoint: &tmprl.Checkpoint{ID: "obsolete"}, Decisions: []tmprl.Decision{{CheckpointID: "previous", SubmissionID: "accepted"}}})
 			c.On("ListWorkflow", mock.Anything, mock.Anything).Return(&workflowservice.ListWorkflowExecutionsResponse{Executions: []*workflowpb.WorkflowExecutionInfo{info}}, nil).Once()
 			runs, next, err := j.List(t.Context(), tmprl.ListOptions{PageSize: 1, Statuses: []tmprl.Status{test.want}})
 			if err != nil || len(runs) != 1 {
 				t.Fatalf("List: got %v, %v, want one terminal snapshot", runs, err)
 			}
 			run := runs[0]
+			if run.Checkpoint != nil || len(run.Decisions) != 1 || run.Decisions[0].SubmissionID != "accepted" {
+				t.Fatalf("terminal checkpoint state: got %+v, want no pending gate and retained receipt", run)
+			}
 			if run.Status != test.want || run.WorkflowID != "export-closed" || run.RunID != "run-closed" || !run.StartedAt.Equal(info.StartTime.AsTime()) || !run.UpdatedAt.Equal(run.StartedAt) || !run.ClosedAt.Equal(info.CloseTime.AsTime()) || len(next) != 0 {
 				t.Errorf("terminal metadata: got %+v token %v, want authoritative identity/times/status %s", run, next, test.want)
 			}

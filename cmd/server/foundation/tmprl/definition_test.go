@@ -108,11 +108,22 @@ func TestValidate(t *testing.T) {
 		{"empty stages", func(j *tmprl.Job) { j.Stages = nil }},
 		{"invalid stage name", func(j *tmprl.Job) { j.Stages[0].Name = " " }},
 		{"duplicate stage", func(j *tmprl.Job) { j.Stages[1].Name = j.Stages[0].Name }},
+		{"invalid stage checkpoint", func(j *tmprl.Job) { j.Stages[0].WaitAfter = "../next" }},
+		{"final stage checkpoint", func(j *tmprl.Job) { j.Stages[1].WaitAfter = "next" }},
+		{"shared stage step checkpoint", func(j *tmprl.Job) {
+			j.Stages[0].WaitAfter = "next"
+			j.Stages[0].Steps[0].WaitAfter = "next"
+		}},
 		{"zero stage timeout", func(j *tmprl.Job) { j.Stages[0].Timeout = 0 }},
 		{"negative stage timeout", func(j *tmprl.Job) { j.Stages[0].Timeout = -1 }},
 		{"empty steps", func(j *tmprl.Job) { j.Stages[0].Steps = nil }},
 		{"invalid step name", func(j *tmprl.Job) { j.Stages[0].Steps[0].Name = "/" }},
 		{"duplicate step", func(j *tmprl.Job) { j.Stages[0].Steps[1].Name = j.Stages[0].Steps[0].Name }},
+		{"invalid checkpoint", func(j *tmprl.Job) { j.Stages[0].Steps[0].WaitAfter = "../review" }},
+		{"duplicate checkpoint", func(j *tmprl.Job) {
+			j.Stages[0].Steps[0].WaitAfter = "review"
+			j.Stages[1].Steps[0].WaitAfter = "review"
+		}},
 		{"zero step timeout", func(j *tmprl.Job) { j.Stages[0].Steps[0].Timeout = 0 }},
 		{"negative step timeout", func(j *tmprl.Job) { j.Stages[0].Steps[0].Timeout = -1 }},
 		{"zero heartbeat", func(j *tmprl.Job) { j.Stages[0].Steps[0].HeartbeatTimeout = 0 }},
@@ -150,7 +161,9 @@ func TestBoundaryPoliciesAndJSON(t *testing.T) {
 	job.SessionAttempts = 1
 	job.Stages[1].Steps[0].Name = job.Stages[0].Steps[0].Name // Unique only within a stage.
 	job.Stages[0].Timeout = math.MaxInt64
+	job.Stages[0].WaitAfter = "next-stage"
 	step := &job.Stages[0].Steps[0]
+	step.WaitAfter = strings.Repeat("a", 64)
 	step.Timeout = math.MaxInt64
 	step.HeartbeatTimeout = math.MaxInt64 - 1
 	step.Retry = tmprl.Retry{MaximumAttempts: 1, InitialInterval: math.MaxInt64, MaximumInterval: math.MaxInt64, BackoffCoefficient: 1}
@@ -170,6 +183,14 @@ func TestBoundaryPoliciesAndJSON(t *testing.T) {
 	}
 	if err := got.Validate(); err != nil {
 		t.Errorf("JSON Validate: got %v, want nil", err)
+	}
+	yamlData, err := yaml.Marshal(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := tmprl.ParseJob(yamlData)
+	if err != nil || !reflect.DeepEqual(parsed, job) {
+		t.Fatalf("checkpoint YAML round trip: got %+v, %v, want %+v", parsed, err, job)
 	}
 }
 

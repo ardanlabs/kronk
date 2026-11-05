@@ -107,7 +107,7 @@ func TestGoMLXTrainerMissingModel(t *testing.T) {
 // KRONK_TMPRL_SMOKE_BASE, KRONK_TMPRL_SMOKE_LIBS and KRONK_TMPRL_SMOKE_MODEL
 // configuration as the providers smoke test. It requires compatible installed
 // libraries and an existing indexed, small single-file GGUF chat model that fits
-// CPU RAM with 512 context tokens. No downloads, training or adapter creation run.
+// CPU RAM with 1024 context tokens. No downloads, training or adapter creation run.
 func TestGoMLXTrainerNativeSuccess(t *testing.T) {
 	initNativeTrainer(t)
 	base, modelID := os.Getenv("KRONK_TMPRL_SMOKE_BASE"), os.Getenv("KRONK_TMPRL_SMOKE_MODEL")
@@ -130,7 +130,7 @@ func TestGoMLXTrainerNativeSuccess(t *testing.T) {
 		Log: applog.DiscardLogger, Models: mdls, Resman: rm, StartupDevices: &hardware,
 		ModelsInPool: 1,
 		ModelConfig: map[string]models.ModelConfig{modelID: {
-			PtrContextWindow: new(512), PtrNGpuLayers: new(-1), PtrNSeqMax: new(1),
+			PtrContextWindow: new(1024), PtrNGpuLayers: new(-1), PtrNSeqMax: new(1),
 			PtrIncrementalCache: new(false), PtrInsecureLogging: new(false),
 		}},
 	})
@@ -171,6 +171,8 @@ func TestGoMLXTrainerNativeSuccess(t *testing.T) {
 	records := []training.Record{
 		{Prompt: "Reply with only the word hello.", Target: "Secret greeting target.", Evidence: "Private greeting evidence.", FactID: "greeting", SourceDocument: "greeting.pdf", IndependentPrompt: true},
 		{Prompt: "Reply with only the number 2.", Target: "Secret number target.", Evidence: "Private number evidence.", FactID: "number", SourceChunkID: "n-2", IndependentPrompt: true},
+		// This Gemma question previously exhausted the 192-token answer cap.
+		{Prompt: "What is the cost for mooring?", Target: "Private mooring target.", Evidence: "Private mooring evidence.", FactID: "mooring", IndependentPrompt: true},
 	}
 	wantRecords := slices.Clone(records)
 	answers, err := trainer.Predict(ctx, job, "", records)

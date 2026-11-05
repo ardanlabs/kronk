@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
@@ -17,6 +18,13 @@ import (
 )
 
 var supportedConfigVersions = []int{1, 2}
+
+type trainingConfig struct {
+	Enabled   bool     `yaml:"enabled"`
+	Address   string   `yaml:"address"`
+	Namespace string   `yaml:"namespace"`
+	Models    []string `yaml:"models"`
+}
 
 type config struct {
 	conf.Version `yaml:"-"`
@@ -63,7 +71,8 @@ type config struct {
 		ServiceName string  `conf:"help:Service name in the traces" yaml:"service-name"`
 		Probability float64 `conf:"help:Share of requests traced (0 to 1)" yaml:"probability"`
 	} `yaml:"tempo"`
-	Pool struct {
+	Training trainingConfig `yaml:"training"`
+	Pool     struct {
 		ModelConfigFile string        `yaml:"-"`
 		BudgetPercent   int           `conf:"help:Percent (1 to 100) of system and GPU memory the loaded models may use" yaml:"budget-percent"`
 		ModelsInPool    int           `conf:"help:Most models kept loaded at once regardless of memory" yaml:"models-in-pool"`
@@ -111,6 +120,8 @@ func newConfig() config {
 	cfg.Tempo.Probability = 0.25
 	cfg.Pool.BudgetPercent = 90
 	cfg.Pool.ModelsInPool = 10
+	cfg.Training.Address = "127.0.0.1:7233"
+	cfg.Training.Namespace = "default"
 	cfg.LibDownloadEnabled = true
 	cfg.MediaBackendsEnabled = true
 	cfg.LibVerifyEnabled = true
@@ -203,6 +214,13 @@ func resolveAuthorizationSettings(mode auth.Mode, mcpAuthEnabled bool) (bool, bo
 	}
 
 	return false, false, false
+}
+
+func validateTrainingConfig(cfg trainingConfig) error {
+	if cfg.Enabled && (strings.TrimSpace(cfg.Address) == "" || strings.TrimSpace(cfg.Namespace) == "" || len(cfg.Models) == 0) {
+		return errors.New("configuration: enabled training requires a Temporal address, namespace, and approved model IDs")
+	}
+	return nil
 }
 
 func validateTimeoutConfig(inferenceTimeout, writeTimeout time.Duration) error {
