@@ -938,6 +938,9 @@ var (
 	// DecisionProtocolPplxDecider identifies the Perplexity label-readout protocol.
 	DecisionProtocolPplxDecider = newDecisionProtocol("pplx-decider")
 
+	// DecisionProtocolGraniteSwitch identifies the Granite Switch label-readout protocol.
+	DecisionProtocolGraniteSwitch = newDecisionProtocol("granite-switch")
+
 	// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol.
 	DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")
 

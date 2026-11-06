@@ -17,6 +17,7 @@ func TestDecisionContracts(t *testing.T) {
 		{"unknown", modelprofile.DecisionExecution{}},
 		{"lev", modelprofile.DecisionExecution{}},
 		{"pplx-decider", modelprofile.DecisionExecution{}},
+		{"granite-switch", modelprofile.DecisionExecution{}},
 		{"lfm2-d1", modelprofile.DecisionExecution{}},
 		{"laya", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchPhysical, Embeddings: true}},
 		{"kev", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchPhysical, Embeddings: true}},
@@ -61,6 +62,7 @@ func TestDecisionTemperaturePrecision(t *testing.T) {
 		bits     int
 	}{
 		{"pplx-decider", 32}, {"lfm2-d1", 32}, {"lfm3-d1", 32},
+		{"granite-switch", 32},
 		{"lfm3-d1-omni", 32},
 		{"vllm-decision2", 32}, {"vllm-d3", 32}, {"lev", 64},
 		{"laya", 64}, {"kev", 64}, {"clef", 64}, {"unknown", 64}, {"", 64},

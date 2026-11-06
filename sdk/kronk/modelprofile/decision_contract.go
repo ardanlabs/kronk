@@ -53,7 +53,7 @@ func DecisionContractFor(protocol string) DecisionContract {
 	case "lfm3-d1", "lfm3-d1-omni":
 		contract.Execution = DecisionExecution{Batch: DecisionBatchWholePrompt, SingleSequence: true, NonCausal: true}
 		contract.temperatureBits = 32
-	case "pplx-decider", "lfm2-d1":
+	case "pplx-decider", "lfm2-d1", "granite-switch":
 		contract.temperatureBits = 32
 	case "lev":
 		contract.temperatureBuckets = []decisionTemperatureBucket{{8, "small"}, {26, "mid"}, {0, "large"}}

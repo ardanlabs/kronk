@@ -91,6 +91,7 @@ var protocolFactories = map[string]protocolFactory{
 	"nimble":         func(r *Runtime) (Protocol, error) { return newNimbleProtocol(r) },
 	"clef":           func(r *Runtime) (Protocol, error) { return newClefProtocol(r) },
 	"pplx-decider":   newPplxDeciderProtocol,
+	"granite-switch": newGraniteSwitchProtocol,
 	"lfm2-d1":        newLFM2D1Protocol,
 	"lfm3-d1":        func(r *Runtime) (Protocol, error) { return newLFM3D1Protocol(r) },
 	"lfm3-d1-omni":   newLFM3D1OmniProtocol,

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -93,6 +94,7 @@ func TestDecisionProtocol(t *testing.T) {
 		{"Nimble", "nimble", DecisionProtocolNimble, false},
 		{"Clef", "clef", DecisionProtocolClef, false},
 		{"PplxDecider", "pplx-decider", DecisionProtocolPplxDecider, false},
+		{"GraniteSwitch", "granite-switch", DecisionProtocolGraniteSwitch, false},
 		{"Lfm2D1", "lfm2-d1", DecisionProtocolLfm2D1, false},
 		{"Lfm3D1", "lfm3-d1", DecisionProtocolLfm3D1, false},
 		{"Lfm3D1Omni", "lfm3-d1-omni", DecisionProtocolLfm3D1Omni, false},
@@ -111,6 +113,16 @@ func TestDecisionProtocol(t *testing.T) {
 				t.Errorf("ParseDecisionProtocol() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGraniteSwitchProtocolDetection(t *testing.T) {
+	profile := arch.Resolve(map[string]string{
+		"general.architecture":        "graniteswitch",
+		"graniteswitch.decision.type": "granite-switch",
+	})
+	if got := detectDecisionProtocol(DecisionProtocol{}, profile); !got.Equal(DecisionProtocolGraniteSwitch) {
+		t.Errorf("detected protocol: got %v, want granite-switch", got)
 	}
 }
 
@@ -1038,6 +1050,10 @@ func TestValidateConfig(t *testing.T) {
 		{"decision protocol is valid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithDecisionProtocol(DecisionProtocolOpenJEV),
+		), false},
+		{"Granite Switch protocol is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithDecisionProtocol(DecisionProtocolGraniteSwitch),
 		), false},
 		{"unknown decision protocol is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),

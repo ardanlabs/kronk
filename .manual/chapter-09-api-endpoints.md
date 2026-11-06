@@ -448,6 +448,7 @@ with the following protocols:
 | Protocol | User-visible behavior |
 | --- | --- |
 | `pplx-decider` | Independent decisions for each question |
+| `granite-switch` | Text-only decisions with a non-null state and required instructions; uses the model's embedded decision adapter |
 | `lfm2-d1` | Model-calibrated option probabilities |
 | `lfm3-d1` | Median score; confidence is maximum answer probability |
 | `lfm3-d1-omni` | LFM3-d1 semantics with image/audio state and spoken instructions; requires a compatible projector |
@@ -460,6 +461,16 @@ choice and score questions; `noul` still returns the true-option probability.
 Decision2 requires at least two choice options and a state that is text, an
 object, or an array. D3 permits omitted or empty instructions, using the
 template's default question; the other protocols require instructions.
+
+Granite Switch requires a GGUF with the embedded decision adapter and its
+bundled decision template; a separate LoRA file is not required. Each question
+is evaluated independently. Structured state, instructions, and option
+descriptions retain their JSON values, and ordered objects retain their field
+order. Score answers use the probability-weighted mean level. Inputs that
+exceed the configured context window are rejected rather than truncated.
+Automatic selection uses the GGUF's `graniteswitch.decision.type` metadata.
+For an explicit SDK override, use
+`model.WithDecisionProtocol(model.DecisionProtocolGraniteSwitch)`.
 
 Decision2, D3, and LFM3 d1 evaluate each complete prompt in a single physical
 batch, regardless of the configured prefill batch size. D3 and LFM3 d1 use one
@@ -477,7 +488,8 @@ the whole-prompt budget; inputs are never truncated.
 
 Model-backed compatibility has been exercised for LFM3 d1 text and Omni media
 decisions, not decision quality. The other four additional protocols still need
-model-backed validation. Protocol support alone is not a quality guarantee.
+model-backed validation, as does Granite Switch. Protocol support alone is not
+a quality guarantee.
 
 A response is keyed by the caller's question IDs:
 

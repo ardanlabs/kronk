@@ -203,8 +203,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.32.0"
-    hash = "sha256-sgbCkdGVh4CwQup75rZQeCpZ9kkMpeH1jlznNeQZQd4="
+    version = "v1.32.1-0.20261106124144-1d9b313de17b"
+    hash = "sha256-eSW6M9mZKU6AY+W2EhABJsdbTVHtKfs9Ve9qGEkC58Y="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -263,8 +263,8 @@ schema = 3
     version = "v0.0.0-20191010083416-a7dc8b61c822"
     hash = "sha256-79URDDFenmGc9JZu+5AXHToMrtTREHb3BC84b/gym9Q="
   [mod."github.com/open-policy-agent/opa"]
-    version = "v1.22.1"
-    hash = "sha256-bVlL0aVU8LA0/SaBlToEAbL388lUP5Z6Pr3klEuVSXQ="
+    version = "v1.22.2"
+    hash = "sha256-kG32+8E/0Lz4eQIO0mNSInyIbuOPmF+ABQ1m/vv4ku4="
   [mod."github.com/pandatix/go-abnf"]
     version = "v0.5.5"
     hash = "sha256-HTxLPMqTr7q4SRTXBEBtXfNpOENm0e0EJh6zFn22hQQ="
@@ -296,8 +296,8 @@ schema = 3
     version = "v1.10.2"
     hash = "sha256-nbRCTFiDCC2jKK7AHi79n7urYCMP5yDZnWtNVJrDi+k="
   [mod."github.com/spf13/pflag"]
-    version = "v1.0.10"
-    hash = "sha256-uDPnWjHpSrzXr17KEYEA1yAbizfcsfo5AyztY2tS6ZU="
+    version = "v1.1.0"
+    hash = "sha256-B7mjsUWaV/ltrpt8mGFyqeLQBpRd7Xcif019pAjWv+w="
   [mod."github.com/spiffe/go-spiffe/v2"]
     version = "v2.9.0"
     hash = "sha256-6QTQzVY/IGJyVrFbNRlphTT6pbyEkAFKGmx5bYRZJyg="

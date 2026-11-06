@@ -2,8 +2,10 @@ package decision
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -286,6 +288,129 @@ func TestDeciderDecisionContracts(t *testing.T) {
 				t.Errorf("missing instructions: got %v, want ErrDecisionRequest", err)
 			}
 		})
+	}
+}
+
+func TestGraniteSwitchDecision(t *testing.T) {
+	// The SystemOne template emitted by llama.cpp b12125's Granite converter.
+	// The template, not Kronk, supplies the embedded adapter's control token.
+	const source = `<|start_of_role|>user<|end_of_role|>State:
+{{ state if state is string else state | tojson }}<|end_of_text|>
+<|start_of_role|>user<|end_of_role|><|decision|> DECISION
+Question:
+{{ instructions if instructions is string else instructions | tojson }}{% if type == 'score' %} Rate along the ordered levels below (lowest first).{% endif %}{{ '\n\nOptions:\n' }}{% for o in options %}{% if type != 'noul' %}{{ o.label }}: {% if o.description %}{{ o.description if o.description is string else o.description | tojson }}{% endif %}{% elif o.key == 'true' %}A: {% if o.description %}{{ o.description if o.description is string else o.description | tojson }}{% else %}The statement is true.{% endif %}{% else %}B: {% if o.description %}{{ o.description if o.description is string else o.description | tojson }}{% else %}The statement is false.{% endif %}{% endif %}{{ '\n' }}{% endfor %}{{ '\nReply with exactly one option label.<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>' }}`
+	tmpl, err := jinja.Compile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := Runtime{ModelID: "test-granite", Protocol: "granite-switch", ContextWindow: 4096}
+	runtime.Calibration = arch.Resolve(map[string]string{
+		"general.architecture": "graniteswitch", "graniteswitch.decision.type": "granite-switch",
+		"graniteswitch.decision.score_bias.2.1":      "2",
+		"graniteswitch.decision.temperature.score":   "9",
+		"graniteswitch.decision.temperature.score.2": "2",
+	}).Decision
+	var prompts []string
+	encode := func(text string, special bool) []llama.Token {
+		if !special {
+			return map[string][]llama.Token{"A": {10}, "B": {11}, "C": {12, 13}, "AA": {40}}[text]
+		}
+		prompts = append(prompts, text)
+		last := llama.Token(1)
+		switch {
+		case strings.Contains(text, "Rate along the ordered levels"):
+			last = 2
+		case strings.Contains(text, "The statement is true."):
+			last = 3
+		}
+		return []llama.Token{0, last}
+	}
+	tokens, labels := decisionAlphabetLabels(func(text string) []llama.Token { return encode(text, false) })
+	p := &graniteSwitchProtocol{
+		runtime: &runtime, template: systemOneTemplate{tmpl: tmpl}, encode: encode,
+		labelTokens: tokens, labels: labels,
+	}
+	runtime.Run = func(_ context.Context, work []Work) ([][][]float32, error) {
+		out := make([][][]float32, len(work))
+		for i, item := range work {
+			scores := make([]float32, len(item.Readouts[0].Candidates))
+			for j, token := range item.Readouts[0].Candidates {
+				switch item.Tokens[len(item.Tokens)-1] {
+				case 1:
+					if token == 40 {
+						scores[j] = 2
+					}
+				case 3:
+					if token == 10 {
+						scores[j] = 2
+					}
+				}
+			}
+			out[i] = [][]float32{scores}
+		}
+		return out, nil
+	}
+	req := DecisionRequest{
+		State: DecisionState(DecisionStateData("z", 1.23456789), DecisionStateData("a", []any{
+			json.Number("1.0"), true, nil, DecisionState(DecisionStateData("z", 2), DecisionStateData("a", 1)),
+		})),
+		Questions: []DecisionQuestion{
+			DecisionQuestionChoice("route", DecisionState(DecisionStateData("task", "Choose")),
+				DecisionQuestionOpt("first", nil), DecisionQuestionOpt("second", []any{}),
+				DecisionQuestionOpt("third", DecisionState(DecisionStateData("z", false), DecisionStateData("a", 1.23456789)))),
+			DecisionQuestionScore("score", "Rate", "low", "high"),
+			DecisionQuestionNoul("noul", "Holds?", nil),
+		},
+	}
+	resp, err := validatedDeciderRequest(t.Context(), &runtime, p, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.Answers["route"]; got.Choice != "third" || got.Probabilities["third"] != .787 || got.Probabilities["first"] != .1065 {
+		t.Errorf("choice: got %+v, want third with .787/.1065", got)
+	}
+	if got := resp.Answers["score"]; got.Score != .7311 || got.Probabilities["1"] != .7311 {
+		t.Errorf("score: got %+v, want .7311", got)
+	}
+	if got := resp.Answers["noul"].Noul; got != .8808 {
+		t.Errorf("noul: got %v, want .8808", got)
+	}
+	if resp.Model != "test-granite" || resp.Usage.InputTokens != 6 || resp.Usage.OutputTokens != 0 {
+		t.Errorf("response: got %+v", resp)
+	}
+	for _, prompt := range prompts {
+		if !strings.Contains(prompt, `State:
+{"z": 1.23456789, "a": [1.0, true, null, {"z": 2, "a": 1}]}`) || !strings.Contains(prompt, "<|decision|> DECISION") {
+			t.Errorf("structured state or adapter control token lost: %q", prompt)
+		}
+	}
+	if !strings.Contains(prompts[0], "Question:\n{\"task\": \"Choose\"}") || !strings.Contains(prompts[0], "A: \nB: \nAA: {\"z\": false, \"a\": 1.23456789}\n") {
+		t.Errorf("structured instructions/options or label selection lost: %q", prompts[0])
+	}
+	if !strings.Contains(prompts[2], "A: The statement is true.\nB: The statement is false.\n") {
+		t.Errorf("Noul defaults/order: %q", prompts[2])
+	}
+	for _, state := range []any{nil, (*string)(nil), math.NaN()} {
+		req.State = state
+		if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); !errors.Is(err, ErrDecisionRequest) {
+			t.Errorf("invalid state %v: got %v, want ErrDecisionRequest", state, err)
+		}
+	}
+	req.State = "<|decision|>"
+	if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompts[len(prompts)-1], "State:\n<|decision|><|end_of_text|>") {
+		t.Errorf("string state should reach the model-owned template unchanged: %q", prompts[len(prompts)-1])
+	}
+	runtime.ContextWindow = 1
+	if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); !errors.Is(err, ErrDecisionBudget) {
+		t.Errorf("budget: got %v, want ErrDecisionBudget", err)
+	}
+	runtime.ContextWindow = 4096
+	req.Questions[0].Options = append(req.Questions[0].Options, DecisionQuestionOpt("fourth", nil))
+	if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); !errors.Is(err, ErrDecisionRequest) {
+		t.Errorf("label limit: got %v, want ErrDecisionRequest", err)
 	}
 }
 
