@@ -209,8 +209,8 @@ func ValidateRequest(req DecisionRequest, protocol string) error {
 			}
 
 		case DecisionQuestionTypeScore:
-			if len(question.Levels) < 2 || len(question.Levels) > 10 {
-				return fmt.Errorf("%w: score question %q needs 2 to 10 levels, got %d", ErrDecisionRequest, question.ID, len(question.Levels))
+			if len(question.Levels) < contract.MinScoreLevels || len(question.Levels) > contract.MaxScoreLevels {
+				return fmt.Errorf("%w: score question %q needs %d to %d levels, got %d", ErrDecisionRequest, question.ID, contract.MinScoreLevels, contract.MaxScoreLevels, len(question.Levels))
 			}
 
 		case DecisionQuestionTypeNoul:

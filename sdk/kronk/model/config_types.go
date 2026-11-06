@@ -938,8 +938,17 @@ var (
 	// DecisionProtocolPplxDecider identifies the Perplexity label-readout protocol.
 	DecisionProtocolPplxDecider = newDecisionProtocol("pplx-decider")
 
+	// DecisionProtocolGraniteSwitch identifies the Granite Switch label-readout protocol.
+	DecisionProtocolGraniteSwitch = newDecisionProtocol("granite-switch")
+
+	// DecisionProtocolH2OLightning identifies the H2O Lightning label-readout protocol.
+	DecisionProtocolH2OLightning = newDecisionProtocol("h2o-lightning")
+
 	// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol.
 	DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")
+
+	// DecisionProtocolLfm2D1Omni identifies the LFM2 whole-prompt embedding-readout protocol.
+	DecisionProtocolLfm2D1Omni = newDecisionProtocol("lfm2-d1-omni")
 
 	// DecisionProtocolLfm3D1 identifies the LFM3 whole-prompt grouped-label protocol.
 	DecisionProtocolLfm3D1 = newDecisionProtocol("lfm3-d1")

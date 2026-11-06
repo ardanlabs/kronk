@@ -17,7 +17,10 @@ func TestDecisionContracts(t *testing.T) {
 		{"unknown", modelprofile.DecisionExecution{}},
 		{"lev", modelprofile.DecisionExecution{}},
 		{"pplx-decider", modelprofile.DecisionExecution{}},
+		{"granite-switch", modelprofile.DecisionExecution{}},
+		{"h2o-lightning", modelprofile.DecisionExecution{}},
 		{"lfm2-d1", modelprofile.DecisionExecution{}},
+		{"lfm2-d1-omni", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchWholePrompt, SingleSequence: true, NonCausal: true, Embeddings: true}},
 		{"laya", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchPhysical, Embeddings: true}},
 		{"kev", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchPhysical, Embeddings: true}},
 		{"clef", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchPhysical, Embeddings: true, AllTokenOutputs: true}},
@@ -31,7 +34,7 @@ func TestDecisionContracts(t *testing.T) {
 			if contract.Execution != tt.want {
 				t.Errorf("Execution: got %+v, want %+v", contract.Execution, tt.want)
 			}
-			if want := tt.protocol == "vllm-d3"; contract.InstructionsOptional != want {
+			if want := tt.protocol == "vllm-d3" || tt.protocol == "h2o-lightning"; contract.InstructionsOptional != want {
 				t.Errorf("InstructionsOptional: got %t, want %t", contract.InstructionsOptional, want)
 			}
 			for _, bucket := range []struct {
@@ -61,6 +64,9 @@ func TestDecisionTemperaturePrecision(t *testing.T) {
 		bits     int
 	}{
 		{"pplx-decider", 32}, {"lfm2-d1", 32}, {"lfm3-d1", 32},
+		{"granite-switch", 32},
+		{"h2o-lightning", 32},
+		{"lfm2-d1-omni", 32},
 		{"lfm3-d1-omni", 32},
 		{"vllm-decision2", 32}, {"vllm-d3", 32}, {"lev", 64},
 		{"laya", 64}, {"kev", 64}, {"clef", 64}, {"unknown", 64}, {"", 64},

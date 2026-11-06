@@ -9,7 +9,7 @@ require (
 	github.com/ardanlabs/kronk v1.33.1
 	github.com/duckdb/duckdb-go/v2 v2.20000.0
 	github.com/gen2brain/malgo v0.11.27
-	github.com/hybridgroup/yzma v1.32.0
+	github.com/hybridgroup/yzma v1.32.1-0.20261106124144-1d9b313de17b
 	golang.org/x/image v0.47.0
 )
 
@@ -112,7 +112,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
+	golang.org/x/exp v0.0.0-20261106112924-d498a4c2cc9a // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect

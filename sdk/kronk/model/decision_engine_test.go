@@ -29,19 +29,26 @@ func TestDecisionContextParams(t *testing.T) {
 }
 
 func TestDecisionContextParamsWholePrompt(t *testing.T) {
-	for _, protocol := range []DecisionProtocol{DecisionProtocolVllmD3, DecisionProtocolVllmDecision2, DecisionProtocolLfm3D1, DecisionProtocolLfm3D1Omni} {
+	for _, protocol := range []DecisionProtocol{DecisionProtocolVllmD3, DecisionProtocolVllmDecision2, DecisionProtocolLfm3D1, DecisionProtocolLfm3D1Omni, DecisionProtocolLfm2D1Omni} {
 		t.Run(protocol.String(), func(t *testing.T) {
 			cfg := NewConfig(WithContextWindow(4096), WithNSeqMax(4), WithPrefillBatchSize(768), WithDecisionProtocol(protocol))
 			got := decisionContextParams(llama.ContextParams{}, cfg)
 			if got.NBatch != 4096 || got.NUbatch != 4096 {
 				t.Errorf("whole prompt: got batch=%d ubatch=%d, want 4096/4096", got.NBatch, got.NUbatch)
 			}
-			if protocol == DecisionProtocolVllmD3 || protocol == DecisionProtocolLfm3D1 || protocol == DecisionProtocolLfm3D1Omni {
+			switch protocol {
+			case DecisionProtocolLfm2D1Omni:
+				if got.NSeqMax != 1 || got.NCtx != 4096 || got.AttentionType != llama.AttentionTypeNonCausal || got.Embeddings != 1 || got.PoolingType != llama.PoolingTypeNone || got.NOutputsMax != decisionMaxReadouts {
+					t.Errorf("whole-prompt isolated embeddings: got %+v", got)
+				}
+			case DecisionProtocolVllmD3, DecisionProtocolLfm3D1, DecisionProtocolLfm3D1Omni:
 				if got.NSeqMax != 1 || got.NCtx != 4096 || got.AttentionType != llama.AttentionTypeNonCausal || got.Embeddings != 0 {
 					t.Errorf("non-causal isolation: got %+v", got)
 				}
-			} else if got.Embeddings != 1 || got.NOutputsMax != 4096 || got.NOutputsMaxPerSeq != 4096 {
-				t.Errorf("decision2 all-token outputs: got %+v", got)
+			default:
+				if got.Embeddings != 1 || got.NOutputsMax != 4096 || got.NOutputsMaxPerSeq != 4096 {
+					t.Errorf("decision2 all-token outputs: got %+v", got)
+				}
 			}
 		})
 	}

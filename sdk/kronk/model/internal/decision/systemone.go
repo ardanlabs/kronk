@@ -1,6 +1,7 @@
 package decision
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,11 +65,70 @@ func (t systemOneTemplate) render(question DecisionQuestion, state, instructions
 }
 
 func (t systemOneTemplate) renderValues(values D) (string, error) {
-	rendered, err := t.tmpl.Render(values)
+	input := make(map[string]jinja.Value, len(values))
+	for key, value := range values {
+		native, ok := value.(jinja.Value)
+		if !ok {
+			native = jinja.FromGoValue(value)
+		}
+		input[key] = native
+	}
+	rendered, err := t.tmpl.RenderValues(input)
 	if err != nil {
 		return "", fmt.Errorf("render systemone template: %w", err)
 	}
 	return rendered, nil
+}
+
+// decisionJinjaValue retains JSON object order and scalar types for templates
+// that serialize structured inputs themselves instead of receiving text.
+func decisionJinjaValue(value any) (jinja.Value, error) {
+	data, err := marshalDecisionJSON(value)
+	if err != nil {
+		return jinja.Undefined(), fmt.Errorf("%w: encode template value: %w", ErrDecisionRequest, err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var decode func() (jinja.Value, error)
+	decode = func() (jinja.Value, error) {
+		token, err := decoder.Token()
+		if err != nil {
+			return jinja.Undefined(), err
+		}
+		delim, container := token.(json.Delim)
+		if !container {
+			return jinja.FromGoValue(token), nil
+		}
+		object := jinja.NewDict()
+		var items []jinja.Value
+		for decoder.More() {
+			key := ""
+			if delim == '{' {
+				name, err := decoder.Token()
+				if err != nil {
+					return jinja.Undefined(), err
+				}
+				key = name.(string)
+			}
+			item, err := decode()
+			if err != nil {
+				return jinja.Undefined(), err
+			}
+			if delim == '{' {
+				object.AsDict().Set(key, item)
+				continue
+			}
+			items = append(items, item)
+		}
+		if _, err := decoder.Token(); err != nil {
+			return jinja.Undefined(), err
+		}
+		if delim == '{' {
+			return object, nil
+		}
+		return jinja.NewList(items), nil
+	}
+	return decode()
 }
 
 func (m *Runtime) decisionLabelTokens() ([]llama.Token, []string, error) {
@@ -80,13 +140,24 @@ func (m *Runtime) decisionLabelTokens() ([]llama.Token, []string, error) {
 }
 
 func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(string) []llama.Token) ([]llama.Token, []string, error) {
+	tokens, labels, err := decisionMetadataLabels(labelAt, encode)
+	if err != nil && !errors.Is(err, llama.ErrModelNoDecisionLabel) {
+		return nil, nil, err
+	}
+	if len(labels) > 0 {
+		return tokens, labels, nil
+	}
+
+	// Older libraries and models without label metadata retain alphabet labels.
+	tokens, labels = decisionAlphabetLabels(encode)
+	return tokens, labels, nil
+}
+
+func decisionMetadataLabels(labelAt func(uint32) (string, error), encode func(string) []llama.Token) ([]llama.Token, []string, error) {
 	var tokens []llama.Token
 	var labels []string
 	for i := range MaxReadouts {
 		label, err := labelAt(uint32(i))
-		if i == 0 && errors.Is(err, llama.ErrModelNoDecisionLabel) {
-			break
-		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("read decision label %d: %w", i, err)
 		}
@@ -100,11 +171,12 @@ func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(strin
 		tokens = append(tokens, encoded[0])
 		labels = append(labels, label)
 	}
-	if len(labels) > 0 {
-		return tokens, labels, nil
-	}
+	return tokens, labels, nil
+}
 
-	// Older libraries and models without label metadata retain alphabet labels.
+func decisionAlphabetLabels(encode func(string) []llama.Token) ([]llama.Token, []string) {
+	var tokens []llama.Token
+	var labels []string
 	appendLabel := func(label string) {
 		encoded := encode(label)
 		if len(encoded) == 1 {
@@ -121,7 +193,7 @@ func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(strin
 			appendLabel(string([]rune{first, second}))
 		}
 	}
-	return tokens, labels, nil
+	return tokens, labels
 }
 
 func decisionTemplateValue(value any) (any, error) {
