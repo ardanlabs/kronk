@@ -731,9 +731,8 @@ models:
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 904004000
     mtp: mtp-Qwen3.8-Flash-Next-UD-Q2_K_XL.gguf
-    mtp_orig: mtp-Qwen3.8-Flash-Next-Q8_0.gguf
-    mtp_url: https://huggingface.co/ggml-org/Qwen3.8-Flash-Next-GGUF/resolve/main/mtp-Qwen3.8-Flash-Next-Q8_0.gguf
-    mtp_size: 4137429280
+    mtp_orig: MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf
+    mtp_size: 4137429120
     mtp_checked: true
     mtp_source: companion
     model_type: MoE

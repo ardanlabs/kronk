@@ -271,8 +271,8 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 	if !exists {
 		t.Fatalf("required model %q is missing", flashNextQ2)
 	}
-	const wantMTPURL = "https://huggingface.co/ggml-org/Qwen3.8-Flash-Next-GGUF/resolve/main/mtp-Qwen3.8-Flash-Next-Q8_0.gguf"
-	if entry.MTPOrig != "mtp-Qwen3.8-Flash-Next-Q8_0.gguf" || entry.MTPURL != wantMTPURL || entry.MTPSize != 4137429280 {
+	const wantMTPURL = "https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/resolve/main/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf"
+	if entry.MTPOrig != "MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf" || entry.MTPURL != "" || entry.MTPSize != 4137429120 {
 		t.Errorf("model %q has incomplete MTP companion metadata: %+v", flashNextQ2, entry)
 	}
 	if entry.MTPSource != MTPSourceCompanion || !entry.Capabilities.MTP {

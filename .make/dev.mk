@@ -90,6 +90,14 @@ test-malina: install-test-malina ## Install fixtures and run Malina tests
 	go test -v -p=1 -count=1 -timeout 20m -tags=malina_integration -run '^TestMalinaModelInference$$' ./sdk/malina && \
 	go test -v -p=1 -count=1 -timeout 20m -tags=malina_integration -run '^TestImageGenerationModel$$' ./cmd/server/app/domain/imageapp
 
+# Keep the full native decision matrix opt-in, separate from the CI smoke tests.
+# See sdk/kronk/model/decision_model_test.go for fixture and memory requirements.
+test-decision: install-test-decision ## Install fixtures and run all local decision models
+	@echo ========== RUN DECISION INTEGRATION TESTS ==========
+	unset KRONK_TEST_HOSTED KRONK_BASE_PATH KRONK_LIB_PATH KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
+	export GITHUB_WORKSPACE=$(shell pwd) && \
+	go test -v -p=1 -count=1 -timeout 60m -tags=decision_integration -run '^TestDecisionModels$$' ./sdk/kronk/model
+
 # Run the native OpenVINO diagnostic and inference probe explicitly. This test
 # downloads the pinned llama.cpp bundle and small diagnostic model, and is not
 # part of the ordinary local or GitHub test suites. OPENVINO_DEVICE selects the
