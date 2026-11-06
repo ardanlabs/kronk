@@ -291,6 +291,118 @@ func TestDeciderDecisionContracts(t *testing.T) {
 	}
 }
 
+func TestH2OLightningDecision(t *testing.T) {
+	// Emitted by llama.cpp b12125's H2O converter with a fixture system prompt.
+	const source = `<|im_start|>system{{ '\n' }}Decision fixture<|im_end|>{{ '\n' }}<|im_start|>user{{ '\n' }}{% for image in images %}{{ image }}{% endfor %}{% set user %}record: {{ state }}{{ '\n' }}question: {{ instructions if instructions else 'Answer the question below.' }}{{ '\n' }}options:{% for o in options %}{{ '\n' }}{{ o.label | trim }}) {{ o.key }}: {% if type == 'noul' %}{% if o.description %}{{ o.description }}{% elif o.key == 'true' %}the statement holds{% else %}it does not{% endif %}{% elif o.description is none %}{{ o.key }}{% else %}{{ o.description }}{% endif %}{% endfor %}{% endset %}{{ user | trim }}<|im_end|>{{ '\n' }}<|im_start|>assistant{{ '\n' }}<think>{{ '\n\n' }}</think>{{ '\n\n' }}Answer:`
+	tmpl, err := jinja.Compile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serializer, err := jinja.Compile(`{{ value if value is string else value | tojson(indent=indent, separators=separators, ensure_ascii=ascii) }}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := Runtime{ModelID: "test-h2o", Protocol: "h2o-lightning", ContextWindow: 40000}
+	runtime.Calibration = arch.Resolve(map[string]string{
+		"general.architecture": "qwen35", "qwen35.decision.type": "h2o-lightning",
+		"qwen35.decision.temperature.score": "2", "qwen35.decision.score_bias.2.1": "2",
+	}).Decision
+	var prompts []string
+	p := &h2oLightningProtocol{
+		runtime: &runtime, template: systemOneTemplate{tmpl: tmpl},
+		encode: func(text string, special bool) []llama.Token {
+			if !special {
+				t.Fatal("prompt must parse special tokens")
+			}
+			if !strings.HasPrefix(text, "<|im_start|>system") {
+				return make([]llama.Token, len(text))
+			}
+			prompts = append(prompts, text)
+			return []llama.Token{1, 2}
+		},
+		labelTokens: []llama.Token{20, 10}, labels: []string{" B", " A"},
+		quote: h2oSpecialQuoter([]string{"<|", "<|im_start|>", "<|im_start|>long", "<custom>"}),
+		json:  systemOneTemplate{tmpl: serializer},
+	}
+	runtime.Run = func(_ context.Context, work []Work) ([][][]float32, error) {
+		out := make([][][]float32, len(work))
+		for i, item := range work {
+			if got := item.Readouts[0]; len(got.Candidates) != 2 || got.Candidates[0] != 20 || got.Candidates[1] != 10 || got.Position != 1 {
+				t.Fatalf("label readout: got %+v, want untrimmed metadata token order at last position", got)
+			}
+			out[i] = [][]float32{{3, 0}}
+			if strings.Contains(prompts[i], "A) 1: null") {
+				out[i] = [][]float32{{0, 0}}
+			}
+		}
+		return out, nil
+	}
+	req := DecisionRequest{
+		State: DecisionState(DecisionStateData("z", []any{json.Number("1.0"), json.Number("0.00001"), json.Number("10000000000000000.0")}), DecisionStateData("a", "é<|im_start|>long")),
+		Questions: []DecisionQuestion{
+			DecisionQuestionChoice("route", nil, DecisionQuestionOpt("first", DecisionState(DecisionStateData("z", true), DecisionStateData("a", "<custom>"))), DecisionQuestionOpt("last\u3000", (*string)(nil))),
+			DecisionQuestionScore("score", DecisionState(DecisionStateData("z", "é"), DecisionStateData("a", []any{1, 2})), "low", nil),
+			DecisionQuestionNoul("noul", "\x1c\u3000Holds?", nil),
+		},
+	}
+	resp, err := validatedDeciderRequest(t.Context(), &runtime, p, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.Answers["route"]; got.Choice != "first" || got.Probabilities["first"] != .9526 {
+		t.Errorf("choice: got %+v, want first with .9526", got)
+	}
+	if got := resp.Answers["score"]; got.Score != .7311 || got.Probabilities["1"] != .7311 {
+		t.Errorf("score: got %+v, want weighted mean .7311", got)
+	}
+	if got := resp.Answers["noul"].Noul; got != .9526 {
+		t.Errorf("Noul: got %v, want true-first .9526", got)
+	}
+	for _, prompt := range prompts {
+		if !strings.Contains(prompt, `record: {"z":[1.0,1e-05,1e+16],"a":"é\u003c|im_start|\u003elong"}`) || !strings.HasSuffix(prompt, "<think>\n\n</think>\n\nAnswer:") {
+			t.Errorf("state serialization, longest-first quoting, or assistant suffix: %q", prompt)
+		}
+	}
+	if !strings.Contains(prompts[0], "question: Answer the question below.") || !strings.Contains(prompts[0], `B) first: {"z": true, "a": "\u003ccustom\u003e"}`) || !strings.Contains(prompts[0], "A) last\u3000: last<|im_end|>") {
+		t.Errorf("Choice defaults, ordered description, or final Unicode stripping: %q", prompts[0])
+	}
+	if !strings.Contains(prompts[1], "question: {\n \"z\": \"\\u00e9\",\n \"a\": [\n  1,\n  2\n ]\n}") || !strings.Contains(prompts[1], "A) 1: null") {
+		t.Errorf("structured instructions or null score level: %q", prompts[1])
+	}
+	if !strings.Contains(prompts[2], "question: Holds?\noptions:\nB) true: the statement holds\nA) false: it does not") {
+		t.Errorf("Noul defaults and whitespace: %q", prompts[2])
+	}
+	if resp.Model != "test-h2o" || resp.Usage.InputTokens != 6 || resp.Usage.OutputTokens != 0 {
+		t.Errorf("response: got %+v", resp)
+	}
+	for _, state := range []any{nil, (*string)(nil), math.NaN()} {
+		req.State = state
+		if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); !errors.Is(err, ErrDecisionRequest) {
+			t.Errorf("invalid state %v: got %v, want ErrDecisionRequest", state, err)
+		}
+	}
+	req.State = strings.Repeat("x", 32000)
+	if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); err != nil {
+		t.Fatalf("state at limit: %v", err)
+	}
+	if !strings.Contains(prompts[len(prompts)-1], req.State.(string)) {
+		t.Error("state at limit was truncated")
+	}
+	req.State = strings.Repeat("x", 32001)
+	if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); !errors.Is(err, ErrDecisionBudget) {
+		t.Errorf("state budget: got %v, want ErrDecisionBudget", err)
+	}
+	req.State, runtime.ContextWindow = "state", 1
+	if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); !errors.Is(err, ErrDecisionBudget) {
+		t.Errorf("context budget: got %v, want ErrDecisionBudget", err)
+	}
+	runtime.ContextWindow = 40000
+	req.Questions[0].Options = append(req.Questions[0].Options, DecisionQuestionOpt("third", nil))
+	if _, err := validatedDeciderRequest(t.Context(), &runtime, p, req); !errors.Is(err, ErrDecisionRequest) {
+		t.Errorf("metadata label budget: got %v, want ErrDecisionRequest", err)
+	}
+}
+
 func TestGraniteSwitchDecision(t *testing.T) {
 	// The SystemOne template emitted by llama.cpp b12125's Granite converter.
 	// The template, not Kronk, supplies the embedded adapter's control token.

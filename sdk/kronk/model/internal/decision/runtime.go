@@ -92,6 +92,7 @@ var protocolFactories = map[string]protocolFactory{
 	"clef":           func(r *Runtime) (Protocol, error) { return newClefProtocol(r) },
 	"pplx-decider":   newPplxDeciderProtocol,
 	"granite-switch": newGraniteSwitchProtocol,
+	"h2o-lightning":  newH2OLightningProtocol,
 	"lfm2-d1":        newLFM2D1Protocol,
 	"lfm3-d1":        func(r *Runtime) (Protocol, error) { return newLFM3D1Protocol(r) },
 	"lfm3-d1-omni":   newLFM3D1OmniProtocol,

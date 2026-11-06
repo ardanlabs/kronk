@@ -140,13 +140,24 @@ func (m *Runtime) decisionLabelTokens() ([]llama.Token, []string, error) {
 }
 
 func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(string) []llama.Token) ([]llama.Token, []string, error) {
+	tokens, labels, err := decisionMetadataLabels(labelAt, encode)
+	if err != nil && !errors.Is(err, llama.ErrModelNoDecisionLabel) {
+		return nil, nil, err
+	}
+	if len(labels) > 0 {
+		return tokens, labels, nil
+	}
+
+	// Older libraries and models without label metadata retain alphabet labels.
+	tokens, labels = decisionAlphabetLabels(encode)
+	return tokens, labels, nil
+}
+
+func decisionMetadataLabels(labelAt func(uint32) (string, error), encode func(string) []llama.Token) ([]llama.Token, []string, error) {
 	var tokens []llama.Token
 	var labels []string
 	for i := range MaxReadouts {
 		label, err := labelAt(uint32(i))
-		if i == 0 && errors.Is(err, llama.ErrModelNoDecisionLabel) {
-			break
-		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("read decision label %d: %w", i, err)
 		}
@@ -160,12 +171,6 @@ func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(strin
 		tokens = append(tokens, encoded[0])
 		labels = append(labels, label)
 	}
-	if len(labels) > 0 {
-		return tokens, labels, nil
-	}
-
-	// Older libraries and models without label metadata retain alphabet labels.
-	tokens, labels = decisionAlphabetLabels(encode)
 	return tokens, labels, nil
 }
 

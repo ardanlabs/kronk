@@ -25,6 +25,8 @@ type DecisionExecution struct {
 type DecisionContract struct {
 	Execution            DecisionExecution
 	InstructionsOptional bool
+	MinScoreLevels       int
+	MaxScoreLevels       int
 	temperatureBits      int
 	temperatureBuckets   []decisionTemperatureBucket
 }
@@ -37,7 +39,7 @@ type decisionTemperatureBucket struct {
 // DecisionContractFor returns protocol policy, with context batching and
 // float64 calibration precision for unknown protocols.
 func DecisionContractFor(protocol string) DecisionContract {
-	contract := DecisionContract{temperatureBits: 64}
+	contract := DecisionContract{temperatureBits: 64, MinScoreLevels: 2, MaxScoreLevels: 10}
 	switch protocol {
 	case "laya", "kev":
 		contract.Execution = DecisionExecution{Batch: DecisionBatchPhysical, Embeddings: true}
@@ -54,6 +56,10 @@ func DecisionContractFor(protocol string) DecisionContract {
 		contract.Execution = DecisionExecution{Batch: DecisionBatchWholePrompt, SingleSequence: true, NonCausal: true}
 		contract.temperatureBits = 32
 	case "pplx-decider", "lfm2-d1", "granite-switch":
+		contract.temperatureBits = 32
+	case "h2o-lightning":
+		contract.InstructionsOptional = true
+		contract.MinScoreLevels, contract.MaxScoreLevels = 1, 255
 		contract.temperatureBits = 32
 	case "lev":
 		contract.temperatureBuckets = []decisionTemperatureBucket{{8, "small"}, {26, "mid"}, {0, "large"}}

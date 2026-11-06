@@ -941,6 +941,9 @@ var (
 	// DecisionProtocolGraniteSwitch identifies the Granite Switch label-readout protocol.
 	DecisionProtocolGraniteSwitch = newDecisionProtocol("granite-switch")
 
+	// DecisionProtocolH2OLightning identifies the H2O Lightning label-readout protocol.
+	DecisionProtocolH2OLightning = newDecisionProtocol("h2o-lightning")
+
 	// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol.
 	DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")
 

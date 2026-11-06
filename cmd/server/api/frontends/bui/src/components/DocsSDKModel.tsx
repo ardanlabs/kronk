@@ -3077,6 +3077,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">// DecisionProtocolClef identifies the Clef joint-head protocol. DecisionProtocolClef = newDecisionProtocol("clef")</p>
               <p className="doc-description">// DecisionProtocolPplxDecider identifies the Perplexity label-readout protocol. DecisionProtocolPplxDecider = newDecisionProtocol("pplx-decider")</p>
               <p className="doc-description">// DecisionProtocolGraniteSwitch identifies the Granite Switch label-readout protocol. DecisionProtocolGraniteSwitch = newDecisionProtocol("granite-switch")</p>
+              <p className="doc-description">// DecisionProtocolH2OLightning identifies the H2O Lightning label-readout protocol. DecisionProtocolH2OLightning = newDecisionProtocol("h2o-lightning")</p>
               <p className="doc-description">// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol. DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")</p>
               <p className="doc-description">// DecisionProtocolLfm3D1 identifies the LFM3 whole-prompt grouped-label protocol. DecisionProtocolLfm3D1 = newDecisionProtocol("lfm3-d1")</p>
               <p className="doc-description">// DecisionProtocolLfm3D1Omni identifies the LFM3 multimodal grouped-label protocol. DecisionProtocolLfm3D1Omni = newDecisionProtocol("lfm3-d1-omni")</p>

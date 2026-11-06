@@ -2920,6 +2920,10 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td>Text-only decisions with a non-null state and required instructions; uses the model's embedded decision adapter</td>
               </tr>
               <tr>
+                <td><code>h2o-lightning</code></td>
+                <td>Text-only decisions with a non-null state, optional instructions, and model-declared labels; supports 1–255 score levels within the model's label limit</td>
+              </tr>
+              <tr>
                 <td><code>lfm2-d1</code></td>
                 <td>Model-calibrated option probabilities</td>
               </tr>
@@ -2941,11 +2945,13 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>These protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
+          <p>These protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 and H2O Lightning permit omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
           <p>Granite Switch requires a GGUF with the embedded decision adapter and its bundled decision template; a separate LoRA file is not required. Each question is evaluated independently. Structured state, instructions, and option descriptions retain their JSON values, and ordered objects retain their field order. Score answers use the probability-weighted mean level. Inputs that exceed the configured context window are rejected rather than truncated. Automatic selection uses the GGUF's <code>graniteswitch.decision.type</code> metadata. For an explicit SDK override, use <code>model.WithDecisionProtocol(model.DecisionProtocolGraniteSwitch)</code>.</p>
+          <p>H2O Lightning requires a converted decision GGUF with its bundled <code>systemone</code> template and decision labels. Kronk preserves label order and whitespace for probability readout; the template supplies the displayed labels. Structured state uses compact Python-compatible JSON, instructions use indented ASCII JSON, and option descriptions use spaced Unicode JSON. Ordered objects retain their field order. Text matching the vocabulary's control or user-defined tokens is quoted so it remains data. Score answers use the probability-weighted mean level; Noul returns the true-option probability.</p>
+          <p>H2O state is limited to 32,000 tokens before special-token quoting, and each complete prompt must also fit the configured context window. Unlike llama-server's head/tail truncation, Kronk rejects oversized inputs without discarding state. Choice and score option counts cannot exceed the GGUF's label count or Kronk's 255-option limit. For an explicit SDK override, use <code>model.WithDecisionProtocol(model.DecisionProtocolH2OLightning)</code>.</p>
           <p>Decision2, D3, and LFM3 d1 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 and LFM3 d1 use one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models. LFM3 d1 does not reuse persistent sequence state; independent questions and concurrent requests are serialized through that single execution sequence.</p>
           <p>LFM3 d1 preserves structured JSON state and option descriptions, returns the median score level rather than an expected level, and uses maximum answer probability for choice and score <code>confidence</code>. The <code>lfm3-d1-omni</code> protocol shares these semantics and supports image/audio state and spoken instructions with a compatible projector. All expanded media rows count toward usage and the whole-prompt budget; inputs are never truncated.</p>
-          <p>Model-backed compatibility has been exercised for LFM3 d1 text and Omni media decisions, not decision quality. The other four additional protocols still need model-backed validation, as does Granite Switch. Protocol support alone is not a quality guarantee.</p>
+          <p>Model-backed compatibility has been exercised for LFM3 d1 text and Omni media decisions, not decision quality. The other additional protocols, including Granite Switch and H2O Lightning, still need model-backed validation. Protocol support alone is not a quality guarantee.</p>
           <p>A response is keyed by the caller's question IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",
