@@ -107,7 +107,7 @@ drafting interaction selections when MTP is implicated.
 | **Hybrid prefill** | Text stalls when an image arrives; shared/isolated preparation changes | `image-prefill`, Hybrid MoE, IMC off/on; includes automatically required forced phases. Companion alternative below. | Subject correctness, cancellation or all-slot saturation. |
 | **Attention prefill** | Attention-only image arrival/progress; native-isolated or IMC preparation changes | `image-prefill`, Attention-only, IMC off/on. Uses Qwen2.5-VL, not Ministral. | Attention image-state reuse. |
 | **Hybrid text load** | Queue/stream progress, cross-session contamination, long-running reuse or MTP interactions | `batch-text`, Hybrid MoE, all four MTP/IMC modes. Select the implicated pair first for a narrow bug. | Same-slot recovery or attribution of a slowdown to a single feature by itself. |
-| **Attention text load** | Ordinary attention state isolation/reuse under growing concurrent histories | `batch-text`, Attention-only, IMC off/on, MTP off. Qwen2.5-VL is the qualified batch fixture. | Vision correctness merely because the fixture can accept images. |
+| **Attention text load** | Ordinary attention state isolation/reuse under growing concurrent histories | `batch-text`, Attention-only, IMC off/on, MTP off. Qwen2.5-VL has historical five-conversation qualification; revised eight-conversation contract awaits revalidation. | Vision correctness merely because the fixture can accept images. |
 | **Image history load** | Subject switch, stale image/history state, growing IMC image prefix or image batch overlap | `batch-images`, Hybrid MoE, all four MTP/IMC modes. IMC/MTP on retains a known failing capture. | Recovery after cancellation or universal scheduling guarantees. |
 | **Embedded drafting** | Drafting stops, corrupts values/session identity or fails recovery; embedded MTP changes | `mtp-embedded`, many slots, MTP off/on × IMC off/on. Use one-slot variation for serial paths. | Appended-history reuse or every-slot generation overlap. |
 | **Companion drafting** | Own-KV/companion state, loading or recovery concerns; companion MTP changes | `mtp-companion`, same contrasts as embedded, on the companion target. | Equivalent results to the embedded fixture or classic full-drafter coverage. |
@@ -252,6 +252,31 @@ make test-load-image-prefill \
   '
 ```
 
+### Batch load evidence contract
+
+Text and image load now default to eight conversations / four slots, retaining
+21 turns and 30K final-prompt targets. Queue depth two gives eight admission
+permits, not a guarantee that all eight requests are admitted simultaneously.
+Neither revised workload has inference qualification yet; retain historical
+PASS/FAIL evidence with its original workload identity.
+
+For each turn, require request-correlated assignment-to-execution-finish evidence
+of concurrent full slot ownership without same-slot conflicts, plus a prepared
+request waiting under full slot pressure, taking a released slot and completing.
+Across the workload, require successive diagnostics samples where one request's
+`generated_tokens` increases while a different, consistently identified request
+remains in text/IMC/media prefill. Do not demand that progress witness every turn
+or replay. One text prefill owner is legal; other slots may generate, and four
+occupied slots do not mean four generation streams.
+
+`maximum_concurrency` measures client response-interval overlap diagnostically.
+Do not infer queue acceptance from client timing, report an inferred queue metric
+or require universal all-four client-stream overlap. Low overlap must not stop
+histories or replays. Missing, untriggered or contradictory required evidence is
+coverage INCOMPLETE with a nonzero exit, separate from behavioral PASS/FAIL.
+Use the [batch contract](coverage.md#batch-scheduling-evidence) when interpreting
+these packages; do not substitute occupancy for generation-progress evidence.
+
 ### Hybrid text load
 
 ```sh copy Copy Hybrid Text Load Command
@@ -289,8 +314,10 @@ make test-load-batch-images \
   '
 ```
 
-The existing image IMC/MTP-on failure remains useful evidence. Do not relax
-overlap checks or drop the changed-image phase to make this package pass.
+The existing image IMC/MTP-on FAIL remains historical evidence, not a pass under
+the revised scheduling contract. Image duplication remains unresolved. Preserve
+subject-switch, replay, isolation and cache assertions; do not drop the
+changed-image phase to make this package pass.
 
 ### Embedded drafting
 
@@ -466,13 +493,15 @@ never interpret an old tool number using a reordered column without checking.
 | Result or signal | Interpretation / next action |
 | --- | --- |
 | Behavioral FAIL | Record the violated contract and actual output/progress. Investigate fixture capability, unsupported compatibility and server behavior; do not guess the cause from the verdict. |
-| Coverage INCOMPLETE / missing encoding or rejection evidence | The requested path has not been established. Check evidence availability and whether the path was triggered; do not equate missing logs or no rejection with wrong answers. |
+| Coverage INCOMPLETE / missing, untriggered or contradictory required evidence | The requested path has not been established; nonzero exit is separate from behavioral PASS/FAIL. Check encoding, rejection and batch scheduling/progress evidence as applicable; missing evidence is not itself wrong-answer behavior. |
 | GAP / NOT APPLY / NOT RUN | No passing execution of that pair. Explain the selection/fixture boundary; do not silently redirect to a representative. |
 | Behavioral PASS with complete required evidence | The executed bounded contract passed. Does not clear unrelated quick-check failures, unrun history turns or other models/backends. |
 | Timing change without failure | Compare the same fixture, workload, stages, modes, hardware/libraries and measured phase against an appropriate baseline. No package supplies a universal performance threshold or causal attribution. |
 
 Ordinary scenario failures allow later selected pairs/phases to run; cleanup
-failure stops further execution. A batch failure may leave later turns untested.
+failure stops further execution. A behavioral batch failure may leave later turns
+untested; low response overlap or incomplete scheduling coverage must not truncate
+histories or replays.
 Inspect completed selections rather than assuming a nonzero exit means nothing
 ran, or that every requested workload finished. Separate Make commands also
 need deliberate failure handling if placed in a shell script; do not accidentally

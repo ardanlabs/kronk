@@ -124,7 +124,7 @@ func TestExplicitProfileCellSelection(t *testing.T) {
 	for i, probe := range executionPlan(cfg) {
 		mode := []string{"OFF", "ON"}[i]
 		want := "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0/TOOLS-BATCH-MTP-OFF-IMC-" + mode
-		if probe.Status != "runnable" || probe.Config.BatchModel != want || probe.Config.BatchTokensPerTurn != 1300 || probe.Config.BatchSlots != 4 || probe.Config.BatchConversations != 5 || probe.Config.ExpectedState != "Attention-only" {
+		if probe.Status != "runnable" || probe.Config.BatchModel != want || probe.Config.BatchTokensPerTurn != 1300 || probe.Config.BatchSlots != 4 || probe.Config.BatchConversations != 8 || probe.Config.ExpectedState != "Attention-only" {
 			t.Fatalf("incorrect qualified batch fixture: %+v", probe)
 		}
 	}

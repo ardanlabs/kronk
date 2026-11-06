@@ -125,8 +125,8 @@ regression verdicts; those need comparable baselines and criteria.
 | `image-state` | Three image/text/replay/append/cancel/recovery cycles without unloading. Subject and requested prefixes, text exact-marker isolation, IMC-on reuse, cancellation after content, all slots idle and fresh image/text recovery. MTP-on measured image requests require drafting. | One-slot fixtures force same-slot recovery; many-slot fixtures do not pin recovery to the cancelled slot. No concurrent image sessions, subject-switch history or prefill cancellation. No byte-identical prose requirement. |
 | `long-context` | Serial staged retrieval of three ordered markers, rejecting foreign-stage markers; cold/repeat correctness and IMC-on warm reuse. Flash-Next stages 4K–128K; Attention-only baseline 4K/8K/16K. Unknown capacity or skipped requested stages cannot pass. | No exact-limit/overflow, append, cancellation, images or concurrent long-context interference. Marker retrieval is not general model-quality evaluation. |
 | `image-prefill` | Submit image after five text content events; both streams complete, scheduler-observed prefill/generation overlap and text gaps within one second by default. Require request-correlated image execution evidence mapped below. | Two concurrent requests, not all-slot saturation. No image-subject, replay/append or cancellation contract. Client content-event gaps are not server per-token timings. |
-| `batch-text` | Five conversations on four slots; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation, IMC-on append reuse, every-turn all-slot client-visible generation overlap and inferred queue pressure. | No dedicated exact replay, cancellation/recovery or images. Later turns after a failing phase are unexercised. Slot occupancy is not generation overlap. |
-| `batch-images` | Batch history/load/isolation contract plus image subjects, later subject switch, initial/switch request replays, current-subject correctness and rejection of stale/foreign subjects. IMC-on replay/append reuse; overlap checks also apply to replay phases. | No whole-description equality: differing correct prose is allowed. No cancellation or forced same-slot recovery. Image history load does not replace prefill responsiveness. |
+| `batch-text` | Eight conversations on four slots; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation and IMC-on append reuse. Per-turn full slot ownership and prepared-request wait/release coverage; workload-wide generation-during-prefill evidence as defined below. | No dedicated exact replay, cancellation/recovery or images. Slot occupancy is not generation overlap. Revised eight-conversation workload awaits inference revalidation. |
+| `batch-images` | Same eight-conversation batch history/load/isolation and scheduling contract, plus image subjects, later subject switch, initial/switch request replays, current-subject correctness and rejection of stale/foreign subjects. IMC-on replay/append reuse remains required. | No whole-description equality: differing correct prose is allowed. No cancellation or forced same-slot recovery. Image history load does not replace prefill responsiveness. Revised workload awaits inference revalidation. |
 | `mtp-embedded` / `mtp-companion` | Embedded-head or companion fixture; three request waves on the same loaded model, supplied-value correctness, own session key and no foreign key, normal stop, selected drafting mode, then fresh-marker recovery. One/many-slot fixtures are distinct. | No appended-history cache-hit requirement, images, target-only output equivalence or proof that all physical slots generated concurrently. No inherent minimum rejection count or acceptance rate. |
 | `example-lifecycle-load` | Separate command: one execution slot, two admission permits, queued cancellation, admission timeout, active cancellation and successful recovery; structured stage evidence. | Fixed text fixture; no IMC/MTP matrix or cache/draft/media integrity assertions. Admission recovery does not establish inference-state integrity. |
 
@@ -137,13 +137,38 @@ defaults. Optional `-mtp-min-rollback-rounds` requests correlated rejection/
 recovery observations, not a universal MTP behavior requirement. Too few means
 incomplete requested coverage. Observing one strategy does not prove all others.
 
-Both batch profiles additionally report request-correlated queue entry, physical
-slot assignment, server queue wait and execution timelines. Evidence is complete,
-incomplete or inconsistent; conflicting requests are excluded from aggregates.
-Client/server clocks are not subtracted across machines. These diagnostics do
-not replace the existing client-visible overlap or inferred-queue assertions,
-and missing logs do not override their verdicts. Failed image-state cycles retain
-response outputs for diagnosis without changing their assertions.
+### Batch scheduling evidence
+
+Both text and image batch profiles default to eight conversations on four slots.
+With `queue-depth: 2`, admission capacity is eight requests; this does **not**
+guarantee simultaneous admission of all eight. Correctness still requires the
+21-turn/30K histories, answers, isolation and applicable cache assertions above.
+
+Scheduling coverage is separate from behavioral PASS/FAIL. For each turn,
+request-correlated server evidence must establish both:
+
+- Concurrent ownership of all configured slots, reconstructed from physical
+  slot assignment through execution finish, with no same-slot ownership conflicts.
+- A prepared request waiting under full slot pressure, then taking a released
+  slot and completing. Client response timing does not establish queue acceptance.
+
+Across the workload, successive request-correlated diagnostics samples must show
+`generated_tokens` increasing for one request while a different, consistently
+identified request remains in prefill across those samples (text, IMC preparation
+or media prefill). This progress witness is not required on every turn or replay.
+A single text prefill owner is legal while other slots generate; four occupied
+slots are not four generation streams.
+
+`maximum_concurrency` remains a diagnostic of overlapping client response
+intervals, not server slot ownership or simultaneous token generation. There is
+no client-inferred queue metric or universal all-four client-stream overlap
+requirement. Low response overlap must not truncate growing histories or replays.
+Retain request-correlated queue entry, slot assignment, server queue wait and
+execution timelines; do not subtract client/server clocks across machines.
+Missing, untriggered or contradictory required evidence means coverage
+INCOMPLETE and a nonzero exit, separately from behavioral PASS/FAIL. Contradictory
+ownership evidence cannot establish coverage through an aggregate.
+Failed image-state cycles retain response outputs without changing assertions.
 
 ## Selected fixtures
 
@@ -166,9 +191,12 @@ target-only controls, not drafting coverage.
 | `image-prefill`, Attention-only Dense | Qwen2.5-VL above | 2; 32K; MTP off |
 | Lifecycle | Qwen3-0.6B above | 1; IMC on, no configured MTP; modes not asserted by lifecycle |
 
-The Attention-only batch fixture is qualified for 21 turns, 105 requests and
+The Attention-only batch fixture was historically qualified for five conversations,
+21 turns, 105 requests and
 30,163-token final prompts in both IMC modes, including four-way overlap and
-reuse when enabled (`output/qwen25vl-batch-imc`). Qwen3-0.6B failed the batch
+reuse when enabled (`output/qwen25vl-batch-imc`). This does not qualify the revised
+eight-conversation workload or its scheduling evidence contract; both batch
+profiles await inference revalidation. Qwen3-0.6B failed the batch
 marker-count task and is retained only for its smaller state/context/lifecycle
 contracts. Qwen2.5-VL's earlier image-prefix failures are why image-state uses
 Ministral, while text batch and prefill retain Qwen2.5-VL.
@@ -262,10 +290,14 @@ combination. Changes to coverage or mappings must also update that guidance.
 | 2:22/54 — `Dense/Att/{1slot,Nslot}/IMC+/MTP-/img+` | Image replay/append cache reuse. Ministral passes subjects, prefixes, cancellation and recovery, but its template triggers documented uncached IMC fallback. IMC-off 2:6/38 are qualified. |
 
 These remain open pending template support or qualification of another suitable
-fixture; do not weaken reuse assertions. Other selected expansion contracts are
-qualified. This does not turn historical failing batch runs into passes or prove
-all blank combinations unnecessary. The Ministral limitation and the two batch
-failures are retained separately in the local, gitignored `development-findings.md`.
+fixture; do not weaken reuse assertions. Historical batch FAILs remain historical
+FAILs, including the image IMC/MTP-on capture; removing the universal client
+overlap requirement does not retroactively pass them. Image duplication remains
+unresolved. Neither batch profile's revised eight-conversation workload has
+inference qualification. Other selected expansion contracts are qualified; this
+does not prove all blank combinations unnecessary. Additional local chronology
+may be retained in the gitignored `development-findings.md`, but is not required
+to understand these limitations.
 
 ## Sources of truth
 

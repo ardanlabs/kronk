@@ -91,7 +91,7 @@ RELIABILITY_BATCH_TARGET_TOKENS ?= 30000
 RELIABILITY_BATCH_TOKENS_PER_TURN ?= 1400
 RELIABILITY_BATCH_MAX_TOKENS ?= 128
 RELIABILITY_BATCH_SLOTS ?= 4
-RELIABILITY_BATCH_CONVERSATIONS ?= 5
+RELIABILITY_BATCH_CONVERSATIONS ?= 8
 RELIABILITY_BATCH_IMAGES ?= examples/samples/giraffe.jpg,examples/samples/adetailer-face.png
 RELIABILITY_BATCH_IMAGE_SUBJECTS ?= giraffe,astronaut
 
@@ -181,8 +181,9 @@ test-load-image-prefill: ## Run image prefill responsiveness probes
 
 # -------------------------------
 
-# Text and image batch profiles. Exercises every slot plus queue
-# pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
+# Text and image batch profiles: eight conversations / four slots, per-turn
+# slot ownership and prepared wait/release coverage, workload-wide generation
+# progress during prefill, marker isolation, IMC reuse, and 30K-token histories.
 test-load-batch: ## Run batch reliability probes
 	$(call run_reliability,batch,-batch-profile all)
 

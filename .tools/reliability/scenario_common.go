@@ -19,13 +19,15 @@ type loadedModel struct {
 }
 
 type slotDiagnostic struct {
-	ID        int    `json:"id"`
-	Phase     string `json:"phase"`
-	RequestID string `json:"request_id"`
+	ID              int    `json:"id"`
+	Phase           string `json:"phase"`
+	RequestID       string `json:"request_id"`
+	GeneratedTokens int    `json:"generated_tokens"`
 }
 
 type engineDiagnostic struct {
 	ModelID          string           `json:"model_id"`
+	Iteration        uint64           `json:"iteration"`
 	PrefillBatchSize int              `json:"prefill_batch_size"`
 	NBatch           int              `json:"nbatch"`
 	NUBatch          int              `json:"nubatch"`

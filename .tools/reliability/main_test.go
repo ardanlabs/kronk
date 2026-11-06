@@ -1422,7 +1422,8 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 		{"text", "off", "on", "evidence", ""},
 		{"text", "off", "on", "evidence-invalid", ""},
 		{"text", "off", "on", "short-output", "produced 7 copies"},
-		{"text", "off", "off", "overlap", "reached concurrency 1"},
+		{"text", "off", "off", "overlap", ""},
+		{"images", "off", "off", "overlap", ""},
 		{"images", "on", "on", "", ""},
 		{"images", "on", "off", "", ""},
 		{"images", "off", "on", "", ""},
@@ -1643,7 +1644,7 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 			}
 			defer func() { os.Args = previous }()
 			err = run()
-			if (err != nil) != (tc.failure != "") {
+			if err == nil || tc.failure == "" && !strings.Contains(err.Error(), "coverage is incomplete") {
 				t.Fatalf("error=%v, want failure=%q", err, tc.failure)
 			}
 			data, err := os.ReadFile(filepath.Join(out, summaryFile))
@@ -1683,8 +1684,8 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 					for _, raw := range result.Details["turns"].([]any) {
 						turn := raw.(map[string]any)
 						x := turn["server_execution"].(map[string]any)
-						if !strings.HasPrefix(turn["queued_requests_basis"].(string), "inferred:") {
-							t.Fatal("client timing must not be labeled server queue evidence")
+						if turn["queued_requests_basis"] != nil || turn["queued_requests"] != nil {
+							t.Fatal("client timing must not infer queue pressure")
 						}
 						if tc.defect == "evidence" {
 							if x["complete_requests"] != float64(1) || x["incomplete_requests"] != float64(1) || x["inconsistent_requests"] != float64(1) || x["observed_queue_entries"] != float64(2) || x["maximum_queue_wait_seconds"] != 0.04 || fmt.Sprint(x["assigned_slots"]) != "[0]" {
@@ -1696,7 +1697,7 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 							}
 						} else if tc.defect == "overlap" {
 							if x["complete_requests"] != float64(3) || fmt.Sprint(x["assigned_slots"]) != "[0 1]" || turn["maximum_concurrency"] != float64(1) {
-								t.Fatalf("server slots must not replace failed client overlap: %v", turn)
+								t.Fatalf("client overlap must remain diagnostic: %v", turn)
 							}
 						} else if x["incomplete_requests"] != float64(3) || x["maximum_queue_wait_seconds"] != nil || len(x["assigned_slots"].([]any)) != 0 {
 							t.Fatalf("missing events must not invent slot/queue evidence: %v", x)
@@ -1738,8 +1739,12 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 				}
 				if tc.defect == "overlap" {
 					phases := result.Details["turns"].([]any)
-					if result.Details["completed_history_turns"] != float64(0) || len(phases) != 1 || phases[0].(map[string]any)["complete"] != true || len(result.Details["requests"].([]any)) != 3 {
-						t.Fatalf("failed overlap must retain completed requests without claiming complete workload: %v", result.Details)
+					wantPhases := 21
+					if workload == "images" {
+						wantPhases = 23
+					}
+					if result.Details["completed_history_turns"] != float64(21) || len(phases) != wantPhases || summary.CoverageStatus != "INCOMPLETE" {
+						t.Fatalf("low overlap must finish histories without certifying scheduling coverage: %v", result.Details)
 					}
 				}
 				if failure == "" {
@@ -1803,6 +1808,93 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 						t.Fatalf("%s event count=%d, want one per workload request", result.Name, counts[result.Name])
 					}
 				}
+			}
+		})
+	}
+}
+
+// Exercise the emitted scheduling contract with an independent server clock.
+// In particular, occupied slots without advancing generation must not qualify.
+func TestBatchSchedulingEvidenceReport(t *testing.T) {
+	for _, defect := range []string{"", "stalled", "reassigned", "foreign", "stale", "no-wait", "conflict", "serial", "missing"} {
+		t.Run(defect, func(t *testing.T) {
+			base := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			evidence := serverEvidence{Available: true, BatchLifecycle: make(map[string][]map[string]any)}
+			var requests []batchRequestResult
+			for session := range 3 {
+				trace := fmt.Sprintf("trace-%d", session)
+				queued, assigned, finished := 0, session, session+4
+				slot := session % 2
+				if session == 2 {
+					queued, assigned, finished = 2, 4, 8
+				}
+				if defect == "serial" {
+					assigned, finished = session*4, (session+1)*4
+				}
+				if defect == "no-wait" {
+					queued = assigned
+				}
+				if defect == "conflict" && session == 1 {
+					slot = 0
+				}
+				at := func(seconds int) string {
+					return base.Add(time.Duration(seconds) * time.Second).Format(time.RFC3339Nano)
+				}
+				evidence.BatchLifecycle[trace] = []map[string]any{
+					{"stage_name": "schedule-job", "status": "queued", "time": at(queued)},
+					{"stage_name": "schedule-job", "status": "complete", "time": at(assigned), "slot": float64(slot), "queue_wait": fmt.Sprintf("%ds", assigned-queued)},
+					{"stage_name": "execute-in-slot", "status": "started", "time": at(assigned), "slot": float64(slot)},
+					{"stage_name": "execute-in-slot", "status": "complete", "time": at(finished), "slot": float64(slot)},
+				}
+				requests = append(requests, batchRequestResult{Session: session + 1, Turn: 1, Phase: "cold", TraceID: trace, ResponseID: fmt.Sprintf("response-%d", session)})
+			}
+			if defect == "missing" {
+				delete(evidence.BatchLifecycle, "trace-1")
+			}
+			samples := []engineDiagnostic{
+				{Iteration: 10, Slots: []slotDiagnostic{{ID: 0, RequestID: "response-0", Phase: "prefill"}, {ID: 1, RequestID: "response-1", Phase: "generation", GeneratedTokens: 7}}},
+				{Iteration: 11, Slots: []slotDiagnostic{{ID: 0, RequestID: "response-0", Phase: "prefill"}, {ID: 1, RequestID: "response-1", Phase: "generation", GeneratedTokens: 9}}},
+			}
+			switch defect {
+			case "stalled":
+				samples[1].Slots[1].GeneratedTokens = 7
+			case "reassigned":
+				samples[1].Slots[1].RequestID = "response-2"
+			case "foreign":
+				samples[0].Slots[0].RequestID, samples[1].Slots[0].RequestID = "foreign", "foreign"
+			case "stale":
+				samples[1].Iteration = 10
+			}
+			summary := runSummary{ServerEvidence: evidence, Scenarios: []scenarioResult{{Name: "batch/text", Status: "PASS", Details: map[string]any{
+				"configuration": map[string]any{"slots": 2}, "requests": requests,
+				"turns": []batchTurnSummary{{Turn: 1, Phase: "cold", Complete: true, MaximumConcurrency: 1, SchedulerSamples: samples}},
+			}}}}
+			annotateBatchExecution(&summary)
+			scenario := summary.Scenarios[0]
+			if scenario.Status != "PASS" || len(scenario.Failures) != 0 {
+				t.Fatalf("coverage changed behavior: %+v", scenario)
+			}
+			wantSlots, wantProgress := "exercised", "exercised"
+			switch defect {
+			case "stalled", "reassigned", "foreign", "stale":
+				wantProgress = "not exercised"
+			case "no-wait", "conflict", "serial", "missing":
+				wantSlots = "not exercised"
+			}
+			if len(scenario.Coverage) != 2 || scenario.Coverage[0].Status != wantSlots || scenario.Coverage[1].Status != wantProgress {
+				t.Fatalf("incorrect scheduling coverage: %+v", scenario.Coverage)
+			}
+			art, err := newArtifacts(filepath.Join(t.TempDir(), "out"), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer art.close()
+			if err := art.writeLogSummary(summary); err != nil {
+				t.Fatal(err)
+			}
+			log, err := os.ReadFile(filepath.Join(art.dir, toolLogFile))
+			if err != nil || !strings.Contains(string(log), "client_response_overlap=1") || strings.Contains(string(log), "inferred_queued") {
+				t.Fatalf("incorrect diagnostic labels: %s, %v", log, err)
 			}
 		})
 	}
