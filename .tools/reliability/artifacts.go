@@ -225,8 +225,8 @@ func (art *artifacts) writeLogSummary(summary runSummary) error {
 					if x.MaximumQueueWaitSeconds != nil {
 						wait = fmt.Sprintf("%.6fs", *x.MaximumQueueWaitSeconds)
 					}
-					fmt.Fprintf(&header, "       turn=%d phase=%s client_overlap=%d inferred_queued=%d server_slots=%v queue_entries=%d max_queue_wait=%s evidence=%d complete/%d incomplete/%d inconsistent\n",
-						turn.Turn, turn.Phase, turn.MaximumConcurrency, turn.QueuedRequests, x.AssignedSlots,
+					fmt.Fprintf(&header, "       turn=%d phase=%s client_response_overlap=%d peak_occupied_slots=%d ownership_consistent=%t waiting_handoff=%t generation_during_prefill=%t server_slots=%v queue_entries=%d max_queue_wait=%s evidence=%d complete/%d incomplete/%d inconsistent\n",
+						turn.Turn, turn.Phase, turn.MaximumConcurrency, x.MaximumOccupiedSlots, x.OwnershipConsistent, x.WaitingHandoff, x.GenerationDuringPrefill, x.AssignedSlots,
 						x.ObservedQueueEntries, wait, x.CompleteRequests, x.IncompleteRequests, x.InconsistentRequests)
 				}
 			}

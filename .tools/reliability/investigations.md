@@ -80,12 +80,13 @@ Prefer the covered representative for a question about common orchestration.
 Prefer the alternate target/backend when the failure or changed code makes that
 distinction material. **Do not silently substitute one for the other.**
 
-The eight Dense Hybrid text-state/batch-text overlap alternatives are not yet
-directly mapped. In particular, selecting `Dense/Hyb/...` for those profiles
-reports a coverage gap, even though related image and MTP profiles support that
-target. Record the missing mapping; do not offer a normal package command as if
-it existed. Their implementation/qualification plan lives in the optional local
-development document. Low-level custom fixtures need separate validation.
+The eight Dense Hybrid text-state/batch-text overlap alternatives are directly
+mapped to Qwen3.8-27B, but still await inference qualification. Text-state uses
+one slot and three recovery cycles; batch-text uses four conversations on two
+slots, retaining the 21-turn/30K history and scheduling-evidence contract.
+Choose them for target-specific recovery, reuse, native execution or companion
+interactions, not as proven equivalents to the MoE representatives. Commands
+are listed under runnable alternatives below.
 
 The other four overlap references duplicate an available MTP-off control on the
 same target/configuration. Choose `mtp-embedded` for the Qwen3.6 control or
@@ -102,13 +103,13 @@ drafting interaction selections when MTP is implicated.
 | --- | --- | --- | --- |
 | **Text state** | Wrong/stale answer after reuse, append or cancellation; IMC/state ownership changes | `text-state`, Hybrid + Attention-only, IMC off/on, MTP off. For sustained interference add text load. | Concurrent-session isolation or companion-target state coverage. |
 | **Hybrid image state** | Image/text contamination, replay/append reuse, cancellation/recovery; multimodal state changes | `image-state`, same-slot Hybrid MoE, IMC off/on. For companion target use the explicit alternate below. | Image-history pressure or prefill responsiveness. |
-| **Attention image state** | Attention-only image recovery or template compatibility | `image-state`, same-slot Attention-only, IMC off/on. IMC-on remains an open fixture-compatibility GAP. | A green IMC-on qualification today. |
+| **Attention image state** | Attention-only image recovery or template compatibility | `image-state`, same-slot Attention-only, IMC off/on. Gemma E4B QAT is qualified in both modes and slot configurations. | Ministral template compatibility or concurrent image-session isolation. |
 | **Context retrieval** | Lost/foreign markers as history grows; context/IMC changes | `long-context`, Hybrid + Attention-only, IMC off/on. Add text load for simultaneous growing sessions. | Overflow limits or concurrent long-context retrieval. |
 | **Hybrid prefill** | Text stalls when an image arrives; shared/isolated preparation changes | `image-prefill`, Hybrid MoE, IMC off/on; includes automatically required forced phases. Companion alternative below. | Subject correctness, cancellation or all-slot saturation. |
-| **Attention prefill** | Attention-only image arrival/progress; native-isolated or IMC preparation changes | `image-prefill`, Attention-only, IMC off/on. Uses Qwen2.5-VL, not Ministral. | Attention image-state reuse. |
+| **Attention prefill** | Attention-only image arrival/progress; native-isolated or IMC preparation changes | `image-prefill`, Attention-only, IMC off/on. Uses Qwen2.5-VL, not the Gemma image-state fixture. | Attention image-state reuse. |
 | **Hybrid text load** | Queue/stream progress, cross-session contamination, long-running reuse or MTP interactions | `batch-text`, Hybrid MoE, all four MTP/IMC modes. Select the implicated pair first for a narrow bug. | Same-slot recovery or attribution of a slowdown to a single feature by itself. |
-| **Attention text load** | Ordinary attention state isolation/reuse under growing concurrent histories | `batch-text`, Attention-only, IMC off/on, MTP off. Qwen2.5-VL is the qualified batch fixture. | Vision correctness merely because the fixture can accept images. |
-| **Image history load** | Subject switch, stale image/history state, growing IMC image prefix or image batch overlap | `batch-images`, Hybrid MoE, all four MTP/IMC modes. IMC/MTP on retains a known failing capture. | Recovery after cancellation or universal scheduling guarantees. |
+| **Attention text load** | Ordinary attention state isolation/reuse under growing concurrent histories | `batch-text`, Attention-only, IMC off/on, MTP off. Qwen2.5-VL has historical five-conversation qualification; revised eight-conversation contract awaits revalidation. | Vision correctness merely because the fixture can accept images. |
+| **Image history load** | Subject switch, stale image/history state, growing IMC image prefix or image batch overlap | `batch-images`, Hybrid MoE, all four MTP/IMC modes. IMC/MTP on passed the revised contract; historical FAIL and history duplication remain separate evidence. | Recovery after cancellation, absence of duplicated decoding or universal scheduling guarantees. |
 | **Embedded drafting** | Drafting stops, corrupts values/session identity or fails recovery; embedded MTP changes | `mtp-embedded`, many slots, MTP off/on × IMC off/on. Use one-slot variation for serial paths. | Appended-history reuse or every-slot generation overlap. |
 | **Companion drafting** | Own-KV/companion state, loading or recovery concerns; companion MTP changes | `mtp-companion`, same contrasts as embedded, on the companion target. | Equivalent results to the embedded fixture or classic full-drafter coverage. |
 | **Drafting + state/images** | Failure requires both speculation and reuse/cancellation or image input | MTP-on `text-state` / `image-state` additions below, alongside relevant off-mode package. For response stalls add MTP-on prefill. | Every backend's state interaction; Dense text-state mapping remains pending. |
@@ -176,11 +177,17 @@ that recovery used the cancelled physical slot. The selector also accepts Dense
 Hybrid one-slot image-state, but its CSV cells are blank and no qualification is
 claimed here. Do not infer same-slot companion coverage from the many-slot runs.
 
-### Attention image state — includes an open GAP
+### Attention image state
 
-Use IMC-on to investigate the limitation or validate a fix, not as a promised
-passing test. It currently fails reuse assertions on Ministral's template;
-IMC-off is the qualified state/answer control. Nslot forms are also available.
+This selects Gemma E4B QAT, qualified in both IMC modes with one and two slots:
+three cycles per combination passed image/text correctness, cancellation,
+slot release and recovery. IMC-on replay/append requests reused 174 tokens
+in every cycle; IMC-off controls reported zero. See the capture and qualification
+boundary in [coverage.md](coverage.md#selected-fixtures).
+Use IMC-off as the state/answer control and IMC-on to exercise replay/append
+reuse as well. Nslot forms are also available and qualified.
+The previous Ministral fixture passed IMC-off but its template caused uncached
+fallback with IMC on. Gemma qualification does not fix or clear that limitation.
 
 ```sh copy Copy Attention Image State Command
 make test-load-image-state \
@@ -252,6 +259,48 @@ make test-load-image-prefill \
   '
 ```
 
+### Batch load evidence contract
+
+Text and image load use eight conversations / four slots, except the Dense
+Hybrid text alternative, which uses four conversations / two slots. Both retain
+21 turns and 30K final-prompt targets. Queue depth two gives eight or four
+admission permits respectively, not guaranteed simultaneous admission.
+The tooling-contract correction has inference validation on both paths; retain
+historical PASS/FAIL evidence with its original workload identity.
+
+November 6 qualification is limited to Hybrid MoE `batch-text` IMC-/MTP-,
+IMC-/MTP+ and IMC+/MTP+, plus `batch-images` IMC+/MTP+. All completed the full
+eight-conversation histories with behavioral PASS, scheduling coverage OBSERVED
+and cleanup PASS. See [qualification and capture identities](coverage.md#batch-contract-qualification).
+This does not qualify text IMC+/MTP-, Attention-only batch or other image modes.
+The earlier interrupted image-pair log is useful behavioral evidence, but lacks
+the summary/raw events required to qualify its IMC-/MTP+ scheduling coverage.
+
+For each turn, require request-correlated assignment-to-execution-finish evidence
+of concurrent full slot ownership without same-slot conflicts, plus a prepared
+request waiting under full slot pressure, taking a released slot and completing.
+Across the workload, require successive diagnostics samples where one request's
+`generated_tokens` increases while a different, consistently identified request
+remains in text/IMC/media prefill. Do not demand that progress witness every turn
+or replay. One text prefill owner is legal; other slots may generate, and four
+occupied slots do not mean four generation streams.
+
+`maximum_concurrency` measures client response-interval overlap diagnostically.
+Do not infer queue acceptance from client timing, report an inferred queue metric
+or require universal all-four client-stream overlap. Low overlap must not stop
+histories or replays. Missing, untriggered or contradictory required evidence is
+coverage INCOMPLETE with a nonzero exit, separate from behavioral PASS/FAIL.
+Use the [batch contract](coverage.md#batch-scheduling-evidence) when interpreting
+these packages; do not substitute occupancy for generation-progress evidence.
+
+The validated text MTP-on/IMC-off workload reached client overlap two on later
+turns; the image IMC/MTP-on subject switch also reached two. Both retained full
+slot ownership, waiting-job handoff and generation-during-prefill evidence and
+completed their remaining histories. This validates the correction, not a claim
+that the scheduler is maximally efficient. Single sequential text captures showed
+MTP-on taking 5.8% longer than MTP-off with IMC off; investigate repeatability and
+phase attribution separately rather than treating probe PASS as resolving it.
+
 ### Hybrid text load
 
 ```sh copy Copy Hybrid Text Load Command
@@ -289,8 +338,16 @@ make test-load-batch-images \
   '
 ```
 
-The existing image IMC/MTP-on failure remains useful evidence. Do not relax
-overlap checks or drop the changed-image phase to make this package pass.
+The existing image IMC/MTP-on FAIL remains historical evidence, not a pass under
+the revised scheduling contract. A new full IMC/MTP-on run passed that contract,
+including turn-11 subject switch and both replay phases, but again reported a
+13,700-token prompt excess at the switch versus the earlier IMC-off control.
+Image history duplication remains unresolved: behavioral/scheduling PASS and
+positive cache usage do not prove cached text was decoded only once. Preserve
+subject-switch, replay, isolation and cache assertions; do not drop the
+changed-image phase. After a server fix, rerun the affected cell and an IMC-off
+control, retaining physical-decode evidence as well as behavior and scheduling
+results; the tooling correction alone cannot close the duplication issue.
 
 ### Embedded drafting
 
@@ -393,7 +450,7 @@ Expand only the needed combinations into ordinary identities, one per line.
 | `mtp-embedded` | `MoE/Hyb/1slot/IMC±/MTP±/img-` | Serial drafting/recovery failures, or changes affecting the one-sequence execution case. Include MTP-off controls when distinguishing drafting from target-only behavior. | Many-slot waves exercise concurrent sessions; a PASS there does not establish the one-slot configuration. |
 | `mtp-companion` | `Dense/Hyb/1slot/IMC±/MTP±/img-` | Serial companion/own-KV state or recovery, with the same mode controls as embedded. | Neither concurrent companion waves nor the embedded target prove this target's serial contract. |
 | `image-state` | `MoE/Hyb/Nslot/IMC±/MTP±/img+` | Image/text recovery with multiple slots available; slot release/selection changes; interactions between image state, reuse and drafting at that capacity. | The same-slot package deliberately removes slot-selection ambiguity. Many-slot state is useful but does not guarantee recovery on the cancelled physical slot or add batch-style concurrent sessions. |
-| `image-state` | `Dense/Att/Nslot/IMC±/MTP-/img+` | Attention-only image recovery with multiple slots available, or investigating/fixing the IMC template limitation at that capacity. | One-slot recovery does not validate the many-slot configuration. IMC-on remains a GAP here too; availability is not passing qualification. |
+| `image-state` | `Dense/Att/Nslot/IMC±/MTP-/img+` | Attention-only image recovery/reuse with multiple slots available, or changes affecting slot selection and release. | Gemma E4B QAT is qualified in both modes with two slots. One-slot recovery alone does not validate this capacity; neither form establishes concurrent image-session isolation or Ministral compatibility. |
 | `long-context` | `MoE/Hyb/1slot/IMC±/MTP+/img-` | Retrieval or reuse fails only with drafting, or a context/state change affects speculation. Pair with the MTP-off context selection. | Dedicated drafting waves do not exercise staged long-context retrieval; MTP-off retrieval does not exercise drafting. |
 | `image-prefill` | `MoE/Hyb/Nslot/IMC±/MTP+/img+` | Text progress degrades when images arrive during drafting, or a change touches the drafting/prefill interaction. Pair with the matching off-mode selection. | MTP-off shared/oversized phases do not exercise active drafting. These MTP-on cells require their mapped shared/IMC execution, not forced oversized isolation. |
 
@@ -406,12 +463,37 @@ question, and avoid running both merely to fill the table.
 
 | Profile / path family | When it could help | Availability / qualification boundary |
 | --- | --- | --- |
+| `text-state`: `Dense/Hyb/1slot/IMC±/MTP±/img-` | Recovery/reuse on the Qwen3.8-27B target, including companion drafting interactions. | Mapped to one-slot aliases with three cycles; all four modes await qualification. CSV overlap labels retain the MoE representative rationale. |
+| `batch-text`: `Dense/Hyb/Nslot/IMC±/MTP±/img-` | Growing histories and cross-session interference on that same target. | Mapped to two slots / four conversations; all four modes await behavioral and scheduling-evidence qualification. Not a four-slot MoE capacity test. |
 | `image-state`: `Dense/Hyb/1slot/IMC±/MTP±/img+` | Same-slot image reuse/cancellation/recovery on the companion-capable target, when many-slot recovery would obscure the question. | Mapped, but CSV cells are blank and this guide claims no inference qualification. The existing Dense Hybrid image-state package uses many slots. |
 | `image-prefill`: `Dense/Hyb/Nslot/IMC±/MTP+/img+` | Companion drafting plus image-arrival responsiveness; select the MTP-off companion-prefill command as its control. | Mapped, but blank/unqualified like the MTP-off companion-prefill alternatives already shown above. Does not supply Qwen3.6's oversized phases. |
 
 Do not promote an alternative to established coverage without qualification.
-The eight Dense Hybrid text-state/batch-text overlaps are a different category:
-potentially useful **but not mapped**, as explained under overlap availability.
+Select only the modes needed for an investigation. To qualify all eight newly
+mapped alternatives, use these separate invocations sequentially, not a cross
+product that also requests inapplicable slot/profile pairs:
+
+```sh copy Copy Dense Hybrid State Command
+make test-load-text-state \
+  RELIABILITY_OUT=".tools/reliability/output/dense-hybrid-state-$(date +%Y%m%d-%H%M%S)" \
+  RELIABILITY_CELLS='
+    Dense/Hyb/1slot/IMC-/MTP-/img-
+    Dense/Hyb/1slot/IMC-/MTP+/img-
+    Dense/Hyb/1slot/IMC+/MTP-/img-
+    Dense/Hyb/1slot/IMC+/MTP+/img-
+  '
+```
+
+```sh copy Copy Dense Hybrid Batch Command
+make test-load-batch-text \
+  RELIABILITY_OUT=".tools/reliability/output/dense-hybrid-batch-$(date +%Y%m%d-%H%M%S)" \
+  RELIABILITY_CELLS='
+    Dense/Hyb/Nslot/IMC-/MTP-/img-
+    Dense/Hyb/Nslot/IMC-/MTP+/img-
+    Dense/Hyb/Nslot/IMC+/MTP-/img-
+    Dense/Hyb/Nslot/IMC+/MTP+/img-
+  '
+```
 The four duplicate MTP-off profile references add no distinct workload on the
 same fixture; choose the existing mapped control rather than rerunning its label.
 
@@ -426,6 +508,11 @@ batch/prefill and image input for text-only probes are not missing variants of
 those contracts. Multi-GPU and classic full-drafter coverage remain out of scope.
 
 ## Running, collecting and judging evidence
+
+Quick-check and reliability share `zarf/kms/tools_model_config.yaml`.
+`make server-for-tools` loads that dedicated configuration from the current
+checkout; restart the tools server after changing it. Normal server targets and
+the codegen benchmark retain `zarf/kms/model_config.yaml` and its `/AGENT` entries.
 
 - Obtain permission before accessing any remote test machine, including SSH discovery, fetching
   files or starting/stopping anything there. An instruction to analyze already
@@ -466,13 +553,15 @@ never interpret an old tool number using a reordered column without checking.
 | Result or signal | Interpretation / next action |
 | --- | --- |
 | Behavioral FAIL | Record the violated contract and actual output/progress. Investigate fixture capability, unsupported compatibility and server behavior; do not guess the cause from the verdict. |
-| Coverage INCOMPLETE / missing encoding or rejection evidence | The requested path has not been established. Check evidence availability and whether the path was triggered; do not equate missing logs or no rejection with wrong answers. |
+| Coverage INCOMPLETE / missing, untriggered or contradictory required evidence | The requested path has not been established; nonzero exit is separate from behavioral PASS/FAIL. Check encoding, rejection and batch scheduling/progress evidence as applicable; missing evidence is not itself wrong-answer behavior. |
 | GAP / NOT APPLY / NOT RUN | No passing execution of that pair. Explain the selection/fixture boundary; do not silently redirect to a representative. |
 | Behavioral PASS with complete required evidence | The executed bounded contract passed. Does not clear unrelated quick-check failures, unrun history turns or other models/backends. |
 | Timing change without failure | Compare the same fixture, workload, stages, modes, hardware/libraries and measured phase against an appropriate baseline. No package supplies a universal performance threshold or causal attribution. |
 
 Ordinary scenario failures allow later selected pairs/phases to run; cleanup
-failure stops further execution. A batch failure may leave later turns untested.
+failure stops further execution. A behavioral batch failure may leave later turns
+untested; low response overlap or incomplete scheduling coverage must not truncate
+histories or replays.
 Inspect completed selections rather than assuming a nonzero exit means nothing
 ran, or that every requested workload finished. Separate Make commands also
 need deliberate failure handling if placed in a shell script; do not accidentally

@@ -55,7 +55,7 @@ or historical tool numbers:
 - [Selector](../../../.tools/reliability/selection.go), relevant
   [CLI configuration](../../../.tools/reliability/config.go),
   [Make recipes](../../../.make/tools.mk) and
-  [shared aliases](../../../zarf/kms/model_config.yaml): actual availability,
+  [tools aliases](../../../zarf/kms/tools_model_config.yaml): actual availability,
   invocation syntax, automatic phases and configuration. Inspect the implicated
   workload/evidence code when its assertions or observations matter.
 
