@@ -3,7 +3,7 @@
 # Consolidated batch-engine, MTP, IMC, long-context, and media reliability
 # probes.
 #
-# Run against the current source with the shared model configuration:
+# Run against the current source with the dedicated tools model configuration:
 #
 #   make server-for-tools
 #   make test-load-batch-text RELIABILITY_CELLS='Dense/Att/Nslot/IMC+/MTP-/img-'
@@ -11,7 +11,7 @@
 #   make kronk-server-stop
 #
 # The tools validate the active model configuration but never modify it or
-# manage the server. Restart the server after editing zarf/kms/model_config.yaml.
+# manage the server. Restart the server after editing zarf/kms/tools_model_config.yaml.
 #
 # Select profiles and explicit single-GPU paths (or use all). Cells accept
 # whitespace-separated identities; quoted multiline lists put one cell per line.
@@ -25,7 +25,7 @@
 #
 # Further analysis with some harness: provide summary.json,
 # events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
-# zarf/kms/model_config.yaml for the expected runtime settings. Do not provide the
+# zarf/kms/tools_model_config.yaml for the expected runtime settings. Do not provide the
 # full ~/.kronk/kronk.log unless the curated evidence is unavailable or a
 # failure needs deeper investigation. Each invocation replaces RELIABILITY_OUT;
 # preserve separate runs with, for example:
@@ -39,9 +39,9 @@
 #   from trace-correlated server evidence, and report failures or evidence gaps.
 
 # API-only tools server: compile current Go code without regenerating docs/BUI.
-# Use the shared configuration, with normal environment/flag precedence.
+# Use the dedicated tools configuration, with normal environment/flag precedence.
 server-for-tools: ## Start a detached API server for probes
-	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/zarf/kms/model_config.yaml" \
+	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/zarf/kms/tools_model_config.yaml" \
 		go run -buildvcs=true ./cmd/kronk server start --detach --web-admin-enabled=false
 
 QUICK_CHECK_ARGS ?=

@@ -3,7 +3,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,1,Off,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,overlaped by 1:5,not apply,,not apply,not apply,not apply,,covered,
 1,1,Off,Off,No,MoE,Pure,,,,not apply,,not apply,not apply,not apply,,,
 1,1,Off,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,covered,not apply,covered,not apply,not apply,not apply,covered,,
-1,1,Off,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state qualification pending; Ministral IMC-off historically qualified.,,GAP: fixture qualification,,not apply,not apply,not apply,,,
+1,1,Off,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state: 3 cycles qualified 2026-11-06; see coverage.md.,,covered,,not apply,not apply,not apply,,,
 1,1,Off,Off,Yes,Dense,Hybrid,,,,,,not apply,not apply,not apply,,,
 1,1,Off,Off,Yes,MoE,Pure,,,,,,not apply,not apply,not apply,,,
 1,1,Off,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,covered,,not apply,not apply,not apply,,,
@@ -19,7 +19,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,1,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,overlaped by 1:21,not apply,,not apply,not apply,not apply,,covered,
 1,1,On,Off,No,MoE,Pure,,,,not apply,,not apply,not apply,not apply,,,
 1,1,On,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,covered,not apply,covered,not apply,not apply,not apply,covered,,
-1,1,On,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state qualification pending; Ministral template bypasses IMC.,,GAP: image cache reuse,,not apply,not apply,not apply,,,
+1,1,On,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state: 3 cycles qualified with replay/append reuse 2026-11-06; see coverage.md.,,covered,,not apply,not apply,not apply,,,
 1,1,On,Off,Yes,Dense,Hybrid,,,,,,not apply,not apply,not apply,,,
 1,1,On,Off,Yes,MoE,Pure,,,,,,not apply,not apply,not apply,,,
 1,1,On,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,covered,,not apply,not apply,not apply,,,
@@ -35,7 +35,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,n,Off,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,not apply,,not apply,overlaped by 5:37,not apply,overlaped by 8:35,covered,not apply
 1,n,Off,Off,No,MoE,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
 1,n,Off,Off,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-text 8 conversations / 4 slots: PASS + OBSERVED 2026-11-06; see coverage.md.,not apply,not apply,,not apply,covered,not apply,covered,overlaped by 7:37,not apply
-1,n,Off,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state qualification pending; Ministral IMC-off historically qualified; prefill uses Qwen2.5-VL.,not apply,GAP: fixture qualification,,covered,not apply,,,,not apply
+1,n,Off,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state: 3 cycles qualified 2026-11-06; prefill uses Qwen2.5-VL.,not apply,covered,,covered,not apply,,,,not apply
 1,n,Off,Off,Yes,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,covered,,,not apply,,,,not apply
 1,n,Off,Off,Yes,MoE,Pure,,,not apply,,,,not apply,,,,not apply
 1,n,Off,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-images revised 8-conversation contract unqualified.,not apply,covered,,covered,not apply,covered,,,not apply
@@ -51,7 +51,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,n,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,not apply,,not apply,overlaped by 5:53,not apply,overlaped by 8:51,covered,not apply
 1,n,On,Off,No,MoE,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
 1,n,On,Off,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-text revised 8-conversation contract unqualified.,not apply,not apply,,not apply,covered,not apply,covered,overlaped by 7:53,not apply
-1,n,On,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state qualification pending; Ministral template bypasses IMC; prefill uses Qwen2.5-VL.,not apply,GAP: image cache reuse,,covered,not apply,,,,not apply
+1,n,On,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state: 3 cycles qualified with replay/append reuse 2026-11-06; prefill uses Qwen2.5-VL.,not apply,covered,,covered,not apply,,,,not apply
 1,n,On,Off,Yes,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,covered,,,not apply,,,,not apply
 1,n,On,Off,Yes,MoE,Pure,,,not apply,,,,not apply,,,,not apply
 1,n,On,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-images revised 8-conversation contract unqualified.,not apply,covered,,covered,not apply,covered,,,not apply

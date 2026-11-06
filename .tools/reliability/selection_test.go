@@ -199,7 +199,7 @@ func TestCellIdentitiesAndRunnableFixtures(t *testing.T) {
 			}
 		}
 	}
-	doc, err := modelconfig.Load("../../zarf/kms/model_config.yaml")
+	doc, err := modelconfig.Load("../../zarf/kms/tools_model_config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestAutomaticPressureMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"isolated", "shared", "shared", "shared", "shared", "imc", "imc", "oversized-imc", "imc", "imc"}
-	doc, err := modelconfig.Load("../../zarf/kms/model_config.yaml")
+	doc, err := modelconfig.Load("../../zarf/kms/tools_model_config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

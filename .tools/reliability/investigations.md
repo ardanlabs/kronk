@@ -102,7 +102,7 @@ drafting interaction selections when MTP is implicated.
 | --- | --- | --- | --- |
 | **Text state** | Wrong/stale answer after reuse, append or cancellation; IMC/state ownership changes | `text-state`, Hybrid + Attention-only, IMC off/on, MTP off. For sustained interference add text load. | Concurrent-session isolation or companion-target state coverage. |
 | **Hybrid image state** | Image/text contamination, replay/append reuse, cancellation/recovery; multimodal state changes | `image-state`, same-slot Hybrid MoE, IMC off/on. For companion target use the explicit alternate below. | Image-history pressure or prefill responsiveness. |
-| **Attention image state** | Attention-only image recovery or template compatibility | `image-state`, same-slot Attention-only, IMC off/on. Gemma E4B QAT qualification is pending in both modes. | A green qualification on the newly selected fixture today. |
+| **Attention image state** | Attention-only image recovery or template compatibility | `image-state`, same-slot Attention-only, IMC off/on. Gemma E4B QAT is qualified in both modes and slot configurations. | Ministral template compatibility or concurrent image-session isolation. |
 | **Context retrieval** | Lost/foreign markers as history grows; context/IMC changes | `long-context`, Hybrid + Attention-only, IMC off/on. Add text load for simultaneous growing sessions. | Overflow limits or concurrent long-context retrieval. |
 | **Hybrid prefill** | Text stalls when an image arrives; shared/isolated preparation changes | `image-prefill`, Hybrid MoE, IMC off/on; includes automatically required forced phases. Companion alternative below. | Subject correctness, cancellation or all-slot saturation. |
 | **Attention prefill** | Attention-only image arrival/progress; native-isolated or IMC preparation changes | `image-prefill`, Attention-only, IMC off/on. Uses Qwen2.5-VL, not the Gemma image-state fixture. | Attention image-state reuse. |
@@ -176,13 +176,17 @@ that recovery used the cancelled physical slot. The selector also accepts Dense
 Hybrid one-slot image-state, but its CSV cells are blank and no qualification is
 claimed here. Do not infer same-slot companion coverage from the many-slot runs.
 
-### Attention image state — fixture qualification pending
+### Attention image state
 
-This selects Gemma E4B QAT in both IMC modes; neither mode is yet inference
-qualified on this fixture. Use IMC-off as the state/answer control and IMC-on
-to establish replay/append reuse as well. Nslot forms are also available.
+This selects Gemma E4B QAT, qualified in both IMC modes with one and two slots:
+three cycles per combination passed image/text correctness, cancellation,
+slot release and recovery. IMC-on replay/append requests reused 174 tokens
+in every cycle; IMC-off controls reported zero. See the capture and qualification
+boundary in [coverage.md](coverage.md#selected-fixtures).
+Use IMC-off as the state/answer control and IMC-on to exercise replay/append
+reuse as well. Nslot forms are also available and qualified.
 The previous Ministral fixture passed IMC-off but its template caused uncached
-fallback with IMC on. A Gemma pass would not fix or clear that Ministral limitation.
+fallback with IMC on. Gemma qualification does not fix or clear that limitation.
 
 ```sh copy Copy Attention Image State Command
 make test-load-image-state \
@@ -444,7 +448,7 @@ Expand only the needed combinations into ordinary identities, one per line.
 | `mtp-embedded` | `MoE/Hyb/1slot/IMC±/MTP±/img-` | Serial drafting/recovery failures, or changes affecting the one-sequence execution case. Include MTP-off controls when distinguishing drafting from target-only behavior. | Many-slot waves exercise concurrent sessions; a PASS there does not establish the one-slot configuration. |
 | `mtp-companion` | `Dense/Hyb/1slot/IMC±/MTP±/img-` | Serial companion/own-KV state or recovery, with the same mode controls as embedded. | Neither concurrent companion waves nor the embedded target prove this target's serial contract. |
 | `image-state` | `MoE/Hyb/Nslot/IMC±/MTP±/img+` | Image/text recovery with multiple slots available; slot release/selection changes; interactions between image state, reuse and drafting at that capacity. | The same-slot package deliberately removes slot-selection ambiguity. Many-slot state is useful but does not guarantee recovery on the cancelled physical slot or add batch-style concurrent sessions. |
-| `image-state` | `Dense/Att/Nslot/IMC±/MTP-/img+` | Attention-only image recovery with multiple slots available, or investigating/fixing the IMC template limitation at that capacity. | One-slot recovery does not validate the many-slot configuration. IMC-on remains a GAP here too; availability is not passing qualification. |
+| `image-state` | `Dense/Att/Nslot/IMC±/MTP-/img+` | Attention-only image recovery/reuse with multiple slots available, or changes affecting slot selection and release. | Gemma E4B QAT is qualified in both modes with two slots. One-slot recovery alone does not validate this capacity; neither form establishes concurrent image-session isolation or Ministral compatibility. |
 | `long-context` | `MoE/Hyb/1slot/IMC±/MTP+/img-` | Retrieval or reuse fails only with drafting, or a context/state change affects speculation. Pair with the MTP-off context selection. | Dedicated drafting waves do not exercise staged long-context retrieval; MTP-off retrieval does not exercise drafting. |
 | `image-prefill` | `MoE/Hyb/Nslot/IMC±/MTP+/img+` | Text progress degrades when images arrive during drafting, or a change touches the drafting/prefill interaction. Pair with the matching off-mode selection. | MTP-off shared/oversized phases do not exercise active drafting. These MTP-on cells require their mapped shared/IMC execution, not forced oversized isolation. |
 
@@ -477,6 +481,11 @@ batch/prefill and image input for text-only probes are not missing variants of
 those contracts. Multi-GPU and classic full-drafter coverage remain out of scope.
 
 ## Running, collecting and judging evidence
+
+Quick-check and reliability share `zarf/kms/tools_model_config.yaml`.
+`make server-for-tools` loads that dedicated configuration from the current
+checkout; restart the tools server after changing it. Normal server targets and
+the codegen benchmark retain `zarf/kms/model_config.yaml` and its `/AGENT` entries.
 
 - Obtain permission before accessing any remote test machine, including SSH discovery, fetching
   files or starting/stopping anything there. An instruction to analyze already

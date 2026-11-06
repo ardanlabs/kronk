@@ -3,7 +3,7 @@
 Matrix cells (32): **MoE or Dense / one or two slots / IMC off or on / MTP off or on / images off or on**.
 Models: **MoE** `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL` and
 **Dense** `ornith-ai/Ornith-1.5-9B-Q8_0`, using the `QUICK-CHECK` aliases
-from `zarf/kms/model_config.yaml`, with **32,768 tokens per slot**.
+from `zarf/kms/tools_model_config.yaml`, with **32,768 tokens per slot**.
 Both require their image projection files and contain embedded MTP;
 no separate Dense MTP file is needed.
 

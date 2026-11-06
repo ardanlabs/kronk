@@ -212,7 +212,9 @@ attribution. Preserve historical FAILs under their original contracts.
 ## Selected fixtures
 
 Model IDs below omit mode-specific alias suffixes. The shared
-[model configuration](../../zarf/kms/model_config.yaml) defines exact aliases.
+[tools model configuration](../../zarf/kms/tools_model_config.yaml) defines exact aliases
+for quick-check and reliability. `make server-for-tools` loads this file;
+normal server targets retain `zarf/kms/model_config.yaml` and its `/AGENT` entries.
 Image fixtures resolve projections from the catalog. MTP-off variants are
 target-only controls, not drafting coverage.
 
@@ -225,7 +227,7 @@ target-only controls, not drafting coverage.
 | `batch-text`, `batch-images`, Hybrid MoE | Qwen3.6 above | 4; 128K; original growth settings |
 | `batch-text`, Attention-only Dense | `ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0` | 4; MTP off; 64K per sequence, 1,300 tokens/turn, 128 completion budget |
 | `image-state`, Hybrid | Qwen3.6 MoE / Qwen3.8-27B Dense above | 1 or 4 / 1 or 2 respectively |
-| `image-state`, Attention-only Dense | `unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL` | 1 or 2; 32K; MTP off; qualification pending in both IMC modes |
+| `image-state`, Attention-only Dense | `unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL` | 1 or 2; 32K; MTP off; both IMC modes qualified |
 | `image-prefill`, Hybrid | Qwen3.6 MoE / Qwen3.8-27B Dense above | Per phase below |
 | `image-prefill`, Attention-only Dense | Qwen2.5-VL above | 2; 32K; MTP off |
 | Lifecycle | Qwen3-0.6B above | 1; IMC on, no configured MTP; modes not asserted by lifecycle |
@@ -240,8 +242,15 @@ marker-count task and is retained only for its smaller state/context/lifecycle
 contracts. Image-state now selects Gemma E4B QAT, while text batch and prefill
 retain Qwen2.5-VL. Qwen2.5-VL previously failed image-state prefix assertions;
 Ministral passed IMC-off image-state but fell back to uncached execution with
-IMC on. Gemma's embedded template supplies a separate generation header, but
-its image correctness and actual cache reuse still require inference qualification.
+IMC on. Gemma qualifies all four image-state combinations (CSV 2:6/22/38/54)
+in `output/fetched-gemma4-image-state-20261106-115711-20261106-140249`:
+three cycles each, image/text correctness, cancellation slot release, recovery
+and successful unload. Repeat and append requests reuse 174 tokens in every
+IMC-on cycle; IMC-off controls report zero reuse. The many-slot fixture has two
+slots. Server build `1.33.2-rc`, revision
+`7986f0b2948ca5d772007a4cd47f9d29f8292e85`, Metal libraries `b12125`.
+This closes the selected image-state fixture/reuse gaps without establishing
+concurrent image-session behavior or fixing Ministral's template limitation.
 
 ## Image-prefill execution mapping
 
@@ -325,15 +334,16 @@ qualification rather than silently substituting. An overlap label is neither
 an instruction to always skip that path nor permission to run an unsupported
 combination. Changes to coverage or mappings must also update that guidance.
 
-## Open coverage gaps
+## Remaining qualification and limitations
 
-| Cells | Unresolved contract |
-| --- | --- |
-| 2:6/38 — `Dense/Att/{1slot,Nslot}/IMC-/MTP-/img+` | Qualify the newly selected Gemma E4B QAT fixture for image answers, cancellation and recovery. Historical Ministral IMC-off passes do not qualify Gemma. |
-| 2:22/54 — `Dense/Att/{1slot,Nslot}/IMC+/MTP-/img+` | Qualify Gemma E4B QAT image correctness, recovery and replay/append cache reuse. The previous Ministral fixture triggered documented uncached IMC fallback; changing fixtures does not resolve that compatibility limitation. |
+The four Gemma image-state combinations are qualified; no image-state fixture
+or reuse GAP remains in the selected coverage. The eight planned Dense Hybrid
+text-state/batch-text alternatives still need mappings and qualification, as
+explained above. Revised batch qualification remains limited to the four
+profile × cells listed in the batch qualification section; other batch modes
+and the Attention-only batch fixture do not inherit those passing results.
 
-These remain open pending Gemma fixture qualification; do not weaken reuse
-assertions. Historical batch FAILs remain historical
+Historical batch FAILs remain historical
 FAILs, including the image IMC/MTP-on capture; removing the universal client
 overlap requirement does not retroactively pass them. Image duplication remains
 unresolved, as does the text MTP timing concern. Revised batch qualification is
@@ -345,7 +355,7 @@ to understand these limitations.
 ## Sources of truth
 
 - [Selection and automatic fixture/phase mapping](selection.go)
-- [Make targets/defaults](../../.make/tools.mk) and [shared aliases](../../zarf/kms/model_config.yaml)
+- [Make targets/defaults](../../.make/tools.mk) and [tools aliases](../../zarf/kms/tools_model_config.yaml)
 - [Shared mode assertions](scenario_common.go) and [MTP workload](scenario_mtp.go)
 - [Text-state](scenario_hybrid.go), [context](scenario_long_context.go), [batch](scenario_batch.go) and [image workloads](scenario_media.go)
 - [Lifecycle workload](../lifecycle-load/main.go)

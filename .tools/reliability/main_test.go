@@ -770,7 +770,7 @@ func TestMaximumEventGapFiltersWindow(t *testing.T) {
 }
 
 func TestLowLevelAliasesMatchConfiguration(t *testing.T) {
-	doc, err := modelconfig.Load("../../zarf/kms/model_config.yaml")
+	doc, err := modelconfig.Load("../../zarf/kms/tools_model_config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
