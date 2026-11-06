@@ -102,13 +102,13 @@ drafting interaction selections when MTP is implicated.
 | --- | --- | --- | --- |
 | **Text state** | Wrong/stale answer after reuse, append or cancellation; IMC/state ownership changes | `text-state`, Hybrid + Attention-only, IMC off/on, MTP off. For sustained interference add text load. | Concurrent-session isolation or companion-target state coverage. |
 | **Hybrid image state** | Image/text contamination, replay/append reuse, cancellation/recovery; multimodal state changes | `image-state`, same-slot Hybrid MoE, IMC off/on. For companion target use the explicit alternate below. | Image-history pressure or prefill responsiveness. |
-| **Attention image state** | Attention-only image recovery or template compatibility | `image-state`, same-slot Attention-only, IMC off/on. IMC-on remains an open fixture-compatibility GAP. | A green IMC-on qualification today. |
+| **Attention image state** | Attention-only image recovery or template compatibility | `image-state`, same-slot Attention-only, IMC off/on. Gemma E4B QAT qualification is pending in both modes. | A green qualification on the newly selected fixture today. |
 | **Context retrieval** | Lost/foreign markers as history grows; context/IMC changes | `long-context`, Hybrid + Attention-only, IMC off/on. Add text load for simultaneous growing sessions. | Overflow limits or concurrent long-context retrieval. |
 | **Hybrid prefill** | Text stalls when an image arrives; shared/isolated preparation changes | `image-prefill`, Hybrid MoE, IMC off/on; includes automatically required forced phases. Companion alternative below. | Subject correctness, cancellation or all-slot saturation. |
-| **Attention prefill** | Attention-only image arrival/progress; native-isolated or IMC preparation changes | `image-prefill`, Attention-only, IMC off/on. Uses Qwen2.5-VL, not Ministral. | Attention image-state reuse. |
+| **Attention prefill** | Attention-only image arrival/progress; native-isolated or IMC preparation changes | `image-prefill`, Attention-only, IMC off/on. Uses Qwen2.5-VL, not the Gemma image-state fixture. | Attention image-state reuse. |
 | **Hybrid text load** | Queue/stream progress, cross-session contamination, long-running reuse or MTP interactions | `batch-text`, Hybrid MoE, all four MTP/IMC modes. Select the implicated pair first for a narrow bug. | Same-slot recovery or attribution of a slowdown to a single feature by itself. |
 | **Attention text load** | Ordinary attention state isolation/reuse under growing concurrent histories | `batch-text`, Attention-only, IMC off/on, MTP off. Qwen2.5-VL has historical five-conversation qualification; revised eight-conversation contract awaits revalidation. | Vision correctness merely because the fixture can accept images. |
-| **Image history load** | Subject switch, stale image/history state, growing IMC image prefix or image batch overlap | `batch-images`, Hybrid MoE, all four MTP/IMC modes. IMC/MTP on retains a known failing capture. | Recovery after cancellation or universal scheduling guarantees. |
+| **Image history load** | Subject switch, stale image/history state, growing IMC image prefix or image batch overlap | `batch-images`, Hybrid MoE, all four MTP/IMC modes. IMC/MTP on passed the revised contract; historical FAIL and history duplication remain separate evidence. | Recovery after cancellation, absence of duplicated decoding or universal scheduling guarantees. |
 | **Embedded drafting** | Drafting stops, corrupts values/session identity or fails recovery; embedded MTP changes | `mtp-embedded`, many slots, MTP off/on × IMC off/on. Use one-slot variation for serial paths. | Appended-history reuse or every-slot generation overlap. |
 | **Companion drafting** | Own-KV/companion state, loading or recovery concerns; companion MTP changes | `mtp-companion`, same contrasts as embedded, on the companion target. | Equivalent results to the embedded fixture or classic full-drafter coverage. |
 | **Drafting + state/images** | Failure requires both speculation and reuse/cancellation or image input | MTP-on `text-state` / `image-state` additions below, alongside relevant off-mode package. For response stalls add MTP-on prefill. | Every backend's state interaction; Dense text-state mapping remains pending. |
@@ -176,11 +176,13 @@ that recovery used the cancelled physical slot. The selector also accepts Dense
 Hybrid one-slot image-state, but its CSV cells are blank and no qualification is
 claimed here. Do not infer same-slot companion coverage from the many-slot runs.
 
-### Attention image state — includes an open GAP
+### Attention image state — fixture qualification pending
 
-Use IMC-on to investigate the limitation or validate a fix, not as a promised
-passing test. It currently fails reuse assertions on Ministral's template;
-IMC-off is the qualified state/answer control. Nslot forms are also available.
+This selects Gemma E4B QAT in both IMC modes; neither mode is yet inference
+qualified on this fixture. Use IMC-off as the state/answer control and IMC-on
+to establish replay/append reuse as well. Nslot forms are also available.
+The previous Ministral fixture passed IMC-off but its template caused uncached
+fallback with IMC on. A Gemma pass would not fix or clear that Ministral limitation.
 
 ```sh copy Copy Attention Image State Command
 make test-load-image-state \
@@ -257,8 +259,16 @@ make test-load-image-prefill \
 Text and image load now default to eight conversations / four slots, retaining
 21 turns and 30K final-prompt targets. Queue depth two gives eight admission
 permits, not a guarantee that all eight requests are admitted simultaneously.
-Neither revised workload has inference qualification yet; retain historical
-PASS/FAIL evidence with its original workload identity.
+The tooling-contract correction has inference validation on both paths; retain
+historical PASS/FAIL evidence with its original workload identity.
+
+November 6 qualification is limited to Hybrid MoE `batch-text` IMC-/MTP-,
+IMC-/MTP+ and IMC+/MTP+, plus `batch-images` IMC+/MTP+. All completed the full
+eight-conversation histories with behavioral PASS, scheduling coverage OBSERVED
+and cleanup PASS. See [qualification and capture identities](coverage.md#batch-contract-qualification).
+This does not qualify text IMC+/MTP-, Attention-only batch or other image modes.
+The earlier interrupted image-pair log is useful behavioral evidence, but lacks
+the summary/raw events required to qualify its IMC-/MTP+ scheduling coverage.
 
 For each turn, require request-correlated assignment-to-execution-finish evidence
 of concurrent full slot ownership without same-slot conflicts, plus a prepared
@@ -276,6 +286,14 @@ histories or replays. Missing, untriggered or contradictory required evidence is
 coverage INCOMPLETE with a nonzero exit, separate from behavioral PASS/FAIL.
 Use the [batch contract](coverage.md#batch-scheduling-evidence) when interpreting
 these packages; do not substitute occupancy for generation-progress evidence.
+
+The validated text MTP-on/IMC-off workload reached client overlap two on later
+turns; the image IMC/MTP-on subject switch also reached two. Both retained full
+slot ownership, waiting-job handoff and generation-during-prefill evidence and
+completed their remaining histories. This validates the correction, not a claim
+that the scheduler is maximally efficient. Single sequential text captures showed
+MTP-on taking 5.8% longer than MTP-off with IMC off; investigate repeatability and
+phase attribution separately rather than treating probe PASS as resolving it.
 
 ### Hybrid text load
 
@@ -315,9 +333,15 @@ make test-load-batch-images \
 ```
 
 The existing image IMC/MTP-on FAIL remains historical evidence, not a pass under
-the revised scheduling contract. Image duplication remains unresolved. Preserve
+the revised scheduling contract. A new full IMC/MTP-on run passed that contract,
+including turn-11 subject switch and both replay phases, but again reported a
+13,700-token prompt excess at the switch versus the earlier IMC-off control.
+Image history duplication remains unresolved: behavioral/scheduling PASS and
+positive cache usage do not prove cached text was decoded only once. Preserve
 subject-switch, replay, isolation and cache assertions; do not drop the
-changed-image phase to make this package pass.
+changed-image phase. After a server fix, rerun the affected cell and an IMC-off
+control, retaining physical-decode evidence as well as behavior and scheduling
+results; the tooling correction alone cannot close the duplication issue.
 
 ### Embedded drafting
 

@@ -486,22 +486,22 @@ models:
     nseq-max: 1
     incremental-cache: false
 
-  # Attention-only image state: IMC-off qualified; IMC-on template reuse remains a GAP.
+  # Attention-only image state: Gemma QAT qualification pending in both IMC modes.
   # Keep Qwen2.5-VL for text batch and native-isolated media prefill.
-  unsloth/Ministral-3-14B-Instruct-2512-Q4_0/TOOLS-MTP-OFF-IMC-ON: &ministralImage
+  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/TOOLS-MTP-OFF-IMC-ON: &gemmaImage
     <<: *attentionText
     nseq-max: 2
 
-  unsloth/Ministral-3-14B-Instruct-2512-Q4_0/TOOLS-MTP-OFF-IMC-OFF:
-    <<: *ministralImage
+  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/TOOLS-MTP-OFF-IMC-OFF:
+    <<: *gemmaImage
     incremental-cache: false
 
-  unsloth/Ministral-3-14B-Instruct-2512-Q4_0/TOOLS-1S-MTP-OFF-IMC-ON:
-    <<: *ministralImage
+  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/TOOLS-1S-MTP-OFF-IMC-ON:
+    <<: *gemmaImage
     nseq-max: 1
 
-  unsloth/Ministral-3-14B-Instruct-2512-Q4_0/TOOLS-1S-MTP-OFF-IMC-OFF:
-    <<: *ministralImage
+  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/TOOLS-1S-MTP-OFF-IMC-OFF:
+    <<: *gemmaImage
     nseq-max: 1
     incremental-cache: false
 

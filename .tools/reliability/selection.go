@@ -245,7 +245,7 @@ func selectProbe(cfg config, cell coverageCell, profile string) probeSelection {
 		} else if cell.Type == "Dense" && cell.MTP == "off" {
 			base = vision
 			if profile == "image-state" {
-				base = "unsloth/Ministral-3-14B-Instruct-2512-Q4_0"
+				base = "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
 			}
 			if slots == 1 {
 				suffix = "/TOOLS-1S" + mode

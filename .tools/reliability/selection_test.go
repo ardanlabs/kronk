@@ -139,7 +139,7 @@ func TestExplicitProfileCellSelection(t *testing.T) {
 			}
 			continue
 		}
-		base := "unsloth/Ministral-3-14B-Instruct-2512-Q4_0"
+		base := "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
 		if probe.Profile == "image-prefill" {
 			base = "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0"
 		}

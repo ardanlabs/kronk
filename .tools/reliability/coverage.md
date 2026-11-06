@@ -125,8 +125,8 @@ regression verdicts; those need comparable baselines and criteria.
 | `image-state` | Three image/text/replay/append/cancel/recovery cycles without unloading. Subject and requested prefixes, text exact-marker isolation, IMC-on reuse, cancellation after content, all slots idle and fresh image/text recovery. MTP-on measured image requests require drafting. | One-slot fixtures force same-slot recovery; many-slot fixtures do not pin recovery to the cancelled slot. No concurrent image sessions, subject-switch history or prefill cancellation. No byte-identical prose requirement. |
 | `long-context` | Serial staged retrieval of three ordered markers, rejecting foreign-stage markers; cold/repeat correctness and IMC-on warm reuse. Flash-Next stages 4K–128K; Attention-only baseline 4K/8K/16K. Unknown capacity or skipped requested stages cannot pass. | No exact-limit/overflow, append, cancellation, images or concurrent long-context interference. Marker retrieval is not general model-quality evaluation. |
 | `image-prefill` | Submit image after five text content events; both streams complete, scheduler-observed prefill/generation overlap and text gaps within one second by default. Require request-correlated image execution evidence mapped below. | Two concurrent requests, not all-slot saturation. No image-subject, replay/append or cancellation contract. Client content-event gaps are not server per-token timings. |
-| `batch-text` | Eight conversations on four slots; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation and IMC-on append reuse. Per-turn full slot ownership and prepared-request wait/release coverage; workload-wide generation-during-prefill evidence as defined below. | No dedicated exact replay, cancellation/recovery or images. Slot occupancy is not generation overlap. Revised eight-conversation workload awaits inference revalidation. |
-| `batch-images` | Same eight-conversation batch history/load/isolation and scheduling contract, plus image subjects, later subject switch, initial/switch request replays, current-subject correctness and rejection of stale/foreign subjects. IMC-on replay/append reuse remains required. | No whole-description equality: differing correct prose is allowed. No cancellation or forced same-slot recovery. Image history load does not replace prefill responsiveness. Revised workload awaits inference revalidation. |
+| `batch-text` | Eight conversations on four slots; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation and IMC-on append reuse. Per-turn full slot ownership and prepared-request wait/release coverage; workload-wide generation-during-prefill evidence as defined below. | No dedicated exact replay, cancellation/recovery or images. Slot occupancy is not generation overlap. Revised contract qualified only for the cells below. |
+| `batch-images` | Same eight-conversation batch history/load/isolation and scheduling contract, plus image subjects, later subject switch, initial/switch request replays, current-subject correctness and rejection of stale/foreign subjects. IMC-on replay/append reuse remains required. | No whole-description equality: differing correct prose is allowed. No cancellation or forced same-slot recovery. Image history load does not replace prefill responsiveness. Revised contract qualified only for the cell below; duplication remains unresolved. |
 | `mtp-embedded` / `mtp-companion` | Embedded-head or companion fixture; three request waves on the same loaded model, supplied-value correctness, own session key and no foreign key, normal stop, selected drafting mode, then fresh-marker recovery. One/many-slot fixtures are distinct. | No appended-history cache-hit requirement, images, target-only output equivalence or proof that all physical slots generated concurrently. No inherent minimum rejection count or acceptance rate. |
 | `example-lifecycle-load` | Separate command: one execution slot, two admission permits, queued cancellation, admission timeout, active cancellation and successful recovery; structured stage evidence. | Fixed text fixture; no IMC/MTP matrix or cache/draft/media integrity assertions. Admission recovery does not establish inference-state integrity. |
 
@@ -170,6 +170,45 @@ INCOMPLETE and a nonzero exit, separately from behavioral PASS/FAIL. Contradicto
 ownership evidence cannot establish coverage through an aggregate.
 Failed image-state cycles retain response outputs without changing assertions.
 
+### Batch contract qualification
+
+The tooling-contract correction is validated on both text and image paths by
+the following November 6, 2026 captures. All use the Hybrid MoE Qwen3.6 fixture,
+eight conversations and four slots; each reports behavioral PASS, scheduling
+coverage OBSERVED and successful cleanup. Server metadata records build
+`1.33.2-rc`, revision `56082b8050aa49cbdb1adf250d67c5fe887bcdf9`, Metal and
+libraries `b12125`. This is bounded qualification, not a matrix-wide clearance.
+
+| Profile × cell | Completed workload | Capture under `output/` |
+| --- | --- | --- |
+| `batch-text × MoE/Hyb/Nslot/IMC-/MTP+/img-` | 21 turns; 168 requests; 31,372-token final prompts | `fetched-batch-text-mtp-on-revalidation-20261106-075952-20261106-105101` |
+| `batch-text × MoE/Hyb/Nslot/IMC-/MTP-/img-` | 21 turns; 168 requests; 31,372-token final prompts | `fetched-batch-text-contract-20261106-090438-20261106-131726` |
+| `batch-text × MoE/Hyb/Nslot/IMC+/MTP+/img-` | 21 turns; 168 requests; 31,372-token final prompts | `fetched-batch-text-contract-20261106-090438-20261106-131726` |
+| `batch-images × MoE/Hyb/Nslot/IMC+/MTP+/img+` | 21 turns plus initial/changed-image replays; 184 requests; final reported prompts 46,327–46,356 tokens | `fetched-batch-images-probe-revalidation-20261106-113046-20261106-134051` |
+
+Retained lifecycle events independently establish four occupied slots without
+ownership conflicts and waiting-job handoff in every recorded phase. Successive
+request-correlated scheduler samples establish generation during peer prefill.
+Text IMC-off/MTP-on client overlap fell to two on later turns; image overlap fell
+to two at the turn-11 subject switch. Both completed with scheduling evidence,
+validating that low client overlap no longer aborts the history exercise.
+The image replays had no sampled generation-during-prefill witness; the required
+workload-wide witness was observed in other phases, including the subject switch.
+
+Do not extend this qualification to text IMC-on/MTP-off, Attention-only batch,
+or the other image modes. The interrupted image-pair capture
+`fetched-batch-images-contract-20261106-094431-20261106-131805` retained only
+`tool.log`: IMC-off/MTP-on logged completion and cleanup, but no final summary or
+raw events survived, so its scheduling qualification is not established.
+
+The correction does not resolve server efficiency concerns. Image turn-11 usage
+again exceeded the earlier IMC-off control by 13,700 prompt tokens; the historical
+physical history-duplication defect remains open. This PASS does not assert that
+cached history was decoded only once. Text MTP-on/IMC-off took 5.8% longer than
+MTP-off/IMC-off over matched 21-turn workloads in single sequential captures;
+that observation is not a repeated benchmark, version regression or causal
+attribution. Preserve historical FAILs under their original contracts.
+
 ## Selected fixtures
 
 Model IDs below omit mode-specific alias suffixes. The shared
@@ -186,7 +225,7 @@ target-only controls, not drafting coverage.
 | `batch-text`, `batch-images`, Hybrid MoE | Qwen3.6 above | 4; 128K; original growth settings |
 | `batch-text`, Attention-only Dense | `ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0` | 4; MTP off; 64K per sequence, 1,300 tokens/turn, 128 completion budget |
 | `image-state`, Hybrid | Qwen3.6 MoE / Qwen3.8-27B Dense above | 1 or 4 / 1 or 2 respectively |
-| `image-state`, Attention-only Dense | `unsloth/Ministral-3-14B-Instruct-2512-Q4_0` | 1 or 2; 32K; MTP off; IMC-on GAP below |
+| `image-state`, Attention-only Dense | `unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL` | 1 or 2; 32K; MTP off; qualification pending in both IMC modes |
 | `image-prefill`, Hybrid | Qwen3.6 MoE / Qwen3.8-27B Dense above | Per phase below |
 | `image-prefill`, Attention-only Dense | Qwen2.5-VL above | 2; 32K; MTP off |
 | Lifecycle | Qwen3-0.6B above | 1; IMC on, no configured MTP; modes not asserted by lifecycle |
@@ -195,11 +234,14 @@ The Attention-only batch fixture was historically qualified for five conversatio
 21 turns, 105 requests and
 30,163-token final prompts in both IMC modes, including four-way overlap and
 reuse when enabled (`output/qwen25vl-batch-imc`). This does not qualify the revised
-eight-conversation workload or its scheduling evidence contract; both batch
-profiles await inference revalidation. Qwen3-0.6B failed the batch
+eight-conversation workload or its scheduling evidence contract for this
+Attention-only fixture. Hybrid MoE qualification is listed above. Qwen3-0.6B failed the batch
 marker-count task and is retained only for its smaller state/context/lifecycle
-contracts. Qwen2.5-VL's earlier image-prefix failures are why image-state uses
-Ministral, while text batch and prefill retain Qwen2.5-VL.
+contracts. Image-state now selects Gemma E4B QAT, while text batch and prefill
+retain Qwen2.5-VL. Qwen2.5-VL previously failed image-state prefix assertions;
+Ministral passed IMC-off image-state but fell back to uncached execution with
+IMC on. Gemma's embedded template supplies a separate generation header, but
+its image correctness and actual cache reuse still require inference qualification.
 
 ## Image-prefill execution mapping
 
@@ -287,14 +329,15 @@ combination. Changes to coverage or mappings must also update that guidance.
 
 | Cells | Unresolved contract |
 | --- | --- |
-| 2:22/54 — `Dense/Att/{1slot,Nslot}/IMC+/MTP-/img+` | Image replay/append cache reuse. Ministral passes subjects, prefixes, cancellation and recovery, but its template triggers documented uncached IMC fallback. IMC-off 2:6/38 are qualified. |
+| 2:6/38 — `Dense/Att/{1slot,Nslot}/IMC-/MTP-/img+` | Qualify the newly selected Gemma E4B QAT fixture for image answers, cancellation and recovery. Historical Ministral IMC-off passes do not qualify Gemma. |
+| 2:22/54 — `Dense/Att/{1slot,Nslot}/IMC+/MTP-/img+` | Qualify Gemma E4B QAT image correctness, recovery and replay/append cache reuse. The previous Ministral fixture triggered documented uncached IMC fallback; changing fixtures does not resolve that compatibility limitation. |
 
-These remain open pending template support or qualification of another suitable
-fixture; do not weaken reuse assertions. Historical batch FAILs remain historical
+These remain open pending Gemma fixture qualification; do not weaken reuse
+assertions. Historical batch FAILs remain historical
 FAILs, including the image IMC/MTP-on capture; removing the universal client
 overlap requirement does not retroactively pass them. Image duplication remains
-unresolved. Neither batch profile's revised eight-conversation workload has
-inference qualification. Other selected expansion contracts are qualified; this
+unresolved, as does the text MTP timing concern. Revised batch qualification is
+limited to the four profile × cells listed above. Other selected expansion contracts are qualified; this
 does not prove all blank combinations unnecessary. Additional local chronology
 may be retained in the gitignored `development-findings.md`, but is not required
 to understand these limitations.
