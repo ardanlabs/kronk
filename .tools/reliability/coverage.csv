@@ -1,6 +1,6 @@
 GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) image-state,3) long-context,4) image-prefill,5) batch-text,6) batch-images,7) mtp-embedded,8) mtp-companion,9) example-lifecycle-load
 1,1,Off,Off,No,Dense,Pure,unsloth/Qwen3-0.6B-Q8_0,,covered,not apply,covered,not apply,not apply,not apply,,,
-1,1,Off,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,overlaped by 1:5,not apply,,not apply,not apply,not apply,,covered,
+1,1,Off,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,Text-state alternate selectable; 3-cycle qualification pending.,overlaped by 1:5,not apply,,not apply,not apply,not apply,,covered,
 1,1,Off,Off,No,MoE,Pure,,,,not apply,,not apply,not apply,not apply,,,
 1,1,Off,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,covered,not apply,covered,not apply,not apply,not apply,covered,,
 1,1,Off,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state: 3 cycles qualified 2026-11-06; see coverage.md.,,covered,,not apply,not apply,not apply,,,
@@ -8,7 +8,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,1,Off,Off,Yes,MoE,Pure,,,,,,not apply,not apply,not apply,,,
 1,1,Off,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,covered,,not apply,not apply,not apply,,,
 1,1,Off,On,No,Dense,Pure,,,,not apply,,not apply,not apply,not apply,,,
-1,1,Off,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,overlaped by 1:13,not apply,,not apply,not apply,not apply,,covered,
+1,1,Off,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,Text-state alternate selectable; 3-cycle qualification pending.,overlaped by 1:13,not apply,,not apply,not apply,not apply,,covered,
 1,1,Off,On,No,MoE,Pure,,,,not apply,,not apply,not apply,not apply,,,
 1,1,Off,On,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,covered,not apply,covered,not apply,not apply,not apply,covered,,
 1,1,Off,On,Yes,Dense,Pure,,,,,,not apply,not apply,not apply,,,
@@ -16,7 +16,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,1,Off,On,Yes,MoE,Pure,,,,,,not apply,not apply,not apply,,,
 1,1,Off,On,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,covered,,not apply,not apply,not apply,,,
 1,1,On,Off,No,Dense,Pure,unsloth/Qwen3-0.6B-Q8_0,Lifecycle 8K; state/context 32K.,covered,not apply,covered,not apply,not apply,not apply,,,covered
-1,1,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,overlaped by 1:21,not apply,,not apply,not apply,not apply,,covered,
+1,1,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,Text-state alternate selectable; 3-cycle qualification pending.,overlaped by 1:21,not apply,,not apply,not apply,not apply,,covered,
 1,1,On,Off,No,MoE,Pure,,,,not apply,,not apply,not apply,not apply,,,
 1,1,On,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,covered,not apply,covered,not apply,not apply,not apply,covered,,
 1,1,On,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state: 3 cycles qualified with replay/append reuse 2026-11-06; see coverage.md.,,covered,,not apply,not apply,not apply,,,
@@ -24,7 +24,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,1,On,Off,Yes,MoE,Pure,,,,,,not apply,not apply,not apply,,,
 1,1,On,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,covered,,not apply,not apply,not apply,,,
 1,1,On,On,No,Dense,Pure,,,,not apply,,not apply,not apply,not apply,,,
-1,1,On,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,overlaped by 1:29,not apply,,not apply,not apply,not apply,,covered,
+1,1,On,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,Text-state alternate selectable; 3-cycle qualification pending.,overlaped by 1:29,not apply,,not apply,not apply,not apply,,covered,
 1,1,On,On,No,MoE,Pure,,,,not apply,,not apply,not apply,not apply,,,
 1,1,On,On,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,covered,not apply,covered,not apply,not apply,not apply,covered,,
 1,1,On,On,Yes,Dense,Pure,,,,,,not apply,not apply,not apply,,,
@@ -32,7 +32,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,1,On,On,Yes,MoE,Pure,,,,,,not apply,not apply,not apply,,,
 1,1,On,On,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,covered,,not apply,not apply,not apply,,,
 1,n,Off,Off,No,Dense,Pure,ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0,4 slots / 64K; 1300/turn. Batch-text revised 8-conversation contract unqualified.,not apply,not apply,,not apply,covered,not apply,,,not apply
-1,n,Off,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,not apply,,not apply,overlaped by 5:37,not apply,overlaped by 8:35,covered,not apply
+1,n,Off,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,Batch-text alternate selectable: 4 conversations / 2 slots; qualification pending.,not apply,not apply,,not apply,overlaped by 5:37,not apply,overlaped by 8:35,covered,not apply
 1,n,Off,Off,No,MoE,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
 1,n,Off,Off,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-text 8 conversations / 4 slots: PASS + OBSERVED 2026-11-06; see coverage.md.,not apply,not apply,,not apply,covered,not apply,covered,overlaped by 7:37,not apply
 1,n,Off,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state: 3 cycles qualified 2026-11-06; prefill uses Qwen2.5-VL.,not apply,covered,,covered,not apply,,,,not apply
@@ -40,7 +40,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,n,Off,Off,Yes,MoE,Pure,,,not apply,,,,not apply,,,,not apply
 1,n,Off,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-images revised 8-conversation contract unqualified.,not apply,covered,,covered,not apply,covered,,,not apply
 1,n,Off,On,No,Dense,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
-1,n,Off,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,not apply,,not apply,overlaped by 5:45,not apply,,covered,not apply
+1,n,Off,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,Batch-text alternate selectable: 4 conversations / 2 slots; qualification pending.,not apply,not apply,,not apply,overlaped by 5:45,not apply,,covered,not apply
 1,n,Off,On,No,MoE,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
 1,n,Off,On,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-text 8 conversations / 4 slots: PASS + OBSERVED 2026-11-06; MTP timing concern open; see coverage.md.,not apply,not apply,,not apply,covered,not apply,covered,,not apply
 1,n,Off,On,Yes,Dense,Pure,,,not apply,,,,not apply,,,,not apply
@@ -48,7 +48,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,n,Off,On,Yes,MoE,Pure,,,not apply,,,,not apply,,,,not apply
 1,n,Off,On,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-images completion logged 2026-11-06; summary/raw events missing; scheduling qualification not established.,not apply,covered,,covered,not apply,covered,,,not apply
 1,n,On,Off,No,Dense,Pure,ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0,4 slots / 64K; 1300/turn. Batch-text revised 8-conversation contract unqualified.,not apply,not apply,,not apply,covered,not apply,,,not apply
-1,n,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,not apply,,not apply,overlaped by 5:53,not apply,overlaped by 8:51,covered,not apply
+1,n,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,Batch-text alternate selectable: 4 conversations / 2 slots; qualification pending.,not apply,not apply,,not apply,overlaped by 5:53,not apply,overlaped by 8:51,covered,not apply
 1,n,On,Off,No,MoE,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
 1,n,On,Off,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-text revised 8-conversation contract unqualified.,not apply,not apply,,not apply,covered,not apply,covered,overlaped by 7:53,not apply
 1,n,On,Off,Yes,Dense,Pure,unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL,Gemma image-state: 3 cycles qualified with replay/append reuse 2026-11-06; prefill uses Qwen2.5-VL.,not apply,covered,,covered,not apply,,,,not apply
@@ -56,7 +56,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,n,On,Off,Yes,MoE,Pure,,,not apply,,,,not apply,,,,not apply
 1,n,On,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-images revised 8-conversation contract unqualified.,not apply,covered,,covered,not apply,covered,,,not apply
 1,n,On,On,No,Dense,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
-1,n,On,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,not apply,,not apply,overlaped by 5:61,not apply,,covered,not apply
+1,n,On,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,Batch-text alternate selectable: 4 conversations / 2 slots; qualification pending.,not apply,not apply,,not apply,overlaped by 5:61,not apply,,covered,not apply
 1,n,On,On,No,MoE,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
 1,n,On,On,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-text 8 conversations / 4 slots: PASS + OBSERVED 2026-11-06; see coverage.md.,not apply,not apply,,not apply,covered,not apply,covered,,not apply
 1,n,On,On,Yes,Dense,Pure,,,not apply,,,,not apply,,,,not apply

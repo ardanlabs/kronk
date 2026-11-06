@@ -80,12 +80,13 @@ Prefer the covered representative for a question about common orchestration.
 Prefer the alternate target/backend when the failure or changed code makes that
 distinction material. **Do not silently substitute one for the other.**
 
-The eight Dense Hybrid text-state/batch-text overlap alternatives are not yet
-directly mapped. In particular, selecting `Dense/Hyb/...` for those profiles
-reports a coverage gap, even though related image and MTP profiles support that
-target. Record the missing mapping; do not offer a normal package command as if
-it existed. Their implementation/qualification plan lives in the optional local
-development document. Low-level custom fixtures need separate validation.
+The eight Dense Hybrid text-state/batch-text overlap alternatives are directly
+mapped to Qwen3.8-27B, but still await inference qualification. Text-state uses
+one slot and three recovery cycles; batch-text uses four conversations on two
+slots, retaining the 21-turn/30K history and scheduling-evidence contract.
+Choose them for target-specific recovery, reuse, native execution or companion
+interactions, not as proven equivalents to the MoE representatives. Commands
+are listed under runnable alternatives below.
 
 The other four overlap references duplicate an available MTP-off control on the
 same target/configuration. Choose `mtp-embedded` for the Qwen3.6 control or
@@ -260,9 +261,10 @@ make test-load-image-prefill \
 
 ### Batch load evidence contract
 
-Text and image load now default to eight conversations / four slots, retaining
-21 turns and 30K final-prompt targets. Queue depth two gives eight admission
-permits, not a guarantee that all eight requests are admitted simultaneously.
+Text and image load use eight conversations / four slots, except the Dense
+Hybrid text alternative, which uses four conversations / two slots. Both retain
+21 turns and 30K final-prompt targets. Queue depth two gives eight or four
+admission permits respectively, not guaranteed simultaneous admission.
 The tooling-contract correction has inference validation on both paths; retain
 historical PASS/FAIL evidence with its original workload identity.
 
@@ -461,12 +463,37 @@ question, and avoid running both merely to fill the table.
 
 | Profile / path family | When it could help | Availability / qualification boundary |
 | --- | --- | --- |
+| `text-state`: `Dense/Hyb/1slot/IMC±/MTP±/img-` | Recovery/reuse on the Qwen3.8-27B target, including companion drafting interactions. | Mapped to one-slot aliases with three cycles; all four modes await qualification. CSV overlap labels retain the MoE representative rationale. |
+| `batch-text`: `Dense/Hyb/Nslot/IMC±/MTP±/img-` | Growing histories and cross-session interference on that same target. | Mapped to two slots / four conversations; all four modes await behavioral and scheduling-evidence qualification. Not a four-slot MoE capacity test. |
 | `image-state`: `Dense/Hyb/1slot/IMC±/MTP±/img+` | Same-slot image reuse/cancellation/recovery on the companion-capable target, when many-slot recovery would obscure the question. | Mapped, but CSV cells are blank and this guide claims no inference qualification. The existing Dense Hybrid image-state package uses many slots. |
 | `image-prefill`: `Dense/Hyb/Nslot/IMC±/MTP+/img+` | Companion drafting plus image-arrival responsiveness; select the MTP-off companion-prefill command as its control. | Mapped, but blank/unqualified like the MTP-off companion-prefill alternatives already shown above. Does not supply Qwen3.6's oversized phases. |
 
 Do not promote an alternative to established coverage without qualification.
-The eight Dense Hybrid text-state/batch-text overlaps are a different category:
-potentially useful **but not mapped**, as explained under overlap availability.
+Select only the modes needed for an investigation. To qualify all eight newly
+mapped alternatives, use these separate invocations sequentially, not a cross
+product that also requests inapplicable slot/profile pairs:
+
+```sh copy Copy Dense Hybrid State Command
+make test-load-text-state \
+  RELIABILITY_OUT=".tools/reliability/output/dense-hybrid-state-$(date +%Y%m%d-%H%M%S)" \
+  RELIABILITY_CELLS='
+    Dense/Hyb/1slot/IMC-/MTP-/img-
+    Dense/Hyb/1slot/IMC-/MTP+/img-
+    Dense/Hyb/1slot/IMC+/MTP-/img-
+    Dense/Hyb/1slot/IMC+/MTP+/img-
+  '
+```
+
+```sh copy Copy Dense Hybrid Batch Command
+make test-load-batch-text \
+  RELIABILITY_OUT=".tools/reliability/output/dense-hybrid-batch-$(date +%Y%m%d-%H%M%S)" \
+  RELIABILITY_CELLS='
+    Dense/Hyb/Nslot/IMC-/MTP-/img-
+    Dense/Hyb/Nslot/IMC-/MTP+/img-
+    Dense/Hyb/Nslot/IMC+/MTP-/img-
+    Dense/Hyb/Nslot/IMC+/MTP+/img-
+  '
+```
 The four duplicate MTP-off profile references add no distinct workload on the
 same fixture; choose the existing mapped control rather than rerunning its label.
 

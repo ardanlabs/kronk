@@ -125,7 +125,7 @@ regression verdicts; those need comparable baselines and criteria.
 | `image-state` | Three image/text/replay/append/cancel/recovery cycles without unloading. Subject and requested prefixes, text exact-marker isolation, IMC-on reuse, cancellation after content, all slots idle and fresh image/text recovery. MTP-on measured image requests require drafting. | One-slot fixtures force same-slot recovery; many-slot fixtures do not pin recovery to the cancelled slot. No concurrent image sessions, subject-switch history or prefill cancellation. No byte-identical prose requirement. |
 | `long-context` | Serial staged retrieval of three ordered markers, rejecting foreign-stage markers; cold/repeat correctness and IMC-on warm reuse. Flash-Next stages 4K–128K; Attention-only baseline 4K/8K/16K. Unknown capacity or skipped requested stages cannot pass. | No exact-limit/overflow, append, cancellation, images or concurrent long-context interference. Marker retrieval is not general model-quality evaluation. |
 | `image-prefill` | Submit image after five text content events; both streams complete, scheduler-observed prefill/generation overlap and text gaps within one second by default. Require request-correlated image execution evidence mapped below. | Two concurrent requests, not all-slot saturation. No image-subject, replay/append or cancellation contract. Client content-event gaps are not server per-token timings. |
-| `batch-text` | Eight conversations on four slots; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation and IMC-on append reuse. Per-turn full slot ownership and prepared-request wait/release coverage; workload-wide generation-during-prefill evidence as defined below. | No dedicated exact replay, cancellation/recovery or images. Slot occupancy is not generation overlap. Revised contract qualified only for the cells below. |
+| `batch-text` | Eight conversations on four slots, or four on two slots for the Dense Hybrid alternative; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation and IMC-on append reuse. Per-turn full slot ownership and prepared-request wait/release coverage; workload-wide generation-during-prefill evidence as defined below. | No dedicated exact replay, cancellation/recovery or images. Slot occupancy is not generation overlap. Revised contract qualified only for the cells below. |
 | `batch-images` | Same eight-conversation batch history/load/isolation and scheduling contract, plus image subjects, later subject switch, initial/switch request replays, current-subject correctness and rejection of stale/foreign subjects. IMC-on replay/append reuse remains required. | No whole-description equality: differing correct prose is allowed. No cancellation or forced same-slot recovery. Image history load does not replace prefill responsiveness. Revised contract qualified only for the cell below; duplication remains unresolved. |
 | `mtp-embedded` / `mtp-companion` | Embedded-head or companion fixture; three request waves on the same loaded model, supplied-value correctness, own session key and no foreign key, normal stop, selected drafting mode, then fresh-marker recovery. One/many-slot fixtures are distinct. | No appended-history cache-hit requirement, images, target-only output equivalence or proof that all physical slots generated concurrently. No inherent minimum rejection count or acceptance rate. |
 | `example-lifecycle-load` | Separate command: one execution slot, two admission permits, queued cancellation, admission timeout, active cancellation and successful recovery; structured stage evidence. | Fixed text fixture; no IMC/MTP matrix or cache/draft/media integrity assertions. Admission recovery does not establish inference-state integrity. |
@@ -139,9 +139,11 @@ incomplete requested coverage. Observing one strategy does not prove all others.
 
 ### Batch scheduling evidence
 
-Both text and image batch profiles default to eight conversations on four slots.
-With `queue-depth: 2`, admission capacity is eight requests; this does **not**
-guarantee simultaneous admission of all eight. Correctness still requires the
+Text and image batch profiles use eight conversations on four slots, except
+Dense Hybrid text batch, which uses four conversations on two slots. Both use
+twice as many conversations as execution slots. With `queue-depth: 2`, admission
+capacity is eight or four requests respectively; this does **not** guarantee
+simultaneous admission of every request. Correctness still requires the
 21-turn/30K histories, answers, isolation and applicable cache assertions above.
 
 Scheduling coverage is separate from behavioral PASS/FAIL. For each turn,
@@ -223,8 +225,10 @@ target-only controls, not drafting coverage.
 | `mtp-embedded`, Hybrid MoE | `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL` | 1 or 4; 128K |
 | `mtp-companion`, Hybrid Dense | `unsloth/Qwen3.8-27B-UD-Q4_K_XL` | 1 or 2; 128K; companion drafter when MTP on |
 | `text-state`, `long-context`, Hybrid MoE | `unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL` | 1; context stages through 128K |
+| `text-state`, Hybrid Dense alternative | Qwen3.8-27B above | 1; 128K; three recovery cycles; all MTP/IMC modes selectable, qualification pending |
 | `text-state`, `long-context`, Attention-only Dense | `unsloth/Qwen3-0.6B-Q8_0` | 1; MTP off; 32K configured context, retrieval through 16K |
 | `batch-text`, `batch-images`, Hybrid MoE | Qwen3.6 above | 4; 128K; original growth settings |
+| `batch-text`, Hybrid Dense alternative | Qwen3.8-27B above | 2; 128K; four conversations, 21 turns / 30K target; all MTP/IMC modes selectable, qualification pending |
 | `batch-text`, Attention-only Dense | `ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0` | 4; MTP off; 64K per sequence, 1,300 tokens/turn, 128 completion budget |
 | `image-state`, Hybrid | Qwen3.6 MoE / Qwen3.8-27B Dense above | 1 or 4 / 1 or 2 respectively |
 | `image-state`, Attention-only Dense | `unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL` | 1 or 2; 32K; MTP off; both IMC modes qualified |
@@ -317,13 +321,14 @@ its native execution, or its companion interaction. The MoE run does not prove
 that Dense fixture works. Conversely, a Dense label alone need not trigger a
 second investigation of common state/batch behavior.
 
-**Availability limitation:** all 12 overlap pairs currently lack direct
-profile × cell mappings in `selectProbe`. Selecting one reports a coverage gap;
-it neither runs the representative nor switches fixtures. In particular, the
-selector only maps Hybrid text-state/batch to MoE fixtures. Choosing a Dense
-alternative needs an explicit suitable custom fixture/workload via the low-level
-interface, or a future selector mapping; it must not be presented as already
-qualified or directly selectable.
+**Availability:** the eight Dense Hybrid alternatives are directly selectable:
+`text-state` uses Qwen3.8-27B one-slot aliases and three recovery cycles;
+`batch-text` uses its two-slot aliases and four conversations, retaining the
+21-turn/30K histories and current scheduling-evidence contract. All four MTP/IMC
+modes are mapped for each profile. These eight pairs await inference
+qualification; their overlap labels retain the representative-coverage rationale,
+not a passing result on the alternate. The four duplicate MTP-off references
+remain unmapped; select the corresponding mapped control profile instead.
 
 An investigation-package reference and its companion skill should choose the
 appropriate behavior and fixture for the reported situation, using this document
@@ -337,8 +342,8 @@ combination. Changes to coverage or mappings must also update that guidance.
 ## Remaining qualification and limitations
 
 The four Gemma image-state combinations are qualified; no image-state fixture
-or reuse GAP remains in the selected coverage. The eight planned Dense Hybrid
-text-state/batch-text alternatives still need mappings and qualification, as
+or reuse GAP remains in the selected coverage. The eight Dense Hybrid
+text-state/batch-text alternatives are mapped but still need qualification, as
 explained above. Revised batch qualification remains limited to the four
 profile × cells listed in the batch qualification section; other batch modes
 and the Attention-only batch fixture do not inherit those passing results.
