@@ -55,6 +55,9 @@ func DecisionContractFor(protocol string) DecisionContract {
 	case "lfm3-d1", "lfm3-d1-omni":
 		contract.Execution = DecisionExecution{Batch: DecisionBatchWholePrompt, SingleSequence: true, NonCausal: true}
 		contract.temperatureBits = 32
+	case "lfm2-d1-omni":
+		contract.Execution = DecisionExecution{Batch: DecisionBatchWholePrompt, SingleSequence: true, NonCausal: true, Embeddings: true}
+		contract.temperatureBits = 32
 	case "pplx-decider", "lfm2-d1", "granite-switch":
 		contract.temperatureBits = 32
 	case "h2o-lightning":

@@ -947,6 +947,9 @@ var (
 	// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol.
 	DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")
 
+	// DecisionProtocolLfm2D1Omni identifies the LFM2 whole-prompt embedding-readout protocol.
+	DecisionProtocolLfm2D1Omni = newDecisionProtocol("lfm2-d1-omni")
+
 	// DecisionProtocolLfm3D1 identifies the LFM3 whole-prompt grouped-label protocol.
 	DecisionProtocolLfm3D1 = newDecisionProtocol("lfm3-d1")
 

@@ -97,6 +97,7 @@ func TestDecisionProtocol(t *testing.T) {
 		{"GraniteSwitch", "granite-switch", DecisionProtocolGraniteSwitch, false},
 		{"H2OLightning", "h2o-lightning", DecisionProtocolH2OLightning, false},
 		{"Lfm2D1", "lfm2-d1", DecisionProtocolLfm2D1, false},
+		{"Lfm2D1Omni", "lfm2-d1-omni", DecisionProtocolLfm2D1Omni, false},
 		{"Lfm3D1", "lfm3-d1", DecisionProtocolLfm3D1, false},
 		{"Lfm3D1Omni", "lfm3-d1-omni", DecisionProtocolLfm3D1Omni, false},
 		{"VllmDecision2", "vllm-decision2", DecisionProtocolVllmDecision2, false},
@@ -134,6 +135,16 @@ func TestH2OLightningProtocolDetection(t *testing.T) {
 	})
 	if got := detectDecisionProtocol(DecisionProtocol{}, profile); !got.Equal(DecisionProtocolH2OLightning) {
 		t.Errorf("detected protocol: got %v, want h2o-lightning", got)
+	}
+}
+
+func TestLFM2D1OmniProtocolDetection(t *testing.T) {
+	profile := arch.Resolve(map[string]string{
+		"general.architecture": "lfm2",
+		"lfm2.decision.type":   "lfm2-d1-omni",
+	})
+	if got := detectDecisionProtocol(DecisionProtocol{}, profile); !got.Equal(DecisionProtocolLfm2D1Omni) {
+		t.Errorf("detected protocol: got %v, want lfm2-d1-omni", got)
 	}
 }
 
@@ -1069,6 +1080,10 @@ func TestValidateConfig(t *testing.T) {
 		{"H2O Lightning protocol is valid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithDecisionProtocol(DecisionProtocolH2OLightning),
+		), false},
+		{"LFM2 D1 Omni protocol is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithDecisionProtocol(DecisionProtocolLfm2D1Omni),
 		), false},
 		{"unknown decision protocol is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),

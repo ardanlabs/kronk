@@ -94,6 +94,7 @@ var protocolFactories = map[string]protocolFactory{
 	"granite-switch": newGraniteSwitchProtocol,
 	"h2o-lightning":  newH2OLightningProtocol,
 	"lfm2-d1":        newLFM2D1Protocol,
+	"lfm2-d1-omni":   newLFM2D1OmniProtocol,
 	"lfm3-d1":        func(r *Runtime) (Protocol, error) { return newLFM3D1Protocol(r) },
 	"lfm3-d1-omni":   newLFM3D1OmniProtocol,
 	"vllm-d3":        newD3Protocol,

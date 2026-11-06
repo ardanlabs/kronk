@@ -451,6 +451,7 @@ with the following protocols:
 | `granite-switch` | Text-only decisions with a non-null state and required instructions; uses the model's embedded decision adapter |
 | `h2o-lightning` | Text-only decisions with a non-null state, optional instructions, and model-declared labels; supports 1–255 score levels within the model's label limit |
 | `lfm2-d1` | Model-calibrated option probabilities |
+| `lfm2-d1-omni` | Text-only whole-prompt decisions; permits null state, requires instructions, and applies per-question and per-option token budgets |
 | `lfm3-d1` | Median score; confidence is maximum answer probability |
 | `lfm3-d1-omni` | LFM3-d1 semantics with image/audio state and spoken instructions; requires a compatible projector |
 | `vllm-decision2` | Requires at least two choice options and text, object, or array state |
@@ -489,9 +490,30 @@ discarding state. Choice and score option counts cannot exceed the GGUF's
 label count or Kronk's 255-option limit. For an explicit SDK override, use
 `model.WithDecisionProtocol(model.DecisionProtocolH2OLightning)`.
 
-Decision2, D3, and LFM3 d1 evaluate each complete prompt in a single physical
-batch, regardless of the configured prefill batch size. D3 and LFM3 d1 use one
-execution sequence even when `NSeqMax` is larger. Large context windows can
+LFM2-D1-Omni requires a converted decision GGUF with its bundled `systemone`
+template and three-output decision head. Structured state, instructions, and
+descriptions retain their JSON values and ordered field order. Control-token
+spellings and decision markers in user data are escaped. Choice probabilities
+follow the original option order; Score returns the probability-weighted mean
+level, and Noul returns the true-option probability.
+
+Despite its name, Kronk's `lfm2-d1-omni` implementation is text-only. Images,
+audio state, and spoken instructions are rejected even with a projector.
+Each complete prompt is limited to 16,384 tokens or the configured context
+window, whichever is smaller. Question and option budgets also apply: for
+`n` options, let `B = max(96, min(24 × n + 32, 8192))`. The question piece,
+including its control token, permits `max(16, B)` tokens. Each option-text
+piece, including its leading space and key, permits
+`max(2, floor((B - 3 × n)/n))` tokens. For two options, these limits are 96 and
+45 tokens respectively. State occupies the remaining whole-prompt budget.
+Unlike llama-server, Kronk rejects oversized pieces or prompts without
+truncation. Automatic selection uses `lfm2.decision.type=lfm2-d1-omni`; an SDK
+override is `model.WithDecisionProtocol(model.DecisionProtocolLfm2D1Omni)`.
+
+Decision2, D3, LFM2-D1-Omni, and LFM3 d1 evaluate each complete prompt in a single
+physical batch, regardless of the configured prefill batch size. D3,
+LFM2-D1-Omni, and LFM3 d1 use one execution sequence even when `NSeqMax` is
+larger. Large context windows can
 therefore increase working memory requirements for these models. LFM3 d1 does
 not reuse persistent sequence state; independent questions and concurrent
 requests are serialized through that single execution sequence.
@@ -505,8 +527,8 @@ the whole-prompt budget; inputs are never truncated.
 
 Model-backed compatibility has been exercised for LFM3 d1 text and Omni media
 decisions, not decision quality. The other additional protocols, including
-Granite Switch and H2O Lightning, still need model-backed validation. Protocol
-support alone is not a quality guarantee.
+Granite Switch, H2O Lightning, and LFM2-D1-Omni, still need model-backed
+validation. Protocol support alone is not a quality guarantee.
 
 A response is keyed by the caller's question IDs:
 
