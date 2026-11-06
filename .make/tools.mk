@@ -239,39 +239,6 @@ example-lifecycle-load: ## Probe server admission, cancellation, and slot releas
 
 # ==============================================================================
 
-# HTTP request capture, replay, and streaming-response inspection.
-
-HTTP_CAPTURE_LISTEN_HOST ?= 127.0.0.1
-HTTP_CAPTURE_LISTEN_PORT ?= 11436
-HTTP_CAPTURE_UPSTREAM_HOST ?= 127.0.0.1
-HTTP_CAPTURE_UPSTREAM_PORT ?= 11435
-HTTP_CAPTURE_OUT ?= .tools/http-capture/output
-
-# Replaces HTTP_CAPTURE_OUT at startup so it contains only the current capture.
-http-capture: ## Capture HTTP traffic through a local proxy
-	python3 .tools/http-capture/capture-proxy.py \
-		--listen-host "$(HTTP_CAPTURE_LISTEN_HOST)" \
-		--listen-port "$(HTTP_CAPTURE_LISTEN_PORT)" \
-		--upstream-host "$(HTTP_CAPTURE_UPSTREAM_HOST)" \
-		--upstream-port "$(HTTP_CAPTURE_UPSTREAM_PORT)" \
-		--output-dir "$(HTTP_CAPTURE_OUT)"
-
-HTTP_REPLAY_CAPTURE ?= .tools/http-capture/output
-HTTP_REPLAY_OUT ?= .tools/http-replay/output
-HTTP_REPLAY_UPSTREAM ?= http://127.0.0.1:11435
-
-http-replay: ## Replay captured HTTP requests
-	bash .tools/http-replay/replay.sh \
-		"$(HTTP_REPLAY_CAPTURE)" \
-		"$(HTTP_REPLAY_OUT)" \
-		"$(HTTP_REPLAY_UPSTREAM)"
-
-http-inspect-sse: ## Inspect captured SSE response files
-	@test -n "$(SSE_FILES)" || { echo 'usage: make http-inspect-sse SSE_FILES="response-*.sse"' >&2; exit 2; }
-	python3 .tools/http-replay/inspect-sse.py $(SSE_FILES)
-
-# ==============================================================================
-
 # Adversarial probe harness against a running (or self-started) Kronk server.
 # Everything is env-tunable — see .tools/adversarial/adversarial.sh -h. Results
 # land in .tools/adversarial/output. Pass groups or a tier through ARGS:

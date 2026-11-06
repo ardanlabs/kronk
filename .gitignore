@@ -9,8 +9,6 @@ node_modules
 zarf/docker/openwebui/
 
 # Scratch output from local tooling
-.tools/http-capture/output/
-.tools/http-replay/output/
 .tools/adversarial/output/
 .tools/codegen-benchmark/output/
 .tools/reliability/output/
