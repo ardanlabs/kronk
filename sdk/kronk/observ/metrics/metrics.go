@@ -7,16 +7,20 @@
 // fleet. Per-request tokens-per-second is a histogram of observations so
 // it can be averaged or quantiled like any other timing.
 //
+// GenAI-facing instruments follow the OTel GenAI semantic conventions
+// (https://github.com/open-telemetry/semantic-conventions-genai) rendered in
+// Prometheus form. Kronk-specific engine metrics keep their own names.
+//
 // PromQL recipes:
 //
 //	# Rolling average of model load time, per model.
 //	rate(model_load_seconds_sum[5m]) / rate(model_load_seconds_count[5m])
 //
 //	# 99th-percentile end-to-end TTFT.
-//	histogram_quantile(0.99, sum by (le, model_id) (rate(model_request_ttft_seconds_bucket[5m])))
+//	histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_to_first_token_seconds_bucket[5m])))
 //
-//	# Total tokens served per second by kind.
-//	sum by (kind) (rate(usage_tokens_total[1m]))
+//	# Total input tokens served per second, per model.
+//	sum by (gen_ai_request_model) (rate(gen_ai_client_inference_usage_input_tokens_total[1m]))
 package metrics
 
 import (
@@ -79,10 +83,16 @@ var (
 	// queue wait and can stretch into the tens of seconds under load.
 	requestTTFTBuckets = []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120}
 
-	// tpsBuckets covers per-request decode rates from very small models
-	// (~5 tps on CPU) to small quantized models on fast GPUs (~1000 tps).
-	tpsBuckets = []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000}
+	// tpotBuckets covers per-output-token decode latency in seconds,
+	// from ~1000 tps (1ms) down to ~5 tps on CPU (200ms).
+	tpotBuckets = []float64{0.001, 0.002, 0.004, 0.01, 0.02, 0.04, 0.1, 0.2, 0.5, 1}
 )
+
+// genaiLabels are the OTel GenAI attributes shared by every gen_ai_* instrument.
+var genaiLabels = []string{"gen_ai_operation_name", "gen_ai_request_model"}
+
+// genaiProvider is the constant gen_ai.provider.name label.
+var genaiProvider = prometheus.Labels{"gen_ai_provider_name": "kronk"}
 
 type promMetrics struct {
 	goroutines  prometheus.Gauge
@@ -96,10 +106,16 @@ type promMetrics struct {
 	promptCreationSeconds *prometheus.HistogramVec // labels: model_id.
 	prefillSeconds        *prometheus.HistogramVec // labels: model_id, kind.
 	prefillTTFTSeconds    *prometheus.HistogramVec // labels: model_id.
-	requestTTFTSeconds    *prometheus.HistogramVec // labels: model_id.
 
-	tokensTotal     *prometheus.CounterVec   // labels: model_id, kind.
-	tokensPerSecond *prometheus.HistogramVec // labels: model_id.
+	// -------------------------------------------------------------------------
+	// OTel GenAI semantic convention instruments (labels: genaiLabels).
+
+	genaiServerRequestDuration *prometheus.HistogramVec // gen_ai.server.request.duration; extra label: error_type.
+	genaiServerTTFT            *prometheus.HistogramVec // gen_ai.server.time_to_first_token.
+	genaiServerTPOT            *prometheus.HistogramVec // gen_ai.server.time_per_output_token.
+	genaiUsageInputTokens      *prometheus.CounterVec   // gen_ai.client.inference.usage.input_tokens.
+	genaiUsageOutputTokens     *prometheus.CounterVec   // gen_ai.client.inference.usage.output_tokens.
+	genaiUsageReasoningTokens  *prometheus.CounterVec   // gen_ai.client.inference.usage.reasoning.output_tokens.
 
 	vramTotal  *prometheus.GaugeVec // labels: model_id.
 	slotMemory *prometheus.GaugeVec // labels: model_id.
@@ -143,14 +159,12 @@ type promMetrics struct {
 
 	chatRequestsTotal    *prometheus.CounterVec   // labels: model_id, status.
 	chatErrorsTotal      *prometheus.CounterVec   // labels: model_id, class.
-	chatRequestDuration  *prometheus.HistogramVec // labels: model_id.
 	chatQueueWaitSeconds *prometheus.HistogramVec // labels: model_id.
 
 	// -------------------------------------------------------------------------
 	// Embedding/reranking request and sequence-batch metrics.
 
 	inferenceRequestsTotal   *prometheus.CounterVec   // labels: model_id, operation, runtime, status.
-	inferenceRequestDuration *prometheus.HistogramVec // labels: model_id, operation, runtime.
 	inferenceActiveRequests  *prometheus.GaugeVec     // labels: model_id, operation, runtime.
 	batchSeqQueueWaitSeconds *prometheus.HistogramVec // labels: model_id, operation.
 	batchSeqItems            *prometheus.HistogramVec // labels: model_id, operation.
@@ -203,13 +217,40 @@ func init() {
 		promptCreationSeconds: newHistVec("model_prompt_creation_seconds", "Prompt template render time in seconds", subSecondBuckets),
 		prefillSeconds:        newHistVec("model_prefill_seconds", "Prefill time in seconds, by kind (text|media|imc-decode)", subSecondBuckets, "kind"),
 		prefillTTFTSeconds:    newHistVec("model_prefill_ttft_seconds", "Prefill-only time-to-first-token in seconds (prefill-start to first sampled token)", subSecondBuckets),
-		requestTTFTSeconds:    newHistVec("model_request_ttft_seconds", "End-to-end request time-to-first-token in seconds (request-received to first sampled token)", requestTTFTBuckets),
 
-		tokensTotal: auto.NewCounterVec(prometheus.CounterOpts{
-			Name: "usage_tokens_total",
-			Help: "Total tokens served, by kind (prompt|reasoning|completion).",
-		}, []string{"model_id", "kind"}),
-		tokensPerSecond: newHistVec("usage_tokens_per_second", "Per-request decode rate in tokens/second (computed after TTFT)", tpsBuckets),
+		genaiServerRequestDuration: auto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:        "gen_ai_server_request_duration_seconds",
+			Help:        "GenAI request duration in seconds (gen_ai.server.request.duration). error_type is empty on success.",
+			Buckets:     requestTTFTBuckets,
+			ConstLabels: genaiProvider,
+		}, append(append([]string{}, genaiLabels...), "error_type")),
+		genaiServerTTFT: auto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:        "gen_ai_server_time_to_first_token_seconds",
+			Help:        "End-to-end time to first generated token in seconds (gen_ai.server.time_to_first_token).",
+			Buckets:     requestTTFTBuckets,
+			ConstLabels: genaiProvider,
+		}, genaiLabels),
+		genaiServerTPOT: auto.NewHistogramVec(prometheus.HistogramOpts{
+			Name:        "gen_ai_server_time_per_output_token_seconds",
+			Help:        "Per-request time per output token after the first, in seconds (gen_ai.server.time_per_output_token).",
+			Buckets:     tpotBuckets,
+			ConstLabels: genaiProvider,
+		}, genaiLabels),
+		genaiUsageInputTokens: auto.NewCounterVec(prometheus.CounterOpts{
+			Name:        "gen_ai_client_inference_usage_input_tokens_total",
+			Help:        "Total input (prompt) tokens used (gen_ai.client.inference.usage.input_tokens).",
+			ConstLabels: genaiProvider,
+		}, genaiLabels),
+		genaiUsageOutputTokens: auto.NewCounterVec(prometheus.CounterOpts{
+			Name:        "gen_ai_client_inference_usage_output_tokens_total",
+			Help:        "Total output tokens generated, including reasoning (gen_ai.client.inference.usage.output_tokens).",
+			ConstLabels: genaiProvider,
+		}, genaiLabels),
+		genaiUsageReasoningTokens: auto.NewCounterVec(prometheus.CounterOpts{
+			Name:        "gen_ai_client_inference_usage_reasoning_output_tokens_total",
+			Help:        "Total reasoning output tokens generated (gen_ai.client.inference.usage.reasoning.output_tokens).",
+			ConstLabels: genaiProvider,
+		}, genaiLabels),
 
 		vramTotal:  newGaugeVec("vram_total_bytes", "Total estimated VRAM usage in bytes (model weights + KV cache)"),
 		slotMemory: newGaugeVec("vram_slot_memory_bytes", "KV cache slot memory in bytes"),
@@ -335,18 +376,12 @@ func init() {
 			Name: "chat_errors_total",
 			Help: "Chat completion errors by model_id and error class.",
 		}, []string{"model_id", "class"}),
-		chatRequestDuration:  newHistVec("chat_request_duration_seconds", "End-to-end chat request duration in seconds.", requestTTFTBuckets),
 		chatQueueWaitSeconds: newHistVec("chat_queue_wait_seconds", "Time spent waiting in the batch engine queue before being assigned a slot.", subSecondBuckets),
 
 		inferenceRequestsTotal: auto.NewCounterVec(prometheus.CounterOpts{
 			Name: "inference_requests_total",
 			Help: "Total admitted embedding and reranking requests by model_id, operation, runtime, and status (ok|error|cancel).",
 		}, []string{"model_id", "operation", "runtime", "status"}),
-		inferenceRequestDuration: auto.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "inference_request_duration_seconds",
-			Help:    "Embedding and reranking model-processing duration after SDK admission, in seconds.",
-			Buckets: requestTTFTBuckets,
-		}, []string{"model_id", "operation", "runtime"}),
 		inferenceActiveRequests: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "inference_active_requests",
 			Help: "Current admitted embedding and reranking requests in model processing, by model_id, operation, and runtime.",
@@ -469,40 +504,30 @@ func AddPrefillTTFT(modelID string, duration time.Duration) {
 // AddRequestTTFT captures the time from when a request entered the SDK
 // (Chat/ChatStreaming entry) to the first sampled token. This is the
 // user-perceived TTFT and includes queue wait, tokenization, cache work,
-// and prefill.
+// and prefill. Recorded as gen_ai.server.time_to_first_token.
 func AddRequestTTFT(modelID string, duration time.Duration) {
-	m.requestTTFTSeconds.WithLabelValues(normalizeModelID(modelID)).Observe(duration.Seconds())
+	m.genaiServerTTFT.WithLabelValues("chat", normalizeModelID(modelID)).Observe(duration.Seconds())
 }
 
-// AddChatCompletionsUsage captures token usage for a completed chat request.
-//
-// Only the primitive token counts (prompt, reasoning, completion) are
-// emitted as counters; output and total are linear combinations of those
-// and can be derived in PromQL:
-//
-//	# Output tokens (reasoning + completion).
-//	sum by (model_id) (usage_tokens_total{kind=~"reasoning|completion"})
-//
-//	# Total tokens (prompt + output).
-//	sum by (model_id) (usage_tokens_total)
-//
-// Per-request tokens-per-second is observed in a histogram so dashboards
-// can show its average, percentile, or distribution.
+// AddChatCompletionsUsage captures token usage for a completed chat request
+// using the OTel GenAI usage counters: input (prompt), output
+// (reasoning + completion), and the reasoning subset. Decode speed is
+// observed as time-per-output-token, the inverse of tokens/second.
 func AddChatCompletionsUsage(modelID string, promptTokens, reasoningTokens, completionTokens, _, _ int, tokensPerSecond float64) {
 	id := normalizeModelID(modelID)
 
 	if promptTokens > 0 {
-		m.tokensTotal.WithLabelValues(id, "prompt").Add(float64(promptTokens))
+		m.genaiUsageInputTokens.WithLabelValues("chat", id).Add(float64(promptTokens))
+	}
+	if reasoningTokens+completionTokens > 0 {
+		m.genaiUsageOutputTokens.WithLabelValues("chat", id).Add(float64(reasoningTokens + completionTokens))
 	}
 	if reasoningTokens > 0 {
-		m.tokensTotal.WithLabelValues(id, "reasoning").Add(float64(reasoningTokens))
-	}
-	if completionTokens > 0 {
-		m.tokensTotal.WithLabelValues(id, "completion").Add(float64(completionTokens))
+		m.genaiUsageReasoningTokens.WithLabelValues("chat", id).Add(float64(reasoningTokens))
 	}
 
 	if tokensPerSecond > 0 {
-		m.tokensPerSecond.WithLabelValues(id).Observe(tokensPerSecond)
+		m.genaiServerTPOT.WithLabelValues("chat", id).Observe(1 / tokensPerSecond)
 	}
 }
 
@@ -716,9 +741,10 @@ func AddChatError(modelID, class string) {
 	m.chatErrorsTotal.WithLabelValues(normalizeModelID(modelID), class).Inc()
 }
 
-// ObserveChatRequestDuration records the end-to-end chat request duration.
-func ObserveChatRequestDuration(modelID string, d time.Duration) {
-	m.chatRequestDuration.WithLabelValues(normalizeModelID(modelID)).Observe(d.Seconds())
+// ObserveChatRequestDuration records the end-to-end chat request duration
+// as gen_ai.server.request.duration. errorType is empty on success.
+func ObserveChatRequestDuration(modelID, errorType string, d time.Duration) {
+	m.genaiServerRequestDuration.WithLabelValues("chat", normalizeModelID(modelID), errorType).Observe(d.Seconds())
 }
 
 // ObserveChatQueueWait records the time a request spent in the batch
@@ -730,13 +756,19 @@ func ObserveChatQueueWait(modelID string, d time.Duration) {
 // ObserveInferenceRequest records one completed embedding or reranking request.
 // Operation values are "embedding" and "rerank"; runtime values are
 // "batchseq" and "context_pool"; status values are "ok", "error", and
-// "cancel". Prompt tokens share usage_tokens_total with chat completions.
+// "cancel". Duration and prompt tokens land in the shared GenAI instruments.
 func ObserveInferenceRequest(modelID, operation, runtimeName, status string, d time.Duration, promptTokens int) {
 	id := normalizeModelID(modelID)
 	m.inferenceRequestsTotal.WithLabelValues(id, operation, runtimeName, status).Inc()
-	m.inferenceRequestDuration.WithLabelValues(id, operation, runtimeName).Observe(d.Seconds())
+
+	errorType := ""
+	if status != "ok" {
+		errorType = status
+	}
+	m.genaiServerRequestDuration.WithLabelValues(operation, id, errorType).Observe(d.Seconds())
+
 	if promptTokens > 0 {
-		m.tokensTotal.WithLabelValues(id, "prompt").Add(float64(promptTokens))
+		m.genaiUsageInputTokens.WithLabelValues(operation, id).Add(float64(promptTokens))
 	}
 }
 

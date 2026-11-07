@@ -327,9 +327,9 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(model_request_ttft_seconds_sum{model_id=~\"$model_id\"}[5m]) / rate(model_request_ttft_seconds_count{model_id=~\"$model_id\"}[5m])",
+          "expr": "rate(gen_ai_server_time_to_first_token_seconds_sum{gen_ai_request_model=~\"$model_id\"}[5m]) / rate(gen_ai_server_time_to_first_token_seconds_count{gen_ai_request_model=~\"$model_id\"}[5m])",
           "hide": false,
-          "legendFormat": "request_ttft_avg ({{model_id}})",
+          "legendFormat": "request_ttft_avg ({{gen_ai_request_model}})",
           "range": true,
           "refId": "C"
         },
@@ -351,9 +351,9 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by (le, model_id) (rate(model_request_ttft_seconds_bucket{model_id=~\"$model_id\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_to_first_token_seconds_bucket{gen_ai_request_model=~\"$model_id\"}[5m])))",
           "hide": false,
-          "legendFormat": "request_ttft_p99 ({{model_id}})",
+          "legendFormat": "request_ttft_p99 ({{gen_ai_request_model}})",
           "range": true,
           "refId": "E"
         }
@@ -444,9 +444,9 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (model_id, kind) (rate(usage_tokens_total{model_id=~\"$model_id\"}[5m]))",
+          "expr": "sum by (__name__, gen_ai_request_model) (rate({__name__=~\"gen_ai_client_inference_usage_.+_tokens_total\", gen_ai_request_model=~\"$model_id\"}[5m]))",
           "hide": false,
-          "legendFormat": "tokens_per_sec ({{model_id}}, {{kind}})",
+          "legendFormat": "tokens_per_sec ({{gen_ai_request_model}}, {{__name__}})",
           "range": true,
           "refId": "A"
         },
@@ -456,9 +456,9 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(usage_tokens_per_second_sum{model_id=~\"$model_id\"}[5m]) / rate(usage_tokens_per_second_count{model_id=~\"$model_id\"}[5m])",
+          "expr": "1 / (rate(gen_ai_server_time_per_output_token_seconds_sum{gen_ai_request_model=~\"$model_id\"}[5m]) / rate(gen_ai_server_time_per_output_token_seconds_count{gen_ai_request_model=~\"$model_id\"}[5m]))",
           "hide": false,
-          "legendFormat": "per_request_tps_avg ({{model_id}})",
+          "legendFormat": "per_request_tps_avg ({{gen_ai_request_model}})",
           "range": true,
           "refId": "B"
         },
@@ -468,9 +468,9 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by (le, model_id) (rate(usage_tokens_per_second_bucket{model_id=~\"$model_id\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_per_output_token_seconds_bucket{gen_ai_request_model=~\"$model_id\"}[5m])))",
           "hide": false,
-          "legendFormat": "per_request_tps_p99 ({{model_id}})",
+          "legendFormat": "time_per_output_token_p99 ({{gen_ai_request_model}})",
           "range": true,
           "refId": "C"
         }
