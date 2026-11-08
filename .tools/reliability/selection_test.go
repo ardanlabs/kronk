@@ -422,4 +422,19 @@ func TestMakeMultilineCellSelection(t *testing.T) {
 			t.Fatalf("renamed Make override lost %s: %s", want, output)
 		}
 	}
+	for _, cells := range []string{"", "Dense/Hyb/Nslot/IMC+/MTP+/img+"} {
+		for _, limit := range []string{"", "1s"} {
+			cmd := exec.Command("make", "-n", "-f", ".make/tools.mk", "test-load-image-prefill",
+				"RELIABILITY_CELLS="+cells, "RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP="+limit)
+			cmd.Dir = "../.."
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("Make gap limit: %v\n%s", err, output)
+			}
+			if limit == "" && strings.Contains(string(output), "-image-prefill-max-generation-gap") ||
+				limit != "" && !strings.Contains(string(output), `-image-prefill-max-generation-gap "1s"`) {
+				t.Fatalf("Make must enforce only an explicitly supplied gap limit: %s", output)
+			}
+		}
+	}
 }

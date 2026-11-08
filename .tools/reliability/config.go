@@ -138,7 +138,7 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.MediaMaxTokens, "image-state-max-tokens", 128, "maximum image-state completion tokens")
 	fs.IntVar(&cfg.MediaGenerationMaxTokens, "image-prefill-generation-max-tokens", 512, "maximum concurrent text completion tokens")
 	fs.IntVar(&cfg.MediaImageMaxTokens, "image-prefill-max-tokens", 64, "maximum concurrent image completion tokens")
-	fs.DurationVar(&cfg.MediaMaxGenerationGap, "image-prefill-max-generation-gap", time.Second, "largest allowed text event gap during image prefill")
+	fs.DurationVar(&cfg.MediaMaxGenerationGap, "image-prefill-max-generation-gap", time.Second, "hard text event-gap limit when explicitly supplied; otherwise gaps above 1s are UX warnings only")
 	fs.BoolVar(&cfg.MediaRequireIsolatedPrefill, "image-require-isolated-prefill", false, "request evidence of isolated image execution above the prefill contribution limit; missing evidence reports incomplete coverage")
 
 	if err := fs.Parse(args); err != nil {

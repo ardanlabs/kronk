@@ -124,7 +124,7 @@ regression verdicts; those need comparable baselines and criteria.
 | `text-state` | One slot; three cold/repeat/append/cancel/recovery cycles without unloading. Exact task answers, new append marker, IMC-on exact/append reuse, cancellation after content and clean recovery without the cancelled marker. | Same execution capacity, not concurrent-session isolation. No images, prefill cancellation or independently identified rollback strategy. Use batch for sustained histories. |
 | `image-state` | Three image/text/replay/append/cancel/recovery cycles without unloading. Subject and requested prefixes, text exact-marker isolation, IMC-on reuse, cancellation after content, all slots idle and fresh image/text recovery. MTP-on measured image requests require drafting. | One-slot fixtures force same-slot recovery; many-slot fixtures do not pin recovery to the cancelled slot. No concurrent image sessions, subject-switch history or prefill cancellation. No byte-identical prose requirement. |
 | `long-context` | Serial staged retrieval of three ordered markers, rejecting foreign-stage markers; cold/repeat correctness and IMC-on warm reuse. Flash-Next stages 4K–128K; Attention-only baseline 4K/8K/16K. Unknown capacity or skipped requested stages cannot pass. | No exact-limit/overflow, append, cancellation, images or concurrent long-context interference. Marker retrieval is not general model-quality evaluation. |
-| `image-prefill` | Submit image after five text content events; both streams complete, scheduler-observed prefill/generation overlap and text gaps within one second by default. Require request-correlated image execution evidence mapped below. | Two concurrent requests, not all-slot saturation. No image-subject, replay/append or cancellation contract. Client content-event gaps are not server per-token timings. |
+| `image-prefill` | Submit image after five text content events; both streams complete and scheduler-observed prefill/generation overlap. Text gaps above one second produce a UX warning; only an explicitly supplied gap limit is enforced. Require request-correlated image execution evidence mapped below. | Two concurrent requests, not all-slot saturation. No image-subject, replay/append or cancellation contract. Client content-event gaps are not server per-token timings. |
 | `batch-text` | Eight conversations on four slots, or four on two slots for the Dense Hybrid alternative; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation and IMC-on append reuse. Per-turn full slot ownership and prepared-request wait/release coverage; generation-during-prefill is a warning-only diagnostic as defined below. | No dedicated exact replay, cancellation/recovery or images. Slot occupancy is not generation overlap. Revised contract qualified only for the cells below. |
 | `batch-images` | Same eight-conversation batch history/load/isolation and scheduling contract, plus image subjects, later subject switch, initial/switch request replays, current-subject correctness and rejection of stale/foreign subjects. IMC-on replay/append reuse remains required. | No whole-description equality: differing correct prose is allowed. No cancellation or forced same-slot recovery. Image history load does not replace prefill responsiveness. Revised contract qualified only for the cell below; duplication remains unresolved. |
 | `mtp-embedded` / `mtp-companion` | Embedded-head or companion fixture; three request waves on the same loaded model, supplied-value correctness, own session key and no foreign key, normal stop, selected drafting mode, then fresh-marker recovery. One/many-slot fixtures are distinct. | No appended-history cache-hit requirement, images, target-only output equivalence or proof that all physical slots generated concurrently. No inherent minimum rejection count or acceptance rate. |
@@ -262,6 +262,30 @@ slots. Server build `1.33.2-rc`, revision
 This closes the selected image-state fixture/reuse gaps without establishing
 concurrent image-session behavior or fixing Ministral's template limitation.
 
+## Image-prefill timing policy
+
+A maximum text content-event gap above one second overlapping image submission
+through first image content produces a `warning` entry and a `WARNING` in the
+tool log. It does not fail the run or make required coverage INCOMPLETE. One
+second is a [general UX flow-interruption heuristic](https://www.nngroup.com/articles/response-times-3-important-limits/),
+not a calibrated Kronk performance-regression limit or an LLM streaming standard.
+The full intersecting event gap is measured, not just its portion inside that
+window; it does not isolate image-encoding duration.
+
+An explicitly supplied positive `-image-prefill-max-generation-gap` duration
+enables a hard limit, including an explicit `1s`. Make's
+`RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP` is empty by default and opts into
+the same hard limit when set, for both selected cells and low-level scenarios.
+The one-second UX warning remains independent of that limit. Choose an enforced
+budget from the deployment's latency requirements and comparable baselines.
+Stream errors, missing content, unmeasurable overlap and required execution
+evidence retain their existing checks.
+
+Summary schema version 10 adds `generation_gap_enforced` to concurrent-prefill
+details, distinguishing an enforced `allowed_maximum_gap_seconds` from the
+default warning threshold. Measurements are retained in either mode. Existing
+captures and their original verdicts are unchanged.
+
 ## Image-prefill execution mapping
 
 All entries are tool 4, many-slot image configurations. Numbers are CSV lines,
@@ -278,7 +302,7 @@ not invocation syntax. Selected MTP/IMC modes remain unchanged in every phase.
 | 57 | Qwen3.6 `TOOLS-ISOLATED`, 2 slots, IMC on | IMC whole-image preparation strictly above the contribution limit; not evidence of the non-IMC isolated scheduler branch. |
 | 65 | Qwen3.6, 4 slots, IMC on | Cold IMC whole-image preparation with active drafting. |
 
-Every phase retains completion, overlap and bounded-text-progress assertions.
+Every phase retains completion and overlap assertions and the timing policy above.
 The forced aliases set prefill contribution limit 32 and image decode capacity
 2,048; qualification observed 345-token image chunks. Shared-capable models can
 isolate oversized whole chunks, so a separate Gemma fixture is unnecessary for

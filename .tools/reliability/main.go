@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const summarySchemaVersion = 9
+const summarySchemaVersion = 10
 
 var scenarioOrder = []string{"text-state", "images", "long-context", "batch", "mtp"}
 

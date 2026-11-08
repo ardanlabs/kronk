@@ -101,7 +101,8 @@ RELIABILITY_IMAGE_EXPECT ?= giraffe
 RELIABILITY_IMAGE_STATE_MAX_TOKENS ?= 128
 RELIABILITY_IMAGE_PREFILL_GENERATION_MAX_TOKENS ?= 512
 RELIABILITY_IMAGE_PREFILL_MAX_TOKENS ?= 64
-RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP ?= 1s
+# Empty keeps the CLI's 1s UX warning; setting a duration opts into a hard limit.
+RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP ?=
 
 reliability_profiles_test-load-mtp = mtp-embedded,mtp-companion
 reliability_profiles_test-load-batch = batch-text,batch-images
@@ -114,6 +115,7 @@ define run_reliability
 		-host "$(RELIABILITY_HOST)" -out "$(RELIABILITY_OUT)" \
 		-server-log "$(RELIABILITY_SERVER_LOG)" -timeout "$(RELIABILITY_TIMEOUT)" \
 		-seed "$(RELIABILITY_SEED)" -repetitions "$(RELIABILITY_REPETITIONS)" \
+		$(if $(strip $(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)),-image-prefill-max-generation-gap "$(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)") \
 		-run-label "$(RELIABILITY_RUN_LABEL)" $(RELIABILITY_ARGS),\
 	go run ./.tools/reliability \
 		-scenario "$(1)" \
@@ -151,7 +153,7 @@ define run_reliability
 		-image-state-max-tokens "$(RELIABILITY_IMAGE_STATE_MAX_TOKENS)" \
 		-image-prefill-generation-max-tokens "$(RELIABILITY_IMAGE_PREFILL_GENERATION_MAX_TOKENS)" \
 		-image-prefill-max-tokens "$(RELIABILITY_IMAGE_PREFILL_MAX_TOKENS)" \
-		-image-prefill-max-generation-gap "$(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)" \
+		$(if $(strip $(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)),-image-prefill-max-generation-gap "$(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)") \
 		$(2) $(RELIABILITY_ARGS))
 endef
 

@@ -232,6 +232,16 @@ the second runs oversized IMC preparation. IMC preparation is **not** proof of
 the non-IMC isolated scheduler branch. The mapping supplies fixtures and phases;
 do not add an isolation flag just to reach them.
 
+All image-prefill runs keep a one-second UX text-gap warning by default, not a
+hard timing failure. Completion, overlap and mapped execution evidence remain
+required. See the [timing policy and threshold rationale](coverage.md#image-prefill-timing-policy).
+When the investigation has an explicit latency budget, add
+`RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP=1s` (or the chosen positive duration)
+to the Make command to enforce it. This also works with selected cells; the CLI
+equivalent is `-image-prefill-max-generation-gap 1s`. Even explicitly choosing
+the default duration opts into failure on excess. A more permissive hard limit
+does not suppress the one-second UX warning.
+
 **Optional unqualified alternative:** the selector maps the companion target's
 shared/IMC prefill path, but these CSV cells are blank, not selected covered
 contracts. Use the following only when that target/path is material to the

@@ -1053,8 +1053,13 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 		failure         bool
 		cells           string
 		failShared      bool
+		slowGap         bool
+		gapLimit        string
 	}{
 		{name: "ordinary"},
+		{name: "gap-warning", slowGap: true, cells: "38", status: "encoding-image", tokens: 442},
+		{name: "gap-explicit-hard-limit", slowGap: true, gapLimit: "1s", failure: true},
+		{name: "gap-permissive-hard-limit", slowGap: true, gapLimit: "5s"},
 		{name: "image-failed", failImage: true, failure: true},
 		{name: "isolated", requireIsolated: true, status: "encoding-image", tokens: 513},
 		{name: "equal-limit", requireIsolated: true, status: "encoding-image", tokens: 512, failure: true},
@@ -1208,7 +1213,10 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 						time.Sleep(90 * time.Millisecond)
 						count = 3
 					}
-					for range count {
+					for event := range count {
+						if text && tc.slowGap && event == 5 {
+							time.Sleep(1100 * time.Millisecond)
+						}
 						fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"1 "}}]}`)
 						fmt.Fprintln(w)
 						w.(http.Flusher).Flush()
@@ -1231,6 +1239,9 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 			}
 			if tc.requireIsolated {
 				os.Args = append(os.Args, "-image-require-isolated-prefill")
+			}
+			if tc.gapLimit != "" {
+				os.Args = append(os.Args, "-image-prefill-max-generation-gap", tc.gapLimit)
 			}
 			defer func() { os.Args = previous }()
 			if err := run(); (err != nil) != tc.failure {
@@ -1255,17 +1266,34 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 				}
 			}
 			for _, scenario := range summary.Scenarios {
-				if (scenario.Status == "FAIL") != (tc.failImage || tc.failShared && scenario.Phase == "shared") {
+				if (scenario.Status == "FAIL") != (tc.failImage || tc.failShared && scenario.Phase == "shared" || tc.gapLimit == "1s") {
 					t.Fatalf("wrong scenario verdict: %+v", scenario)
 				}
 				prefill := scenario.Details["concurrent_prefill"].(map[string]any)
+				if prefill["generation_gap_enforced"] != (tc.gapLimit != "") {
+					t.Fatalf("wrong generation-gap enforcement: %v", prefill)
+				}
+				warnings := 0
+				for _, coverage := range scenario.Coverage {
+					if coverage.Status == "warning" {
+						warnings++
+						if coverage.Path != "image-prefill UX text gap" {
+							t.Fatalf("unexpected warning: %+v", coverage)
+						}
+					}
+				}
+				if tc.slowGap && (warnings != 1 || prefill["prefill_maximum_gap_seconds"].(float64) <= 1 || summary.CoverageStatus == "INCOMPLETE") {
+					t.Fatalf("slow gap must remain measurable and warn without losing required coverage: %+v", scenario)
+				}
 				if tc.cells != "" {
-					if len(scenario.Coverage) != 1 || scenario.Phase == "" {
+					if len(scenario.Coverage)-warnings != 1 || scenario.Phase == "" {
 						t.Fatalf("missing phase identity/evidence: %+v", scenario)
 					}
 					missing := tc.name == "selected-wrong-execution" && scenario.Phase == "shared" || tc.name == "selected-imc-rejects-native"
-					if (scenario.Coverage[0].Status == "not exercised") != missing {
-						t.Fatalf("wrong path coverage: %+v", scenario)
+					for _, coverage := range scenario.Coverage {
+						if coverage.Status != "warning" && (coverage.Status == "not exercised") != missing {
+							t.Fatalf("wrong path coverage: %+v", scenario)
+						}
 					}
 				}
 				if tc.requireIsolated && !tc.failure && prefill["isolated_image_tokens"] != float64(513) {
@@ -1273,6 +1301,12 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 				}
 				if tc.requireIsolated && tc.failure && (len(scenario.Failures) != 0 || len(scenario.Coverage) != 1 || scenario.Coverage[0].Status != "not exercised" || summary.CoverageStatus != "INCOMPLETE") {
 					t.Fatalf("missing isolation coverage must not be a behavior failure: %+v", scenario)
+				}
+			}
+			if tc.slowGap {
+				log, err := os.ReadFile(filepath.Join(dir, "out", "tool.log"))
+				if err != nil || !strings.Contains(string(log), "WARNING:") || !strings.Contains(string(log), "image-prefill UX text gap") {
+					t.Fatalf("missing operator-visible gap warning: %v\n%s", err, log)
 				}
 			}
 			for _, aggregate := range summary.PerformanceAggregates {
