@@ -15,15 +15,95 @@ func truncateSpanContent(s string) string {
 	return s[:maxSpanMessageBytes] + "…(truncated)"
 }
 
+// spanInputPart is one content part of an input message in the
+// gen_ai.input.messages schema.
+type spanInputPart struct {
+	Type      string `json:"type"`
+	Content   any    `json:"content,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments any    `json:"arguments,omitempty"`
+	Response  any    `json:"response,omitempty"`
+}
+
+// spanInputMessage is one chat message in the gen_ai.input.messages schema.
+type spanInputMessage struct {
+	Role  string          `json:"role"`
+	Parts []spanInputPart `json:"parts"`
+}
+
 // spanInputMessages serializes the request messages for the
-// gen_ai.input.messages span attribute.
+// gen_ai.input.messages span attribute, converting the OpenAI-style
+// request body to the semconv role/parts structure.
 func spanInputMessages(d D) string {
-	msgs, exists := d["messages"]
+	raw, exists := d["messages"]
 	if !exists {
 		return ""
 	}
 
-	data, err := json.Marshal(msgs)
+	msgs, ok := raw.([]any)
+	if !ok {
+		return ""
+	}
+
+	out := make([]spanInputMessage, 0, len(msgs))
+
+	for _, m := range msgs {
+		msg, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		role, _ := msg["role"].(string)
+		sm := spanInputMessage{Role: role, Parts: []spanInputPart{}}
+
+		switch content := msg["content"].(type) {
+		case string:
+			if content != "" {
+				if role == "tool" {
+					id, _ := msg["tool_call_id"].(string)
+					sm.Parts = append(sm.Parts, spanInputPart{Type: "tool_call_response", ID: id, Response: content})
+				} else {
+					sm.Parts = append(sm.Parts, spanInputPart{Type: "text", Content: content})
+				}
+			}
+
+		case []any:
+			for _, p := range content {
+				part, ok := p.(map[string]any)
+				if !ok {
+					continue
+				}
+				typ, _ := part["type"].(string)
+				if typ == "text" {
+					sm.Parts = append(sm.Parts, spanInputPart{Type: "text", Content: part["text"]})
+					continue
+				}
+				sm.Parts = append(sm.Parts, spanInputPart{Type: typ})
+			}
+		}
+
+		if toolCalls, ok := msg["tool_calls"].([]any); ok {
+			for _, t := range toolCalls {
+				tc, ok := t.(map[string]any)
+				if !ok {
+					continue
+				}
+				id, _ := tc["id"].(string)
+				var name string
+				var args any
+				if fn, ok := tc["function"].(map[string]any); ok {
+					name, _ = fn["name"].(string)
+					args = fn["arguments"]
+				}
+				sm.Parts = append(sm.Parts, spanInputPart{Type: "tool_call", ID: id, Name: name, Arguments: args})
+			}
+		}
+
+		out = append(out, sm)
+	}
+
+	data, err := json.Marshal(out)
 	if err != nil {
 		return ""
 	}

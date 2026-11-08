@@ -79,13 +79,21 @@ var (
 	// in normal operation. Uses the Prometheus default family.
 	subSecondBuckets = prometheus.DefBuckets
 
-	// requestTTFTBuckets covers user-perceived TTFT, which includes
-	// queue wait and can stretch into the tens of seconds under load.
+	// requestTTFTBuckets covers queue-inclusive waits that can stretch
+	// into the tens of seconds under load (pool acquire, singleflight).
 	requestTTFTBuckets = []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120}
 
-	// tpotBuckets covers per-output-token decode latency in seconds,
-	// from ~1000 tps (1ms) down to ~5 tps on CPU (200ms).
-	tpotBuckets = []float64{0.001, 0.002, 0.004, 0.01, 0.02, 0.04, 0.1, 0.2, 0.5, 1}
+	// genaiDurationBuckets are the explicit bucket boundaries the OTel
+	// GenAI semconv recommends for gen_ai.server.request.duration.
+	genaiDurationBuckets = []float64{0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92}
+
+	// genaiTTFTBuckets are the semconv-recommended boundaries for
+	// gen_ai.server.time_to_first_token.
+	genaiTTFTBuckets = []float64{0.001, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0}
+
+	// genaiTPOTBuckets are the semconv-recommended boundaries for
+	// gen_ai.server.time_per_output_token.
+	genaiTPOTBuckets = []float64{0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.5}
 )
 
 // genaiLabels are the OTel GenAI attributes shared by every gen_ai_* instrument.
@@ -93,6 +101,20 @@ var genaiLabels = []string{"gen_ai_operation_name", "gen_ai_request_model"}
 
 // genaiProvider is the constant gen_ai.provider.name label.
 var genaiProvider = prometheus.Labels{"gen_ai_provider_name": "kronk"}
+
+// genaiTokenLabels adds the required gen_ai.token.modality label; Kronk
+// only counts text tokens.
+var genaiTokenLabels = prometheus.Labels{"gen_ai_provider_name": "kronk", "gen_ai_token_modality": "text"}
+
+// genaiOperation maps Kronk operation names to the semconv
+// gen_ai.operation.name values ("embeddings" is plural in the spec;
+// "rerank" is a Kronk-specific operation the spec allows).
+func genaiOperation(op string) string {
+	if op == "embedding" {
+		return "embeddings"
+	}
+	return op
+}
 
 type promMetrics struct {
 	goroutines  prometheus.Gauge
@@ -221,35 +243,35 @@ func init() {
 		genaiServerRequestDuration: auto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:        "gen_ai_server_request_duration_seconds",
 			Help:        "GenAI request duration in seconds (gen_ai.server.request.duration). error_type is empty on success.",
-			Buckets:     requestTTFTBuckets,
+			Buckets:     genaiDurationBuckets,
 			ConstLabels: genaiProvider,
 		}, append(append([]string{}, genaiLabels...), "error_type")),
 		genaiServerTTFT: auto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:        "gen_ai_server_time_to_first_token_seconds",
 			Help:        "End-to-end time to first generated token in seconds (gen_ai.server.time_to_first_token).",
-			Buckets:     requestTTFTBuckets,
+			Buckets:     genaiTTFTBuckets,
 			ConstLabels: genaiProvider,
 		}, genaiLabels),
 		genaiServerTPOT: auto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:        "gen_ai_server_time_per_output_token_seconds",
 			Help:        "Per-request time per output token after the first, in seconds (gen_ai.server.time_per_output_token).",
-			Buckets:     tpotBuckets,
+			Buckets:     genaiTPOTBuckets,
 			ConstLabels: genaiProvider,
 		}, genaiLabels),
 		genaiUsageInputTokens: auto.NewCounterVec(prometheus.CounterOpts{
 			Name:        "gen_ai_client_inference_usage_input_tokens_total",
 			Help:        "Total input (prompt) tokens used (gen_ai.client.inference.usage.input_tokens).",
-			ConstLabels: genaiProvider,
+			ConstLabels: genaiTokenLabels,
 		}, genaiLabels),
 		genaiUsageOutputTokens: auto.NewCounterVec(prometheus.CounterOpts{
 			Name:        "gen_ai_client_inference_usage_output_tokens_total",
 			Help:        "Total output tokens generated, including reasoning (gen_ai.client.inference.usage.output_tokens).",
-			ConstLabels: genaiProvider,
+			ConstLabels: genaiTokenLabels,
 		}, genaiLabels),
 		genaiUsageReasoningTokens: auto.NewCounterVec(prometheus.CounterOpts{
 			Name:        "gen_ai_client_inference_usage_reasoning_output_tokens_total",
 			Help:        "Total reasoning output tokens generated (gen_ai.client.inference.usage.reasoning.output_tokens).",
-			ConstLabels: genaiProvider,
+			ConstLabels: genaiTokenLabels,
 		}, genaiLabels),
 
 		vramTotal:  newGaugeVec("vram_total_bytes", "Total estimated VRAM usage in bytes (model weights + KV cache)"),
@@ -765,10 +787,11 @@ func ObserveInferenceRequest(modelID, operation, runtimeName, status string, d t
 	if status != "ok" {
 		errorType = status
 	}
-	m.genaiServerRequestDuration.WithLabelValues(operation, id, errorType).Observe(d.Seconds())
+	genaiOp := genaiOperation(operation)
+	m.genaiServerRequestDuration.WithLabelValues(genaiOp, id, errorType).Observe(d.Seconds())
 
 	if promptTokens > 0 {
-		m.genaiUsageInputTokens.WithLabelValues(operation, id).Add(float64(promptTokens))
+		m.genaiUsageInputTokens.WithLabelValues(genaiOp, id).Add(float64(promptTokens))
 	}
 }
 
