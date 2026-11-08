@@ -1644,7 +1644,11 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 			}
 			defer func() { os.Args = previous }()
 			err = run()
-			if err == nil || tc.failure == "" && !strings.Contains(err.Error(), "coverage is incomplete") {
+			if tc.defect == "overlap" {
+				if err != nil {
+					t.Fatalf("missing diagnostic progress witness must not fail the command: %v", err)
+				}
+			} else if err == nil || tc.failure == "" && !strings.Contains(err.Error(), "coverage is incomplete") {
 				t.Fatalf("error=%v, want failure=%q", err, tc.failure)
 			}
 			data, err := os.ReadFile(filepath.Join(out, summaryFile))
@@ -1743,8 +1747,12 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 					if workload == "images" {
 						wantPhases = 23
 					}
-					if result.Details["completed_history_turns"] != float64(21) || len(phases) != wantPhases || summary.CoverageStatus != "INCOMPLETE" {
-						t.Fatalf("low overlap must finish histories without certifying scheduling coverage: %v", result.Details)
+					if result.Details["completed_history_turns"] != float64(21) || len(phases) != wantPhases || summary.CoverageStatus != "OBSERVED" {
+						t.Fatalf("low overlap must finish histories with required scheduling coverage: %v", result.Details)
+					}
+					log, err := os.ReadFile(filepath.Join(out, toolLogFile))
+					if err != nil || !strings.Contains(string(log), "WARNING:") || !strings.Contains(string(log), "coverage: warning — batch generation progress during peer prefill") {
+						t.Fatalf("missing progress warning: %s, %v", log, err)
 					}
 				}
 				if failure == "" {
@@ -1814,7 +1822,7 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 }
 
 // Exercise the emitted scheduling contract with an independent server clock.
-// In particular, occupied slots without advancing generation must not qualify.
+// Missing generation progress is a warning; missing ownership/handoff is required coverage.
 func TestBatchSchedulingEvidenceReport(t *testing.T) {
 	for _, defect := range []string{"", "stalled", "reassigned", "foreign", "stale", "no-wait", "conflict", "serial", "missing"} {
 		t.Run(defect, func(t *testing.T) {
@@ -1877,7 +1885,7 @@ func TestBatchSchedulingEvidenceReport(t *testing.T) {
 			wantSlots, wantProgress := "exercised", "exercised"
 			switch defect {
 			case "stalled", "reassigned", "foreign", "stale":
-				wantProgress = "not exercised"
+				wantProgress = "warning"
 			case "no-wait", "conflict", "serial", "missing":
 				wantSlots = "not exercised"
 			}

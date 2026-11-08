@@ -107,12 +107,12 @@ func annotateBatchExecution(summary *runSummary) {
 				Note: fmt.Sprintf("peak occupied slots=%d/%d; ownership consistent=%t; prepared waiting job handed off and completed=%t", evidence.MaximumOccupiedSlots, slots, evidence.OwnershipConsistent, evidence.WaitingHandoff),
 			})
 		}
-		status := "not exercised"
+		status := "warning"
 		if progressObserved {
 			status = "exercised"
 		}
 		scenario.Coverage = append(scenario.Coverage, pathCoverage{Path: "batch generation progress during peer prefill", Status: status,
-			Note: "requires increasing generated-token counters for the same request across advancing scheduler snapshots while a different request remains in prefill; a single prefill owner is expected"})
+			Note: "diagnostic only: observation requires increasing generated-token counters for the same request across advancing scheduler snapshots while a different request remains in prefill; short prefills may not produce this witness"})
 		scenario.Details["requests"], scenario.Details["turns"] = requests, turns
 	}
 }

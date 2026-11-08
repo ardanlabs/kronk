@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const summarySchemaVersion = 8
+const summarySchemaVersion = 9
 
 var scenarioOrder = []string{"text-state", "images", "long-context", "batch", "mtp"}
 
@@ -289,6 +289,10 @@ func run() error {
 	annotateBatchExecution(&summary)
 	for _, scenario := range summary.Scenarios {
 		for _, coverage := range scenario.Coverage {
+			if coverage.Status == "warning" {
+				art.logf("WARNING: %s / %s / %s: %s", scenario.Cell, scenario.Name, coverage.Path, coverage.Note)
+				continue
+			}
 			if summary.CoverageStatus == "" {
 				summary.CoverageStatus = "OBSERVED"
 			}

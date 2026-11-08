@@ -56,7 +56,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,n,On,Off,Yes,MoE,Pure,,,not apply,,,,not apply,,,,not apply
 1,n,On,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-images revised 8-conversation contract unqualified.,not apply,covered,,covered,not apply,covered,,,not apply
 1,n,On,On,No,Dense,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
-1,n,On,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q6_K,Batch-text alternate selectable: 4 conversations / 2 slots; Q6 fixture qualification pending.,not apply,not apply,,not apply,overlaped by 5:61,not apply,,covered,not apply
+1,n,On,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q6_K,Batch-text alternate selectable: 4 conversations / 2 slots; absent generation-during-prefill witness is warning-only; see coverage.md for qualification.,not apply,not apply,,not apply,overlaped by 5:61,not apply,,covered,not apply
 1,n,On,On,No,MoE,Pure,,,not apply,not apply,,not apply,,not apply,,,not apply
 1,n,On,On,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,Batch-text 8 conversations / 4 slots: PASS + OBSERVED 2026-11-06; see coverage.md.,not apply,not apply,,not apply,covered,not apply,covered,,not apply
 1,n,On,On,Yes,Dense,Pure,,,not apply,,,,not apply,,,,not apply

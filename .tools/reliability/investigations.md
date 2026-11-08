@@ -279,11 +279,14 @@ the summary/raw events required to qualify its IMC-/MTP+ scheduling coverage.
 For each turn, require request-correlated assignment-to-execution-finish evidence
 of concurrent full slot ownership without same-slot conflicts, plus a prepared
 request waiting under full slot pressure, taking a released slot and completing.
-Across the workload, require successive diagnostics samples where one request's
+Across the workload, retain successive diagnostics samples where one request's
 `generated_tokens` increases while a different, consistently identified request
-remains in text/IMC/media prefill. Do not demand that progress witness every turn
-or replay. One text prefill owner is legal; other slots may generate, and four
-occupied slots do not mean four generation streams.
+remains in text/IMC/media prefill. An absent witness is warning-only: short
+prefills may not persist across samples. It does not make required coverage
+INCOMPLETE or cause a nonzero exit. Keep the warning visible; do not claim that
+generation-during-prefill was established. One text prefill owner is legal;
+other slots may generate, and four occupied slots do not mean four generation
+streams.
 
 `maximum_concurrency` measures client response-interval overlap diagnostically.
 Do not infer queue acceptance from client timing, report an inferred queue metric
@@ -291,7 +294,8 @@ or require universal all-four client-stream overlap. Low overlap must not stop
 histories or replays. Missing, untriggered or contradictory required evidence is
 coverage INCOMPLETE with a nonzero exit, separate from behavioral PASS/FAIL.
 Use the [batch contract](coverage.md#batch-scheduling-evidence) when interpreting
-these packages; do not substitute occupancy for generation-progress evidence.
+these packages; required coverage OBSERVED can coexist with a diagnostic warning.
+Do not substitute occupancy for generation-progress evidence.
 
 The validated text MTP-on/IMC-off workload reached client overlap two on later
 turns; the image IMC/MTP-on subject switch also reached two. Both retained full

@@ -125,7 +125,7 @@ regression verdicts; those need comparable baselines and criteria.
 | `image-state` | Three image/text/replay/append/cancel/recovery cycles without unloading. Subject and requested prefixes, text exact-marker isolation, IMC-on reuse, cancellation after content, all slots idle and fresh image/text recovery. MTP-on measured image requests require drafting. | One-slot fixtures force same-slot recovery; many-slot fixtures do not pin recovery to the cancelled slot. No concurrent image sessions, subject-switch history or prefill cancellation. No byte-identical prose requirement. |
 | `long-context` | Serial staged retrieval of three ordered markers, rejecting foreign-stage markers; cold/repeat correctness and IMC-on warm reuse. Flash-Next stages 4K–128K; Attention-only baseline 4K/8K/16K. Unknown capacity or skipped requested stages cannot pass. | No exact-limit/overflow, append, cancellation, images or concurrent long-context interference. Marker retrieval is not general model-quality evaluation. |
 | `image-prefill` | Submit image after five text content events; both streams complete, scheduler-observed prefill/generation overlap and text gaps within one second by default. Require request-correlated image execution evidence mapped below. | Two concurrent requests, not all-slot saturation. No image-subject, replay/append or cancellation contract. Client content-event gaps are not server per-token timings. |
-| `batch-text` | Eight conversations on four slots, or four on two slots for the Dense Hybrid alternative; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation and IMC-on append reuse. Per-turn full slot ownership and prepared-request wait/release coverage; workload-wide generation-during-prefill evidence as defined below. | No dedicated exact replay, cancellation/recovery or images. Slot occupancy is not generation overlap. Revised contract qualified only for the cells below. |
+| `batch-text` | Eight conversations on four slots, or four on two slots for the Dense Hybrid alternative; at least 21 growing-history turns and 30K final prompts. Session/turn canaries, isolation and IMC-on append reuse. Per-turn full slot ownership and prepared-request wait/release coverage; generation-during-prefill is a warning-only diagnostic as defined below. | No dedicated exact replay, cancellation/recovery or images. Slot occupancy is not generation overlap. Revised contract qualified only for the cells below. |
 | `batch-images` | Same eight-conversation batch history/load/isolation and scheduling contract, plus image subjects, later subject switch, initial/switch request replays, current-subject correctness and rejection of stale/foreign subjects. IMC-on replay/append reuse remains required. | No whole-description equality: differing correct prose is allowed. No cancellation or forced same-slot recovery. Image history load does not replace prefill responsiveness. Revised contract qualified only for the cell below; duplication remains unresolved. |
 | `mtp-embedded` / `mtp-companion` | Embedded-head or companion fixture; three request waves on the same loaded model, supplied-value correctness, own session key and no foreign key, normal stop, selected drafting mode, then fresh-marker recovery. One/many-slot fixtures are distinct. | No appended-history cache-hit requirement, images, target-only output equivalence or proof that all physical slots generated concurrently. No inherent minimum rejection count or acceptance rate. |
 | `example-lifecycle-load` | Separate command: one execution slot, two admission permits, queued cancellation, admission timeout, active cancellation and successful recovery; structured stage evidence. | Fixed text fixture; no IMC/MTP matrix or cache/draft/media integrity assertions. Admission recovery does not establish inference-state integrity. |
@@ -154,10 +154,16 @@ request-correlated server evidence must establish both:
 - A prepared request waiting under full slot pressure, then taking a released
   slot and completing. Client response timing does not establish queue acceptance.
 
-Across the workload, successive request-correlated diagnostics samples must show
-`generated_tokens` increasing for one request while a different, consistently
+Across the workload, the runner looks for successive request-correlated
+diagnostics samples showing `generated_tokens` increasing for one request while a different, consistently
 identified request remains in prefill across those samples (text, IMC preparation
-or media prefill). This progress witness is not required on every turn or replay.
+or media prefill). This progress witness is diagnostic, not required coverage.
+If absent, it is reported as `warning` in the coverage entries and as `WARNING`
+in the tool log, without making coverage INCOMPLETE or causing a nonzero exit.
+Short prefills may complete between samples; absence does not establish a stall.
+`coverage_status: OBSERVED` means required paths were observed, not that every
+diagnostic witness was obtained. Inspect warnings separately. This warning
+status is introduced in summary schema version 9; existing captures are unchanged.
 A single text prefill owner is legal while other slots generate; four occupied
 slots are not four generation streams.
 
