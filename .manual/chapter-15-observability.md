@@ -105,12 +105,17 @@ unit suffix. They carry the convention's attributes as labels:
 `gen_ai_operation_name` (`chat`, `embeddings`, or the Kronk-specific
 `rerank`), `gen_ai_request_model`, the constant
 `gen_ai_provider_name="kronk"`, and `gen_ai_token_modality="text"` on the
-token counters. `gen_ai_server_request_duration_seconds` also carries
-`error_type`, which is empty on success and otherwise holds a low-cardinality
-error class such as `context-cancelled`, `tool-call-parse`,
-`stop-gate-flush`, `error`, or `cancel`. Engine metrics (prefill, queue,
-pool, resman, IMC) keep Kronk-specific names, which the conventions allow as
-system-specific additions.
+token counters. `gen_ai_server_request_duration_seconds` also carries two
+Kronk-specific labels the conventions permit as custom attributes:
+`error_type`, which is empty on success and otherwise holds a
+low-cardinality error class such as `context-cancelled`, `tool-call-parse`,
+`stop-gate-flush`, `error`, or `cancel`; and `runtime`, which is `batch` for
+chat and `batchseq` or `context_pool` for embedding and reranking.
+Histogram buckets follow the convention's recommended boundaries, with
+`gen_ai_server_time_to_first_token_seconds` extended through 120 seconds so
+queue-heavy deployments keep tail-quantile resolution. Engine metrics
+(prefill, queue, pool, resman, IMC) keep Kronk-specific names, which the
+conventions allow as system-specific additions.
 
 Most model and request metrics have a `model_id` label; `gen_ai_*` metrics
 use `gen_ai_request_model` instead. Histograms expose `_bucket`, `_sum`, and

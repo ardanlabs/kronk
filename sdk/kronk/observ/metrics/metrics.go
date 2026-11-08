@@ -88,8 +88,9 @@ var (
 	genaiDurationBuckets = []float64{0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92}
 
 	// genaiTTFTBuckets are the semconv-recommended boundaries for
-	// gen_ai.server.time_to_first_token.
-	genaiTTFTBuckets = []float64{0.001, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0}
+	// gen_ai.server.time_to_first_token, extended with 30/60/120 so
+	// queue-heavy deployments keep tail-quantile resolution.
+	genaiTTFTBuckets = []float64{0.001, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 30, 60, 120}
 
 	// genaiTPOTBuckets are the semconv-recommended boundaries for
 	// gen_ai.server.time_per_output_token.
@@ -132,7 +133,7 @@ type promMetrics struct {
 	// -------------------------------------------------------------------------
 	// OTel GenAI semantic convention instruments (labels: genaiLabels).
 
-	genaiServerRequestDuration *prometheus.HistogramVec // gen_ai.server.request.duration; extra label: error_type.
+	genaiServerRequestDuration *prometheus.HistogramVec // gen_ai.server.request.duration; extra labels: error_type, runtime.
 	genaiServerTTFT            *prometheus.HistogramVec // gen_ai.server.time_to_first_token.
 	genaiServerTPOT            *prometheus.HistogramVec // gen_ai.server.time_per_output_token.
 	genaiUsageInputTokens      *prometheus.CounterVec   // gen_ai.client.inference.usage.input_tokens.
@@ -242,10 +243,10 @@ func init() {
 
 		genaiServerRequestDuration: auto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:        "gen_ai_server_request_duration_seconds",
-			Help:        "GenAI request duration in seconds (gen_ai.server.request.duration). error_type is empty on success.",
+			Help:        "GenAI request duration in seconds (gen_ai.server.request.duration). error_type is empty on success; runtime is batch|batchseq|context_pool.",
 			Buckets:     genaiDurationBuckets,
 			ConstLabels: genaiProvider,
-		}, append(append([]string{}, genaiLabels...), "error_type")),
+		}, append(append([]string{}, genaiLabels...), "error_type", "runtime")),
 		genaiServerTTFT: auto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:        "gen_ai_server_time_to_first_token_seconds",
 			Help:        "End-to-end time to first generated token in seconds (gen_ai.server.time_to_first_token).",
@@ -764,9 +765,10 @@ func AddChatError(modelID, class string) {
 }
 
 // ObserveChatRequestDuration records the end-to-end chat request duration
-// as gen_ai.server.request.duration. errorType is empty on success.
+// as gen_ai.server.request.duration. errorType is empty on success. Chat
+// always runs on the batch engine, so runtime is "batch".
 func ObserveChatRequestDuration(modelID, errorType string, d time.Duration) {
-	m.genaiServerRequestDuration.WithLabelValues("chat", normalizeModelID(modelID), errorType).Observe(d.Seconds())
+	m.genaiServerRequestDuration.WithLabelValues("chat", normalizeModelID(modelID), errorType, "batch").Observe(d.Seconds())
 }
 
 // ObserveChatQueueWait records the time a request spent in the batch
@@ -788,7 +790,7 @@ func ObserveInferenceRequest(modelID, operation, runtimeName, status string, d t
 		errorType = status
 	}
 	genaiOp := genaiOperation(operation)
-	m.genaiServerRequestDuration.WithLabelValues(genaiOp, id, errorType).Observe(d.Seconds())
+	m.genaiServerRequestDuration.WithLabelValues(genaiOp, id, errorType, runtimeName).Observe(d.Seconds())
 
 	if promptTokens > 0 {
 		m.genaiUsageInputTokens.WithLabelValues(genaiOp, id).Add(float64(promptTokens))
