@@ -103,7 +103,7 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.RecoveryCycles, "recovery-cycles", 1, "text-state and image-state recovery cycles without unloading the model")
 
 	fs.StringVar(&cfg.MTPEmbeddedModel, "mtp-embedded-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", "embedded-MTP base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
-	fs.StringVar(&cfg.MTPCompanionModel, "mtp-companion-model", "unsloth/Qwen3.8-27B-UD-Q4_K_XL", "companion own-KV MTP base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
+	fs.StringVar(&cfg.MTPCompanionModel, "mtp-companion-model", "unsloth/Qwen3.8-27B-UD-Q6_K", "companion own-KV MTP base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
 	fs.StringVar(&cfg.MTPProfile, "mtp-profile", "all", "MTP profile: embedded, companion, or all")
 	fs.IntVar(&cfg.MTPRequests, "mtp-requests", 0, "concurrent MTP requests (0 uses every configured slot)")
 	fs.IntVar(&cfg.MTPPromptTokens, "mtp-prompt-tokens", 2200, "calibrated MTP prompt tokens")

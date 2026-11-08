@@ -81,7 +81,7 @@ Prefer the alternate target/backend when the failure or changed code makes that
 distinction material. **Do not silently substitute one for the other.**
 
 The eight Dense Hybrid text-state/batch-text overlap alternatives are directly
-mapped to Qwen3.8-27B, but still await inference qualification. Text-state uses
+mapped to Qwen3.8-27B Q6, but still await inference qualification. Text-state uses
 one slot and three recovery cycles; batch-text uses four conversations on two
 slots, retaining the 21-turn/30K history and scheduling-evidence contract.
 Choose them for target-specific recovery, reuse, native execution or companion

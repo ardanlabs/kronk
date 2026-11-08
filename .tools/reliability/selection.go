@@ -172,7 +172,7 @@ func selectProbe(cfg config, cell coverageCell, profile string) probeSelection {
 	}
 	mode := "-MTP-" + strings.ToUpper(cell.MTP) + "-IMC-" + strings.ToUpper(cell.IMC)
 	embedded := "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL"
-	companion := "unsloth/Qwen3.8-27B-UD-Q4_K_XL"
+	companion := "unsloth/Qwen3.8-27B-UD-Q6_K"
 	vision := "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0"
 	base := ""
 	suffix := "/TOOLS" + mode

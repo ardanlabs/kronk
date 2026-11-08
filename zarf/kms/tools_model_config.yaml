@@ -106,22 +106,22 @@ models:
     speculation: disabled
     incremental-cache: false
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-ON-IMC-ON: &companion
+  unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-MTP-ON-IMC-ON: &companion
     nseq-max: 2
     context-window: 131072
     queue-depth: 2
     incremental-cache: true
     speculation: mtp
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-ON-IMC-OFF:
+  unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-MTP-ON-IMC-OFF:
     <<: *companion
     incremental-cache: false
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-OFF-IMC-ON:
+  unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-MTP-OFF-IMC-ON:
     <<: *companion
     speculation: disabled
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-OFF-IMC-OFF:
+  unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-MTP-OFF-IMC-OFF:
     <<: *companion
     speculation: disabled
     incremental-cache: false
@@ -165,19 +165,19 @@ models:
     incremental-cache: false
 
   # Single-slot companion drafting; retain the two-slot aliases above.
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-1S-MTP-ON-IMC-ON: &companionOne
+  unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-1S-MTP-ON-IMC-ON: &companionOne
     <<: *companion
     nseq-max: 1
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-1S-MTP-ON-IMC-OFF:
+  unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-1S-MTP-ON-IMC-OFF:
     <<: *companionOne
     incremental-cache: false
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-1S-MTP-OFF-IMC-ON:
+  unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-1S-MTP-OFF-IMC-ON:
     <<: *companionOne
     speculation: disabled
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-1S-MTP-OFF-IMC-OFF:
+  unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-1S-MTP-OFF-IMC-OFF:
     <<: *companionOne
     speculation: disabled
     incremental-cache: false

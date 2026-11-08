@@ -131,7 +131,7 @@ func TestExplicitProfileCellSelection(t *testing.T) {
 					t.Fatal(err)
 				}
 				probe := executionPlan(cfg)[0]
-				want := "unsloth/Qwen3.8-27B-UD-Q4_K_XL" + suffix + "-MTP-" + strings.ToUpper(mtp) + "-IMC-" + strings.ToUpper(imc)
+				want := "unsloth/Qwen3.8-27B-UD-Q6_K" + suffix + "-MTP-" + strings.ToUpper(mtp) + "-IMC-" + strings.ToUpper(imc)
 				if probe.Status != "runnable" || !reflect.DeepEqual(probe.Config.selectedModels(), []string{want}) || probe.Config.ExpectedState != "Hybrid" || probe.Config.IMC != imc || probe.Config.MTP != mtp {
 					t.Fatalf("incorrect Dense Hybrid selection %s × %s: %+v", profile, cell, probe)
 				}
@@ -377,7 +377,7 @@ func TestSelectedCommandReportsEveryCombination(t *testing.T) {
 					t.Fatalf("cell %s: status %s, want %s", result.Cell, result.Status, statuses[result.Cell])
 				}
 			}
-			if _, ok := want["34"]; ok && !reflect.DeepEqual(loaded, []string{"ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0/TOOLS-BATCH-MTP-OFF-IMC-OFF", "unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-OFF-IMC-OFF"}) {
+			if _, ok := want["34"]; ok && !reflect.DeepEqual(loaded, []string{"ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0/TOOLS-BATCH-MTP-OFF-IMC-OFF", "unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-MTP-OFF-IMC-OFF"}) {
 				t.Fatalf("wrong selected model requests: %v", loaded)
 			}
 			for _, selected := range summary.Selection {

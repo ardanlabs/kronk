@@ -223,7 +223,7 @@ target-only controls, not drafting coverage.
 | Profiles / state | Model | Slots / configuration |
 | --- | --- | --- |
 | `mtp-embedded`, Hybrid MoE | `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL` | 1 or 4; 128K |
-| `mtp-companion`, Hybrid Dense | `unsloth/Qwen3.8-27B-UD-Q4_K_XL` | 1 or 2; 128K; companion drafter when MTP on |
+| `mtp-companion`, Hybrid Dense | `unsloth/Qwen3.8-27B-UD-Q6_K` | 1 or 2; 128K; companion drafter when MTP on; qualification pending |
 | `text-state`, `long-context`, Hybrid MoE | `unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL` | 1; context stages through 128K |
 | `text-state`, Hybrid Dense alternative | Qwen3.8-27B above | 1; 128K; three recovery cycles; all MTP/IMC modes selectable, qualification pending |
 | `text-state`, `long-context`, Attention-only Dense | `unsloth/Qwen3-0.6B-Q8_0` | 1; MTP off; 32K configured context, retrieval through 16K |
