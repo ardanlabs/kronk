@@ -475,6 +475,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">ResponseStreamingHTTP provides http handler support for a responses call. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-speech">
+              <h4>Kronk.Speech</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) Speech(ctx context.Context, req model.SpeechRequest) (model.SpeechResponse, error)</code>
+              </pre>
+              <p className="doc-description">Speech generates a complete PCM16 mono WAV from text and an optional preset voice. The returned bytes belong to the caller. Cancellation can wait for an in-flight native step or vocoder call to finish; failed calls return no audio.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-systeminfo">
               <h4>Kronk.SystemInfo</h4>
               <pre className="code-block">
@@ -625,6 +633,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-response">Kronk.Response</a></li>
                 <li><a href="#method-kronk-responsestreaming">Kronk.ResponseStreaming</a></li>
                 <li><a href="#method-kronk-responsestreaminghttp">Kronk.ResponseStreamingHTTP</a></li>
+                <li><a href="#method-kronk-speech">Kronk.Speech</a></li>
                 <li><a href="#method-kronk-systeminfo">Kronk.SystemInfo</a></li>
                 <li><a href="#method-kronk-tokenize">Kronk.Tokenize</a></li>
                 <li><a href="#method-kronk-tokenizehttp">Kronk.TokenizeHTTP</a></li>

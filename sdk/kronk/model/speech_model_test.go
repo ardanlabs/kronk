@@ -1,11 +1,16 @@
 package model_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -37,9 +42,12 @@ func TestSpeechModelLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			unloaded := false
 			t.Cleanup(func() {
-				if err := krn.Unload(context.Background()); err != nil {
-					t.Errorf("unload: %v", err)
+				if !unloaded {
+					if err := krn.Unload(context.Background()); err != nil {
+						t.Errorf("unload: %v", err)
+					}
 				}
 			})
 			info := krn.ModelInfo()
@@ -68,8 +76,109 @@ func TestSpeechModelLifecycle(t *testing.T) {
 			if _, err := krn.Rerank(t.Context(), model.D{"query": "Hello", "documents": []string{"World"}}); err == nil {
 				t.Error("speech model accepted a rerank request")
 			}
+
+			prompts := []string{"I played column four. Your turn!", "Watch out for the diagonal. You can still block it in column three."}
+			references := make([]model.SpeechResponse, len(prompts))
+			for i, prompt := range prompts {
+				resp, err := krn.Speech(t.Context(), model.SpeechRequest{Input: prompt})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(resp.Audio) < 44 || resp.SampleRate != 24000 || resp.Samples <= 0 {
+					t.Fatalf("speech: got rate=%d samples=%d bytes=%d", resp.SampleRate, resp.Samples, len(resp.Audio))
+				}
+				wav := resp.Audio
+				if string(wav[:4]) != "RIFF" || string(wav[8:12]) != "WAVE" || binary.LittleEndian.Uint32(wav[4:8]) != uint32(len(wav)-8) ||
+					binary.LittleEndian.Uint16(wav[20:22]) != 1 || binary.LittleEndian.Uint16(wav[22:24]) != 1 ||
+					binary.LittleEndian.Uint16(wav[34:36]) != 16 || int64(len(wav)) != 44+2*resp.Samples {
+					t.Fatal("speech is not a complete PCM16 mono WAV")
+				}
+				references[i] = resp
+			}
+			if bytes.Equal(references[0].Audio, references[1].Audio) {
+				t.Fatal("asymmetric utterances returned identical audio")
+			}
+			for _, req := range []model.SpeechRequest{
+				{}, {Input: " \n"}, {Input: "bad\x00text"}, {Input: string([]byte{0xff})},
+				{Input: strings.Repeat("x", 65537)}, {Input: strings.Repeat("hello ", 3000)},
+				{Input: prompts[0], Voice: "not-a-voice"},
+			} {
+				resp, err := krn.Speech(t.Context(), req)
+				if !errors.Is(err, model.ErrInvalidRequest) || len(resp.Audio) != 0 {
+					t.Errorf("invalid speech request: got %v, bytes=%d", err, len(resp.Audio))
+				}
+			}
+
+			// Four callers also exercise queueing on the one- and two-slot runs.
+			outputs := make([]model.SpeechResponse, 4)
+			errorsByCall := make([]error, len(outputs))
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			for i := range outputs {
+				wg.Go(func() {
+					<-start
+					outputs[i], errorsByCall[i] = krn.Speech(t.Context(), model.SpeechRequest{Input: prompts[i%len(prompts)], Voice: "default"})
+				})
+			}
+			close(start)
+			wg.Wait()
+			for i, output := range outputs {
+				want := references[i%len(prompts)]
+				if errorsByCall[i] != nil || output.SampleRate != want.SampleRate || output.Samples != want.Samples || !bytes.Equal(output.Audio, want.Audio) {
+					t.Fatalf("overlapping speech %d differs from serial: %v", i, errorsByCall[i])
+				}
+			}
+
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+			defer cancel()
+			wg.Go(func() {
+				outputs[0], errorsByCall[0] = krn.Speech(ctx, model.SpeechRequest{Input: prompts[1]})
+			})
+			wg.Go(func() {
+				outputs[1], errorsByCall[1] = krn.Speech(t.Context(), model.SpeechRequest{Input: prompts[0]})
+			})
+			wg.Wait()
+			if !errors.Is(errorsByCall[0], context.DeadlineExceeded) || len(outputs[0].Audio) != 0 {
+				t.Errorf("canceled speech: got %v, bytes=%d", errorsByCall[0], len(outputs[0].Audio))
+			}
+			if errorsByCall[1] != nil || !bytes.Equal(outputs[1].Audio, references[0].Audio) {
+				t.Errorf("cancellation changed neighboring speech: %v", errorsByCall[1])
+			}
+			resp, err := krn.Speech(t.Context(), model.SpeechRequest{Input: prompts[1]})
+			if err != nil || !bytes.Equal(resp.Audio, references[1].Audio) || krn.ActiveStreams() != 0 {
+				t.Fatalf("speech reuse after cancellation: %v, active=%d", err, krn.ActiveStreams())
+			}
+			owned := bytes.Clone(resp.Audio)
+			if err := krn.Unload(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			unloaded = true
+			if !bytes.Equal(resp.Audio, owned) {
+				t.Error("returned audio changed after unload")
+			}
+			if resp, err := krn.Speech(t.Context(), model.SpeechRequest{Input: prompts[0]}); err == nil || len(resp.Audio) != 0 {
+				t.Error("speech succeeded after unload")
+			}
 		})
 	}
+
+	t.Run("frame limit", func(t *testing.T) {
+		krn, err := kronk.NewWithContext(t.Context(), append(opts, model.WithSpeech(&model.SpeechConfig{MaxFrames: 1}))...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := krn.Unload(context.Background()); err != nil {
+				t.Error(err)
+			}
+		})
+		for range 2 {
+			resp, err := krn.Speech(t.Context(), model.SpeechRequest{Input: "I played column four. Your turn!"})
+			if !errors.Is(err, model.ErrSpeechLimit) || len(resp.Audio) != 0 || krn.ActiveStreams() != 0 {
+				t.Fatalf("frame limit/reuse: got %v, bytes=%d active=%d", err, len(resp.Audio), krn.ActiveStreams())
+			}
+		}
+	})
 
 	t.Run("incompatible settings", func(t *testing.T) {
 		for _, tt := range []struct {

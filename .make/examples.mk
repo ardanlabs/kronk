@@ -84,6 +84,9 @@ example-question: ## Run the question example
 example-response: ## Run the response example
 	cd examples && go run ./response/main.go
 
+example-speech: ## Run the speech example and write examples/speech.wav
+	cd examples && go run ./speech/main.go
+
 example-vision: ## Run the vision example
 	cd examples && go run ./vision/main.go
 

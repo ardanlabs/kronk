@@ -56,6 +56,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
@@ -71,8 +72,8 @@ var errFrameLimit = errors.New("speech frame limit reached")
 
 type speechSlot struct {
 	lctx    llama.Context
-	gen     mtmd.HelperGenAudio
-	input   mtmd.HelperGenAudioInput
+	gen     model.MTMDHelperGenAudio
+	input   model.MTMDHelperGenAudioInput
 	sampler llama.Sampler
 	nEmbd   int32
 	token   llama.Token
@@ -172,7 +173,7 @@ func runCase(mdl llama.Model, projFile string, nSlots int, memory *memoryMonitor
 	// =========================================================================
 	// Share model and decoder weights, but keep each sequence's request state.
 
-	voice, err := mtmd.GenAudioGetVoice(mctx, "default")
+	voice, err := model.MTMDGenAudioGetVoice(mctx, "default")
 	if err != nil {
 		return err
 	}
@@ -324,7 +325,7 @@ func runCase(mdl llama.Model, projFile string, nSlots int, memory *memoryMonitor
 			return fmt.Errorf("frame limit: got %v, want %w", err, errFrameLimit)
 		}
 		memory.mark(fmt.Sprintf("seq-%d-before-ceiling-flush", slot.input.SeqID))
-		if err := mtmd.HelperGenAudioFlush(slot.gen); err != nil {
+		if err := model.MTMDHelperGenAudioFlush(slot.gen); err != nil {
 			return err
 		}
 		memory.mark(fmt.Sprintf("seq-%d-after-ceiling-flush", slot.input.SeqID))
@@ -366,15 +367,15 @@ func runCase(mdl llama.Model, projFile string, nSlots int, memory *memoryMonitor
 }
 
 func newSpeechSlot(mdl llama.Model, lctx llama.Context, mctx mtmd.Context, voice mtmd.Bitmap, seqID llama.SeqId) (*speechSlot, error) {
-	input, err := mtmd.HelperGenAudioInputDefault()
+	input, err := model.MTMDHelperGenAudioInputDefault()
 	if err != nil {
 		return nil, err
 	}
 	input.SeqID = seqID
 	input.SpeakerRef = voice
-	input.OutType = mtmd.GenAudioOutputWAV
+	input.OutType = model.MTMDGenAudioOutputWAV
 	input.Seed, input.Temp = 42, 0.8
-	gen, err := mtmd.HelperGenAudioInit(lctx, mctx)
+	gen, err := model.MTMDHelperGenAudioInit(lctx, mctx)
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +407,7 @@ func newSpeechSlot(mdl llama.Model, lctx llama.Context, mctx mtmd.Context, voice
 
 func (s *speechSlot) close() {
 	llama.SamplerFree(s.sampler)
-	mtmd.HelperGenAudioFree(s.gen)
+	model.MTMDHelperGenAudioFree(s.gen)
 }
 
 func (s *speechSlot) start(prompt string) error {
@@ -416,9 +417,9 @@ func (s *speechSlot) start(prompt string) error {
 	if err != nil {
 		return err
 	}
-	input.PromptLen = uint64(len(prompt))
+	input.PromptLen = uintptr(len(prompt))
 	// SetInput resets this helper and removes only input.SeqID's KV entries.
-	if err := mtmd.HelperGenAudioSetInput(s.gen, input); err != nil {
+	if err := model.MTMDHelperGenAudioSetInput(s.gen, input); err != nil {
 		return err
 	}
 	llama.SamplerReset(s.sampler)
@@ -426,7 +427,7 @@ func (s *speechSlot) start(prompt string) error {
 	s.output = speechResult{}
 	batches := 0
 	for {
-		remaining := mtmd.HelperGenAudioStepPrompt(s.gen, 512)
+		remaining := model.MTMDHelperGenAudioStepPrompt(s.gen, 512)
 		if remaining < 0 {
 			return fmt.Errorf("sequence %d prompt processing failed: %d", input.SeqID, remaining)
 		}
@@ -459,7 +460,7 @@ func (s *speechSlot) step() error {
 		return fmt.Errorf("sequence %d reached %d frames: %w", s.input.SeqID, maxFrames, errFrameLimit)
 	}
 	s.tokens = append(s.tokens, s.token)
-	next, stop, err := mtmd.HelperGenAudioStepGen(s.gen, s.token, s.hidden)
+	next, stop, err := model.MTMDHelperGenAudioStepGen(s.gen, s.token, s.hidden)
 	if err != nil {
 		return err
 	}
@@ -509,7 +510,7 @@ func generateSpeech(slots ...*speechSlot) (int, error) {
 
 func (s *speechSlot) collect() error {
 	s.memory.mark(fmt.Sprintf("seq-%d-before-vocode-frames-%d", s.input.SeqID, s.frames))
-	data, rate, samples, err := mtmd.HelperGenAudioGetOutput(s.gen)
+	data, rate, samples, err := model.MTMDHelperGenAudioGetOutput(s.gen)
 	if err != nil {
 		return err
 	}
@@ -636,6 +637,9 @@ func initYzma() error {
 	}
 	if err := mtmd.Load(libPath); err != nil {
 		return fmt.Errorf("unable to load MTMD library: %w", err)
+	}
+	if err := model.InitYzmaWorkarounds(libPath); err != nil {
+		return fmt.Errorf("unable to load MTMD speech bindings: %w", err)
 	}
 	llama.LogSet(llama.LogSilent())
 	mtmd.LogSet(llama.LogSilent())

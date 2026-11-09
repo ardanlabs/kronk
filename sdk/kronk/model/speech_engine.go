@@ -7,6 +7,7 @@ import (
 	"math"
 	"runtime"
 	"slices"
+	"sync"
 	"unsafe"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -22,14 +23,31 @@ const (
 // Model owns the backbone context and decoder they borrow. All native work on
 // those shared contexts must be serialized; helpers are not independent workers.
 type speechEngine struct {
-	voice mtmd.Bitmap
-	slots []speechSlot
+	voice     mtmd.Bitmap
+	slots     []speechSlot
+	model     *Model
+	maxFrames int // Immutable load-time resource limit.
+	requestQ  chan *speechJob
+	stopCh    chan struct{}
+	doneCh    chan struct{}
+	submitMu  sync.Mutex
+	submitWG  sync.WaitGroup
+	accepting bool
+	stopErr   error
 }
 
 type speechSlot struct {
-	helper  mtmd.HelperGenAudio
-	input   mtmd.HelperGenAudioInput
-	sampler llama.Sampler
+	helper        MTMDHelperGenAudio
+	input         MTMDHelperGenAudioInput
+	sampler       llama.Sampler
+	job           *speechJob
+	started       bool
+	prefilling    bool
+	frames        int
+	token         llama.Token
+	hidden        *float32
+	prefillHidden []float32
+	voice         mtmd.Bitmap
 }
 
 // adjustSpeechConfig resolves only the verified speech resource envelope. It
@@ -92,11 +110,11 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	input, err := mtmd.HelperGenAudioInputDefault()
+	input, err := MTMDHelperGenAudioInputDefault()
 	if err != nil {
 		return fmt.Errorf("speech input defaults: %w: %w", ErrSpeechUnsupported, err)
 	}
-	input.OutType = mtmd.GenAudioOutputWAV
+	input.OutType = MTMDGenAudioOutputWAV
 	input.Stream = false
 	input.Seed, input.Temp = 42, 0.8
 
@@ -125,7 +143,7 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	if got := llama.NCtxSeq(lctx); got != speechContextWindow {
 		return fmt.Errorf("speech context per sequence: got %d, want %d", got, speechContextWindow)
 	}
-	engine.voice, err = mtmd.GenAudioGetVoice(m.mtmdMetaCtx, "default")
+	engine.voice, err = MTMDGenAudioGetVoice(m.mtmdMetaCtx, "default")
 	if err != nil {
 		return fmt.Errorf("speech default voice: %w: %w", ErrSpeechUnsupported, err)
 	}
@@ -141,7 +159,7 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		helper, err := mtmd.HelperGenAudioInit(lctx, m.mtmdMetaCtx)
+		helper, err := MTMDHelperGenAudioInit(lctx, m.mtmdMetaCtx)
 		if err != nil {
 			return fmt.Errorf("init speech sequence %d: %w: %w", i, ErrSpeechUnsupported, err)
 		}
@@ -158,6 +176,7 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 		engine.slots = append(engine.slots, slot)
 		m.log(ctx, "speech-runtime", "status", "slot-ready", "slot", i)
 	}
+
 	runtime.KeepAlive(biases)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -172,13 +191,15 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	m.speech = &engine
 	m.log(ctx, "MODEL-INFO", "values", m.modelInfo.String())
 	m.log(ctx, "MODEL-CONFIG", "values", cfg.String())
+	engine.start(m)
+
 	return nil
 }
 
 func (e *speechEngine) free() {
 	for _, v := range slices.Backward(e.slots) {
 		llama.SamplerFree(v.sampler)
-		mtmd.HelperGenAudioFree(v.helper)
+		MTMDHelperGenAudioFree(v.helper)
 	}
 	e.slots = nil
 	if e.voice != 0 {

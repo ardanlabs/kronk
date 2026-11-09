@@ -1348,6 +1348,13 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.decision.scheduler.stop()
 	}
 
+	if m.speech != nil {
+		if err := m.speech.stop(ctx); err != nil {
+			m.unloaded.Store(false)
+			return fmt.Errorf("unload: %w", err)
+		}
+	}
+
 	m.log(ctx, "unload", "status", "waiting-for-streams", "active", m.activeStreams.Load())
 
 	for m.activeStreams.Load() > 0 {

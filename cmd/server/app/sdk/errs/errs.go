@@ -127,6 +127,8 @@ func FromSDK(err error) *Error {
 		code = InvalidArgument
 	case errors.Is(err, model.ErrSpeechUnsupported):
 		code = FailedPrecondition
+	case errors.Is(err, model.ErrSpeechLimit):
+		code = ResourceExhausted
 	case errors.Is(err, malinamodel.ErrInvalidRequest):
 		code = InvalidArgument
 	case errors.Is(err, llamamodels.ErrInvalidModelID):
