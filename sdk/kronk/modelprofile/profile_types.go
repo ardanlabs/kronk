@@ -81,6 +81,8 @@ var (
 	PurposeEmbedding = newPurpose("embedding")
 	// PurposeRerank identifies reranking.
 	PurposeRerank = newPurpose("rerank")
+	// PurposeSpeech identifies dedicated speech generation.
+	PurposeSpeech = newPurpose("speech")
 )
 
 func newPurpose(value string) Purpose {

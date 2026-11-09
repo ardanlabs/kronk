@@ -257,13 +257,16 @@ func CapabilitiesForModel(metadata map[string]string, hasProjection bool, modelI
 		caps.Endpoint = "rerank"
 		caps.Rerank = true
 		caps.Streaming = false
+	case profile.Purpose == modelprofile.PurposeSpeech:
+		caps.Endpoint = "speech"
+		caps.Streaming = false
 	default:
 		caps.Endpoint = "chat_completion"
 		caps.Tooling = profile.HasChatTemplate
 		caps.Reasoning = profile.HasChatTemplate
 	}
 
-	if hasProjection {
+	if hasProjection && profile.Purpose != modelprofile.PurposeSpeech {
 		caps.Images = true
 		caps.Audio = profile.Modalities.Audio
 		caps.Video = profile.Modalities.Video

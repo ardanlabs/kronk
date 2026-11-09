@@ -340,6 +340,27 @@ func NewModel(ctx context.Context, cfg Config) (_ *Model, err error) {
 		return nil, err
 	}
 
+	// Native-only detection covers bundles without explicit speech metadata.
+	// Mixed chat/audio models retain their existing chat runtime.
+	if m.mtmdCapsKnown && m.mtmdCapabilities.AudioGen && !m.mtmdCapabilities.Chat &&
+		(!modelInfo.IsEmbedModel && !modelInfo.IsRerankModel && !modelInfo.IsDecisionModel) {
+		modelInfo.IsSpeechModel = true
+		modelInfo.profile.Purpose = modelprofile.PurposeSpeech
+	}
+
+	if modelInfo.IsSpeechModel {
+		switch {
+		case cfg.ProjFile == "":
+			return nil, fmt.Errorf("load speech model %q: matching audio decoder is required: %w", modelInfo.ID, ErrSpeechUnsupported)
+		case !m.mtmdCapsKnown:
+			return nil, fmt.Errorf("load speech model %q: native audio-generation capabilities are unavailable: %w", modelInfo.ID, ErrSpeechUnsupported)
+		case !m.mtmdCapabilities.AudioGen:
+			return nil, fmt.Errorf("load speech model %q: native bundle does not support audio generation: %w", modelInfo.ID, ErrSpeechUnsupported)
+		default:
+			return nil, fmt.Errorf("load speech model %q: SDK speech engine is not implemented yet: %w", modelInfo.ID, ErrSpeechUnsupported)
+		}
+	}
+
 	// All model/bundle capabilities are now available for runtime selection.
 	// Keep the existing classification and initialization behavior unchanged.
 	pooled := modelInfo.IsEmbedModel || modelInfo.IsRerankModel

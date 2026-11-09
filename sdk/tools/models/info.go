@@ -23,6 +23,7 @@ type ModelInfo struct {
 	Quantization   string
 	IsEmbedModel   bool
 	IsRerankModel  bool
+	IsSpeechModel  bool
 	Metadata       map[string]string
 	Weights        *gguf.WeightBreakdown `json:"-"` // Optional tensor accounting for local analysis.
 	vocabularySize int64                 // Output rows recovered from tensors when GGUF omits vocab_size.
@@ -79,6 +80,19 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 	}
 
 	result := ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", mtpFile != "")
+
+	if projFile != "" {
+		data, err := gguf.ReadHeaderBytes(projFile)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("model-information: read projector: %w", err)
+		}
+		projector, err := gguf.ParseMetadata(data)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("model-information: parse projector: %w", err)
+		}
+		result.IsSpeechModel = arch.ResolveBundle(metadata, projector, id).Purpose == modelprofile.PurposeSpeech
+	}
+
 	var tensors []gguf.TensorInfo
 	var shards [][]gguf.TensorInfo
 
@@ -136,6 +150,7 @@ func ModelInfoFromMetadata(id string, metadata map[string]string, size uint64, h
 		Quantization:  quantization,
 		IsEmbedModel:  profile.Purpose == modelprofile.PurposeEmbedding,
 		IsRerankModel: profile.Purpose == modelprofile.PurposeRerank,
+		IsSpeechModel: profile.Purpose == modelprofile.PurposeSpeech,
 		Metadata:      metadata,
 	}
 }

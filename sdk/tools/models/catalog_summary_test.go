@@ -29,6 +29,8 @@ func TestModelPurpose(t *testing.T) {
 		{"legacy decision beats embed hint", "OpenJEV-embed-Q8_0", map[string]string{"general.architecture": "llama"}, "decision"},
 		{"Julia decision fallback", "Julia-1-Q8_0", map[string]string{"general.architecture": "modern-bert"}, "decision"},
 		{"decision token boundary", "clever-model", map[string]string{"general.architecture": "llama"}, "chat_completion"},
+		{"speech metadata without filename hint", "renamed", map[string]string{"general.architecture": "gpt2", "general.tags": "[text-to-speech speech-generation]"}, "speech"},
+		{"gpt2 alone is not speech", "ordinary", map[string]string{"general.architecture": "gpt2"}, "chat_completion"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -39,6 +41,15 @@ func TestModelPurpose(t *testing.T) {
 			info := models.ModelInfoFromMetadata(tt.id, tt.metadata, 0, false, false)
 			if info.IsEmbedModel != (tt.endpoint == "embeddings") || info.IsRerankModel != (tt.endpoint == "rerank") {
 				t.Errorf("model flags: got embed=%t rerank=%t, want endpoint %q", info.IsEmbedModel, info.IsRerankModel, tt.endpoint)
+			}
+			if info.IsSpeechModel != (tt.endpoint == "speech") {
+				t.Errorf("speech flag: got %t, want %t", info.IsSpeechModel, tt.endpoint == "speech")
+			}
+			if info.IsSpeechModel {
+				caps := models.CapabilitiesForModel(tt.metadata, true, tt.id)
+				if caps.Streaming || caps.Images || caps.Audio || caps.Video {
+					t.Errorf("speech decoder must not imply streaming or media input: got %+v", caps)
+				}
 			}
 		})
 	}

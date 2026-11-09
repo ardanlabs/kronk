@@ -23,6 +23,7 @@ func TestRegisteredStringValues(t *testing.T) {
 		{modelprofile.PurposeGeneration, "generation"},
 		{modelprofile.PurposeEmbedding, "embedding"},
 		{modelprofile.PurposeRerank, "rerank"},
+		{modelprofile.PurposeSpeech, "speech"},
 		{modelprofile.MemorySemantics{}, ""},
 		{modelprofile.MemoryAttention, "attention"},
 		{modelprofile.MemoryRecurrent, "recurrent"},

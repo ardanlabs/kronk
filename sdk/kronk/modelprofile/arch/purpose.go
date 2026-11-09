@@ -27,6 +27,19 @@ func resolvePurpose(metadata Metadata, modelID string, profile *modelprofile.Pro
 		return
 	}
 
+	// Only explicit generation tags identify speech; names and generic audio
+	// tags do not. Chat-capable bundles retain their existing generation path.
+	if !profile.HasChatTemplate {
+		for _, tag := range strings.FieldsFunc(strings.ToLower(metadata.value("general.tags")), func(r rune) bool {
+			return unicode.IsSpace(r) || strings.ContainsRune("[],\"'", r)
+		}) {
+			if tag == "text-to-speech" || tag == "speech-generation" {
+				profile.Purpose = modelprofile.PurposeSpeech
+				return
+			}
+		}
+	}
+
 	hint := strings.ToLower(strings.Join([]string{
 		modelID, metadata.value("general.name"), metadata.value("general.basename"),
 		metadata.value("general.tags"), profile.Architecture,

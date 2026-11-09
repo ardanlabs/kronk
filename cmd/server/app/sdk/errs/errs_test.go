@@ -43,6 +43,7 @@ func TestFromSDK(t *testing.T) {
 		{name: "invalid request", err: model.ErrInvalidRequest, code: InvalidArgument},
 		{name: "invalid decision request", err: model.ErrDecisionRequest, code: InvalidArgument},
 		{name: "decision budget", err: model.ErrDecisionBudget, code: InvalidArgument},
+		{name: "speech unsupported", err: model.ErrSpeechUnsupported, code: FailedPrecondition},
 		{name: "malina invalid request", err: malinamodel.ErrInvalidRequest, code: InvalidArgument},
 		{name: "invalid model id", err: llamamodels.ErrInvalidModelID, code: InvalidArgument},
 		{name: "llama model not found", err: llamamodels.ErrModelNotFound, code: NotFound},

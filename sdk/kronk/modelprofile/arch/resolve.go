@@ -2,6 +2,7 @@ package arch
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
@@ -11,6 +12,25 @@ import (
 // subset required for their operation.
 func Resolve(values map[string]string) modelprofile.Profile {
 	return ResolveForModel(values, "")
+}
+
+// ResolveBundle resolves a backbone with optional projector metadata. A declared
+// audio-generation decoder identifies dedicated speech when the backbone has no
+// chat template or specialized embedding, rerank or decision purpose. This is
+// metadata classification, not confirmation of native runtime support.
+func ResolveBundle(values, projector map[string]string, modelID string) modelprofile.Profile {
+	profile := ResolveForModel(values, modelID)
+	if profile.Role != modelprofile.RoleLanguage || profile.Purpose != modelprofile.PurposeGeneration ||
+		profile.Decision.Type != "" || profile.HasChatTemplate {
+		return profile
+	}
+
+	genAudio, err := strconv.ParseBool(projector["clip.has_gen_audio_encoder"])
+	if err == nil && projector["general.architecture"] == "clip" && genAudio {
+		profile.Purpose = modelprofile.PurposeSpeech
+	}
+
+	return profile
 }
 
 // ResolveForModel resolves model facts using metadata first and the model ID as

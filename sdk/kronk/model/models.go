@@ -63,6 +63,7 @@ type ModelInfo struct {
 	IsEmbedModel       bool
 	IsRerankModel      bool
 	IsDecisionModel    bool
+	IsSpeechModel      bool
 	Metadata           map[string]string
 	Template           Template
 	decisionProtocol   DecisionProtocol
@@ -71,6 +72,7 @@ type ModelInfo struct {
 
 func (mi ModelInfo) String() string {
 	var flags []string
+
 	if mi.HasProjection {
 		flags = append(flags, "projection")
 	}
@@ -82,6 +84,9 @@ func (mi ModelInfo) String() string {
 	}
 	if mi.IsDecisionModel {
 		flags = append(flags, "decision:"+mi.decisionProtocol.String())
+	}
+	if mi.IsSpeechModel {
+		flags = append(flags, "speech")
 	}
 
 	flagStr := "none"
@@ -124,26 +129,48 @@ func toModelInfo(cfg Config, model llama.Model) (ModelInfo, error) {
 	}
 
 	// llama_model_meta_* deliberately omits GGUF arrays. Adapters declare
-	// whether their profile needs those facts restored from the file.
+	// whether their profile needs topology facts restored from the file. An
+	// otherwise generic, untemplated language model also needs file metadata to
+	// distinguish dedicated speech from ordinary generation using general.tags.
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 	profile := arch.ResolveForModel(metadata, modelID)
-	if profile.RequiresFileMetadata {
+
+	needsTags := profile.Role == modelprofile.RoleLanguage && profile.Purpose == modelprofile.PurposeGeneration &&
+		profile.Decision.Type == "" && !profile.HasChatTemplate && metadata["general.tags"] == ""
+
+	if profile.RequiresFileMetadata || needsTags {
 		data, err := gguf.ReadHeaderBytes(cfg.ModelFiles[0])
 		if err != nil {
-			return ModelInfo{}, fmt.Errorf("read %s topology: %w", profile.Architecture, err)
+			return ModelInfo{}, fmt.Errorf("read %s metadata: %w", profile.Architecture, err)
 		}
+
 		fileMetadata, err := gguf.ParseMetadata(data)
+
 		if err != nil {
-			return ModelInfo{}, fmt.Errorf("parse %s topology: %w", profile.Architecture, err)
+			return ModelInfo{}, fmt.Errorf("parse %s metadata: %w", profile.Architecture, err)
 		}
+
 		for key, value := range fileMetadata {
-			if strings.HasPrefix(key, profile.Architecture+".") {
+			if key == "general.tags" || strings.HasPrefix(key, profile.Architecture+".") {
 				if _, exists := metadata[key]; !exists {
 					metadata[key] = value
 				}
 			}
 		}
+
 		profile = arch.ResolveForModel(metadata, modelID)
+	}
+
+	if cfg.ProjFile != "" {
+		data, err := gguf.ReadHeaderBytes(cfg.ProjFile)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("read projector metadata: %w", err)
+		}
+		projector, err := gguf.ParseMetadata(data)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("parse projector metadata: %w", err)
+		}
+		profile = arch.ResolveBundle(metadata, projector, modelID)
 	}
 
 	if llama.ModelIsHybrid(model) {
@@ -165,6 +192,7 @@ func toModelInfo(cfg Config, model llama.Model) (ModelInfo, error) {
 		IsEmbedModel:       decisionProtocol.IsZero() && profile.Purpose == modelprofile.PurposeEmbedding,
 		IsRerankModel:      decisionProtocol.IsZero() && profile.Purpose == modelprofile.PurposeRerank,
 		IsDecisionModel:    !decisionProtocol.IsZero(),
+		IsSpeechModel:      decisionProtocol.IsZero() && profile.Purpose == modelprofile.PurposeSpeech,
 		Metadata:           metadata,
 		decisionProtocol:   decisionProtocol,
 		profile:            profile,

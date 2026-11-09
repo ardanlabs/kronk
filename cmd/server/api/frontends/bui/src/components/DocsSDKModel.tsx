@@ -933,6 +933,7 @@ export default function DocsSDKModel() {
 	IsEmbedModel       bool
 	IsRerankModel      bool
 	IsDecisionModel    bool
+	IsSpeechModel      bool
 	Metadata           map[string]string
 	Template           Template
 
@@ -3245,6 +3246,14 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">ErrMessagesMissing indicates that a chat request has no messages field.</p>
             </div>
+
+            <div className="doc-section" id="var-errspeechunsupported">
+              <h4>ErrSpeechUnsupported</h4>
+              <pre className="code-block">
+                <code>{`var ErrSpeechUnsupported = errors.New("speech generation is not supported")`}</code>
+              </pre>
+              <p className="doc-description">ErrSpeechUnsupported indicates that a detected speech model cannot be served by the current SDK/native runtime or is missing its required decoder.</p>
+            </div>
           </div>
         </div>
 
@@ -3583,6 +3592,7 @@ export default function DocsSDKModel() {
                 <li><a href="#var-errinvalidrequest">ErrInvalidRequest</a></li>
                 <li><a href="#var-errmessagesinvalid">ErrMessagesInvalid</a></li>
                 <li><a href="#var-errmessagesmissing">ErrMessagesMissing</a></li>
+                <li><a href="#var-errspeechunsupported">ErrSpeechUnsupported</a></li>
               </ul>
             </div>
           </div>
