@@ -209,15 +209,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParseMoEMode parses value and returns the corresponding MoEMode when it exists.</p>
             </div>
 
-            <div className="doc-section" id="func-newmodel">
-              <h4>NewModel</h4>
-              <pre className="code-block">
-                <code>func NewModel(ctx context.Context, cfg Config) (*Model, error)</code>
-              </pre>
-              <p className="doc-description">NewModel loads a model from the GGUF files specified in cfg and returns a *Model ready to serve requests. It validates the configuration, builds llama.cpp model parameters, applies NUMA settings, performs the actual GGUF load, computes VRAM/KV diagnostics, retrieves the chat template, and initializes the per-model runtime — either the sequence-batch runtime or context-pool fallback for embed/rerank models, or a batch engine plus parser plugin and optional draft model for generation models.</p>
-              <p className="doc-description">The returned *Model owns the underlying llama.Model, llama.Context, KV memory, batch engine, and (when configured) draft model; release them via Model.Unload when finished.</p>
-            </div>
-
             <div className="doc-section" id="func-parsenumastrategy">
               <h4>ParseNUMAStrategy</h4>
               <pre className="code-block">
@@ -482,6 +473,7 @@ export default function DocsSDKModel() {
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
 	Speculation                SpeculationMode
+	PtrSpeech                  *SpeechConfig
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
 	TensorBuftOverrides        []string
@@ -510,6 +502,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">DecisionProtocol optionally overrides automatic decision-protocol detection. It is useful when a decision model has been renamed and its GGUF metadata does not identify the protocol.</p>
               <p className="doc-description">ChatTemplateKwargs contains model-level defaults passed only to the Jinja chat template. Request-level chat_template_kwargs override matching keys. Resolved first-class request parameters remain top-level template values.</p>
               <p className="doc-description">PtrDraftModel configures a separate speculative-decoding draft model or an nDraft override for an auto-detected MTP head.</p>
+              <p className="doc-description">PtrSpeech optionally overrides speech generation limits. Nil uses speech defaults; providing it does not select or enable the speech runtime.</p>
               <p className="doc-description">Devices is a list of device names to use for model execution. When multiple devices are specified, the model is distributed across them according to the SplitMode and TensorSplit configuration. Device names can be obtained from the output of llama-bench --list-devices (e.g., "CUDA0", "CUDA1", "Metal"). When empty, the default device selection is used.</p>
               <p className="doc-description">PtrFlashAttention controls Flash Attention mode. Flash Attention reduces memory usage and speeds up attention computation, especially for large context windows. When nil, FlashAttentionAuto is used so llama.cpp can decide whether the active backend supports it. Set to FlashAttentionEnabled to force it on, or FlashAttentionDisabled to force it off.</p>
               <p className="doc-description">IMCSessionCapacity sets the number of reusable IMC session identities. When left unset or set to 0, generation models default to NSeqMax * QueueDepth. An explicit value must be at least that large so every admitted generation request can reserve a session.</p>
@@ -1276,6 +1269,43 @@ export default function DocsSDKModel() {
               <p className="doc-description">SpeculationMode selects the speculative-decoding implementation for a model.</p>
             </div>
 
+            <div className="doc-section" id="type-speechconfig">
+              <h4>SpeechConfig</h4>
+              <pre className="code-block">
+                <code>{`type SpeechConfig struct {
+	// MaxFrames limits generated speech frames. Zero uses 512. The initial
+	// supported range is 1 through 512. Frames are model-specific units, not
+	// samples or seconds. Exhausting the limit fails the request rather than
+	// returning successful truncated audio.
+	MaxFrames int
+}`}</code>
+              </pre>
+              <p className="doc-description">SpeechConfig configures speech generation limits. It does not select the model's runtime; speech models are identified from their model bundle.</p>
+            </div>
+
+            <div className="doc-section" id="type-speechrequest">
+              <h4>SpeechRequest</h4>
+              <pre className="code-block">
+                <code>{`type SpeechRequest struct {
+	Input string // Text to speak.
+	Voice string // Preset voice name; empty selects the model's default voice.
+}`}</code>
+              </pre>
+              <p className="doc-description">SpeechRequest supplies text and an optional preset voice for speech generation.</p>
+            </div>
+
+            <div className="doc-section" id="type-speechresponse">
+              <h4>SpeechResponse</h4>
+              <pre className="code-block">
+                <code>{`type SpeechResponse struct {
+	Audio      []byte // Complete WAV file, including its header.
+	SampleRate int32  // Samples per second.
+	Samples    int64  // Audio sample count, excluding the WAV header.
+}`}</code>
+              </pre>
+              <p className="doc-description">SpeechResponse contains a complete PCM16 little-endian mono WAV. Audio is caller-owned and remains valid after subsequent requests or model unload.</p>
+            </div>
+
             <div className="doc-section" id="type-splitmode">
               <h4>SplitMode</h4>
               <pre className="code-block">
@@ -1736,6 +1766,14 @@ export default function DocsSDKModel() {
                 <code>func (cfg Config) SpeculationMode() SpeculationMode</code>
               </pre>
               <p className="doc-description">SpeculationMode returns the selected speculative-decoding implementation. The zero value preserves automatic selection.</p>
+            </div>
+
+            <div className="doc-section" id="method-config-speechmaxframes">
+              <h4>Config.SpeechMaxFrames</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) SpeechMaxFrames() int</code>
+              </pre>
+              <p className="doc-description">SpeechMaxFrames returns the speech frame limit. An unset or zero limit defaults to 512. Model loading rejects limits outside 1 through 512.</p>
             </div>
 
             <div className="doc-section" id="method-config-string">
@@ -3236,7 +3274,6 @@ export default function DocsSDKModel() {
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
                 <li><a href="#func-parsemediatype">ParseMediaType</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
-                <li><a href="#func-newmodel">NewModel</a></li>
                 <li><a href="#func-parsenumastrategy">ParseNUMAStrategy</a></li>
                 <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsespeculationmode">ParseSpeculationMode</a></li>
@@ -3311,6 +3348,9 @@ export default function DocsSDKModel() {
                 <li><a href="#type-result">Result</a></li>
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
                 <li><a href="#type-speculationmode">SpeculationMode</a></li>
+                <li><a href="#type-speechconfig">SpeechConfig</a></li>
+                <li><a href="#type-speechrequest">SpeechRequest</a></li>
+                <li><a href="#type-speechresponse">SpeechResponse</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-statemachine">StateMachine</a></li>
                 <li><a href="#type-statemachineflusher">StateMachineFlusher</a></li>
@@ -3368,6 +3408,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-ropefreqscale">Config.RopeFreqScale</a></li>
                 <li><a href="#method-config-swafull">Config.SWAFull</a></li>
                 <li><a href="#method-config-speculationmode">Config.SpeculationMode</a></li>
+                <li><a href="#method-config-speechmaxframes">Config.SpeechMaxFrames</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
                 <li><a href="#method-config-vramweightloading">Config.VRAMWeightLoading</a></li>
                 <li><a href="#method-config-yarnattnfactor">Config.YarnAttnFactor</a></li>

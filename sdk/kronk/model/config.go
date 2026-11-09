@@ -192,6 +192,9 @@ type AdapterConfig struct {
 // PtrDraftModel configures a separate speculative-decoding draft model or an
 // nDraft override for an auto-detected MTP head.
 //
+// PtrSpeech optionally overrides speech generation limits. Nil uses speech
+// defaults; providing it does not select or enable the speech runtime.
+//
 // Devices is a list of device names to use for model execution. When multiple
 // devices are specified, the model is distributed across them according to the
 // SplitMode and TensorSplit configuration. Device names can be obtained from
@@ -444,6 +447,7 @@ type Config struct {
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
 	Speculation                SpeculationMode
+	PtrSpeech                  *SpeechConfig
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
 	TensorBuftOverrides        []string
@@ -464,6 +468,16 @@ func (cfg Config) AdmissionTimeout() time.Duration {
 	}
 	return *cfg.PtrAdmissionTimeout
 }
+
+// SpeechMaxFrames returns the speech frame limit. An unset or zero limit
+// defaults to 512. Model loading rejects limits outside 1 through 512.
+func (cfg Config) SpeechMaxFrames() int {
+	if cfg.PtrSpeech == nil || cfg.PtrSpeech.MaxFrames == 0 {
+		return 512
+	}
+	return cfg.PtrSpeech.MaxFrames
+}
+
 func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) }
 func (cfg Config) IMCSessionCapacity() int { return intOr(cfg.PtrIMCSessionCapacity, 0) }
 func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
@@ -636,6 +650,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 	if cfg.QueueDepth() < 0 {
 		return fmt.Errorf("validate-config: queue depth must be >= 0, got %d", cfg.QueueDepth())
+	}
+
+	if n := cfg.SpeechMaxFrames(); n < 1 || n > 512 {
+		return fmt.Errorf("validate-config: speech max frames must be between 1 and 512, got %d", n)
 	}
 
 	if cfg.IMCSessionCapacity() < 0 {
@@ -873,6 +891,19 @@ func adjustIMCSessionCapacity(cfg Config, pooled bool) Config {
 	return cfg
 }
 
+// adjustThreads resolves shared thread defaults before either capability
+// discovery or runtime initialization creates native contexts.
+func adjustThreads(cfg Config) Config {
+	nThreads := max(defNThreads, runtime.GOMAXPROCS(0))
+	if cfg.NThreads() <= 0 {
+		cfg.PtrNThreads = new(nThreads)
+	}
+	if cfg.NThreadsBatch() <= 0 {
+		cfg.PtrNThreadsBatch = new(nThreads)
+	}
+	return cfg
+}
+
 func adjustConfig(cfg Config, model llama.Model, pooled bool) Config {
 	cfg = adjustQueueDepth(cfg)
 	cfg = adjustAdmissionTimeout(cfg)
@@ -907,14 +938,7 @@ func adjustConfig(cfg Config, model llama.Model, pooled bool) Config {
 		cfg = adjustGenerationBatch(cfg, 1, false)
 	}
 
-	nThreads := max(defNThreads, runtime.GOMAXPROCS(0))
-	if cfg.NThreads() <= 0 {
-		cfg.PtrNThreads = new(nThreads)
-	}
-
-	if cfg.NThreadsBatch() <= 0 {
-		cfg.PtrNThreadsBatch = new(nThreads)
-	}
+	cfg = adjustThreads(cfg)
 
 	// IMC is enabled by default.
 	if cfg.PtrIncrementalCache == nil {
@@ -1329,6 +1353,10 @@ func WithChatTemplateKwargs(v D) Option {
 
 func WithDevices(v []string) Option             { return func(c *Config) { c.Devices = v } }
 func WithDraftModel(v *DraftModelConfig) Option { return func(c *Config) { c.PtrDraftModel = v } }
+
+// WithSpeech overrides speech generation limits without selecting a model runtime.
+// Nil uses the default limits.
+func WithSpeech(v *SpeechConfig) Option { return func(c *Config) { c.PtrSpeech = v } }
 
 func WithFlashAttention(v FlashAttentionType) Option {
 	return func(c *Config) { c.PtrFlashAttention = new(v) }

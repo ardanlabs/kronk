@@ -20,6 +20,38 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
+func TestSpeechConfiguration(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		speech *SpeechConfig
+		want   int
+	}{
+		{"unset", nil, 512},
+		{"zero defaults", &SpeechConfig{}, 512},
+		{"minimum", &SpeechConfig{MaxFrames: 1}, 1},
+		{"custom", &SpeechConfig{MaxFrames: 137}, 137},
+		{"ceiling", &SpeechConfig{MaxFrames: 512}, 512},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig(WithSpeech(tt.speech), WithNSeqMax(2))
+			if got := cfg.SpeechMaxFrames(); got != tt.want {
+				t.Errorf("SpeechMaxFrames: got %d, want %d", got, tt.want)
+			}
+			if got := cfg.NSeqMax(); got != 2 {
+				t.Errorf("NSeqMax: got %d, want 2", got)
+			}
+		})
+	}
+
+	for _, limit := range []int{-1, 513} {
+		cfg := NewConfig(WithModelFiles([]string{"speech.gguf"}), WithSpeech(&SpeechConfig{MaxFrames: limit}))
+		err := validateConfig(t.Context(), cfg, nil)
+		if err == nil || !strings.Contains(err.Error(), "speech max frames") {
+			t.Errorf("MaxFrames %d: got %v, want speech frame limit error", limit, err)
+		}
+	}
+}
+
 func TestLazyReservationDeviceSelection(t *testing.T) {
 	devs := devices.Devices{MMapSupported: true, Devices: []devices.DeviceInfo{
 		{Name: "MTL0", Type: "gpu_metal", HardwareType: "GPU", MMapSupported: true},
