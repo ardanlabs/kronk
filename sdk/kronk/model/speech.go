@@ -8,6 +8,9 @@ var ErrSpeechUnsupported = errors.New("speech generation is not supported")
 
 // SpeechConfig configures speech generation limits. It does not select the
 // model's runtime; speech models are identified from their model bundle.
+// The initial runtime uses 2,048 context tokens per sequence, 512-token logical
+// and physical batches, and partitioned F16 KV cache. Incompatible overrides,
+// IMC, speculative decoding, and adapters are rejected during model loading.
 type SpeechConfig struct {
 	// MaxFrames limits generated speech frames. Zero uses 512. The initial
 	// supported range is 1 through 512. Frames are model-specific units, not

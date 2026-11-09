@@ -1281,7 +1281,7 @@ export default function DocsSDKModel() {
 	MaxFrames int
 }`}</code>
               </pre>
-              <p className="doc-description">SpeechConfig configures speech generation limits. It does not select the model's runtime; speech models are identified from their model bundle.</p>
+              <p className="doc-description">SpeechConfig configures speech generation limits. It does not select the model's runtime; speech models are identified from their model bundle. The initial runtime uses 2,048 context tokens per sequence, 512-token logical and physical batches, and partitioned F16 KV cache. Incompatible overrides, IMC, speculative decoding, and adapters are rejected during model loading.</p>
             </div>
 
             <div className="doc-section" id="type-speechrequest">

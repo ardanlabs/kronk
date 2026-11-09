@@ -197,6 +197,7 @@ type Model struct {
 	adapterScales    []float32
 	batch            *batchEngine
 	decision         *decisionEngine
+	speech           *speechEngine
 	protocol         decision.Protocol
 	template         Template
 	compiledTmpl     *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
@@ -230,8 +231,8 @@ type Model struct {
 // runtime configuration, VRAM/KV diagnostics, and the chat template.
 // It then initializes the per-model runtime —
 // either the sequence-batch runtime or context-pool fallback for embed/rerank
-// models, or a batch engine plus parser plugin and optional draft model for
-// generation models.
+// models, a dedicated speech runtime, or a batch engine plus parser plugin and
+// optional draft model for generation models.
 //
 // The returned *Model owns the underlying llama.Model, llama.Context, KV
 // memory, batch engine, and (when configured) draft model; release them
@@ -356,9 +357,14 @@ func NewModel(ctx context.Context, cfg Config) (_ *Model, err error) {
 			return nil, fmt.Errorf("load speech model %q: native audio-generation capabilities are unavailable: %w", modelInfo.ID, ErrSpeechUnsupported)
 		case !m.mtmdCapabilities.AudioGen:
 			return nil, fmt.Errorf("load speech model %q: native bundle does not support audio generation: %w", modelInfo.ID, ErrSpeechUnsupported)
-		default:
-			return nil, fmt.Errorf("load speech model %q: SDK speech engine is not implemented yet: %w", modelInfo.ID, ErrSpeechUnsupported)
 		}
+		m.modelInfo = modelInfo
+		if err := initSpeechRuntime(ctx, &m); err != nil {
+			return nil, fmt.Errorf("load speech model %q: %w", modelInfo.ID, err)
+		}
+		metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
+		loaded = true
+		return &m, nil
 	}
 
 	// All model/bundle capabilities are now available for runtime selection.
@@ -1380,6 +1386,13 @@ func (m *Model) Unload(ctx context.Context) error {
 		poolErr = m.pool.close()
 	}
 
+	// Speech helpers borrow both the primary context and shared decoder.
+	// Release them and their voice conditioning before either context is freed.
+	if m.speech != nil {
+		m.speech.free()
+		m.speech = nil
+	}
+
 	// Free the primary generation, decision, or sequence-batch context if it
 	// exists. Its owner goroutine and reusable batch are already gone.
 	var batchSeqContextErr error
@@ -1480,9 +1493,9 @@ type InputCapabilities struct {
 func (m *Model) InputCapabilities() InputCapabilities {
 	return InputCapabilities{
 		Available: m.mtmdCapsKnown,
-		Chat:      m.mtmdCapabilities.Chat && !m.modelInfo.IsEmbedModel && !m.modelInfo.IsRerankModel && !m.modelInfo.IsDecisionModel,
-		Vision:    m.mtmdCapabilities.Vision,
-		Audio:     m.mtmdCapabilities.Audio,
+		Chat:      m.mtmdCapabilities.Chat && !m.modelInfo.IsEmbedModel && !m.modelInfo.IsRerankModel && !m.modelInfo.IsDecisionModel && !m.modelInfo.IsSpeechModel,
+		Vision:    m.mtmdCapabilities.Vision && !m.modelInfo.IsSpeechModel,
+		Audio:     m.mtmdCapabilities.Audio && !m.modelInfo.IsSpeechModel,
 	}
 }
 
