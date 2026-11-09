@@ -890,6 +890,12 @@ export default function DocsSDKModel() {
 	// context, shared across GPUs. Zero uses llama.cpp's default (disabled).
 	// Original host weights remain resident. Ignored for non-MoE models.
 	PtrCacheSize *int64 \`yaml:"cache-size,omitempty"\`
+
+	// PtrCacheCPUShare sets the experimental fraction of GPU expert-cache misses
+	// computed on CPU instead of uploaded once the cache is full. Values must be
+	// finite and between 0 and 1. Unset or zero uploads all misses. This does not
+	// reduce the cache-size budget. Ignored without an active MoE expert cache.
+	PtrCacheCPUShare *float32 \`yaml:"cache-cpu-share,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">MoEConfig configures Mixture of Experts tensor placement. When nil, no MoE-specific behavior is applied.</p>
@@ -1634,6 +1640,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) MainGPU() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-moecachecpushare">
+              <h4>Config.MoECacheCPUShare</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) MoECacheCPUShare() float32</code>
+              </pre>
+              <p className="doc-description">MoECacheCPUShare returns the fraction of expert-cache misses computed on CPU. Unset or zero uploads all misses; the cache must be full before sharing starts.</p>
             </div>
 
             <div className="doc-section" id="method-config-moecachesize">
@@ -3341,6 +3355,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-insecurelogging">Config.InsecureLogging</a></li>
                 <li><a href="#method-config-kvcachemode">Config.KVCacheMode</a></li>
                 <li><a href="#method-config-maingpu">Config.MainGPU</a></li>
+                <li><a href="#method-config-moecachecpushare">Config.MoECacheCPUShare</a></li>
                 <li><a href="#method-config-moecachesize">Config.MoECacheSize</a></li>
                 <li><a href="#method-config-ngpulayers">Config.NGpuLayers</a></li>
                 <li><a href="#method-config-nseqmax">Config.NSeqMax</a></li>

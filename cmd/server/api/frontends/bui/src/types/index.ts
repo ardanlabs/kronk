@@ -224,6 +224,7 @@ export interface ModelConfig {
     mode: string;
     'keep-experts-top-n'?: number | null;
     'cache-size'?: number | null;
+    'cache-cpu-share'?: number | null;
   };
 
   // NUMA configuration for multi-socket systems.
@@ -300,6 +301,7 @@ export interface VRAMInput {
   gpu_layers: number;
   expert_layers_on_gpu: number;
   moe_cache_size?: number;
+  moe_cache_cpu_share?: number;
   kv_cache_on_cpu?: boolean;
   swa_full: boolean;
 }
@@ -747,6 +749,7 @@ export interface VRAMRequest {
   gpu_layers?: number;
   expert_layers_on_gpu?: number;
   moe_cache_size?: number;
+  moe_cache_cpu_share?: number;
   kv_cache_on_cpu?: boolean;
   swa_full?: boolean;
   device_count?: number;

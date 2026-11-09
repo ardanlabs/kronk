@@ -12,6 +12,35 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
+func TestMoECacheCPUShareYAML(t *testing.T) {
+	var cfg ModelConfig
+	if err := yaml.Unmarshal([]byte("moe:\n  mode: experts_cpu\n  cache-size: 1073741824\n  cache-cpu-share: 0.25\n"), &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for _, share := range []float32{0.25, 0} {
+		if share == 0 {
+			MergeModelConfig(&cfg, ModelConfig{MoE: &model.MoEConfig{
+				Mode: model.MoEModeExpertsCPU, PtrCacheSize: new(int64(1 << 30)), PtrCacheCPUShare: new(share),
+			}})
+		}
+		data, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		var restored ModelConfig
+		if err := yaml.Unmarshal(data, &restored); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+		resolved := restored.ToKronkConfig()
+		if restored.MoE.PtrCacheCPUShare == nil || resolved.MoECacheCPUShare() != share {
+			t.Errorf("CPU share: got %v, want explicit %v", restored.MoE.PtrCacheCPUShare, share)
+		}
+		if got := resolved.MoECacheSize(); got != 1<<30 {
+			t.Errorf("cache budget: got %d, want %d", got, 1<<30)
+		}
+	}
+}
+
 func TestKronkResolvedConfigBasePath(t *testing.T) {
 	basePath := t.TempDir()
 	t.Setenv("KRONK_BASE_PATH", t.TempDir())

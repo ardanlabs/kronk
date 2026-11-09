@@ -3,6 +3,7 @@ package toolapp
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -332,6 +333,10 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "moe_cache_size must be >= 0")
 	}
 
+	if share := req.MoECacheCPUShare; math.IsNaN(float64(share)) || math.IsInf(float64(share), 0) || share < 0 || share > 1 {
+		return errs.Errorf(errs.InvalidArgument, "moe_cache_cpu_share must be finite and between 0 and 1")
+	}
+
 	slots := max(req.Slots, 1)
 	var configuredSWAFull *bool
 	var nUBatch int64
@@ -403,6 +408,8 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	resp := toVRAMResponse(v, repoFiles)
+	// CPU share is execution tuning for config export, not a memory discount.
+	resp.Input.MoECacheCPUShare = req.MoECacheCPUShare
 	resp.AutoFitSucceeded = autoFitSucceeded
 	if req.GPUCapacity > 0 || len(req.GPUFreeBytes) > 0 || req.SystemRAMBytes > 0 {
 		assessment := toFitAssessment(vram.AssessFit(v, vram.FitConstraints{
@@ -530,6 +537,7 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 	var vramResp *VRAMResponse
 	if v, err := a.models.CalculateVRAM(modelID, vramConfigFromRMC(rmc)); err == nil {
 		vr := toVRAMResponse(v, nil)
+		vr.Input.MoECacheCPUShare = rmc.ToKronkConfig().MoECacheCPUShare()
 		vramResp = &vr
 	} else {
 		a.log.Info(ctx, "show-model: calculate-vram", "ERROR", err)

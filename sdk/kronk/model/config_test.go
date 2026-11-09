@@ -213,6 +213,45 @@ func TestMoEModeYAML(t *testing.T) {
 	}
 }
 
+func TestMoECacheCPUShare(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		share   *float32
+		wantErr bool
+	}{
+		{"unset", nil, false},
+		{"zero", new(float32(0)), false},
+		{"fraction", new(float32(0.25)), false},
+		{"one", new(float32(1)), false},
+		{"negative", new(float32(-0.01)), true},
+		{"above one", new(float32(1.01)), true},
+		{"NaN", new(float32(math.NaN())), true},
+		{"positive infinity", new(float32(math.Inf(1))), true},
+		{"negative infinity", new(float32(math.Inf(-1))), true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig(WithModelFiles([]string{"dummy.gguf"}), WithMoE(&MoEConfig{
+				PtrCacheSize: new(int64(1 << 30)), PtrCacheCPUShare: tt.share,
+			}))
+			if err := validateConfig(t.Context(), cfg, func(context.Context, string, ...any) {}); (err != nil) != tt.wantErr {
+				t.Fatalf("validateConfig() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				var want float32
+				if tt.share != nil {
+					want = *tt.share
+				}
+				if got := cfg.MoECacheCPUShare(); got != want {
+					t.Errorf("MoECacheCPUShare: got %v, want %v", got, want)
+				}
+				if got := cfg.MoECacheSize(); got != 1<<30 {
+					t.Errorf("MoECacheSize: got %d, want %d", got, 1<<30)
+				}
+			}
+		})
+	}
+}
+
 func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	cfg := Config{
 		AutoTune:         true,

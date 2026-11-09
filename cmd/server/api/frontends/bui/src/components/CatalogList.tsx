@@ -465,6 +465,7 @@ export default function CatalogList() {
     initialContextWindow: 131072,
     initialBytesPerElement: 2,
     serverResponse: effectiveVram ?? null,
+    configuredMoECacheCPUShare: modelInfo?.model_config?.moe?.['cache-cpu-share'],
     modelId: useLocalModel ? modelInfo?.id : undefined,
     modelUrls: !useLocalModel ? catalogModelUrls : undefined,
   });

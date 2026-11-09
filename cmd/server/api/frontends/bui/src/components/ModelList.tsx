@@ -71,6 +71,7 @@ export default function ModelList() {
     initialContextWindow: 131072,
     initialBytesPerElement: 2,
     serverResponse: vramServerResponse,
+    configuredMoECacheCPUShare: modelInfo?.model_config?.moe?.['cache-cpu-share'],
     modelId: selectedModelId ?? undefined,
   });
   const contextInfo = extractContextInfo(modelInfo?.metadata);

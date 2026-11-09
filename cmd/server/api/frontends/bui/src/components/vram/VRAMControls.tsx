@@ -232,6 +232,8 @@ interface VRAMControlsProps {
   onExpertLayersOnGPUChange?: (v: number) => void;
   moeCacheSize?: number;
   onMoECacheSizeChange?: (v: number) => void;
+  moeCacheCPUShare?: number;
+  onMoECacheCPUShareChange?: (v: number) => void;
   kvCacheOnCPU?: boolean;
   onKvCacheOnCPUChange?: (v: boolean) => void;
   hasSWA?: boolean;
@@ -277,6 +279,7 @@ export default function VRAMControls({
   gpuLayers, onGpuLayersChange,
   expertLayersOnGPU, onExpertLayersOnGPUChange,
   moeCacheSize, onMoECacheSizeChange,
+  moeCacheCPUShare, onMoECacheCPUShareChange,
   kvCacheOnCPU, onKvCacheOnCPUChange,
   hasSWA, swaFull, onSwaFullChange,
   deviceCount, onDeviceCountChange,
@@ -342,6 +345,25 @@ export default function VRAMControls({
     onGpuLayersChange?.(v);
     onExpertLayersOnGPUChange?.(Math.max(0, v - 1));
   };
+
+  const moeCacheCPUShareControl = isMoE && (
+    <div className={variant === 'compact' ? 'control-field' : 'playground-sweep-param'}>
+      <FieldLabel htmlFor={`vram-${variant}-moe-cache-cpu-share`} tooltipKey="moeCacheCPUShare">MoE Cache CPU Share (0–1)</FieldLabel>
+      <input
+        id={`vram-${variant}-moe-cache-cpu-share`}
+        type="number"
+        min="0"
+        max="1"
+        step="any"
+        value={moeCacheCPUShare ?? 0}
+        onChange={(e) => {
+          const value = e.target.valueAsNumber;
+          if (Number.isFinite(value) && value >= 0 && value <= 1) onMoECacheCPUShareChange?.(value);
+        }}
+        className={variant === 'compact' ? 'form-input' : 'playground-sweep-param-values'}
+      />
+    </div>
+  );
 
   const moeCacheControl = isMoE && (
     <div className={variant === 'compact' ? 'control-field' : 'playground-sweep-param'}>
@@ -414,6 +436,7 @@ export default function VRAMControls({
             </select>
           </div>
           {moeCacheControl}
+          {moeCacheCPUShareControl}
           {layoutControl}
           <CompactAdvancedToggle
             open={compactAdvancedOpen}
@@ -531,6 +554,7 @@ export default function VRAMControls({
       </div>
 
       {moeCacheControl}
+      {moeCacheCPUShareControl}
 
       {showHardwareOverrides && (
         <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--color-gray-200)', paddingTop: '16px', marginTop: '8px' }}>

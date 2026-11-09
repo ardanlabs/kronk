@@ -10,6 +10,8 @@ export interface UseVRAMStateOptions {
   initialSlots?: number;
   /** When provided, the hook seeds controls from this response (used by embedded views). */
   serverResponse?: VRAMCalculatorResponse | null;
+  /** Model configuration fallback when the seed response omits the CPU share. */
+  configuredMoECacheCPUShare?: number | null;
   /** When true, enables custom GPU memory, system RAM, and GPU count overrides (standalone calculator only). */
   enableHardwareOverrides?: boolean;
   /** HuggingFace URL to use for incremental recomputes (catalog / standalone). */
@@ -63,6 +65,8 @@ export interface VRAMControlsState {
   onExpertLayersOnGPUChange: (v: number) => void;
   moeCacheSize: number;
   onMoECacheSizeChange: (v: number) => void;
+  moeCacheCPUShare: number;
+  onMoECacheCPUShareChange: (v: number) => void;
   kvCacheOnCPU: boolean;
   onKvCacheOnCPUChange: (v: boolean) => void;
   hasSWA: boolean;
@@ -163,6 +167,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     initialBytesPerElement = 2,
     initialSlots = 1,
     serverResponse,
+    configuredMoECacheCPUShare,
     enableHardwareOverrides = false,
     modelUrl,
     modelUrls,
@@ -181,6 +186,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   // slider then drives real 0..blockCount values.
   const [expertLayersOnGPU, setExpertLayersOnGPU] = useState<number>(EXPERTS_ALL_ON_GPU);
   const [moeCacheSize, setMoECacheSize] = useState(0);
+  const [moeCacheCPUShare, setMoECacheCPUShare] = useState(0);
   const [kvCacheOnCPU, setKvCacheOnCPU] = useState(false);
   const [swaFull, setSwaFull] = useState(true);
   const [deviceCount, setDeviceCount] = useState(1);
@@ -254,9 +260,10 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       setGpuLayers(gpuLayersForControl(input.gpu_layers, input.block_count));
       setExpertLayersOnGPU(input.expert_layers_on_gpu);
       setMoECacheSize(input.moe_cache_size ?? 0);
+      setMoECacheCPUShare(input.moe_cache_cpu_share ?? configuredMoECacheCPUShare ?? 0);
       setSwaFull(input.swa_full ?? true);
     }
-  }, [serverResponse]);
+  }, [serverResponse, configuredMoECacheCPUShare]);
 
   const parsedTensorSplit = useMemo(() => {
     if (!tensorSplit) return [];
@@ -325,6 +332,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
         gpu_layers: gpuLayers === 0 ? -1 : gpuLayers,
         expert_layers_on_gpu: expertLayersOnGPU,
         moe_cache_size: moeCacheSize,
+        moe_cache_cpu_share: moeCacheCPUShare,
         kv_cache_on_cpu: kvCacheOnCPU,
         swa_full: swaFull,
         device_count: effectiveDeviceCount,
@@ -358,7 +366,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   }, [
     modelUrl, modelUrls, modelId,
     contextWindow, bytesPerElement, slots, kvCacheMode,
-    gpuLayers, expertLayersOnGPU, moeCacheSize, kvCacheOnCPU, swaFull,
+    gpuLayers, expertLayersOnGPU, moeCacheSize, moeCacheCPUShare, kvCacheOnCPU, swaFull,
     effectiveDeviceCount, parsedTensorSplit, effectiveGpuDevices,
     effectiveGpuTotalBytes, effectiveSystemRAMBytes, isUnifiedMemory,
   ]);
@@ -389,6 +397,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       kv_cache_mode: kvCacheMode,
       kv_cache_on_cpu: kvCacheOnCPU,
       moe_cache_size: moeCacheSize,
+      moe_cache_cpu_share: moeCacheCPUShare,
       swa_full: swaFull,
       device_count: fitDeviceCount,
       tensor_split: parsedTensorSplit.length > 0 ? parsedTensorSplit : undefined,
@@ -424,7 +433,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     liveResponse, serverResponse, modelUrl, modelUrls, modelId,
     recomputing, isUnifiedMemory, effectiveSystemRAMBytes, effectiveDeviceCount,
     effectiveGpuDevices, effectiveGpuTotalBytes, contextWindow,
-    bytesPerElement, slots, kvCacheMode, moeCacheSize, kvCacheOnCPU, swaFull, parsedTensorSplit,
+    bytesPerElement, slots, kvCacheMode, moeCacheSize, moeCacheCPUShare, kvCacheOnCPU, swaFull, parsedTensorSplit,
   ]);
 
   // ── Derived view ────────────────────────────────────────────────────────
@@ -457,6 +466,8 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     onExpertLayersOnGPUChange: setExpertLayersOnGPU,
     moeCacheSize,
     onMoECacheSizeChange: setMoECacheSize,
+    moeCacheCPUShare,
+    onMoECacheCPUShareChange: setMoECacheCPUShare,
     kvCacheOnCPU,
     onKvCacheOnCPUChange: setKvCacheOnCPU,
     hasSWA,
