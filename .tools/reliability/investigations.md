@@ -11,8 +11,8 @@ when the investigation calls for a different selection.
 [coverage.csv](coverage.csv) shows coverage labels;
 [coverage.md](coverage.md) defines contracts, fixtures, execution phases and
 limits. [selection.go](selection.go) determines what is actually selectable.
-If these disagree, report the discrepancy before promising a run. This guide
-does not make an unavailable fixture available or turn a historical FAIL into PASS.
+If these disagree, report the discrepancy before promising a run. Availability
+and qualification are separate; use the current status in the coverage reference.
 
 For agent-assisted planning and evidence analysis, use the project skill
 [`probing-kronk`](../../.agents/skills/probing-kronk/SKILL.md).
@@ -81,9 +81,10 @@ Prefer the alternate target/backend when the failure or changed code makes that
 distinction material. **Do not silently substitute one for the other.**
 
 The eight Dense Hybrid text-state/batch-text overlap alternatives are directly
-mapped to Qwen3.8-27B Q6, but still await inference qualification. Text-state uses
-one slot and three recovery cycles; batch-text uses four conversations on two
-slots, retaining the 21-turn/30K history and scheduling-evidence contract.
+mapped to Qwen3.8-27B Q6. Text-state uses one slot and three recovery cycles;
+batch-text uses four conversations on two slots, retaining the 21-turn/30K
+history and scheduling-evidence contract. Only the IMC+/MTP+ batch alternative
+is qualified; text-state and the other batch modes remain pending.
 Choose them for target-specific recovery, reuse, native execution or companion
 interactions, not as proven equivalents to the MoE representatives. Commands
 are listed under runnable alternatives below.
@@ -103,13 +104,13 @@ drafting interaction selections when MTP is implicated.
 | --- | --- | --- | --- |
 | **Text state** | Wrong/stale answer after reuse, append or cancellation; IMC/state ownership changes | `text-state`, Hybrid + Attention-only, IMC off/on, MTP off. For sustained interference add text load. | Concurrent-session isolation or companion-target state coverage. |
 | **Hybrid image state** | Image/text contamination, replay/append reuse, cancellation/recovery; multimodal state changes | `image-state`, same-slot Hybrid MoE, IMC off/on. For companion target use the explicit alternate below. | Image-history pressure or prefill responsiveness. |
-| **Attention image state** | Attention-only image recovery or template compatibility | `image-state`, same-slot Attention-only, IMC off/on. Gemma E4B QAT is qualified in both modes and slot configurations. | Ministral template compatibility or concurrent image-session isolation. |
+| **Attention image state** | Attention-only image recovery or template compatibility | `image-state`, same-slot Attention-only, IMC off/on. Gemma E4B QAT is qualified in both modes and slot configurations. | Other templates' compatibility or concurrent image-session isolation. |
 | **Context retrieval** | Lost/foreign markers as history grows; context/IMC changes | `long-context`, Hybrid + Attention-only, IMC off/on. Add text load for simultaneous growing sessions. | Overflow limits or concurrent long-context retrieval. |
 | **Hybrid prefill** | Text stalls when an image arrives; shared/isolated preparation changes | `image-prefill`, Hybrid MoE, IMC off/on; includes automatically required forced phases. Companion alternative below. | Subject correctness, cancellation or all-slot saturation. |
 | **Attention prefill** | Attention-only image arrival/progress; native-isolated or IMC preparation changes | `image-prefill`, Attention-only, IMC off/on. Uses Qwen2.5-VL, not the Gemma image-state fixture. | Attention image-state reuse. |
 | **Hybrid text load** | Queue/stream progress, cross-session contamination, long-running reuse or MTP interactions | `batch-text`, Hybrid MoE, all four MTP/IMC modes. Select the implicated pair first for a narrow bug. | Same-slot recovery or attribution of a slowdown to a single feature by itself. |
-| **Attention text load** | Ordinary attention state isolation/reuse under growing concurrent histories | `batch-text`, Attention-only, IMC off/on, MTP off. Qwen2.5-VL has historical five-conversation qualification; revised eight-conversation contract awaits revalidation. | Vision correctness merely because the fixture can accept images. |
-| **Image history load** | Subject switch, stale image/history state, growing IMC image prefix or image batch overlap | `batch-images`, Hybrid MoE, all four MTP/IMC modes. IMC/MTP on passed the revised contract; historical FAIL and history duplication remain separate evidence. | Recovery after cancellation, absence of duplicated decoding or universal scheduling guarantees. |
+| **Attention text load** | Ordinary attention state isolation/reuse under growing concurrent histories | `batch-text`, Attention-only, IMC off/on, MTP off. Qwen2.5-VL's eight-conversation contract is qualified in both modes. | Vision correctness merely because the fixture can accept images. |
+| **Image history load** | Subject switch, stale image/history state, growing IMC image prefix or image batch overlap | `batch-images`, Hybrid MoE, all four MTP/IMC modes qualified; IMC history duplication remains unresolved. | Recovery after cancellation, absence of duplicated decoding or universal scheduling guarantees. |
 | **Embedded drafting** | Drafting stops, corrupts values/session identity or fails recovery; embedded MTP changes | `mtp-embedded`, many slots, MTP off/on × IMC off/on. Use one-slot variation for serial paths. | Appended-history reuse or every-slot generation overlap. |
 | **Companion drafting** | Own-KV/companion state, loading or recovery concerns; companion MTP changes | `mtp-companion`, same contrasts as embedded, on the companion target. | Equivalent results to the embedded fixture or classic full-drafter coverage. |
 | **Drafting + state/images** | Failure requires both speculation and reuse/cancellation or image input | MTP-on `text-state` / `image-state` additions below, alongside relevant off-mode package. For response stalls add MTP-on prefill. | Every backend's state interaction; Dense text-state mapping remains pending. |
@@ -179,15 +180,9 @@ claimed here. Do not infer same-slot companion coverage from the many-slot runs.
 
 ### Attention image state
 
-This selects Gemma E4B QAT, qualified in both IMC modes with one and two slots:
-three cycles per combination passed image/text correctness, cancellation,
-slot release and recovery. IMC-on replay/append requests reused 174 tokens
-in every cycle; IMC-off controls reported zero. See the capture and qualification
-boundary in [coverage.md](coverage.md#selected-fixtures).
-Use IMC-off as the state/answer control and IMC-on to exercise replay/append
-reuse as well. Nslot forms are also available and qualified.
-The previous Ministral fixture passed IMC-off but its template caused uncached
-fallback with IMC on. Gemma qualification does not fix or clear that limitation.
+Gemma E4B QAT is qualified with one and two slots in both IMC modes. Use IMC-off
+as the state/answer control and IMC-on for replay/append reuse. This does not
+establish IMC compatibility for other models or templates.
 
 ```sh copy Copy Attention Image State Command
 make test-load-image-state \
@@ -242,10 +237,9 @@ equivalent is `-image-prefill-max-generation-gap 1s`. Even explicitly choosing
 the default duration opts into failure on excess. A more permissive hard limit
 does not suppress the one-second UX warning.
 
-**Optional unqualified alternative:** the selector maps the companion target's
-shared/IMC prefill path, but these CSV cells are blank, not selected covered
-contracts. Use the following only when that target/path is material to the
-investigation; treat its inference run as qualification as well as investigation.
+**Optional alternative:** the selector maps the companion target's shared/IMC
+prefill path, but these CSV cells are blank, not selected covered contracts.
+Use it when that target/path matters; qualification is specific to the selected modes.
 It does not include the oversized Qwen3.6 phases. Do not present it as equivalent
 to the selected/qualified Hybrid MoE package above.
 
@@ -275,45 +269,16 @@ Text and image load use eight conversations / four slots, except the Dense
 Hybrid text alternative, which uses four conversations / two slots. Both retain
 21 turns and 30K final-prompt targets. Queue depth two gives eight or four
 admission permits respectively, not guaranteed simultaneous admission.
-The tooling-contract correction has inference validation on both paths; retain
-historical PASS/FAIL evidence with its original workload identity.
+All four Hybrid MoE modes are qualified for both batch profiles; Attention-only
+text batch is qualified in both IMC modes with MTP off. See
+[current qualification](coverage.md#current-qualification) for other paths.
 
-November 6 qualification is limited to Hybrid MoE `batch-text` IMC-/MTP-,
-IMC-/MTP+ and IMC+/MTP+, plus `batch-images` IMC+/MTP+. All completed the full
-eight-conversation histories with behavioral PASS, scheduling coverage OBSERVED
-and cleanup PASS. See [qualification and capture identities](coverage.md#batch-contract-qualification).
-This does not qualify text IMC+/MTP-, Attention-only batch or other image modes.
-The earlier interrupted image-pair log is useful behavioral evidence, but lacks
-the summary/raw events required to qualify its IMC-/MTP+ scheduling coverage.
-
-For each turn, require request-correlated assignment-to-execution-finish evidence
-of concurrent full slot ownership without same-slot conflicts, plus a prepared
-request waiting under full slot pressure, taking a released slot and completing.
-Across the workload, retain successive diagnostics samples where one request's
-`generated_tokens` increases while a different, consistently identified request
-remains in text/IMC/media prefill. An absent witness is warning-only: short
-prefills may not persist across samples. It does not make required coverage
-INCOMPLETE or cause a nonzero exit. Keep the warning visible; do not claim that
-generation-during-prefill was established. One text prefill owner is legal;
-other slots may generate, and four occupied slots do not mean four generation
-streams.
-
-`maximum_concurrency` measures client response-interval overlap diagnostically.
-Do not infer queue acceptance from client timing, report an inferred queue metric
-or require universal all-four client-stream overlap. Low overlap must not stop
-histories or replays. Missing, untriggered or contradictory required evidence is
-coverage INCOMPLETE with a nonzero exit, separate from behavioral PASS/FAIL.
-Use the [batch contract](coverage.md#batch-scheduling-evidence) when interpreting
-these packages; required coverage OBSERVED can coexist with a diagnostic warning.
-Do not substitute occupancy for generation-progress evidence.
-
-The validated text MTP-on/IMC-off workload reached client overlap two on later
-turns; the image IMC/MTP-on subject switch also reached two. Both retained full
-slot ownership, waiting-job handoff and generation-during-prefill evidence and
-completed their remaining histories. This validates the correction, not a claim
-that the scheduler is maximally efficient. Single sequential text captures showed
-MTP-on taking 5.8% longer than MTP-off with IMC off; investigate repeatability and
-phase attribution separately rather than treating probe PASS as resolving it.
+Required scheduling evidence is per-turn full-slot ownership without conflicts
+and prepared waiting-job handoff. Generation during peer prefill is a
+warning-only diagnostic; client response overlap is not server slot ownership.
+Use the [batch contract](coverage.md#batch-scheduling-evidence) to interpret
+OBSERVED, INCOMPLETE and warnings. Behavioral/scheduling PASS does not establish
+maximum throughput or absence of duplicated decoding.
 
 ### Hybrid text load
 
@@ -352,16 +317,12 @@ make test-load-batch-images \
   '
 ```
 
-The existing image IMC/MTP-on FAIL remains historical evidence, not a pass under
-the revised scheduling contract. A new full IMC/MTP-on run passed that contract,
-including turn-11 subject switch and both replay phases, but again reported a
-13,700-token prompt excess at the switch versus the earlier IMC-off control.
 Image history duplication remains unresolved: behavioral/scheduling PASS and
 positive cache usage do not prove cached text was decoded only once. Preserve
 subject-switch, replay, isolation and cache assertions; do not drop the
 changed-image phase. After a server fix, rerun the affected cell and an IMC-off
 control, retaining physical-decode evidence as well as behavior and scheduling
-results; the tooling correction alone cannot close the duplication issue.
+results.
 
 ### Embedded drafting
 
@@ -431,8 +392,8 @@ Select only the implicated backend if the question is backend-specific. For
 drafting-time image arrival/stalls, use the Hybrid/companion prefill command
 with `MTP+` instead of `MTP-`. These available forms require active drafting
 and their mapped shared/IMC execution, not the forced oversized phases. The
-companion-prefill forms remain unselected/unqualified alternatives; the MoE
-forms have selected coverage.
+companion-prefill forms are unselected alternatives with mode-specific
+qualification; the MoE forms have selected coverage.
 
 ### Admission/lifecycle
 
@@ -464,7 +425,7 @@ Expand only the needed combinations into ordinary identities, one per line.
 | `mtp-embedded` | `MoE/Hyb/1slot/IMC±/MTP±/img-` | Serial drafting/recovery failures, or changes affecting the one-sequence execution case. Include MTP-off controls when distinguishing drafting from target-only behavior. | Many-slot waves exercise concurrent sessions; a PASS there does not establish the one-slot configuration. |
 | `mtp-companion` | `Dense/Hyb/1slot/IMC±/MTP±/img-` | Serial companion/own-KV state or recovery, with the same mode controls as embedded. | Neither concurrent companion waves nor the embedded target prove this target's serial contract. |
 | `image-state` | `MoE/Hyb/Nslot/IMC±/MTP±/img+` | Image/text recovery with multiple slots available; slot release/selection changes; interactions between image state, reuse and drafting at that capacity. | The same-slot package deliberately removes slot-selection ambiguity. Many-slot state is useful but does not guarantee recovery on the cancelled physical slot or add batch-style concurrent sessions. |
-| `image-state` | `Dense/Att/Nslot/IMC±/MTP-/img+` | Attention-only image recovery/reuse with multiple slots available, or changes affecting slot selection and release. | Gemma E4B QAT is qualified in both modes with two slots. One-slot recovery alone does not validate this capacity; neither form establishes concurrent image-session isolation or Ministral compatibility. |
+| `image-state` | `Dense/Att/Nslot/IMC±/MTP-/img+` | Attention-only image recovery/reuse with multiple slots available, or changes affecting slot selection and release. | Gemma E4B QAT is qualified in both modes with two slots. One-slot recovery alone does not validate this capacity; neither form establishes concurrent image-session isolation or other templates' compatibility. |
 | `long-context` | `MoE/Hyb/1slot/IMC±/MTP+/img-` | Retrieval or reuse fails only with drafting, or a context/state change affects speculation. Pair with the MTP-off context selection. | Dedicated drafting waves do not exercise staged long-context retrieval; MTP-off retrieval does not exercise drafting. |
 | `image-prefill` | `MoE/Hyb/Nslot/IMC±/MTP+/img+` | Text progress degrades when images arrive during drafting, or a change touches the drafting/prefill interaction. Pair with the matching off-mode selection. | MTP-off shared/oversized phases do not exercise active drafting. These MTP-on cells require their mapped shared/IMC execution, not forced oversized isolation. |
 
@@ -478,13 +439,13 @@ question, and avoid running both merely to fill the table.
 | Profile / path family | When it could help | Availability / qualification boundary |
 | --- | --- | --- |
 | `text-state`: `Dense/Hyb/1slot/IMC±/MTP±/img-` | Recovery/reuse on the Qwen3.8-27B target, including companion drafting interactions. | Mapped to one-slot aliases with three cycles; all four modes await qualification. CSV overlap labels retain the MoE representative rationale. |
-| `batch-text`: `Dense/Hyb/Nslot/IMC±/MTP±/img-` | Growing histories and cross-session interference on that same target. | Mapped to two slots / four conversations; all four modes await behavioral and scheduling-evidence qualification. Not a four-slot MoE capacity test. |
+| `batch-text`: `Dense/Hyb/Nslot/IMC±/MTP±/img-` | Growing histories and cross-session interference on that same target. | Two slots / four conversations; IMC+/MTP+ qualified, other modes pending. Not a four-slot MoE capacity test. |
 | `image-state`: `Dense/Hyb/1slot/IMC±/MTP±/img+` | Same-slot image reuse/cancellation/recovery on the companion-capable target, when many-slot recovery would obscure the question. | Mapped, but CSV cells are blank and this guide claims no inference qualification. The existing Dense Hybrid image-state package uses many slots. |
-| `image-prefill`: `Dense/Hyb/Nslot/IMC±/MTP+/img+` | Companion drafting plus image-arrival responsiveness; select the MTP-off companion-prefill command as its control. | Mapped, but blank/unqualified like the MTP-off companion-prefill alternatives already shown above. Does not supply Qwen3.6's oversized phases. |
+| `image-prefill`: `Dense/Hyb/Nslot/IMC±/MTP+/img+` | Companion drafting plus image-arrival responsiveness; select the MTP-off companion-prefill command as its control. | Mapped but not selected matrix coverage; qualification is mode-specific. Does not supply Qwen3.6's oversized phases. |
 
 Do not promote an alternative to established coverage without qualification.
-Select only the modes needed for an investigation. To qualify all eight newly
-mapped alternatives, use these separate invocations sequentially, not a cross
+Select only the modes needed for an investigation. For Dense Hybrid state/batch
+alternatives, use these separate invocations sequentially, not a cross
 product that also requests inapplicable slot/profile pairs:
 
 ```sh copy Copy Dense Hybrid State Command
