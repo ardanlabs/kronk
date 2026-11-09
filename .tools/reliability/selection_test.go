@@ -117,6 +117,33 @@ func TestExplicitProfileCellSelection(t *testing.T) {
 			t.Fatalf("wrong workload for %s: %+v", tc.profile, probe.Config)
 		}
 	}
+	for _, profile := range []string{"text-state", "batch-text"} {
+		for _, imc := range []string{"off", "on"} {
+			for _, mtp := range []string{"off", "on"} {
+				slots, suffix := "1slot", "/TOOLS-1S"
+				if profile == "batch-text" {
+					slots, suffix = "Nslot", "/TOOLS"
+				}
+				sign := map[string]string{"off": "-", "on": "+"}
+				cell := "Dense/Hyb/" + slots + "/IMC" + sign[imc] + "/MTP" + sign[mtp] + "/img-"
+				cfg, _, err := parseConfig([]string{"-profiles", profile, "-cells", cell})
+				if err != nil {
+					t.Fatal(err)
+				}
+				probe := executionPlan(cfg)[0]
+				want := "unsloth/Qwen3.8-27B-UD-Q6_K" + suffix + "-MTP-" + strings.ToUpper(mtp) + "-IMC-" + strings.ToUpper(imc)
+				if probe.Status != "runnable" || !reflect.DeepEqual(probe.Config.selectedModels(), []string{want}) || probe.Config.ExpectedState != "Hybrid" || probe.Config.IMC != imc || probe.Config.MTP != mtp {
+					t.Fatalf("incorrect Dense Hybrid selection %s × %s: %+v", profile, cell, probe)
+				}
+				if profile == "text-state" && (probe.Scenario != "text-state" || probe.Config.RecoveryCycles != 3) {
+					t.Fatalf("incorrect Dense Hybrid recovery workload: %+v", probe)
+				}
+				if profile == "batch-text" && (probe.Scenario != "batch" || probe.Config.BatchProfile != "text" || probe.Config.BatchSlots != 2 || probe.Config.BatchConversations != 4 || probe.Config.BatchTurns != 21 || probe.Config.BatchTargetTokens != 30000) {
+					t.Fatalf("incorrect Dense Hybrid batch pressure: %+v", probe)
+				}
+			}
+		}
+	}
 	cfg, _, err := parseConfig([]string{"-profiles", "batch-text", "-cells", testCellIDs(t, "34,50")})
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +151,7 @@ func TestExplicitProfileCellSelection(t *testing.T) {
 	for i, probe := range executionPlan(cfg) {
 		mode := []string{"OFF", "ON"}[i]
 		want := "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0/TOOLS-BATCH-MTP-OFF-IMC-" + mode
-		if probe.Status != "runnable" || probe.Config.BatchModel != want || probe.Config.BatchTokensPerTurn != 1300 || probe.Config.BatchSlots != 4 || probe.Config.BatchConversations != 5 || probe.Config.ExpectedState != "Attention-only" {
+		if probe.Status != "runnable" || probe.Config.BatchModel != want || probe.Config.BatchTokensPerTurn != 1300 || probe.Config.BatchSlots != 4 || probe.Config.BatchConversations != 8 || probe.Config.ExpectedState != "Attention-only" {
 			t.Fatalf("incorrect qualified batch fixture: %+v", probe)
 		}
 	}
@@ -139,7 +166,7 @@ func TestExplicitProfileCellSelection(t *testing.T) {
 			}
 			continue
 		}
-		base := "unsloth/Ministral-3-14B-Instruct-2512-Q4_0"
+		base := "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
 		if probe.Profile == "image-prefill" {
 			base = "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0"
 		}
@@ -199,7 +226,7 @@ func TestCellIdentitiesAndRunnableFixtures(t *testing.T) {
 			}
 		}
 	}
-	doc, err := modelconfig.Load("../../zarf/kms/model_config.yaml")
+	doc, err := modelconfig.Load("../../zarf/kms/tools_model_config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +286,7 @@ func TestAutomaticPressureMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"isolated", "shared", "shared", "shared", "shared", "imc", "imc", "oversized-imc", "imc", "imc"}
-	doc, err := modelconfig.Load("../../zarf/kms/model_config.yaml")
+	doc, err := modelconfig.Load("../../zarf/kms/tools_model_config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +319,7 @@ func TestAutomaticPressureMapping(t *testing.T) {
 }
 
 func TestSelectedCommandReportsEveryCombination(t *testing.T) {
-	for _, cells := range []string{"2,35", "34,2,35"} {
+	for _, cells := range []string{"2,36", "34,2,36,35"} {
 		t.Run(cells, func(t *testing.T) {
 			requests := 0
 			var loaded []string
@@ -331,9 +358,10 @@ func TestSelectedCommandReportsEveryCombination(t *testing.T) {
 			if summary.CoverageStatus != "INCOMPLETE" {
 				t.Fatalf("gap not reported: %+v", summary)
 			}
-			want := map[string]string{"2": "NOT APPLY", "35": "GAP"}
+			want := map[string]string{"2": "NOT APPLY", "36": "GAP"}
 			if strings.HasPrefix(cells, "34") {
 				want["34"] = "FAIL"
+				want["35"] = "FAIL"
 			} else if requests != 0 || summary.Status != "NOT RUN" {
 				t.Fatalf("nonrunnable selection contacted server or passed: requests=%d status=%s", requests, summary.Status)
 			}
@@ -349,7 +377,7 @@ func TestSelectedCommandReportsEveryCombination(t *testing.T) {
 					t.Fatalf("cell %s: status %s, want %s", result.Cell, result.Status, statuses[result.Cell])
 				}
 			}
-			if _, ok := want["34"]; ok && !reflect.DeepEqual(loaded, []string{"ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0/TOOLS-BATCH-MTP-OFF-IMC-OFF"}) {
+			if _, ok := want["34"]; ok && !reflect.DeepEqual(loaded, []string{"ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0/TOOLS-BATCH-MTP-OFF-IMC-OFF", "unsloth/Qwen3.8-27B-UD-Q6_K/TOOLS-MTP-OFF-IMC-OFF"}) {
 				t.Fatalf("wrong selected model requests: %v", loaded)
 			}
 			for _, selected := range summary.Selection {
@@ -392,6 +420,21 @@ func TestMakeMultilineCellSelection(t *testing.T) {
 	for _, want := range []string{`-scenario "text-state"`, `-text-state-model "custom-text"`, `-image-model "custom-image"`, `-image-state-max-tokens "137"`} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("renamed Make override lost %s: %s", want, output)
+		}
+	}
+	for _, cells := range []string{"", "Dense/Hyb/Nslot/IMC+/MTP+/img+"} {
+		for _, limit := range []string{"", "1s"} {
+			cmd := exec.Command("make", "-n", "-f", ".make/tools.mk", "test-load-image-prefill",
+				"RELIABILITY_CELLS="+cells, "RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP="+limit)
+			cmd.Dir = "../.."
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("Make gap limit: %v\n%s", err, output)
+			}
+			if limit == "" && strings.Contains(string(output), "-image-prefill-max-generation-gap") ||
+				limit != "" && !strings.Contains(string(output), `-image-prefill-max-generation-gap "1s"`) {
+				t.Fatalf("Make must enforce only an explicitly supplied gap limit: %s", output)
+			}
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -42,9 +43,8 @@ type batchTurnSummary struct {
 	Phase                 string              `json:"phase"`
 	Completed             int                 `json:"completed"`
 	MaximumConcurrency    int                 `json:"maximum_concurrency"`
-	QueuedRequests        int                 `json:"queued_requests"`
-	QueuedRequestsBasis   string              `json:"queued_requests_basis"`
 	ServerExecution       *batchTurnExecution `json:"server_execution,omitempty"`
+	SchedulerSamples      []engineDiagnostic  `json:"scheduler_samples,omitempty"`
 	MinimumPrompt         int                 `json:"minimum_prompt_tokens"`
 	MinimumCached         int                 `json:"minimum_cached_tokens"`
 	SlowestSeconds        float64             `json:"slowest_seconds"`
@@ -157,21 +157,16 @@ func runBatch(rc *runContext) scenarioResult {
 			phases = append(phases, "repeat")
 		}
 		for _, phase := range phases {
-			requests, updated := runBatchTurn(rc, model, turn, turnRecords, conversations, imageURLs, phase)
+			requests, updated, samples := runBatchTurn(rc, model, turn, turnRecords, conversations, imageURLs, phase)
 			allRequests = append(allRequests, requests...)
 			turnSummary := summarizeBatchTurn(turn, requests)
 			turnSummary.Phase = phase
+			turnSummary.SchedulerSamples = samples
 			turns = append(turns, turnSummary)
 			for _, request := range requests {
 				if request.Error != "" {
 					appendFailure(&result.Failures, "session %d turn %d %s: %s", request.Session, turn, phase, request.Error)
 				}
-			}
-			if turnSummary.MaximumConcurrency < rc.cfg.BatchSlots {
-				appendFailure(&result.Failures, "turn %d reached concurrency %d, want all %d slots", turn, turnSummary.MaximumConcurrency, rc.cfg.BatchSlots)
-			}
-			if turnSummary.QueuedRequests < rc.cfg.BatchConversations-rc.cfg.BatchSlots {
-				appendFailure(&result.Failures, "turn %d observed %d queued requests, want at least %d", turn, turnSummary.QueuedRequests, rc.cfg.BatchConversations-rc.cfg.BatchSlots)
 			}
 			if rc.cfg.IMC == "on" && (turn > 1 || phase == "repeat") && turnSummary.MinimumCached <= 0 {
 				appendFailure(&result.Failures, "turn %d %s reported no cached tokens for at least one conversation", turn, phase)
@@ -180,9 +175,9 @@ func runBatch(rc *runContext) scenarioResult {
 				break
 			}
 			conversations = updated
-			rc.artifacts.logf("batch turn %02d %s: %d/%d complete prompt=%d cached=%d max_concurrency=%d inferred_queued=%d slowest=%.3fs",
+			rc.artifacts.logf("batch turn %02d %s: %d/%d complete prompt=%d cached=%d client_response_overlap=%d slowest=%.3fs",
 				turn, phase, turnSummary.Completed, rc.cfg.BatchConversations, turnSummary.MinimumPrompt,
-				turnSummary.MinimumCached, turnSummary.MaximumConcurrency, turnSummary.QueuedRequests, turnSummary.SlowestSeconds)
+				turnSummary.MinimumCached, turnSummary.MaximumConcurrency, turnSummary.SlowestSeconds)
 		}
 		if len(result.Failures) > 0 {
 			break
@@ -204,7 +199,7 @@ func runBatch(rc *runContext) scenarioResult {
 	return result
 }
 
-func runBatchTurn(rc *runContext, model string, turn, records int, conversations [][]map[string]any, imageURLs []string, phase string) ([]batchRequestResult, [][]map[string]any) {
+func runBatchTurn(rc *runContext, model string, turn, records int, conversations [][]map[string]any, imageURLs []string, phase string) ([]batchRequestResult, [][]map[string]any, []engineDiagnostic) {
 	count := len(conversations)
 	results := make(chan batchRequestResult, count)
 	updated := make([][]map[string]any, count)
@@ -283,19 +278,21 @@ func runBatchTurn(rc *runContext, model string, turn, records int, conversations
 		}()
 	}
 	ready.Wait()
+	pollCtx, stopPolling := context.WithCancel(rc)
+	sampled := make(chan []engineDiagnostic, 1)
+	go func() { sampled <- sampleBatchScheduler(pollCtx, rc, model) }()
 	close(start)
 	requests := make([]batchRequestResult, count)
 	for range count {
 		request := <-results
 		requests[request.Session-1] = request
 	}
-	return requests, updated
+	stopPolling()
+	return requests, updated, <-sampled
 }
 
 func summarizeBatchTurn(turn int, requests []batchRequestResult) batchTurnSummary {
-	summary := batchTurnSummary{Turn: turn, MinimumPrompt: -1, MinimumCached: -1,
-		QueuedRequestsBasis: "inferred: first content at/after earliest client completion"}
-	var earliestFinish time.Time
+	summary := batchTurnSummary{Turn: turn, MinimumPrompt: -1, MinimumCached: -1}
 	var started, finished time.Time
 	for _, request := range requests {
 		if !request.StartedAt.IsZero() && (started.IsZero() || request.StartedAt.Before(started)) {
@@ -316,14 +313,6 @@ func summarizeBatchTurn(turn int, requests []batchRequestResult) batchTurnSummar
 		}
 		if request.ElapsedSeconds > summary.SlowestSeconds {
 			summary.SlowestSeconds = request.ElapsedSeconds
-		}
-		if !request.finishedAt.IsZero() && (earliestFinish.IsZero() || request.finishedAt.Before(earliestFinish)) {
-			earliestFinish = request.finishedAt
-		}
-	}
-	for _, request := range requests {
-		if !earliestFinish.IsZero() && !request.firstContentAt.IsZero() && !request.firstContentAt.Before(earliestFinish) {
-			summary.QueuedRequests++
 		}
 	}
 	summary.MaximumConcurrency = maximumBatchConcurrency(requests)

@@ -324,7 +324,7 @@ func TestQuickCheckCommand(t *testing.T) {
 }
 
 func TestQuickCheckModelConfig(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "zarf", "kms", "model_config.yaml"))
+	data, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "zarf", "kms", "tools_model_config.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

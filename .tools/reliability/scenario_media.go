@@ -49,6 +49,7 @@ type mediaPrefillResult struct {
 	BaselineMaximumGapSeconds float64           `json:"baseline_maximum_gap_seconds"`
 	PrefillMaximumGapSeconds  float64           `json:"prefill_maximum_gap_seconds"`
 	AllowedMaximumGapSeconds  float64           `json:"allowed_maximum_gap_seconds"`
+	GenerationGapEnforced     bool              `json:"generation_gap_enforced"`
 	Failures                  []string          `json:"failures,omitempty"`
 	WorkloadComplete          bool              `json:"workload_complete"`
 	RequireIsolatedPrefill    bool              `json:"require_isolated_prefill"`
@@ -110,6 +111,12 @@ func runMedia(rc *runContext) scenarioResult {
 	if rc.cfg.MediaProfile == "all" || rc.cfg.MediaProfile == "prefill" {
 		prefill := runMediaPrefill(rc, model, imageURL, loaded)
 		result.Details["concurrent_prefill"] = prefill
+		if prefill.PrefillMaximumGapSeconds > time.Second.Seconds() {
+			result.Coverage = append(result.Coverage, pathCoverage{
+				Path: "image-prefill UX text gap", Status: "warning",
+				Note: fmt.Sprintf("maximum overlapping text content-event gap %.3fs exceeds the 1s UX warning threshold; not a calibrated regression limit", prefill.PrefillMaximumGapSeconds),
+			})
+		}
 		for _, failure := range prefill.Failures {
 			appendFailure(&result.Failures, "prefill: %s", failure)
 		}
@@ -288,6 +295,7 @@ func runMediaPrefill(rc *runContext, model, imageURL string, loaded loadedModel)
 	result := mediaPrefillResult{
 		PhaseCounts:              make(map[string]int),
 		AllowedMaximumGapSeconds: rc.cfg.MediaMaxGenerationGap.Seconds(),
+		GenerationGapEnforced:    rc.cfg.explicitFlags["image-prefill-max-generation-gap"],
 		RequireIsolatedPrefill:   rc.cfg.MediaRequireIsolatedPrefill,
 		ExpectedExecution:        rc.cfg.MediaPrefillExecution,
 	}
@@ -454,13 +462,13 @@ func runMediaPrefill(rc *runContext, model, imageURL string, loaded loadedModel)
 	})
 	if result.PrefillMaximumGapSeconds == 0 {
 		result.Failures = append(result.Failures, "no text content-event gap overlapped image submission through first image content")
-	} else if result.PrefillMaximumGapSeconds > rc.cfg.MediaMaxGenerationGap.Seconds() {
+	} else if result.GenerationGapEnforced && result.PrefillMaximumGapSeconds > rc.cfg.MediaMaxGenerationGap.Seconds() {
 		appendFailure(&result.Failures, "maximum overlapping text event gap %.3fs exceeds %.3fs",
 			result.PrefillMaximumGapSeconds, rc.cfg.MediaMaxGenerationGap.Seconds())
 	}
-	rc.artifacts.logf("media prefill: polls=%d media_observations=%d overlap=%d baseline_gap=%.3fs prefill_gap=%.3fs allowed=%.3fs",
+	rc.artifacts.logf("media prefill: polls=%d media_observations=%d overlap=%d baseline_gap=%.3fs prefill_gap=%.3fs allowed=%.3fs enforced=%t",
 		result.SchedulerPolls, result.MediaPrefillObservations, result.GenerationOverlap,
-		result.BaselineMaximumGapSeconds, result.PrefillMaximumGapSeconds, result.AllowedMaximumGapSeconds)
+		result.BaselineMaximumGapSeconds, result.PrefillMaximumGapSeconds, result.AllowedMaximumGapSeconds, result.GenerationGapEnforced)
 	result.WorkloadComplete = result.Generation.Error == "" && result.Image.Error == "" && result.Generation.FinishReason != "" && result.Image.FinishReason != ""
 	rc.artifacts.logf("media timing: text_first=%.3fs text_elapsed=%.3fs text_tokens=%d image_first=%.3fs image_elapsed=%.3fs image_tokens=%d complete=%t",
 		result.Generation.Performance.FirstContentSeconds, result.Generation.Performance.ElapsedSeconds, result.Generation.Usage.CompletionTokens,

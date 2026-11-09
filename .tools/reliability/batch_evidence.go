@@ -1,15 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
 )
 
 // Server times share a clock with each other, not necessarily with the client.
-// Execution includes preparation/prefill; it is not a generation interval.
+// Execution includes slot-owned prefill; it is not a generation interval.
 type batchRequestExecution struct {
 	Status              string     `json:"status"`
 	Slot                *int       `json:"slot,omitempty"`
@@ -29,9 +31,14 @@ type batchTurnExecution struct {
 	ObservedQueueEntries    int      `json:"observed_queue_entries"`
 	AssignedSlots           []int    `json:"assigned_slots"`
 	MaximumQueueWaitSeconds *float64 `json:"maximum_queue_wait_seconds,omitempty"`
+	MaximumOccupiedSlots    int      `json:"maximum_occupied_slots"`
+	OwnershipConsistent     bool     `json:"ownership_consistent"`
+	WaitingHandoff          bool     `json:"waiting_handoff"`
+	GenerationDuringPrefill bool     `json:"generation_during_prefill"`
 }
 
-// Diagnostic only: never changes scenario failures, status or coverage verdicts.
+// Scheduling coverage is separate from behavior. Insufficient evidence never
+// truncates histories or changes a correctness verdict into a server failure.
 func annotateBatchExecution(summary *runSummary) {
 	for i := range summary.Scenarios {
 		scenario := &summary.Scenarios[i]
@@ -46,6 +53,7 @@ func annotateBatchExecution(summary *runSummary) {
 			request.ServerExecution = batchExecution(summary.ServerEvidence, request.TraceID, slots)
 		}
 		turns, _ := scenario.Details["turns"].([]batchTurnSummary)
+		progressObserved := false
 		for j := range turns {
 			turn := &turns[j]
 			evidence := &batchTurnExecution{AssignedSlots: []int{}}
@@ -76,10 +84,164 @@ func annotateBatchExecution(summary *runSummary) {
 				}
 			}
 			slices.Sort(evidence.AssignedSlots)
+			var executions []*batchRequestExecution
+			var responseIDs []string
+			for _, request := range requests {
+				if request.Turn == turn.Turn && request.Phase == turn.Phase {
+					executions = append(executions, request.ServerExecution)
+					if request.ResponseID != "" {
+						responseIDs = append(responseIDs, request.ResponseID)
+					}
+				}
+			}
+			evidence.MaximumOccupiedSlots, evidence.OwnershipConsistent, evidence.WaitingHandoff = batchSlotCoverage(executions, slots)
+			evidence.GenerationDuringPrefill = batchPrefillProgress(turn.SchedulerSamples, responseIDs)
+			progressObserved = progressObserved || evidence.GenerationDuringPrefill
 			turn.ServerExecution = evidence
+			status := "not exercised"
+			if evidence.OwnershipConsistent && evidence.MaximumOccupiedSlots == slots && evidence.WaitingHandoff && turn.Complete {
+				status = "exercised"
+			}
+			scenario.Coverage = append(scenario.Coverage, pathCoverage{
+				Path: fmt.Sprintf("batch scheduling turn %d %s", turn.Turn, turn.Phase), Status: status,
+				Note: fmt.Sprintf("peak occupied slots=%d/%d; ownership consistent=%t; prepared waiting job handed off and completed=%t", evidence.MaximumOccupiedSlots, slots, evidence.OwnershipConsistent, evidence.WaitingHandoff),
+			})
 		}
+		status := "warning"
+		if progressObserved {
+			status = "exercised"
+		}
+		scenario.Coverage = append(scenario.Coverage, pathCoverage{Path: "batch generation progress during peer prefill", Status: status,
+			Note: "diagnostic only: observation requires increasing generated-token counters for the same request across advancing scheduler snapshots while a different request remains in prefill; short prefills may not produce this witness"})
 		scenario.Details["requests"], scenario.Details["turns"] = requests, turns
 	}
+}
+
+// Half-open ownership intervals: a finish and assignment at the same instant
+// are a handoff, not simultaneous ownership of the same physical slot.
+func batchSlotCoverage(executions []*batchRequestExecution, slots int) (int, bool, bool) {
+	type boundary struct {
+		at    time.Time
+		slot  int
+		delta int
+	}
+	var boundaries []boundary
+	consistent := len(executions) > 0 && slots > 0
+	for _, x := range executions {
+		if x.Status == "inconsistent" || x.Slot == nil || x.AssignedAt == nil || x.ExecutionFinishedAt == nil || !x.ExecutionFinishedAt.After(*x.AssignedAt) {
+			consistent = false
+			continue
+		}
+		boundaries = append(boundaries, boundary{*x.AssignedAt, *x.Slot, 1}, boundary{*x.ExecutionFinishedAt, *x.Slot, -1})
+	}
+	slices.SortFunc(boundaries, func(a, b boundary) int {
+		if order := a.at.Compare(b.at); order != 0 {
+			return order
+		}
+		return a.delta - b.delta
+	})
+	active := make(map[int]int)
+	peak := 0
+	for _, b := range boundaries {
+		active[b.slot] += b.delta
+		if active[b.slot] > 1 || active[b.slot] < 0 {
+			consistent = false
+		}
+		if active[b.slot] == 0 {
+			delete(active, b.slot)
+		}
+		peak = max(peak, len(active))
+	}
+	if !consistent {
+		return peak, false, false
+	}
+	for _, waiting := range executions {
+		if waiting.Status != "complete" || waiting.FinishStatus != "complete" || waiting.QueuedAt == nil {
+			continue
+		}
+		checkAt := []time.Time{*waiting.QueuedAt}
+		for _, b := range boundaries {
+			if b.delta == 1 {
+				checkAt = append(checkAt, b.at)
+			}
+		}
+		for _, at := range checkAt {
+			if at.Before(*waiting.QueuedAt) || !at.Before(*waiting.AssignedAt) {
+				continue
+			}
+			occupied := make(map[int]bool)
+			for _, x := range executions {
+				if !at.Before(*x.AssignedAt) && at.Before(*x.ExecutionFinishedAt) {
+					occupied[*x.Slot] = true
+				}
+			}
+			if len(occupied) != slots {
+				continue
+			}
+			for _, x := range executions {
+				if x != waiting && *x.Slot == *waiting.Slot && x.ExecutionFinishedAt.After(at) && !x.ExecutionFinishedAt.After(*waiting.AssignedAt) {
+					return peak, true, true
+				}
+			}
+		}
+	}
+	return peak, true, false
+}
+
+func sampleBatchScheduler(ctx context.Context, rc *runContext, model string) []engineDiagnostic {
+	var samples []engineDiagnostic
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return samples
+		case <-ticker.C:
+			var engines []engineDiagnostic
+			pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_, err := rc.client.json(pollCtx, rc.scenario, http.MethodGet, "/v1/kronk/models/slots", nil, &engines)
+			cancel()
+			if err != nil {
+				if ctx.Err() == nil {
+					rc.artifacts.logf("batch scheduler sampling unavailable: %v; coverage may be incomplete", err)
+				}
+				return samples
+			}
+			for _, engine := range engines {
+				if engine.ModelID == model && (len(samples) == 0 || samples[len(samples)-1].Iteration != engine.Iteration) {
+					samples = append(samples, engine)
+				}
+			}
+		}
+	}
+}
+
+func batchPrefillProgress(samples []engineDiagnostic, responseIDs []string) bool {
+	for i := 1; i < len(samples); i++ {
+		before, after := samples[i-1], samples[i]
+		if after.Iteration <= before.Iteration {
+			continue
+		}
+		next := make(map[int]slotDiagnostic, len(after.Slots))
+		for _, slot := range after.Slots {
+			next[slot.ID] = slot
+		}
+		for _, p := range before.Slots {
+			nextP, ok := next[p.ID]
+			if !ok || p.RequestID == "" || !slices.Contains(responseIDs, p.RequestID) || nextP.RequestID != p.RequestID || !strings.Contains(p.Phase, "prefill") || !strings.Contains(nextP.Phase, "prefill") {
+				continue
+			}
+			for _, g := range before.Slots {
+				if g.ID == p.ID || g.RequestID == "" || g.RequestID == p.RequestID || !slices.Contains(responseIDs, g.RequestID) || g.Phase != "generation" {
+					continue
+				}
+				if nextG, ok := next[g.ID]; ok && nextG.RequestID == g.RequestID && nextG.GeneratedTokens > g.GeneratedTokens {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func batchExecution(server serverEvidence, traceID string, slots int) *batchRequestExecution {

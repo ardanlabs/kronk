@@ -3,7 +3,7 @@
 # Consolidated batch-engine, MTP, IMC, long-context, and media reliability
 # probes.
 #
-# Run against the current source with the shared model configuration:
+# Run against the current source with the dedicated tools model configuration:
 #
 #   make server-for-tools
 #   make test-load-batch-text RELIABILITY_CELLS='Dense/Att/Nslot/IMC+/MTP-/img-'
@@ -11,7 +11,7 @@
 #   make kronk-server-stop
 #
 # The tools validate the active model configuration but never modify it or
-# manage the server. Restart the server after editing zarf/kms/model_config.yaml.
+# manage the server. Restart the server after editing zarf/kms/tools_model_config.yaml.
 #
 # Select profiles and explicit single-GPU paths (or use all). Cells accept
 # whitespace-separated identities; quoted multiline lists put one cell per line.
@@ -25,7 +25,7 @@
 #
 # Further analysis with some harness: provide summary.json,
 # events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
-# zarf/kms/model_config.yaml for the expected runtime settings. Do not provide the
+# zarf/kms/tools_model_config.yaml for the expected runtime settings. Do not provide the
 # full ~/.kronk/kronk.log unless the curated evidence is unavailable or a
 # failure needs deeper investigation. Each invocation replaces RELIABILITY_OUT;
 # preserve separate runs with, for example:
@@ -39,9 +39,9 @@
 #   from trace-correlated server evidence, and report failures or evidence gaps.
 
 # API-only tools server: compile current Go code without regenerating docs/BUI.
-# Use the shared configuration, with normal environment/flag precedence.
+# Use the dedicated tools configuration, with normal environment/flag precedence.
 server-for-tools: ## Start a detached API server for probes
-	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/zarf/kms/model_config.yaml" \
+	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/zarf/kms/tools_model_config.yaml" \
 		go run -buildvcs=true ./cmd/kronk server start --detach --web-admin-enabled=false
 
 QUICK_CHECK_ARGS ?=
@@ -72,7 +72,7 @@ RELIABILITY_PROFILES ?=
 RELIABILITY_CELLS ?=
 
 RELIABILITY_MTP_EMBEDDED_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
-RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL
+RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q6_K
 RELIABILITY_MTP_REQUESTS ?= 0
 RELIABILITY_MTP_PROMPT_TOKENS ?= 2200
 RELIABILITY_MTP_MAX_TOKENS ?= 256
@@ -91,7 +91,7 @@ RELIABILITY_BATCH_TARGET_TOKENS ?= 30000
 RELIABILITY_BATCH_TOKENS_PER_TURN ?= 1400
 RELIABILITY_BATCH_MAX_TOKENS ?= 128
 RELIABILITY_BATCH_SLOTS ?= 4
-RELIABILITY_BATCH_CONVERSATIONS ?= 5
+RELIABILITY_BATCH_CONVERSATIONS ?= 8
 RELIABILITY_BATCH_IMAGES ?= examples/samples/giraffe.jpg,examples/samples/adetailer-face.png
 RELIABILITY_BATCH_IMAGE_SUBJECTS ?= giraffe,astronaut
 
@@ -101,7 +101,8 @@ RELIABILITY_IMAGE_EXPECT ?= giraffe
 RELIABILITY_IMAGE_STATE_MAX_TOKENS ?= 128
 RELIABILITY_IMAGE_PREFILL_GENERATION_MAX_TOKENS ?= 512
 RELIABILITY_IMAGE_PREFILL_MAX_TOKENS ?= 64
-RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP ?= 1s
+# Empty keeps the CLI's 1s UX warning; setting a duration opts into a hard limit.
+RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP ?=
 
 reliability_profiles_test-load-mtp = mtp-embedded,mtp-companion
 reliability_profiles_test-load-batch = batch-text,batch-images
@@ -114,6 +115,7 @@ define run_reliability
 		-host "$(RELIABILITY_HOST)" -out "$(RELIABILITY_OUT)" \
 		-server-log "$(RELIABILITY_SERVER_LOG)" -timeout "$(RELIABILITY_TIMEOUT)" \
 		-seed "$(RELIABILITY_SEED)" -repetitions "$(RELIABILITY_REPETITIONS)" \
+		$(if $(strip $(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)),-image-prefill-max-generation-gap "$(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)") \
 		-run-label "$(RELIABILITY_RUN_LABEL)" $(RELIABILITY_ARGS),\
 	go run ./.tools/reliability \
 		-scenario "$(1)" \
@@ -151,7 +153,7 @@ define run_reliability
 		-image-state-max-tokens "$(RELIABILITY_IMAGE_STATE_MAX_TOKENS)" \
 		-image-prefill-generation-max-tokens "$(RELIABILITY_IMAGE_PREFILL_GENERATION_MAX_TOKENS)" \
 		-image-prefill-max-tokens "$(RELIABILITY_IMAGE_PREFILL_MAX_TOKENS)" \
-		-image-prefill-max-generation-gap "$(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)" \
+		$(if $(strip $(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)),-image-prefill-max-generation-gap "$(RELIABILITY_IMAGE_PREFILL_MAX_GENERATION_GAP)") \
 		$(2) $(RELIABILITY_ARGS))
 endef
 
@@ -181,8 +183,9 @@ test-load-image-prefill: ## Run image prefill responsiveness probes
 
 # -------------------------------
 
-# Text and image batch profiles. Exercises every slot plus queue
-# pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
+# Text and image batch profiles: eight conversations / four slots, per-turn
+# slot ownership and prepared wait/release coverage, workload-wide generation
+# progress during prefill, marker isolation, IMC reuse, and 30K-token histories.
 test-load-batch: ## Run batch reliability probes
 	$(call run_reliability,batch,-batch-profile all)
 
@@ -235,39 +238,6 @@ example-lifecycle-load: ## Probe server admission, cancellation, and slot releas
 	KRONK_LIFECYCLE_OUT="$(LIFECYCLE_LOAD_OUT)" \
 	KRONK_SERVER_LOG="$(LIFECYCLE_SERVER_LOG)" \
 	go run ./.tools/lifecycle-load
-
-# ==============================================================================
-
-# HTTP request capture, replay, and streaming-response inspection.
-
-HTTP_CAPTURE_LISTEN_HOST ?= 127.0.0.1
-HTTP_CAPTURE_LISTEN_PORT ?= 11436
-HTTP_CAPTURE_UPSTREAM_HOST ?= 127.0.0.1
-HTTP_CAPTURE_UPSTREAM_PORT ?= 11435
-HTTP_CAPTURE_OUT ?= .tools/http-capture/output
-
-# Replaces HTTP_CAPTURE_OUT at startup so it contains only the current capture.
-http-capture: ## Capture HTTP traffic through a local proxy
-	python3 .tools/http-capture/capture-proxy.py \
-		--listen-host "$(HTTP_CAPTURE_LISTEN_HOST)" \
-		--listen-port "$(HTTP_CAPTURE_LISTEN_PORT)" \
-		--upstream-host "$(HTTP_CAPTURE_UPSTREAM_HOST)" \
-		--upstream-port "$(HTTP_CAPTURE_UPSTREAM_PORT)" \
-		--output-dir "$(HTTP_CAPTURE_OUT)"
-
-HTTP_REPLAY_CAPTURE ?= .tools/http-capture/output
-HTTP_REPLAY_OUT ?= .tools/http-replay/output
-HTTP_REPLAY_UPSTREAM ?= http://127.0.0.1:11435
-
-http-replay: ## Replay captured HTTP requests
-	bash .tools/http-replay/replay.sh \
-		"$(HTTP_REPLAY_CAPTURE)" \
-		"$(HTTP_REPLAY_OUT)" \
-		"$(HTTP_REPLAY_UPSTREAM)"
-
-http-inspect-sse: ## Inspect captured SSE response files
-	@test -n "$(SSE_FILES)" || { echo 'usage: make http-inspect-sse SSE_FILES="response-*.sse"' >&2; exit 2; }
-	python3 .tools/http-replay/inspect-sse.py $(SSE_FILES)
 
 # ==============================================================================
 

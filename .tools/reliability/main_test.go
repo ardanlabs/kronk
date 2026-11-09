@@ -770,7 +770,7 @@ func TestMaximumEventGapFiltersWindow(t *testing.T) {
 }
 
 func TestLowLevelAliasesMatchConfiguration(t *testing.T) {
-	doc, err := modelconfig.Load("../../zarf/kms/model_config.yaml")
+	doc, err := modelconfig.Load("../../zarf/kms/tools_model_config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1053,8 +1053,13 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 		failure         bool
 		cells           string
 		failShared      bool
+		slowGap         bool
+		gapLimit        string
 	}{
 		{name: "ordinary"},
+		{name: "gap-warning", slowGap: true, cells: "38", status: "encoding-image", tokens: 442},
+		{name: "gap-explicit-hard-limit", slowGap: true, gapLimit: "1s", failure: true},
+		{name: "gap-permissive-hard-limit", slowGap: true, gapLimit: "5s"},
 		{name: "image-failed", failImage: true, failure: true},
 		{name: "isolated", requireIsolated: true, status: "encoding-image", tokens: 513},
 		{name: "equal-limit", requireIsolated: true, status: "encoding-image", tokens: 512, failure: true},
@@ -1208,7 +1213,10 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 						time.Sleep(90 * time.Millisecond)
 						count = 3
 					}
-					for range count {
+					for event := range count {
+						if text && tc.slowGap && event == 5 {
+							time.Sleep(1100 * time.Millisecond)
+						}
 						fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"1 "}}]}`)
 						fmt.Fprintln(w)
 						w.(http.Flusher).Flush()
@@ -1231,6 +1239,9 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 			}
 			if tc.requireIsolated {
 				os.Args = append(os.Args, "-image-require-isolated-prefill")
+			}
+			if tc.gapLimit != "" {
+				os.Args = append(os.Args, "-image-prefill-max-generation-gap", tc.gapLimit)
 			}
 			defer func() { os.Args = previous }()
 			if err := run(); (err != nil) != tc.failure {
@@ -1255,17 +1266,34 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 				}
 			}
 			for _, scenario := range summary.Scenarios {
-				if (scenario.Status == "FAIL") != (tc.failImage || tc.failShared && scenario.Phase == "shared") {
+				if (scenario.Status == "FAIL") != (tc.failImage || tc.failShared && scenario.Phase == "shared" || tc.gapLimit == "1s") {
 					t.Fatalf("wrong scenario verdict: %+v", scenario)
 				}
 				prefill := scenario.Details["concurrent_prefill"].(map[string]any)
+				if prefill["generation_gap_enforced"] != (tc.gapLimit != "") {
+					t.Fatalf("wrong generation-gap enforcement: %v", prefill)
+				}
+				warnings := 0
+				for _, coverage := range scenario.Coverage {
+					if coverage.Status == "warning" {
+						warnings++
+						if coverage.Path != "image-prefill UX text gap" {
+							t.Fatalf("unexpected warning: %+v", coverage)
+						}
+					}
+				}
+				if tc.slowGap && (warnings != 1 || prefill["prefill_maximum_gap_seconds"].(float64) <= 1 || summary.CoverageStatus == "INCOMPLETE") {
+					t.Fatalf("slow gap must remain measurable and warn without losing required coverage: %+v", scenario)
+				}
 				if tc.cells != "" {
-					if len(scenario.Coverage) != 1 || scenario.Phase == "" {
+					if len(scenario.Coverage)-warnings != 1 || scenario.Phase == "" {
 						t.Fatalf("missing phase identity/evidence: %+v", scenario)
 					}
 					missing := tc.name == "selected-wrong-execution" && scenario.Phase == "shared" || tc.name == "selected-imc-rejects-native"
-					if (scenario.Coverage[0].Status == "not exercised") != missing {
-						t.Fatalf("wrong path coverage: %+v", scenario)
+					for _, coverage := range scenario.Coverage {
+						if coverage.Status != "warning" && (coverage.Status == "not exercised") != missing {
+							t.Fatalf("wrong path coverage: %+v", scenario)
+						}
 					}
 				}
 				if tc.requireIsolated && !tc.failure && prefill["isolated_image_tokens"] != float64(513) {
@@ -1273,6 +1301,12 @@ func TestMediaPrefillCommandTiming(t *testing.T) {
 				}
 				if tc.requireIsolated && tc.failure && (len(scenario.Failures) != 0 || len(scenario.Coverage) != 1 || scenario.Coverage[0].Status != "not exercised" || summary.CoverageStatus != "INCOMPLETE") {
 					t.Fatalf("missing isolation coverage must not be a behavior failure: %+v", scenario)
+				}
+			}
+			if tc.slowGap {
+				log, err := os.ReadFile(filepath.Join(dir, "out", "tool.log"))
+				if err != nil || !strings.Contains(string(log), "WARNING:") || !strings.Contains(string(log), "image-prefill UX text gap") {
+					t.Fatalf("missing operator-visible gap warning: %v\n%s", err, log)
 				}
 			}
 			for _, aggregate := range summary.PerformanceAggregates {
@@ -1422,7 +1456,8 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 		{"text", "off", "on", "evidence", ""},
 		{"text", "off", "on", "evidence-invalid", ""},
 		{"text", "off", "on", "short-output", "produced 7 copies"},
-		{"text", "off", "off", "overlap", "reached concurrency 1"},
+		{"text", "off", "off", "overlap", ""},
+		{"images", "off", "off", "overlap", ""},
 		{"images", "on", "on", "", ""},
 		{"images", "on", "off", "", ""},
 		{"images", "off", "on", "", ""},
@@ -1643,7 +1678,11 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 			}
 			defer func() { os.Args = previous }()
 			err = run()
-			if (err != nil) != (tc.failure != "") {
+			if tc.defect == "overlap" {
+				if err != nil {
+					t.Fatalf("missing diagnostic progress witness must not fail the command: %v", err)
+				}
+			} else if err == nil || tc.failure == "" && !strings.Contains(err.Error(), "coverage is incomplete") {
 				t.Fatalf("error=%v, want failure=%q", err, tc.failure)
 			}
 			data, err := os.ReadFile(filepath.Join(out, summaryFile))
@@ -1683,8 +1722,8 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 					for _, raw := range result.Details["turns"].([]any) {
 						turn := raw.(map[string]any)
 						x := turn["server_execution"].(map[string]any)
-						if !strings.HasPrefix(turn["queued_requests_basis"].(string), "inferred:") {
-							t.Fatal("client timing must not be labeled server queue evidence")
+						if turn["queued_requests_basis"] != nil || turn["queued_requests"] != nil {
+							t.Fatal("client timing must not infer queue pressure")
 						}
 						if tc.defect == "evidence" {
 							if x["complete_requests"] != float64(1) || x["incomplete_requests"] != float64(1) || x["inconsistent_requests"] != float64(1) || x["observed_queue_entries"] != float64(2) || x["maximum_queue_wait_seconds"] != 0.04 || fmt.Sprint(x["assigned_slots"]) != "[0]" {
@@ -1696,7 +1735,7 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 							}
 						} else if tc.defect == "overlap" {
 							if x["complete_requests"] != float64(3) || fmt.Sprint(x["assigned_slots"]) != "[0 1]" || turn["maximum_concurrency"] != float64(1) {
-								t.Fatalf("server slots must not replace failed client overlap: %v", turn)
+								t.Fatalf("client overlap must remain diagnostic: %v", turn)
 							}
 						} else if x["incomplete_requests"] != float64(3) || x["maximum_queue_wait_seconds"] != nil || len(x["assigned_slots"].([]any)) != 0 {
 							t.Fatalf("missing events must not invent slot/queue evidence: %v", x)
@@ -1738,8 +1777,16 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 				}
 				if tc.defect == "overlap" {
 					phases := result.Details["turns"].([]any)
-					if result.Details["completed_history_turns"] != float64(0) || len(phases) != 1 || phases[0].(map[string]any)["complete"] != true || len(result.Details["requests"].([]any)) != 3 {
-						t.Fatalf("failed overlap must retain completed requests without claiming complete workload: %v", result.Details)
+					wantPhases := 21
+					if workload == "images" {
+						wantPhases = 23
+					}
+					if result.Details["completed_history_turns"] != float64(21) || len(phases) != wantPhases || summary.CoverageStatus != "OBSERVED" {
+						t.Fatalf("low overlap must finish histories with required scheduling coverage: %v", result.Details)
+					}
+					log, err := os.ReadFile(filepath.Join(out, toolLogFile))
+					if err != nil || !strings.Contains(string(log), "WARNING:") || !strings.Contains(string(log), "coverage: warning — batch generation progress during peer prefill") {
+						t.Fatalf("missing progress warning: %s, %v", log, err)
 					}
 				}
 				if failure == "" {
@@ -1803,6 +1850,93 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 						t.Fatalf("%s event count=%d, want one per workload request", result.Name, counts[result.Name])
 					}
 				}
+			}
+		})
+	}
+}
+
+// Exercise the emitted scheduling contract with an independent server clock.
+// Missing generation progress is a warning; missing ownership/handoff is required coverage.
+func TestBatchSchedulingEvidenceReport(t *testing.T) {
+	for _, defect := range []string{"", "stalled", "reassigned", "foreign", "stale", "no-wait", "conflict", "serial", "missing"} {
+		t.Run(defect, func(t *testing.T) {
+			base := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			evidence := serverEvidence{Available: true, BatchLifecycle: make(map[string][]map[string]any)}
+			var requests []batchRequestResult
+			for session := range 3 {
+				trace := fmt.Sprintf("trace-%d", session)
+				queued, assigned, finished := 0, session, session+4
+				slot := session % 2
+				if session == 2 {
+					queued, assigned, finished = 2, 4, 8
+				}
+				if defect == "serial" {
+					assigned, finished = session*4, (session+1)*4
+				}
+				if defect == "no-wait" {
+					queued = assigned
+				}
+				if defect == "conflict" && session == 1 {
+					slot = 0
+				}
+				at := func(seconds int) string {
+					return base.Add(time.Duration(seconds) * time.Second).Format(time.RFC3339Nano)
+				}
+				evidence.BatchLifecycle[trace] = []map[string]any{
+					{"stage_name": "schedule-job", "status": "queued", "time": at(queued)},
+					{"stage_name": "schedule-job", "status": "complete", "time": at(assigned), "slot": float64(slot), "queue_wait": fmt.Sprintf("%ds", assigned-queued)},
+					{"stage_name": "execute-in-slot", "status": "started", "time": at(assigned), "slot": float64(slot)},
+					{"stage_name": "execute-in-slot", "status": "complete", "time": at(finished), "slot": float64(slot)},
+				}
+				requests = append(requests, batchRequestResult{Session: session + 1, Turn: 1, Phase: "cold", TraceID: trace, ResponseID: fmt.Sprintf("response-%d", session)})
+			}
+			if defect == "missing" {
+				delete(evidence.BatchLifecycle, "trace-1")
+			}
+			samples := []engineDiagnostic{
+				{Iteration: 10, Slots: []slotDiagnostic{{ID: 0, RequestID: "response-0", Phase: "prefill"}, {ID: 1, RequestID: "response-1", Phase: "generation", GeneratedTokens: 7}}},
+				{Iteration: 11, Slots: []slotDiagnostic{{ID: 0, RequestID: "response-0", Phase: "prefill"}, {ID: 1, RequestID: "response-1", Phase: "generation", GeneratedTokens: 9}}},
+			}
+			switch defect {
+			case "stalled":
+				samples[1].Slots[1].GeneratedTokens = 7
+			case "reassigned":
+				samples[1].Slots[1].RequestID = "response-2"
+			case "foreign":
+				samples[0].Slots[0].RequestID, samples[1].Slots[0].RequestID = "foreign", "foreign"
+			case "stale":
+				samples[1].Iteration = 10
+			}
+			summary := runSummary{ServerEvidence: evidence, Scenarios: []scenarioResult{{Name: "batch/text", Status: "PASS", Details: map[string]any{
+				"configuration": map[string]any{"slots": 2}, "requests": requests,
+				"turns": []batchTurnSummary{{Turn: 1, Phase: "cold", Complete: true, MaximumConcurrency: 1, SchedulerSamples: samples}},
+			}}}}
+			annotateBatchExecution(&summary)
+			scenario := summary.Scenarios[0]
+			if scenario.Status != "PASS" || len(scenario.Failures) != 0 {
+				t.Fatalf("coverage changed behavior: %+v", scenario)
+			}
+			wantSlots, wantProgress := "exercised", "exercised"
+			switch defect {
+			case "stalled", "reassigned", "foreign", "stale":
+				wantProgress = "warning"
+			case "no-wait", "conflict", "serial", "missing":
+				wantSlots = "not exercised"
+			}
+			if len(scenario.Coverage) != 2 || scenario.Coverage[0].Status != wantSlots || scenario.Coverage[1].Status != wantProgress {
+				t.Fatalf("incorrect scheduling coverage: %+v", scenario.Coverage)
+			}
+			art, err := newArtifacts(filepath.Join(t.TempDir(), "out"), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer art.close()
+			if err := art.writeLogSummary(summary); err != nil {
+				t.Fatal(err)
+			}
+			log, err := os.ReadFile(filepath.Join(art.dir, toolLogFile))
+			if err != nil || !strings.Contains(string(log), "client_response_overlap=1") || strings.Contains(string(log), "inferred_queued") {
+				t.Fatalf("incorrect diagnostic labels: %s, %v", log, err)
 			}
 		})
 	}

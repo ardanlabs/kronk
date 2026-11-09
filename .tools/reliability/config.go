@@ -103,7 +103,7 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.RecoveryCycles, "recovery-cycles", 1, "text-state and image-state recovery cycles without unloading the model")
 
 	fs.StringVar(&cfg.MTPEmbeddedModel, "mtp-embedded-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", "embedded-MTP base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
-	fs.StringVar(&cfg.MTPCompanionModel, "mtp-companion-model", "unsloth/Qwen3.8-27B-UD-Q4_K_XL", "companion own-KV MTP base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
+	fs.StringVar(&cfg.MTPCompanionModel, "mtp-companion-model", "unsloth/Qwen3.8-27B-UD-Q6_K", "companion own-KV MTP base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
 	fs.StringVar(&cfg.MTPProfile, "mtp-profile", "all", "MTP profile: embedded, companion, or all")
 	fs.IntVar(&cfg.MTPRequests, "mtp-requests", 0, "concurrent MTP requests (0 uses every configured slot)")
 	fs.IntVar(&cfg.MTPPromptTokens, "mtp-prompt-tokens", 2200, "calibrated MTP prompt tokens")
@@ -124,8 +124,8 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.BatchTargetTokens, "batch-target-tokens", 30000, "minimum final prompt tokens")
 	fs.IntVar(&cfg.BatchTokensPerTurn, "batch-tokens-per-turn", 1400, "target tokens added per turn")
 	fs.IntVar(&cfg.BatchMaxTokens, "batch-max-tokens", 128, "maximum batch completion tokens")
-	fs.IntVar(&cfg.BatchSlots, "batch-slots", 4, "expected generation slots")
-	fs.IntVar(&cfg.BatchConversations, "batch-conversations", 5, "conversations; values above slots exercise queue pressure")
+	fs.IntVar(&cfg.BatchSlots, "batch-slots", 4, "expected execution slots (prefill and generation)")
+	fs.IntVar(&cfg.BatchConversations, "batch-conversations", 8, "conversations; default matches four slots with two admission layers; values above slots offer queue pressure")
 	fs.StringVar(&cfg.BatchProfile, "batch-profile", "all", "batch profile: text, images, or all")
 	fs.StringVar(&batchImages, "batch-images", "examples/samples/giraffe.jpg,examples/samples/adetailer-face.png", "comma-separated distinct batch image fixtures")
 	fs.StringVar(&batchSubjects, "batch-image-subjects", "giraffe,astronaut", "comma-separated expected subject per batch image, in matching order")
@@ -138,7 +138,7 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.MediaMaxTokens, "image-state-max-tokens", 128, "maximum image-state completion tokens")
 	fs.IntVar(&cfg.MediaGenerationMaxTokens, "image-prefill-generation-max-tokens", 512, "maximum concurrent text completion tokens")
 	fs.IntVar(&cfg.MediaImageMaxTokens, "image-prefill-max-tokens", 64, "maximum concurrent image completion tokens")
-	fs.DurationVar(&cfg.MediaMaxGenerationGap, "image-prefill-max-generation-gap", time.Second, "largest allowed text event gap during image prefill")
+	fs.DurationVar(&cfg.MediaMaxGenerationGap, "image-prefill-max-generation-gap", time.Second, "hard text event-gap limit when explicitly supplied; otherwise gaps above 1s are UX warnings only")
 	fs.BoolVar(&cfg.MediaRequireIsolatedPrefill, "image-require-isolated-prefill", false, "request evidence of isolated image execution above the prefill contribution limit; missing evidence reports incomplete coverage")
 
 	if err := fs.Parse(args); err != nil {

@@ -172,7 +172,7 @@ func selectProbe(cfg config, cell coverageCell, profile string) probeSelection {
 	}
 	mode := "-MTP-" + strings.ToUpper(cell.MTP) + "-IMC-" + strings.ToUpper(cell.IMC)
 	embedded := "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL"
-	companion := "unsloth/Qwen3.8-27B-UD-Q4_K_XL"
+	companion := "unsloth/Qwen3.8-27B-UD-Q6_K"
 	vision := "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0"
 	base := ""
 	suffix := "/TOOLS" + mode
@@ -206,6 +206,9 @@ func selectProbe(cfg config, cell coverageCell, profile string) probeSelection {
 		if cell.State == "Hybrid" && cell.Type == "MoE" {
 			base = "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL"
 		}
+		if profile == "text-state" && cell.State == "Hybrid" && cell.Type == "Dense" {
+			base, suffix = companion, "/TOOLS-1S"+mode
+		}
 		if cell.State == "Attention-only" && cell.Type == "Dense" && cell.MTP == "off" {
 			base = "unsloth/Qwen3-0.6B-Q8_0"
 			cfg.LongContextStages = []int{4096, 8192, 16384}
@@ -218,6 +221,10 @@ func selectProbe(cfg config, cell coverageCell, profile string) probeSelection {
 	case "batch-text", "batch-images":
 		if cell.State == "Hybrid" && cell.Type == "MoE" {
 			base = embedded
+		}
+		if profile == "batch-text" && cell.State == "Hybrid" && cell.Type == "Dense" {
+			base = companion
+			cfg.BatchSlots, cfg.BatchConversations = 2, 4
 		}
 		if profile == "batch-text" && cell.State == "Attention-only" && cell.Type == "Dense" && cell.MTP == "off" {
 			base, suffix = vision, "/TOOLS-BATCH"+mode
@@ -245,7 +252,7 @@ func selectProbe(cfg config, cell coverageCell, profile string) probeSelection {
 		} else if cell.Type == "Dense" && cell.MTP == "off" {
 			base = vision
 			if profile == "image-state" {
-				base = "unsloth/Ministral-3-14B-Instruct-2512-Q4_0"
+				base = "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
 			}
 			if slots == 1 {
 				suffix = "/TOOLS-1S" + mode
