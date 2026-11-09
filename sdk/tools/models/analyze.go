@@ -313,6 +313,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	profileInput := profileInput{
 		weightLoading:       runtimeCfg.VRAMWeightLoading(devs),
 		lazyTable:           info.lazyTable,
+		architecture:        profile.Architecture,
 		computeKind:         profile.ComputeKind,
 		attention:           profile.Attention,
 		vocabSize:           vocabSize,
@@ -368,7 +369,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	// -------------------------------------------------------------------------
 	// Warnings.
 
-	var warnings []string
+	warnings := slices.Clone(profile.Warnings)
 
 	if !sf.SupportsGPUOffload {
 		warnings = append(warnings, "No GPU offload support detected; inference will use CPU only")
@@ -418,6 +419,7 @@ func normalizeAnalysisConfig(cfg ModelConfig, trainingCtx int64) ModelConfig {
 type profileInput struct {
 	weightLoading       vram.WeightLoading
 	lazyTable           vram.LazyTable
+	architecture        string
 	computeKind         modelprofile.ComputeKind
 	attention           gguf.AttentionFacts
 	computeBackend      string
@@ -691,17 +693,21 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 	batchCfg := p.batchConfig
 	batchCfg.PtrNSeqMax = new(int(slots))
 	_, physical := batchCfg.GenerationBatchSizes(p.generationRows, p.singlePhysicalBatch)
+
 	if p.class == "embedding" || p.class == "rerank" {
 		physical = batchCfg.BatchBaseSize()
 	}
+
 	headCountKV := p.attn.FullHeadCountKV
 	if headCountKV <= 0 {
 		headCountKV = p.headCountKV
 	}
+
 	keyLength := p.attn.FullKeyLength
 	if keyLength <= 0 {
 		keyLength = p.keyLength
 	}
+
 	valueLength := p.attn.FullValueLength
 	if valueLength <= 0 {
 		valueLength = p.valueLength
@@ -717,6 +723,7 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 	return vram.Calculate(vram.Input{
 		WeightLoading:         p.weightLoading,
 		LazyTable:             p.lazyTable,
+		Architecture:          p.architecture,
 		ComputeKind:           p.computeKind,
 		CompressRatios:        p.attention.CompressRatios,
 		KVSources:             p.attention.KVSources,

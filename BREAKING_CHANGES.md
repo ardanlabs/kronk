@@ -3,7 +3,6 @@
 ## Index
 
 - [v1.33.2](#v1332)
-  - [MoE Expert Cache CPU Share](#v1332-moe-expert-cache-cpu-share)
   - [Browser Admin Session Lifetime](#v1332-browser-admin-session-lifetime)
   - [Internal RAM IMC Storage](#unreleased-internal-ram-imc-storage)
   - [Speculative Rollback Diagnostics](#unreleased-speculative-rollback-diagnostics)
@@ -52,17 +51,6 @@
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
 ## v1.33.2
-
-### v1.33.2: MoE Expert Cache CPU Share
-
-Added optional `moe.cache-cpu-share` (`model.MoEConfig.PtrCacheCPUShare`,
-`*float32`) for experimental GPU expert caching. It must be finite and between
-0 and 1. After an active cache fills, it controls the fraction of eligible
-misses computed on CPU rather than uploaded to GPU. Unset or zero preserves
-existing behavior. Cache capacity and pool reservations are unchanged.
-
-All three BUI VRAM calculators expose and export the setting; it does not
-discount estimated memory. No configuration migration is required.
 
 ### v1.33.2: Browser Admin Session Lifetime
 

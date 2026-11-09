@@ -101,7 +101,7 @@ func TestComputeKindNumericWireValues(t *testing.T) {
 		modelprofile.ComputeQwen35, modelprofile.ComputeGPTOSS, modelprofile.ComputeMistral3,
 		modelprofile.ComputeLFM2, modelprofile.ComputeGLM4MoE, modelprofile.ComputeGemma3,
 		modelprofile.ComputeLlama, modelprofile.ComputeClef, modelprofile.ComputeModernBERT,
-		modelprofile.ComputeDeepSeek41,
+		modelprofile.ComputeDeepSeek41, modelprofile.ComputeLFM3, modelprofile.ComputeKimiK3,
 	}
 	for index, member := range members {
 		if member.Value() != uint8(index) || !modelprofile.MustParseComputeKind(uint8(index)).Equal(member) {
@@ -129,7 +129,7 @@ func TestComputeKindNumericWireValues(t *testing.T) {
 				if err := codec.unmarshal(data, &decoded); err != nil || !decoded.Equal(member) {
 					t.Fatalf("round trip: got %v, %v, want %v, nil", decoded, err, member)
 				}
-				if err := codec.unmarshal([]byte("13"), &decoded); err == nil || !decoded.Equal(member) {
+				if err := codec.unmarshal([]byte("255"), &decoded); err == nil || !decoded.Equal(member) {
 					t.Fatal("unregistered numeric ID did not fail atomically")
 				}
 			})

@@ -8,6 +8,34 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
+func TestResolveRequiresFileMetadata(t *testing.T) {
+	for _, tt := range []struct {
+		architecture string
+		want         bool
+	}{
+		{"lfm3", true},
+		{"kimi-k3", true},
+		{"kimi-k31", true},
+		{"lfm2", false},
+		{"llama", false},
+		{"unknown", false},
+	} {
+		for _, blocks := range []string{"0", "4"} {
+			t.Run(tt.architecture+"/blocks-"+blocks, func(t *testing.T) {
+				// Scalar-only native metadata must advertise the requirement
+				// even when missing arrays cause validation to fail or return early.
+				profile := arch.Resolve(map[string]string{
+					"general.architecture":           tt.architecture,
+					tt.architecture + ".block_count": blocks,
+				})
+				if profile.RequiresFileMetadata != tt.want {
+					t.Errorf("RequiresFileMetadata: got %v, want %v", profile.RequiresFileMetadata, tt.want)
+				}
+			})
+		}
+	}
+}
+
 func TestResolveArchitectureParity(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -247,6 +247,63 @@ func TestAnalyzeIndexedWorkspaceMatchesCalculator(t *testing.T) {
 	}
 }
 
+func TestAnalyzeKimiK31MatchesCalculator(t *testing.T) {
+	info := ModelInfo{
+		ID: "Kimi-K3.1-Pro", Size: 1 << 30,
+		Metadata: map[string]string{
+			"general.architecture": "kimi-k31",
+			"kimi-k31.block_count": "5", "kimi-k31.embedding_length": "256", "kimi-k31.context_length": "8192",
+			"kimi-k31.attention.head_count": "8", "kimi-k31.attention.head_count_kv": "[0 1 0 1 1]",
+			"kimi-k31.attention.key_length": "64", "kimi-k31.attention.kv_lora_rank": "32",
+			"kimi-k31.ssm.conv_kernel": "3", "kimi-k31.kda.head_dim": "16",
+			"kimi-k31.attention.indexer.key_length": "32", "kimi-k31.attention.indexer.head_count": "4",
+			"kimi-k31.attention.q_lora_rank": "64", "kimi-k31.attention.indexer.top_k": "64",
+			"kimi-k31.attention.indexer.types": "[true true false false true]",
+		},
+	}
+	analysis, err := Analyze(info, devices.Devices{
+		GPUCount: 1, GPUTotalBytes: 64 << 30, SystemRAMBytes: 64 << 30, SupportsGPUOffload: true,
+		Devices: []devices.DeviceInfo{{Name: "GPU", Type: "gpu_cuda", FreeBytes: 60 << 30, TotalBytes: 64 << 30}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(analysis.Warnings) == 0 || !contains(analysis.Warnings[0], "compute workspace is uncalibrated") {
+		t.Errorf("warnings: got %v, want uncalibrated workspace warning", analysis.Warnings)
+	}
+	for _, rec := range analysis.Profiles {
+		cfg := model.Config{PtrNSeqMax: new(int(rec.NSeqMax))}
+		_, physical := cfg.GenerationBatchSizes(1, false)
+		want := vram.Calculate(vram.Input{
+			Architecture: "kimi-k31", ModelSizeBytes: 1 << 30, BlockCount: 5, EmbeddingLength: 256,
+			ComputeKind: modelprofile.ComputeKimiK3,
+			HeadCount:   8, HeadCountKV: 1, KeyLength: 64, ValueLength: 32,
+			HeadCountKVByLayer: []int64{0, 1, 0, 1, 1}, RecurrentPattern: []bool{true, false, true, false, false},
+			RecurrentStateBytes: 11264, IndexerKeyLength: 32, IndexerHeads: 4, IndexerTopK: 64, QueryRank: 64,
+			IndexerSources: []int64{-1, 1, -1, 1, 4}, ContextWindow: rec.ContextWindow, Slots: rec.NSeqMax,
+			NUBatch: int64(physical), TypeK: 1, TypeV: 1, BytesPerElement: 2,
+		})
+		if !rec.Fits || rec.CacheTypeK != "f16" || rec.EstimatedVRAMBytes != want.TotalVRAM {
+			t.Errorf("%s: got %+v, want fitting F16 reservation %d", rec.Name, rec, want.TotalVRAM)
+		}
+	}
+	rocm, err := Analyze(info, devices.Devices{
+		GPUCount: 2, SystemRAMBytes: 64 << 30, SupportsGPUOffload: true,
+		Devices: []devices.DeviceInfo{
+			{Name: "ROCm0", Type: "gpu_rocm", FreeBytes: 32 << 30},
+			{Name: "ROCm1", Type: "gpu_rocm", FreeBytes: 32 << 30},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range rocm.Profiles {
+		if rec.SplitMode == "tensor" {
+			t.Errorf("%s selected unsupported tensor parallelism", rec.Name)
+		}
+	}
+}
+
 func TestAnalyzeModelMoE(t *testing.T) {
 
 	// Simulate a Qwen3-30B-A3B MoE model.

@@ -10,16 +10,14 @@ import (
 // control tags may be split across decoded tokens, so a possible tag is held
 // until its terminating <|sep|> arrives.
 type stateMachine struct {
-	status model.Channel
-
-	pending           strings.Builder
-	tools             strings.Builder
-	inTag             bool
-	inTools           bool
-	afterTools        bool
-	malformedTool     bool
-	pendingAfterTools bool
-
+	status         model.Channel
+	pending        strings.Builder
+	tools          strings.Builder
+	inTag          bool
+	inTools        bool
+	afterTools     bool
+	messageClosed  bool
+	malformedTool  bool
 	toolCallDeltas []model.ResponseToolCallDelta
 	startedCalls   []model.ResponseToolCallDelta
 	detectedCalls  int
@@ -33,8 +31,8 @@ func (sm *stateMachine) Reset() {
 	sm.inTag = false
 	sm.inTools = false
 	sm.afterTools = false
+	sm.messageClosed = false
 	sm.malformedTool = false
-	sm.pendingAfterTools = false
 	sm.toolCallDeltas = nil
 	sm.startedCalls = nil
 	sm.detectedCalls = 0
@@ -52,17 +50,16 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		return sm.completeTools(), false
 	}
 
+	if sm.afterTools {
+		return sm.classifyAfterTools(content)
+	}
+
 	if sm.inTag {
 		sm.pending.WriteString(content)
 		candidate := sm.pending.String()
 		if !possibleControlTag(candidate) {
 			sm.pending.Reset()
 			sm.inTag = false
-			if sm.pendingAfterTools {
-				sm.pendingAfterTools = false
-				sm.malformedTool = true
-				return model.Result{Channel: model.ChannelTool, Content: candidate}, false
-			}
 			return sm.Classify(candidate)
 		}
 		if !strings.Contains(candidate, sepToken) {
@@ -71,37 +68,7 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 		sm.pending.Reset()
 		sm.inTag = false
-		if sm.pendingAfterTools {
-			sm.pendingAfterTools = false
-			if !strings.HasPrefix(candidate, toolsOpen) {
-				sm.malformedTool = true
-				return model.Result{Channel: model.ChannelTool, Content: candidate}, false
-			}
-		}
 		return sm.classifyTag(candidate)
-	}
-
-	if sm.afterTools {
-		trimmed := strings.TrimLeft(content, " \t\r\n")
-		if trimmed == "" {
-			return model.Result{}, false
-		}
-		if trimmed == "<|end_of_msg|>" {
-			sm.afterTools = false
-			return model.Result{}, true
-		}
-		if strings.HasPrefix(trimmed, toolsOpen) {
-			sm.afterTools = false
-			return sm.Classify(trimmed)
-		}
-		if strings.HasPrefix(toolsOpen, trimmed) {
-			sm.afterTools = false
-			sm.pendingAfterTools = true
-			return sm.Classify(trimmed)
-		}
-		sm.afterTools = false
-		sm.malformedTool = true
-		return model.Result{Channel: model.ChannelTool, Content: trimmed}, false
 	}
 
 	start := firstControlTag(content)
@@ -137,12 +104,27 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 // Flush drains an unresolved Kimi control-tag prefix or incomplete tools block.
 func (sm *stateMachine) Flush() model.Result {
+	if sm.afterTools {
+		result, _ := sm.classifyAfterTools("")
+		if result.Content != "" {
+			return result
+		}
+
+		if sm.pending.Len() > 0 {
+			result = model.Result{Channel: model.ChannelTool, Content: sm.pending.String()}
+			sm.pending.Reset()
+			sm.afterTools = false
+			return result
+		}
+	}
+
 	if sm.inTools {
 		content := sm.tools.String()
 		sm.tools.Reset()
 		sm.inTools = false
 		return model.Result{Channel: model.ChannelTool, Content: content}
 	}
+
 	if !sm.inTag {
 		return model.Result{}
 	}
@@ -205,15 +187,43 @@ func (sm *stateMachine) completeTools() model.Result {
 	end := closeAt + len(toolsClose)
 	complete := content[:end]
 	remainder := content[end:]
-	if strings.TrimSpace(remainder) == "<|end_of_msg|>" {
-		remainder = ""
-	}
 	sm.tools.Reset()
-	sm.tools.WriteString(remainder)
-	sm.inTools = remainder != ""
-	sm.afterTools = remainder == ""
-	sm.detectedCalls = strings.Count(remainder, callOpen)
+	sm.inTools = false
+	sm.afterTools = true
+	sm.pending.WriteString(remainder)
 	return model.Result{Channel: model.ChannelTool, Content: complete}
+}
+
+// classifyAfterTools accepts only another tools block or the message trailer.
+// Keep incomplete trailer markers on the tool channel at Flush so malformed
+// output still invalidates the entire accumulated call list.
+func (sm *stateMachine) classifyAfterTools(content string) (model.Result, bool) {
+	sm.pending.WriteString(content)
+	candidate := strings.TrimLeft(sm.pending.String(), " \t\r\n")
+	sm.pending.Reset()
+	if !sm.messageClosed && strings.HasPrefix(candidate, messageClose) {
+		sm.messageClosed = true
+		candidate = strings.TrimLeft(candidate[len(messageClose):], " \t\r\n")
+	}
+	switch {
+	case candidate == "":
+		return model.Result{}, false
+	case strings.TrimSpace(candidate) == endOfMessage:
+		sm.afterTools = false
+		return model.Result{}, true
+	case !sm.messageClosed && strings.HasPrefix(candidate, toolsOpen):
+		sm.afterTools = false
+		return sm.Classify(candidate)
+	case strings.HasPrefix(endOfMessage, candidate),
+		!sm.messageClosed && strings.HasPrefix(messageClose, candidate),
+		!sm.messageClosed && strings.HasPrefix(toolsOpen, candidate):
+		sm.pending.WriteString(candidate)
+		return model.Result{}, false
+	default:
+		sm.afterTools = false
+		sm.malformedTool = true
+		return model.Result{Channel: model.ChannelTool, Content: candidate}, false
+	}
 }
 
 func (sm *stateMachine) updateToolCallDeltas() {

@@ -123,21 +123,21 @@ func toModelInfo(cfg Config, model llama.Model) (ModelInfo, error) {
 		}()
 	}
 
-	// llama_model_meta_* deliberately omits GGUF arrays. LFM3 needs its
-	// per-layer KV heads and SWA pattern to classify the hybrid runtime.
+	// llama_model_meta_* deliberately omits GGUF arrays. Adapters declare
+	// whether their profile needs those facts restored from the file.
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 	profile := arch.ResolveForModel(metadata, modelID)
-	if profile.Architecture == "lfm3" {
+	if profile.RequiresFileMetadata {
 		data, err := gguf.ReadHeaderBytes(cfg.ModelFiles[0])
 		if err != nil {
-			return ModelInfo{}, fmt.Errorf("read LFM3 topology: %w", err)
+			return ModelInfo{}, fmt.Errorf("read %s topology: %w", profile.Architecture, err)
 		}
 		fileMetadata, err := gguf.ParseMetadata(data)
 		if err != nil {
-			return ModelInfo{}, fmt.Errorf("parse LFM3 topology: %w", err)
+			return ModelInfo{}, fmt.Errorf("parse %s topology: %w", profile.Architecture, err)
 		}
 		for key, value := range fileMetadata {
-			if strings.HasPrefix(key, "lfm3.") {
+			if strings.HasPrefix(key, profile.Architecture+".") {
 				if _, exists := metadata[key]; !exists {
 					metadata[key] = value
 				}

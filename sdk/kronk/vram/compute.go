@@ -1,8 +1,6 @@
 package vram
 
 import (
-	"strings"
-
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
@@ -88,13 +86,14 @@ func selectMemoryPolicy(input Input) memoryPolicy {
 	case input.ComputeKind == modelprofile.ComputeModernBERT:
 		policy.compute = modernbertComputeMemory
 		policy.cache = noPersistentCache
+	case input.ComputeKind == modelprofile.ComputeLFM3:
+		policy.compute = lfm3ComputeMemory
+	case input.ComputeKind == modelprofile.ComputeKimiK3:
+		policy.cache = kimiCache
 	case input.ComputeKind == modelprofile.ComputeIndexed || input.IndexerKeyLength > 0:
 		policy.compute = qwen4expComputeMemory
 	}
 
-	if strings.EqualFold(input.Architecture, "lfm3") {
-		policy.compute = lfm3ComputeMemory
-	}
 	if input.NoPersistentCache {
 		policy.cache = noPersistentCache
 		policy.deviceCache = nil
