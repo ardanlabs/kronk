@@ -152,6 +152,8 @@ export default function VRAMCalculator() {
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
           expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
+          moe_cache_size: controlsProps.moeCacheSize,
+          moe_cache_cpu_share: controlsProps.moeCacheCPUShare,
         },
       );
       setResult(response);
@@ -196,6 +198,8 @@ export default function VRAMCalculator() {
       controlsProps.kvCacheMode,
       controlsProps.gpuLayers,
       controlsProps.expertLayersOnGPU,
+      controlsProps.moeCacheSize,
+      controlsProps.moeCacheCPUShare,
       controlsProps.kvCacheOnCPU,
       controlsProps.swaFull,
       controlsProps.deviceCount,
@@ -218,6 +222,8 @@ export default function VRAMCalculator() {
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
           expert_layers_on_gpu: EXPERTS_ALL_ON_GPU,
+          moe_cache_size: controlsProps.moeCacheSize,
+          moe_cache_cpu_share: controlsProps.moeCacheCPUShare,
         },
       );
       setResult(response);

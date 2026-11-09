@@ -22,6 +22,8 @@ func TestSupportsTensorParallel(t *testing.T) {
 		{"supported GLM4 MoE architecture", "glm4moe", true},
 		{"unsupported GLM DSA architecture", "glm-dsa", false},
 		{"unsupported experimental architecture", "qwen4exp", false},
+		{"unsupported Kimi K3.1 architecture", "kimi-k31", false},
+		{"mixed-case Kimi K3.1 architecture", "KIMI-K31", false},
 	}
 
 	for _, tt := range tests {

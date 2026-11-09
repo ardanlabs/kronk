@@ -43,8 +43,8 @@ func TestLFM3Profile(t *testing.T) {
 			if tt.recurrent > 0 && (a.RecurrentStateBytes != 2048 || a.FullHeadCountKV != 4 || a.SWAHeadCountKV != 2 || profile.SequenceProcessing != "Hybrid") {
 				t.Errorf("hybrid facts: got %+v, classification %q", a, profile.SequenceProcessing)
 			}
-			if profile.ComputeKind != modelprofile.ComputeGeneric || !profile.TiedOutputFallback {
-				t.Errorf("compute/tied output: got %v/%v, want generic/true", profile.ComputeKind, profile.TiedOutputFallback)
+			if profile.ComputeKind != modelprofile.ComputeLFM3 || !profile.TiedOutputFallback {
+				t.Errorf("compute/tied output: got %v/%v, want %v/true", profile.ComputeKind, profile.TiedOutputFallback, modelprofile.ComputeLFM3)
 			}
 			if profile.Batch.InputMixing != modelprofile.BatchInputMixingUnknown || !profile.Speculation.MTPArchitecture.IsZero() {
 				t.Errorf("unvalidated capabilities: got batch %+v, speculation %+v", profile.Batch, profile.Speculation)

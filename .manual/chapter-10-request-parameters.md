@@ -143,6 +143,16 @@ When `reasoning_effort` is omitted from both the request and model
 configuration, Kronk leaves it undefined so the selected chat template can
 apply its native default.
 
+The Kimi K3/K3.1 template uses native `thinking` and `thinking_effort` variables.
+Pass them through `chat_template_kwargs`, for example
+`{"thinking": true, "thinking_effort": "high"}`. Supported native efforts are
+`low`, `high`, and `max`; the template defaults to thinking enabled and effort
+`max`. Set `chat_template_kwargs: {"thinking": false}` to disable thinking,
+including for grammar- or JSON-constrained output. These values can also be
+set as model-level `chat-template-kwargs` defaults; request kwargs override
+those defaults. Kronk does not translate `enable_thinking` or `reasoning_effort`
+into these model-specific variables.
+
 ## 10.6 Structured Output
 
 Kronk can convert JSON Schema to a GBNF grammar and constrain emitted tokens.

@@ -27,6 +27,8 @@ const (
 	callClose     = closeToken + "call" + sepToken
 	argumentOpen  = openToken + "argument"
 	argumentClose = closeToken + "argument" + sepToken
+	messageClose  = closeToken + "message" + sepToken
+	endOfMessage  = "<|end_of_msg|>"
 )
 
 // Parser implements model.Parser for Kimi structured output.
@@ -87,10 +89,18 @@ func containsKimiMarkers(template string) bool {
 		return true
 	}
 
-	return strings.Contains(template, "'<|open|>' + tag") &&
-		strings.Contains(template, "'<|close|>' + tag") &&
-		strings.Contains(template, "'<|sep|>'") &&
-		strings.Contains(template, "otag('response')") &&
-		strings.Contains(template, "otag('tools')") &&
-		strings.Contains(template, "otag('call'")
+	if !strings.Contains(template, "'<|open|>' + tag") ||
+		!strings.Contains(template, "'<|close|>' + tag") ||
+		!strings.Contains(template, "'<|sep|>'") {
+		return false
+	}
+
+	for _, macro := range []string{"otag", "open_tag"} {
+		if strings.Contains(template, macro+"('response')") &&
+			strings.Contains(template, macro+"('tools')") &&
+			strings.Contains(template, macro+"('call'") {
+			return true
+		}
+	}
+	return false
 }

@@ -124,6 +124,7 @@ export default function VRAMResults({
 
   if (isMoE) {
     breakdownRows.push({ label: labelWithTip('MoE Expert Cache (budget)', 'moeCacheSize'), value: formatBytes(moeCacheBytes ?? 0) });
+    breakdownRows.push({ label: labelWithTip('MoE Cache CPU Share', 'moeCacheCPUShare'), value: String(input.moe_cache_cpu_share ?? 0) });
   }
 
   const headerRows: { label: ReactNode; value: string }[] = [
@@ -365,6 +366,7 @@ export interface VramComputedConfig {
   moeMode: string;
   moeKeepTopN: number | null;
   moeCacheSize: number;
+  moeCacheCPUShare: number;
 }
 
 function buildComputedCatalogConfig(
@@ -427,6 +429,7 @@ function buildComputedCatalogConfig(
     moeMode,
     moeKeepTopN,
     moeCacheSize: isMoE ? (input.moe_cache_size ?? 0) : 0,
+    moeCacheCPUShare: isMoE ? (input.moe_cache_cpu_share ?? 0) : 0,
   };
 }
 
@@ -456,13 +459,14 @@ function configToYAML(config: VramComputedConfig, configName?: string, defaults?
     lines.push('  swa-full: false');
   }
 
-  if (config.moeMode || config.moeCacheSize > 0) {
+  if (config.moeMode || config.moeCacheSize > 0 || config.moeCacheCPUShare > 0) {
     lines.push('  moe:');
     if (config.moeMode) lines.push(`    mode: ${config.moeMode}`);
     if (config.moeMode === 'keep_top_n' && config.moeKeepTopN != null) {
       lines.push(`    keep-experts-top-n: ${config.moeKeepTopN}`);
     }
     if (config.moeCacheSize > 0) lines.push(`    cache-size: ${config.moeCacheSize}`);
+    lines.push(`    cache-cpu-share: ${config.moeCacheCPUShare}`);
   }
 
   if (config.tensorSplit) {

@@ -307,6 +307,10 @@ var (
 	ComputeModernBERT = newComputeKind(11)
 	// ComputeDeepSeek41 identifies DeepSeek V4.1 compressed-attention workspaces.
 	ComputeDeepSeek41 = newComputeKind(12)
+	// ComputeLFM3 identifies LFM3's uncalibrated mixed-attention workspace allowance.
+	ComputeLFM3 = newComputeKind(13)
+	// ComputeKimiK3 identifies Kimi K3/K3.1's generic workspace allowance and native cache layout.
+	ComputeKimiK3 = newComputeKind(14)
 )
 
 func newComputeKind(value uint8) ComputeKind {

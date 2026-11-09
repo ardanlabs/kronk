@@ -2,6 +2,7 @@ package toolapp
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,11 +11,35 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestMoECacheCPUShareTransport(t *testing.T) {
+	for _, share := range []float32{0, 0.25, 1} {
+		resp := toModelInfo(llamamodels.FileInfo{}, llamamodels.ModelInfo{},
+			llamamodels.ModelConfig{MoE: &model.MoEConfig{PtrCacheCPUShare: new(share)}}, nil)
+		data, _, err := resp.Encode()
+		if err != nil {
+			t.Fatalf("Encode: %v", err)
+		}
+		if want := fmt.Sprintf(`"cache-cpu-share":%v`, share); !bytes.Contains(data, []byte(want)) {
+			t.Errorf("Encode: got %s, want %s", data, want)
+		}
+	}
+	for _, share := range []float32{-0.01, 1.01} {
+		body := fmt.Sprintf(`{"model_id":"example/model","moe_cache_cpu_share":%v}`, share)
+		req := httptest.NewRequest(http.MethodPost, "/v1/models/vram", bytes.NewBufferString(body))
+		resp := (&app{}).calculateVRAM(t.Context(), req)
+		err, ok := resp.(*errs.Error)
+		if !ok || err.Code != errs.InvalidArgument {
+			t.Errorf("calculateVRAM(%v): got %v, want InvalidArgument", share, resp)
+		}
+	}
+}
 
 func TestVRAMResponsePreservesZeroExpertLayers(t *testing.T) {
 	resp := toVRAMResponse(vram.Result{

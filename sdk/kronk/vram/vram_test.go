@@ -937,6 +937,58 @@ func TestFromBytesDeepSeek41Compute(t *testing.T) {
 	}
 }
 
+func TestFromBytesKimiK31Memory(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		unified, cpu bool
+		typeK        int32
+		want         int64
+	}{
+		{"partitioned F16", false, false, 1, 921600},
+		{"unified F16", true, false, 1, 790528},
+		{"partitioned Q8", false, false, 8, 552960},
+		{"unified Q8", true, false, 8, 483328},
+		{"CPU cache", false, true, 1, 921600},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := map[string]string{
+				"general.architecture": "kimi-k31",
+				"kimi-k31.block_count": "5", "kimi-k31.embedding_length": "256",
+				"kimi-k31.attention.head_count": "8", "kimi-k31.attention.head_count_kv": "[0 1 0 1 1]",
+				"kimi-k31.attention.key_length": "64", "kimi-k31.attention.kv_lora_rank": "32",
+				"kimi-k31.ssm.conv_kernel": "3", "kimi-k31.kda.head_dim": "16",
+				"kimi-k31.attention.indexer.key_length": "32", "kimi-k31.attention.indexer.head_count": "4",
+				"kimi-k31.attention.q_lora_rank": "64", "kimi-k31.attention.indexer.top_k": "64",
+				"kimi-k31.attention.indexer.types": "[true true false false true]",
+			}
+			// Three K-only 64-wide MLA rows, two 32-wide indexer owners,
+			// and two KDA states of 11264 bytes × 2 sequences × 3 copies.
+			// 513 × 2 pads to 1280 shared cells or 768 × 2 separate cells.
+			// Q8_0 rows occupy 34 bytes per 32 values, not one byte/value.
+			result, err := FromBytes(deepseek41Header(t, metadata, nil), 1<<30, Config{
+				ContextWindow: 513, Slots: 2, NUBatch: 128, BytesPerElement: 2,
+				TypeK: tt.typeK, TypeV: 1, RecurrentStateCopies: 3,
+				KVUnified: tt.unified, KVCacheOnCPU: tt.cpu,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.SlotMemory != tt.want || result.KVPerSlot != tt.want/2 {
+				t.Errorf("persistent total/per slot: got %d/%d, want %d/%d", result.SlotMemory, result.KVPerSlot, tt.want, tt.want/2)
+			}
+			if tt.cpu && result.KVVRAMBytes != 0 {
+				t.Errorf("CPU cache GPU allocation: got %d, want 0", result.KVVRAMBytes)
+			}
+			input := result.Input
+			input.GPULayers = 2 // Output plus the final MLA/indexer owner.
+			partial := Calculate(input)
+			if !tt.cpu && partial.KVVRAMBytes != (tt.want-135168)*3/8 {
+				t.Errorf("partial GPU cache: got %d, want %d", partial.KVVRAMBytes, (tt.want-135168)*3/8)
+			}
+		})
+	}
+}
+
 func TestFromBytesLFM3Memory(t *testing.T) {
 	for _, tt := range []struct {
 		name, causal string
@@ -977,7 +1029,7 @@ func TestFromBytesLFM3Memory(t *testing.T) {
 			if tt.onCPU && result.KVVRAMBytes != 0 {
 				t.Errorf("GPU cache: got %d, want 0", result.KVVRAMBytes)
 			}
-			if result.Input.ComputeKind != modelprofile.ComputeGeneric || result.ComputeMemory.RuntimeAllowanceGPU != 256<<20 {
+			if result.Input.ComputeKind != modelprofile.ComputeLFM3 || result.ComputeMemory.RuntimeAllowanceGPU != 256<<20 {
 				t.Errorf("compute policy: got %v, allowance %d", result.Input.ComputeKind, result.ComputeMemory.RuntimeAllowanceGPU)
 			}
 			input := result.Input

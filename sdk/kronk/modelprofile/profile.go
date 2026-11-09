@@ -47,7 +47,7 @@ type BatchCapabilities struct {
 // Profile is the normalized view of one model artifact.
 type Profile struct {
 	Architecture           string
-	SequenceProcessing     string // Attention-only, Recurrent, Hybrid, or Unknown.
+	SequenceProcessing     string
 	Role                   Role
 	Purpose                Purpose
 	MemorySemantics        MemorySemantics
@@ -62,9 +62,11 @@ type Profile struct {
 	Batch                  BatchCapabilities
 	FileType               int64
 	HasChatTemplate        bool
+	RequiresFileMetadata   bool
 	SupportsTensorParallel bool
-	TiedOutputFallback     bool  // Loader reuses token embeddings when output.weight is absent.
-	LazyRowsPerToken       int64 // Row gathers from the eligible per-layer embedding table; 0 = unsupported.
+	TiedOutputFallback     bool
+	LazyRowsPerToken       int64
+	Warnings               []string
 
 	issues []error
 }

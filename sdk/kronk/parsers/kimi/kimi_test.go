@@ -19,9 +19,12 @@ func TestNewClaimsKimiK3(t *testing.T) {
 		want bool
 	}{
 		{"constructed-template", model.Fingerprint{ChatTemplate: constructedTemplate}, true},
+		{"upstream-macro-template", model.Fingerprint{ChatTemplate: strings.ReplaceAll(constructedTemplate, "otag(", "open_tag(")}, true},
 		{"literal-template", model.Fingerprint{ChatTemplate: thinkOpen + responseOpen + toolsOpen}, true},
 		{"architecture", model.Fingerprint{Architecture: "kimi-k3"}, true},
 		{"architecture-case", model.Fingerprint{Architecture: "KimiK3"}, true},
+		{"k31-architecture", model.Fingerprint{Architecture: "kimi-k31"}, true},
+		{"k31-model-name", model.Fingerprint{ModelName: "Moonshot-Kimi-K3.1"}, true},
 		{"model-name", model.Fingerprint{ModelName: "Moonshot-Kimi-K3-Instruct"}, true},
 		{"k2-architecture", model.Fingerprint{Architecture: "kimi-k2"}, false},
 		{"k2-model-name", model.Fingerprint{ModelName: "Kimi-K2-Instruct"}, false},
@@ -249,6 +252,80 @@ func TestStateMachineFlushPendingTag(t *testing.T) {
 	if got := flusher.Flush(); got != (model.Result{}) {
 		t.Errorf("second Flush: got %+v, want zero result", got)
 	}
+}
+
+func TestToolMessageChunkBoundaries(t *testing.T) {
+	parser := Parser{}
+	prompt := `<|open|>message role="assistant"<|sep|><|open|>response<|sep|><|close|>response<|sep|><|open|>tools<|sep|><|open|>call tool="ping" index="1"<|sep|><|open|>argument key="text" type="string"<|sep|>hello<|close|>argument<|sep|><|close|>call<|sep|><|close|>tools<|sep|><|close|>message<|sep|><|end_of_msg|>`
+	for size := 1; size <= len(prompt); size++ {
+		t.Run(fmt.Sprintf("chunk-%d", size), func(t *testing.T) {
+			calls := classifyToolChunks(t, parser, prompt, size)
+			if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "ping" || calls[0].Function.Arguments["text"] != "hello" {
+				t.Fatalf("ToolCall: got %+v, want executable ping(text=hello)", calls)
+			}
+		})
+	}
+}
+
+func TestStateMachineToolTrailers(t *testing.T) {
+	block := toolsOpen + callOpen + ` tool="ping" index="1"` + sepToken + callClose + toolsClose
+	for _, tt := range []struct {
+		name    string
+		tail    string
+		wantErr bool
+	}{
+		{name: "message-close", tail: messageClose},
+		{name: "message-close-eom", tail: messageClose + endOfMessage},
+		{name: "eom", tail: endOfMessage},
+		{name: "whitespace", tail: " \n" + messageClose + "\t" + endOfMessage},
+		{name: "garbage", tail: "unexpected", wantErr: true},
+		{name: "argument-close", tail: argumentClose, wantErr: true},
+		{name: "garbage-after-close", tail: messageClose + "unexpected", wantErr: true},
+		{name: "duplicate-close", tail: messageClose + messageClose, wantErr: true},
+		{name: "partial-close", tail: messageClose[:len(messageClose)-1], wantErr: true},
+		{name: "partial-eom", tail: messageClose + "<|end_of_", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// Vary chunk sizes, including fully coalesced tools and trailer.
+			input := block + tt.tail
+			for split := 1; split <= len(input); split++ {
+				calls := classifyToolChunks(t, Parser{}, input, split)
+				if len(calls) != 1 || (calls[0].Status != 0) != tt.wantErr {
+					t.Fatalf("chunk size %d: got %+v, want error %v", split, calls, tt.wantErr)
+				}
+			}
+		})
+	}
+
+	// Content in the same piece as EOM is still validated. Do not call the
+	// state machine after it has already returned EOG on an earlier piece.
+	input := block + messageClose + endOfMessage + "unexpected"
+	calls := classifyToolChunks(t, Parser{}, input, len(input))
+	if len(calls) != 1 || calls[0].Status == 0 {
+		t.Fatalf("coalesced garbage after EOM: got %+v, want failed call", calls)
+	}
+}
+
+func classifyToolChunks(t *testing.T, parser model.Parser, input string, size int) []model.ResponseToolCall {
+	t.Helper()
+	sm := parser.NewStateMachine()
+	var tool strings.Builder
+	for offset := 0; offset < len(input); offset += size {
+		result, eog := sm.Classify(input[offset:min(offset+size, len(input))])
+		if result.Channel == model.ChannelTool {
+			tool.WriteString(result.Content)
+		}
+		if eog {
+			break
+		}
+	}
+	flusher := sm.(model.StateMachineFlusher)
+	for result := flusher.Flush(); result != (model.Result{}); result = flusher.Flush() {
+		if result.Channel == model.ChannelTool {
+			tool.WriteString(result.Content)
+		}
+	}
+	return parser.ToolCall(t.Context(), nil, tool.String())
 }
 
 func assertResult(t *testing.T, sm model.StateMachine, token string, channel model.Channel, content string, eog bool) {

@@ -1176,6 +1176,7 @@ type VRAMInput struct {
 	GPULayers           int64             `json:"gpu_layers"`
 	ExpertLayersOnGPU   int64             `json:"expert_layers_on_gpu"`
 	MoECacheSize        int64             `json:"moe_cache_size"`
+	MoECacheCPUShare    float32           `json:"moe_cache_cpu_share"`
 	KVCacheOnCPU        bool              `json:"kv_cache_on_cpu,omitempty"`
 	SWAFull             bool              `json:"swa_full"`
 	KVCacheMode         model.KVCacheMode `json:"kv_cache_mode"`
@@ -1220,6 +1221,7 @@ type MoEConfig struct {
 	Mode                             model.MoEMode `json:"mode,omitzero"`
 	PtrKeepExpertsOnGPUForTopNLayers *int          `json:"keep_experts_top_n,omitempty"`
 	PtrCacheSize                     *int64        `json:"cache-size,omitempty"`
+	PtrCacheCPUShare                 *float32      `json:"cache-cpu-share,omitempty"`
 }
 
 func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
@@ -1231,6 +1233,7 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 		Mode:                             m.Mode,
 		PtrKeepExpertsOnGPUForTopNLayers: m.PtrKeepExpertsOnGPUForTopNLayers,
 		PtrCacheSize:                     m.PtrCacheSize,
+		PtrCacheCPUShare:                 m.PtrCacheCPUShare,
 	}
 }
 
@@ -1359,6 +1362,7 @@ type VRAMRequest struct {
 	GPULayers         int64              `json:"gpu_layers,omitempty"`
 	ExpertLayersOnGPU int64              `json:"expert_layers_on_gpu,omitempty"`
 	MoECacheSize      int64              `json:"moe_cache_size,omitempty"`
+	MoECacheCPUShare  float32            `json:"moe_cache_cpu_share,omitempty"`
 	KVCacheOnCPU      bool               `json:"kv_cache_on_cpu,omitempty"`
 	SWAFull           *bool              `json:"swa_full,omitempty"`
 	KVCacheMode       *model.KVCacheMode `json:"kv_cache_mode,omitempty"`

@@ -670,6 +670,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		return fmt.Errorf("validate-config: moe cache-size must be >= 0")
 	}
 
+	if share := cfg.MoECacheCPUShare(); math.IsNaN(float64(share)) || math.IsInf(float64(share), 0) || share < 0 || share > 1 {
+		return fmt.Errorf("validate-config: moe cache-cpu-share must be finite and between 0 and 1")
+	}
+
 	switch cfg.CacheTypeV {
 	case GGMLTypeQ4_0, GGMLTypeQ4_1, GGMLTypeQ5_0, GGMLTypeQ5_1, GGMLTypeQ8_0:
 		if cfg.FlashAttention() == FlashAttentionDisabled {
@@ -1038,6 +1042,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 
 	if mi.profile.MoE.IsMoE && cfg.MoECacheSize() > 0 {
 		ctxParams.MoeCacheSize = uint64(cfg.MoECacheSize())
+		ctxParams.MoeCacheCpuShare = cfg.MoECacheCPUShare()
 	}
 
 	if mi.IsEmbedModel || mi.IsRerankModel {
@@ -1217,6 +1222,12 @@ type MoEConfig struct {
 	// context, shared across GPUs. Zero uses llama.cpp's default (disabled).
 	// Original host weights remain resident. Ignored for non-MoE models.
 	PtrCacheSize *int64 `yaml:"cache-size,omitempty"`
+
+	// PtrCacheCPUShare sets the experimental fraction of GPU expert-cache misses
+	// computed on CPU instead of uploaded once the cache is full. Values must be
+	// finite and between 0 and 1. Unset or zero uploads all misses. This does not
+	// reduce the cache-size budget. Ignored without an active MoE expert cache.
+	PtrCacheCPUShare *float32 `yaml:"cache-cpu-share,omitempty"`
 }
 
 func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int {
@@ -1229,6 +1240,15 @@ func (cfg Config) MoECacheSize() int64 {
 		return 0
 	}
 	return *cfg.PtrMoE.PtrCacheSize
+}
+
+// MoECacheCPUShare returns the fraction of expert-cache misses computed on CPU.
+// Unset or zero uploads all misses; the cache must be full before sharing starts.
+func (cfg Config) MoECacheCPUShare() float32 {
+	if cfg.PtrMoE == nil || cfg.PtrMoE.PtrCacheCPUShare == nil {
+		return 0
+	}
+	return *cfg.PtrMoE.PtrCacheCPUShare
 }
 
 // ExpertsAllOnGPU is the sentinel value used for vram.Config.ExpertLayersOnGPU

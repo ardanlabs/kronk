@@ -727,7 +727,17 @@ my-moe-model:
   moe:
     mode: experts_cpu
     cache-size: 1073741824 # 1 GiB of additional GPU expert-cache capacity
+    cache-cpu-share: 0.25 # Compute a fraction of misses on CPU once full
 ```
+
+The optional `moe.cache-cpu-share` is a finite fraction from 0 to 1. Once an
+active expert cache fills, this fraction of eligible cache misses is computed
+on CPU instead of uploading the missed experts to GPU. Unset or zero preserves
+the existing upload behavior; 1 requests CPU computation for all eligible
+misses after the cache fills. It has no effect without an active MoE expert
+cache. It does not reduce the cache capacity, reserved bytes, or original host
+weights. Benchmark latency and peak memory for your workload; CPU execution
+can change compute/scratch overhead and is not a guaranteed speedup.
 
 The cache primarily targets small-batch generation (up to 32 tokens per
 microbatch when capacity permits). Multiple GPUs are supported; tensor
@@ -737,8 +747,10 @@ can fail context initialization. Models without eligible host-resident experts
 may run without an active cache. Benchmark before assuming a speedup.
 
 All three BUI calculators (standalone, model details, and catalog details)
-expose **MoE Expert Cache (GiB)** for MoE models and export `cache-size` in
-bytes. The calculator and pool reserve this budget in addition to model
+expose **MoE Expert Cache (GiB)** and **MoE Cache CPU Share (0–1)** for MoE
+models and export `cache-size` in bytes and `cache-cpu-share` as a fraction.
+Changing CPU share does not discount the memory estimate.
+The calculator and pool reserve the cache budget in addition to model
 weights, KV, and compute memory. On unified-memory systems it increases the
 shared physical-memory footprint; original host weights are not deducted.
 Per-GPU allocation is an estimate: actual cache placement follows eligible

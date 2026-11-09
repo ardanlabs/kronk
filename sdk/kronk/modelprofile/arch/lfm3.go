@@ -23,7 +23,9 @@ func (LFM3) Claims(architecture string) bool {
 // compute policy. Non-causal decision graphs retain their topology facts, but
 // do not retain either attention or convolution history between evaluations.
 func (LFM3) Apply(metadata Metadata, profile *modelprofile.Profile) error {
+	profile.RequiresFileMetadata = true
 	profile.MemorySemantics = modelprofile.MemoryRecurrent
+	profile.ComputeKind = modelprofile.ComputeLFM3
 	profile.TiedOutputFallback = true
 	blocks := profile.Dimensions.BlockCount
 	if blocks <= 0 {
