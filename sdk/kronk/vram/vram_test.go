@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -166,6 +168,21 @@ func TestFromBytesSpeechDecoderMemory(t *testing.T) {
 	}
 	cfg.ComputeBackend = "metal"
 	cfg.GPULayers = 0
+	changedMetadata := maps.Clone(metadata)
+	for _, key := range []string{"embedding_length", "feed_forward_length", "block_count", "attention.head_count", "projection_dim"} {
+		changedMetadata["clip.gen.audio."+key] = "17"
+	}
+	changedTensors := slices.Clone(tensors)
+	changedTensors[3].Dims = []int64{256}
+	changed, err := FromBytes(deepseek41Header(t, changedMetadata, changedTensors), 555371392, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An extra 64 speaker elements occupy 256 bytes in both the shared voice
+	// and the selected helper's reference copy. Native graph dimensions stay fixed.
+	if changed.ComputeMemory.WorkspaceCPU-single.ComputeMemory.WorkspaceCPU != 512 || changed.ComputeBufferEst != single.ComputeBufferEst {
+		t.Fatalf("Chatterbox reference tensor sizing: got %+v, baseline %+v", changed.ComputeMemory, single.ComputeMemory)
+	}
 	tensors[1].Dims[0] = 251
 	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 555371392, cfg); err == nil {
 		t.Error("accepted reference beyond calibrated length")
@@ -210,8 +227,8 @@ func TestFromBytesQwen3TTSMemory(t *testing.T) {
 		t.Fatal("Qwen per-helper tables or backbone KV did not scale with slots")
 	}
 	short, err := FromBytes(header, 1847874400, Config{ComputeBackend: "metal", Speech: &SpeechConfig{MaxFrames: 71}})
-	if err != nil || short.ComputeBufferCPU >= single.ComputeBufferCPU || short.SlotMemory != single.SlotMemory {
-		t.Fatalf("frame cap must reduce output allowance, not backbone KV: %+v, %v", short, err)
+	if err != nil || short.ComputeBufferCPU != single.ComputeBufferCPU || short.SlotMemory != single.SlotMemory {
+		t.Fatalf("frame cap must not change backbone memory; decoder owns waveform buffers: %+v, %v", short, err)
 	}
 	if _, err := FromBytes(deepseek41Header(t, metadata, tensors[1:]), 1847874400, Config{}); err == nil {
 		t.Fatal("accepted missing combined embedding table")
@@ -273,8 +290,8 @@ func TestFromBytesQwen3TTSDecoderMemory(t *testing.T) {
 	}
 	cfg.Speech = &SpeechConfig{MaxFrames: 71}
 	short, err := FromBytes(header, 669081472, cfg)
-	if err != nil || short.ComputeBufferEst != multiple.ComputeBufferEst {
-		t.Fatalf("frame cap changed the fixed 72-frame decoder graph: %+v, %v", short, err)
+	if err != nil || short.ComputeBufferEst != multiple.ComputeBufferEst || short.ComputeBufferCPU >= multiple.ComputeBufferCPU {
+		t.Fatalf("frame cap must reduce host outputs, not the fixed 72-frame decoder graph: %+v, %v", short, err)
 	}
 	for _, backend := range []string{"vulkan", "cuda", "rocm", "", "opencl"} {
 		cfg.ComputeBackend, cfg.Speech, cfg.Slots = backend, nil, 4
@@ -314,11 +331,58 @@ func TestFromBytesQwen3TTSDecoderMemory(t *testing.T) {
 			t.Fatalf("%s CPU placement lost Qwen decoder workspace/state: difference %d", backend, difference)
 		}
 	}
-	cfg.ComputeBackend = "metal"
-	cfg.GPULayers = 0
-	tensors[0].Dims[2] = 14
-	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 669081472, cfg); err == nil {
-		t.Fatal("accepted uncalibrated Qwen codebook layout")
+	for _, tt := range []struct {
+		name     string
+		tensor   int
+		dims     []int64
+		gpuDelta int64
+		cpuDelta int64
+		wantErr  bool
+	}{
+		{name: "predictor codebooks", tensor: 0, dims: []int64{1024, 2048, 14}},
+		// Eight F32 K/V pairs, each retaining 71 frames: 256 fewer channels.
+		{name: "codec attention width", tensor: 2, dims: []int64{512, 768}, gpuDelta: -1163264},
+		// Left context grows from 2×512 to 4×640 F32 elements.
+		{name: "convolution width and kernel", tensor: 4, dims: []int64{5, 640, 1024}, gpuDelta: 6144},
+		// Depthwise state uses ne2, not the singleton ne1 channel dimension.
+		{name: "depthwise width and kernel", tensor: 5, dims: []int64{9, 1, 1280}, gpuDelta: 16384},
+		// DAC stride rises from 8 to 10: 1536 more tail elements, and
+		// 2400 samples/frame instead of 1920 for readback and buffered output.
+		{name: "DAC stride", tensor: 9, dims: []int64{20, 768, 1536}, gpuDelta: 6144, cpuDelta: 6036480},
+		{name: "missing state tensor", tensor: 2, dims: nil, wantErr: true},
+		{name: "wrong tensor rank", tensor: 2, dims: []int64{512, 1024, 1}, wantErr: true},
+		{name: "zero tensor width", tensor: 2, dims: []int64{512, 0}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			changedMetadata := maps.Clone(metadata)
+			// Predictor and optional speaker metadata must not be a model-size allowlist.
+			for key := range changedMetadata {
+				if key != "general.architecture" && key != "clip.has_gen_audio_encoder" && key != "clip.gen.audio.projector_type" {
+					delete(changedMetadata, key)
+				}
+			}
+			changedTensors := slices.Clone(tensors)
+			changedTensors[tt.tensor].Dims = tt.dims
+			if tt.dims == nil {
+				changedTensors = append(changedTensors[:tt.tensor:tt.tensor], changedTensors[tt.tensor+1:]...)
+			}
+			changed, err := FromBytes(deepseek41Header(t, changedMetadata, changedTensors), 669081472, Config{ComputeBackend: "metal"})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("accepted missing or malformed codec tensor")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := changed.ComputeMemory.WorkspaceGPU - single.ComputeMemory.WorkspaceGPU; got != tt.gpuDelta {
+				t.Errorf("GPU payload delta: got %d, want %d", got, tt.gpuDelta)
+			}
+			if got := changed.ComputeMemory.WorkspaceCPU - single.ComputeMemory.WorkspaceCPU; got != tt.cpuDelta {
+				t.Errorf("host payload delta: got %d, want %d", got, tt.cpuDelta)
+			}
+		})
 	}
 }
 

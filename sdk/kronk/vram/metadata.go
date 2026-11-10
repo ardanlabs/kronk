@@ -40,9 +40,9 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		if metadata["clip.has_gen_audio_encoder"] == "true" {
 			switch profile.ComputeKind {
 			case modelprofile.ComputeChatterboxTurboDecoder:
-				return chatterboxTurboDecoderResult(metadata, tensors, modelSizeBytes, cfg)
+				return chatterboxTurboDecoderResult(tensors, modelSizeBytes, cfg)
 			case modelprofile.ComputeQwen3TTSDecoder:
-				return qwen3TTSDecoderResult(metadata, tensors, modelSizeBytes, cfg)
+				return qwen3TTSDecoderResult(tensors, modelSizeBytes, cfg)
 			default:
 				return Result{}, fmt.Errorf("build-from-metadata: unsupported speech decoder allocation family")
 			}

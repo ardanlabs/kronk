@@ -141,9 +141,11 @@ type Input struct {
 	VTransposed           bool                     // Size V using the model-wide transposed layout.
 	cacheLayerDevices     []int                    // Internal placement for shared compressed-cache mirrors.
 	speechReferenceTokens int64                    // Largest preset reference read from the decoder tensors.
+	speechReferenceBytes  int64                    // Largest materialized preset reference copied into a helper.
 	speechVoiceBytes      int64                    // Materialized preset voice payload.
 	speechEmbeddingBytes  int64                    // Encoded embedding readback during lazy helper initialization.
 	speechCodecStateBytes int64                    // F32 persistent codec state per active helper.
+	speechSamplesPerFrame int64                    // Waveform expansion derived from decoder convolution strides.
 }
 
 // Result contains the calculated VRAM requirements.

@@ -57,23 +57,13 @@ func chatterboxTurboBackboneMemory(input Input) ComputeMemory {
 
 // chatterboxTurboDecoderResult normalizes the supported family into calculator
 // input. Non-Metal backends use provisional allowances based on Metal measurements.
-func chatterboxTurboDecoderResult(metadata map[string]string, tensors []gguf.TensorInfo, size int64, cfg Config) (Result, error) {
-	for key, want := range map[string]string{
-		"clip.gen.audio.embedding_length":     "512",
-		"clip.gen.audio.feed_forward_length":  "2048",
-		"clip.gen.audio.block_count":          "6",
-		"clip.gen.audio.attention.head_count": "8",
-		"clip.gen.audio.projection_dim":       "80",
-	} {
-		if metadata[key] != want {
-			return Result{}, fmt.Errorf("speech decoder estimate requires %s=%s, got %q", key, want, metadata[key])
-		}
-	}
+func chatterboxTurboDecoderResult(tensors []gguf.TensorInfo, size int64, cfg Config) (Result, error) {
 	frames, err := speechFrames(cfg.Speech)
 	if err != nil {
 		return Result{}, err
 	}
 	var referenceTokens, voiceBytes int64
+	referenceBytes := make(map[string]int64)
 	for _, tensor := range tensors {
 		if !strings.HasPrefix(tensor.Name, "voice.") {
 			continue
@@ -86,6 +76,12 @@ func chatterboxTurboDecoderResult(metadata map[string]string, tensors []gguf.Ten
 		if strings.HasSuffix(tensor.Name, ".ref_tokens") {
 			referenceTokens = max(referenceTokens, elements)
 		}
+		for _, suffix := range []string{".ref_tokens", ".ref_feat", ".ref_spk"} {
+			if voice, ok := strings.CutSuffix(tensor.Name, suffix); ok {
+				referenceBytes[voice] += 4 * elements
+				break
+			}
+		}
 	}
 	if referenceTokens <= 0 {
 		return Result{}, fmt.Errorf("speech decoder estimate requires preset voice references")
@@ -95,12 +91,17 @@ func chatterboxTurboDecoderResult(metadata map[string]string, tensors []gguf.Ten
 	if referenceTokens > 250 {
 		return Result{}, fmt.Errorf("speech decoder reference exceeds the calibrated 250-token limit")
 	}
+	var largestReference int64
+	for _, bytes := range referenceBytes {
+		largestReference = max(largestReference, bytes)
+	}
 	input := Input{
 		Architecture: "clip", ModelSizeBytes: size, ComputeBackend: cfg.ComputeBackend,
 		ComputeKind:       modelprofile.ComputeChatterboxTurboDecoder,
 		NoPersistentCache: true, Slots: max(cfg.Slots, 1), GPULayers: cfg.GPULayers,
 		Speech:                &SpeechConfig{MaxFrames: frames},
 		speechReferenceTokens: referenceTokens, speechVoiceBytes: voiceBytes,
+		speechReferenceBytes: largestReference,
 	}
 	return Calculate(input), nil
 }
@@ -120,11 +121,14 @@ func chatterboxTurboDecoderMemory(input Input) ComputeMemory {
 	generated := frames + 3
 	flowTokens := generated + input.speechReferenceTokens
 	samples := 960 * generated
+	// b12223 fixes the flow positional width at 512 and mel width at 80,
+	// independent of clip.gen.audio metadata. Reference payloads, unlike
+	// those graph constants, follow the embedded voice tensor dimensions.
 	// Source-derived host waveform arrays coexist with retained graph arenas.
 	// At mel=2*generated, STFT/output frames are at most 240*generated+1.
 	mel, stft := 2*generated, 240*generated+1
 	hostWaveform := 4*(80*mel+mel+samples+36*stft+samples) + 16*(4*stft+16)
-	references := input.speechVoiceBytes + max(input.Slots, 1)*4*(161*input.speechReferenceTokens+192)
+	references := input.speechVoiceBytes + max(input.Slots, 1)*input.speechReferenceBytes
 	// Positional/noise upload scratch and already materialized preset rows.
 	host := hostWaveform + 4*512*(4*flowTokens-1) + references
 	workspace := int64(531 * 1024 * 1024)
