@@ -27,6 +27,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
@@ -619,7 +620,11 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	if err != nil {
 		return fmt.Errorf("initializing training uploads: %w", err)
 	}
-	trainConfig := trainapp.Config{Uploads: store}
+	datasets, err := preparation.NewDatasetStore(filepath.Join(home, ".moxie", "preparation-datasets"))
+	if err != nil {
+		return fmt.Errorf("initializing preparation datasets: %w", err)
+	}
+	trainConfig := trainapp.Config{Uploads: store, Datasets: datasets}
 	if cfg.Training.Enabled {
 		approvedModels := make(map[string]string, len(cfg.Training.Models))
 		for _, id := range cfg.Training.Models {
@@ -647,7 +652,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 			return fmt.Errorf("initializing document extractor: %w", err)
 		}
 		job, err := training.New(temporalClient, training.Config{
-			Uploads: store, StorageRoot: filepath.Join(home, ".moxie"),
+			Uploads: store, Datasets: datasets, StorageRoot: filepath.Join(home, ".moxie"),
 			Models: approvedModels, ModelPool: p.Kronk, Extractor: extractor, Log: log.Info,
 		})
 		if err != nil {

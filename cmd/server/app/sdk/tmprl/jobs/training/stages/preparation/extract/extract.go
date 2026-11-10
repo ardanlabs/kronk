@@ -36,12 +36,12 @@ type extraction struct {
 // Run extracts a document and caches it by source identity and extractor settings
 // inside the execution workspace. After successful cache publication, retries do
 // not upload again. Failed or interrupted conversion may be repeated.
-func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, openSource func(context.Context) (io.ReadCloser, error), workspace *os.Root) (providers.Document, error) {
-	profile, err := extractionProfile(extractor, sourceInfo)
+func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, openSource func(context.Context) (io.ReadCloser, error), workspace *os.Root, options ...providers.DocumentOptions) (providers.Document, error) {
+	profile, err := extractionProfile(extractor, sourceInfo, options...)
 	if err != nil {
 		return providers.Document{}, err
 	}
-	cached, err := Read(ctx, extractor, sourceInfo, workspace)
+	cached, err := Read(ctx, extractor, sourceInfo, workspace, options...)
 	switch {
 	case err == nil:
 		return cached, nil
@@ -89,7 +89,11 @@ func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInf
 		document.StructuredJSON = structured
 	} else {
 		var err error
-		document, err = extractor.Convert(ctx, path)
+		var conversion providers.DocumentOptions
+		if len(options) > 0 {
+			conversion = options[0]
+		}
+		document, err = extractor.Convert(ctx, path, conversion)
 		if err != nil {
 			return providers.Document{}, err
 		}
@@ -108,11 +112,11 @@ func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInf
 
 // Read returns saved extraction for the exact source and extraction profile.
 // It never opens or converts the source document and never writes extraction.
-func Read(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, workspace *os.Root) (providers.Document, error) {
+func Read(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, workspace *os.Root, options ...providers.DocumentOptions) (providers.Document, error) {
 	if err := ctx.Err(); err != nil {
 		return providers.Document{}, err
 	}
-	profile, err := extractionProfile(extractor, sourceInfo)
+	profile, err := extractionProfile(extractor, sourceInfo, options...)
 	if err != nil {
 		return providers.Document{}, err
 	}
@@ -133,12 +137,29 @@ func Read(ctx context.Context, extractor preparation.DocumentExtractor, sourceIn
 	return saved.Document, nil
 }
 
-func extractionProfile(extractor preparation.DocumentExtractor, sourceInfo uploads.File) (string, error) {
+func extractionProfile(extractor preparation.DocumentExtractor, sourceInfo uploads.File, options ...providers.DocumentOptions) (string, error) {
+	if len(options) > 1 {
+		return "", fmt.Errorf("%w: only one set of extraction options is allowed", preparation.ErrInvalidArgument)
+	}
+	var pages providers.DocumentOptions
+	if len(options) > 0 {
+		pages = options[0]
+	}
+	if err := pages.Validate(); err != nil {
+		return "", err
+	}
+	if pages != (providers.DocumentOptions{}) && sourceInfo.Format != ".pdf" {
+		return "", fmt.Errorf("%w: page ranges require a PDF", preparation.ErrInvalidArgument)
+	}
 	if sourceInfo.Format == ".pdf" || sourceInfo.Format == ".docx" {
 		if extractor == nil {
 			return "", fmt.Errorf("%w: PDF/DOCX extraction is not configured", preparation.ErrInvalidArgument)
 		}
-		return extractor.ExtractionProfile(), nil
+		profile := extractor.ExtractionProfile()
+		if pages.PageStart > 0 {
+			profile += fmt.Sprintf("-pages-%d-%d", pages.PageStart, pages.PageEnd)
+		}
+		return profile, nil
 	}
 	return "tuning-text-v1", nil
 }

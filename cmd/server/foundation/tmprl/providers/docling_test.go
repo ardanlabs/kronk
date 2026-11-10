@@ -17,8 +17,12 @@ import (
 )
 
 func TestDoclingConversion(t *testing.T) {
-	for _, ext := range []string{".pdf", ".docx"} {
-		t.Run(ext, func(t *testing.T) {
+	for _, test := range []struct {
+		ext     string
+		options DocumentOptions
+	}{{".pdf", DocumentOptions{}}, {".docx", DocumentOptions{}}, {".pdf", DocumentOptions{PageStart: 11, PageEnd: 25}}} {
+		t.Run(fmt.Sprint(test), func(t *testing.T) {
+			ext := test.ext
 			var temporary atomic.Bool
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
@@ -34,6 +38,13 @@ func TestDoclingConversion(t *testing.T) {
 					}
 					if (r.FormValue("pdf_backend") == "dlparse_v4") != (ext == ".pdf") {
 						t.Error("wrong PDF backend option")
+					}
+					var pages []string
+					if test.options.PageStart > 0 {
+						pages = []string{"11", "25"}
+					}
+					if !slices.Equal(r.MultipartForm.Value["page_range"], pages) {
+						t.Errorf("page range = %v, want %v", r.MultipartForm.Value["page_range"], pages)
 					}
 					file, header, err := r.FormFile("files")
 					if err != nil {
@@ -67,7 +78,7 @@ func TestDoclingConversion(t *testing.T) {
 			if err := os.WriteFile(path, []byte("document fixture"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			document, err := extractor.Convert(t.Context(), path)
+			document, err := extractor.Convert(t.Context(), path, test.options)
 			if err != nil || document.Markdown != "Extracted facts." || document.ProcessingTime != 1.25 || string(document.StructuredJSON) != `{"texts":[{"text":"Extracted facts."}]}` {
 				t.Fatalf("conversion result: %+v %v", document, err)
 			}
@@ -105,7 +116,7 @@ func TestDoclingCancellationAndInvalidResult(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), timeout)
 			defer cancel()
-			_, err = extractor.Convert(ctx, path)
+			_, err = extractor.Convert(ctx, path, DocumentOptions{})
 			if err == nil || mode == "pending" && !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("%s result: %v", mode, err)
 			}

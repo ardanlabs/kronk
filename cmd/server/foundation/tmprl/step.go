@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"go.temporal.io/sdk/activity"
@@ -60,10 +61,21 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return output, readErr
 	}
+	var sample Progress
+	var progressMu sync.Mutex
 	output, err = implementation.Execute(ctx, StepContext[R, A]{
 		Request: input, Workspace: workspace,
 		Publish: func(progress Progress) {
+			progressMu.Lock()
+			defer progressMu.Unlock()
 			progress.Execution, progress.Stage, progress.Step = input.Execution, StageName(input.Stage), input.Step
+			progress.UpdatedAt = time.Now()
+			if sample.StartedAt.IsZero() || progress.Total != sample.Total || progress.Completed < sample.Completed {
+				progress.StartedAt, progress.InitialCompleted = progress.UpdatedAt, progress.Completed
+			} else {
+				progress.StartedAt, progress.InitialCompleted = sample.StartedAt, sample.InitialCompleted
+			}
+			sample = progress
 			log.Debug("job step progress", "stage", input.Stage, "step", input.Step, "completed", progress.Completed, "total", progress.Total)
 			report(progress)
 		},

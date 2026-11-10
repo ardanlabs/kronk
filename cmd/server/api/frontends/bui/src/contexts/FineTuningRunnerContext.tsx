@@ -84,6 +84,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const [watchAttempt, setWatchAttempt] = useState(0);
   const uploadAbort = useRef<AbortController | null>(null);
   const submissionPending = useRef(false);
+  const runSubmissionIDs = useRef<Record<string, string>>({});
   const previewRequests = useRef<Record<string, PreviewSubmission>>({});
   const [previewSubmissions, setPreviewSubmissions] = useState<Record<string, PreviewSubmission>>({});
   const trainingRequests = useRef<Record<string, TrainingSubmission>>({});
@@ -176,17 +177,23 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     submissionPending.current = true;
     setSubmitting(true);
     setError('');
+    const submissionKey = `${inputKind}:${upload.id}`;
+    const submissionID = runSubmissionIDs.current[submissionKey] ?? `training-${crypto.randomUUID()}`;
+    runSubmissionIDs.current[submissionKey] = submissionID;
     try {
       const run = await api.startTrainingRun({
-        model: FINE_TUNING_MODEL_ID, training,
+        id: submissionID, model: FINE_TUNING_MODEL_ID, training,
         ...(inputKind === 'document' && preparation
-          ? { prepare: { ...preparation, dataset_id: upload.id } }
+          ? { preparation_only: true, prepare: { ...preparation, dataset_id: upload.id } }
           : { dataset_id: upload.id }),
       });
+      delete runSubmissionIDs.current[submissionKey];
       selectRun(run);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Job submission failed');
+      setError(err instanceof ApiError && err.status === 409
+        ? `${err.message} Refresh datasets if the destination changed, or check Training history if this job was already submitted.`
+        : err instanceof Error ? err.message : 'Job submission failed');
       return false;
     } finally {
       submissionPending.current = false;

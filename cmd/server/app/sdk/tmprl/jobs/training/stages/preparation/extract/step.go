@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/internal/checkpoint"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -29,7 +30,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 	if !exists {
 		p := input.Preparation
-		document, err := Run(ctx, p.Extractor, p.Source, p.OpenSource, input.Workspace)
+		document, err := Run(ctx, p.Extractor, p.Source, p.OpenSource, input.Workspace, providers.DocumentOptions{PageStart: p.Input.Request.PageStart, PageEnd: p.Input.Request.PageEnd})
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}

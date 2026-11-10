@@ -35,6 +35,72 @@ func awaitCheckpointState(t *testing.T, ctx context.Context, j *tmprl.Jobs[strin
 	}
 }
 
+func TestJobsProgressTiming(t *testing.T) {
+	env := newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	var broker tmprl.ProgressBroker[tmprl.Execution, tmprl.Progress]
+	observations := make(chan []tmprl.Progress, 1)
+	release := make(chan struct{})
+	handler := tmprl.StepFunc[string, []string](func(ctx context.Context, in tmprl.StepContext[string, []string]) (tmprl.StepResult[[]string], error) {
+		updates, unsubscribe := broker.Subscribe(in.Request.Execution)
+		defer unsubscribe()
+		var captured []tmprl.Progress
+		for _, p := range []tmprl.Progress{{Completed: 12, Total: 20}, {Completed: 16, Total: 20}, {Completed: 18, Total: 30}, {Completed: 5, Total: 30}, {Completed: 7, Total: 30}} {
+			in.Publish(p)
+			captured = append(captured, <-updates)
+		}
+		observations <- captured
+		select {
+		case <-release:
+			return tmprl.StepResult[[]string]{}, nil
+		case <-ctx.Done():
+			return tmprl.StepResult[[]string]{}, ctx.Err()
+		}
+	})
+	j, err := tmprl.New(env.Client, tmprl.Config[string, []string]{
+		Names:     tmprl.Names{Workflow: "example.Timing", Activity: "example.TimingStep", Memo: "timing.snapshot", Query: "timing-query", Control: "timing-control"},
+		TaskQueue: env.TaskQueue, StorageRoot: t.TempDir(), StorageDirectory: "timing", Log: env.Log, Progress: &broker,
+		Steps: map[string]tmprl.StepHandler[string, []string]{"work/commit": handler},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := j.NewWorker()
+	if err := w.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(w.Stop)
+	plan := recoveryPlan()
+	plan.Stages[0].Steps = plan.Stages[0].Steps[:1]
+	run, err := j.Submit(ctx, "timing-"+rand.Text(), tmprl.JobInput[string]{Job: &plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var samples []tmprl.Progress
+	select {
+	case samples = <-observations:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if samples[0].InitialCompleted != 12 || samples[0].Remaining() != 0 || samples[1].InitialCompleted != 12 || samples[1].Remaining() <= 0 || !samples[1].StartedAt.Equal(samples[0].StartedAt) {
+		t.Fatalf("resumed work timing: %+v", samples)
+	}
+	if samples[2].InitialCompleted != 18 || samples[2].Remaining() != 0 || samples[3].InitialCompleted != 5 || samples[3].Remaining() != 0 || samples[4].InitialCompleted != 5 || samples[4].Remaining() <= 0 {
+		t.Fatalf("phase reset timing: %+v", samples)
+	}
+	snapshot := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool {
+		return s.Progress != nil && s.Progress.Completed == 7 && s.Progress.InitialCompleted == 5
+	})
+	if !snapshot.Progress.StartedAt.Equal(samples[4].StartedAt) || !snapshot.Progress.UpdatedAt.Equal(samples[4].UpdatedAt) || snapshot.Progress.Remaining() <= 0 {
+		t.Fatalf("Temporal heartbeat lost timing: %+v", snapshot.Progress)
+	}
+	close(release)
+	if _, err := j.Wait(ctx, run.Execution); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDecisionValidate(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

@@ -72,6 +72,56 @@ func testAPI(t *testing.T, c *mocks.Client) (*web.App, *uploads.Store) {
 	return api, store
 }
 
+func TestPreparationDatasetRoutes(t *testing.T) {
+	store, err := preparation.NewDatasetStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := logger.New(io.Discard, logger.LevelInfo, "datasets-test", nil)
+	api := web.NewApp(log.Info, mid.Errors(log))
+	trainapp.Routes(api, trainapp.Config{Datasets: store, AuthorizationMode: auth.Open})
+	request := func(method, path, body string, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		w := httptest.NewRecorder()
+		r := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		api.ServeHTTP(w, r)
+		if w.Code != status {
+			t.Fatalf("%s %s: got %d, want %d: %s", method, path, w.Code, status, w.Body)
+		}
+		return w
+	}
+	created := request(http.MethodPost, "/v1/training/datasets", `{"name":"Harbor"}`, http.StatusOK)
+	var dataset trainapp.Dataset
+	if err := json.Unmarshal(created.Body.Bytes(), &dataset); err != nil || dataset.Name != "Harbor" || dataset.Version != 1 {
+		t.Fatalf("create: %+v, %v", dataset, err)
+	}
+	row := optimization.Record{Prompt: "When does the harbor open?", Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: "upload-a"}
+	if _, err := store.Add(t.Context(), dataset.ID, 1, preparation.DatasetAddition{PublicationID: "run-a", Source: uploads.File{ID: "upload-a", Name: "harbor.txt", SHA256: "hash-a"}, Records: []optimization.Record{row}}); err != nil {
+		t.Fatal(err)
+	}
+	path := "/v1/training/datasets/" + dataset.ID
+	request(http.MethodGet, path, "", http.StatusOK)
+	request(http.MethodGet, "/v1/training/datasets", "", http.StatusOK)
+	before := request(http.MethodGet, path+"/versions/2/download", "", http.StatusOK)
+	originalDownload := before.Body.String()
+	rows, err := optimization.ReadRecords(t.Context(), before.Body)
+	if err != nil || len(rows) != 1 || rows[0] != row || before.Header().Get("Content-Disposition") == "" {
+		t.Fatalf("version download: %+v, %v", rows, err)
+	}
+	request(http.MethodDelete, path+"/documents/run-a?base_version=1", "", http.StatusConflict)
+	removed := request(http.MethodDelete, path+"/documents/run-a?base_version=2", "", http.StatusOK)
+	if err := json.Unmarshal(removed.Body.Bytes(), &dataset); err != nil || dataset.Version != 3 || dataset.RecordCount != 0 || len(dataset.Documents) != 0 {
+		t.Fatalf("remove: %+v, %v", dataset, err)
+	}
+	after := request(http.MethodGet, path+"/versions/2/download", "", http.StatusOK)
+	if after.Body.String() != originalDownload {
+		t.Fatalf("historical download changed: %s", after.Body)
+	}
+	request(http.MethodGet, path+"/versions/99/download", "", http.StatusNotFound)
+	request(http.MethodPost, "/v1/training/datasets", `{"name":""}`, http.StatusBadRequest)
+}
+
 func uploadRequest(t *testing.T, fields map[string][]string, data string) *http.Request {
 	t.Helper()
 	var body bytes.Buffer
@@ -273,6 +323,130 @@ func TestReadState(t *testing.T) {
 		if strings.Contains(w.Body.String(), private) {
 			t.Errorf("response exposes %q: %s", private, w.Body)
 		}
+	}
+}
+
+func TestReadProgressEstimate(t *testing.T) {
+	for _, mode := range []string{"running", "paused", "stale", "wrong step", "old heartbeat"} {
+		t.Run(mode, func(t *testing.T) {
+			c := new(mocks.Client)
+			api, _ := testAPI(t, c)
+			start := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+			e := tmprl.Execution{WorkflowID: "training-example", RunID: "run-2"}
+			state := tmprl.Run[training.Request, training.Artifacts]{Execution: e, Status: tmprl.StatusRunning, Stage: "preparation", Step: "generate"}
+			progress := tmprl.Progress{Execution: e, Stage: "preparation", Step: "generate", InitialCompleted: 12, Completed: 16, Total: 20, StartedAt: start, UpdatedAt: start.Add(2 * time.Minute)}
+			if mode == "paused" {
+				state.Status = tmprl.StatusPaused
+			}
+			if mode == "wrong step" {
+				progress.Step = "verify"
+			}
+			if mode == "old heartbeat" {
+				progress.StartedAt, progress.UpdatedAt = time.Time{}, time.Time{}
+			}
+			payload, err := converter.GetDefaultDataConverter().ToPayload(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			heartbeat, err := converter.GetDefaultDataConverter().ToPayloads(progress)
+			if err != nil {
+				t.Fatal(err)
+			}
+			description := &workflowservice.DescribeWorkflowExecutionResponse{
+				WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{
+					Execution: &commonpb.WorkflowExecution{WorkflowId: e.WorkflowID, RunId: e.RunID},
+					Type:      &commonpb.WorkflowType{Name: "moxie.training.Job"}, Status: enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING,
+					Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"moxie.training.job": payload}},
+				},
+				PendingActivities: []*workflowpb.PendingActivityInfo{{ActivityType: &commonpb.ActivityType{Name: "moxie.training.Step"}, HeartbeatDetails: heartbeat}},
+			}
+			if mode == "stale" {
+				description.PendingWorkflowTask = &workflowpb.PendingWorkflowTaskInfo{}
+			}
+			c.On("DescribeWorkflowExecution", mock.Anything, e.WorkflowID, e.RunID).Return(description, nil)
+			w := httptest.NewRecorder()
+			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
+			var got trainapp.Run
+			if w.Code != http.StatusOK {
+				t.Fatalf("response: %d %s", w.Code, w.Body)
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			want := int64(0)
+			if mode == "running" {
+				want = 120
+			}
+			if got.Progress.RemainingSeconds != want {
+				t.Fatalf("remaining seconds = %d, want %d", got.Progress.RemainingSeconds, want)
+			}
+		})
+	}
+}
+
+func TestDownloadDataset(t *testing.T) {
+	for _, name := range []string{"ready", "small test dataset", "training failed", "not prepared", "wrong source", "missing artifact", "foreign reference", "missing file"} {
+		t.Run(name, func(t *testing.T) {
+			api, state, path := readyTrainingAPI(t, new(mocks.Client))
+			state.Artifacts.Preparation.RecordsPath = "/private/worker/dataset.jsonl"
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			available, ready, status := true, true, http.StatusOK
+			switch name {
+			case "small test dataset":
+				state.Artifacts.Preparation.TrainingReady = false
+				state.Artifacts.Preparation.RecordCount = 5
+				ready = false
+			case "training failed":
+				state.Status = tmprl.StatusFailed
+			case "not prepared":
+				state.Artifacts.Preparation = nil
+				available, ready, status = false, false, http.StatusNotFound
+			case "wrong source":
+				state.Artifacts.Preparation.DatasetID = "another-source"
+				available, ready, status = false, false, http.StatusNotFound
+			case "missing artifact":
+				state.Artifacts.Preparation.RecordsPath = ""
+				available, ready, status = false, false, http.StatusNotFound
+			case "foreign reference":
+				foreign := filepath.Join(t.TempDir(), "other.jsonl")
+				if err := os.WriteFile(foreign, []byte("foreign data"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				state.Artifacts.Preparation.RecordsPath = foreign
+			case "missing file":
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				status = http.StatusInternalServerError
+			}
+			w := httptest.NewRecorder()
+			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath+"/dataset", nil))
+			if w.Code != status || w.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("dataset: %d %s", w.Code, w.Body)
+			}
+			if status == http.StatusOK {
+				if !bytes.Equal(w.Body.Bytes(), want) || w.Header().Get("Content-Disposition") != `attachment; filename="dataset.jsonl"` || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+					t.Fatalf("incorrect dataset download: %v %s", w.Header(), w.Body)
+				}
+			} else if w.Header().Get("Content-Disposition") != "" || strings.Contains(w.Body.String(), "private") {
+				t.Fatalf("unsafe error response: %s", w.Body)
+			}
+			w = httptest.NewRecorder()
+			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
+			var run trainapp.Run
+			if err := json.Unmarshal(w.Body.Bytes(), &run); err != nil || w.Code != http.StatusOK || run.DatasetAvailable != available || run.TrainingReady != ready {
+				t.Fatalf("dataset state: %+v, %v (%d)", run, err, w.Code)
+			}
+			if state.Artifacts.Preparation != nil && run.DatasetRecordCount != state.Artifacts.Preparation.RecordCount {
+				t.Fatalf("incorrect prepared record count: %d", run.DatasetRecordCount)
+			}
+			if strings.Contains(w.Body.String(), "/private/") {
+				t.Fatalf("state leaked artifact path: %s", w.Body)
+			}
+		})
 	}
 }
 
@@ -1285,6 +1459,11 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 						t.Fatalf("adapter response: %d %s", w.Code, w.Body)
 					}
 					w = httptest.NewRecorder()
+					api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath+"/dataset", nil))
+					if w.Code != test.status {
+						t.Fatalf("dataset response: %d %s", w.Code, w.Body)
+					}
+					w = httptest.NewRecorder()
 					api.ServeHTTP(w, uploadRequest(t, map[string][]string{"file": {"source.jsonl"}}, "data"))
 					if w.Code != test.status {
 						t.Fatalf("upload response: %d %s", w.Code, w.Body)
@@ -1355,7 +1534,7 @@ func TestCreatePreparation(t *testing.T) {
 	c := new(mocks.Client)
 	api, _ := testAPI(t, c)
 	w := httptest.NewRecorder()
-	api.ServeHTTP(w, uploadRequest(t, map[string][]string{"file": {"source.md"}}, "The harbor opens at dawn."))
+	api.ServeHTTP(w, uploadRequest(t, map[string][]string{"file": {"source.pdf"}}, "The harbor opens at dawn."))
 	if w.Code != http.StatusOK {
 		t.Fatalf("upload: %d %s", w.Code, w.Body)
 	}
@@ -1369,7 +1548,7 @@ func TestCreatePreparation(t *testing.T) {
 	c.On("ExecuteWorkflow", mock.Anything, mock.Anything, "moxie.training.Job", mock.Anything).
 		Run(func(args mock.Arguments) {
 			input := args.Get(3).(tmprl.JobInput[training.Request])
-			want := preparation.PreparationRequest{DatasetID: file.ID, Model: "catalog/qwen", Goal: preparation.GoalQuestionAnswer, Instructions: "Answer briefly."}
+			want := preparation.PreparationRequest{DatasetID: file.ID, Model: "catalog/qwen", Goal: preparation.GoalQuestionAnswer, Instructions: "Answer briefly.", PageStart: 11, PageEnd: 25, MaxQuestions: 50}
 			if input.Request.ID != "preparation-submitted" || input.Request.Model != "model-a" || input.Request.DatasetID != "" || !reflect.DeepEqual(input.Request.Prepare, &want) {
 				t.Errorf("submitted preparation: %+v", input.Request)
 			}
@@ -1377,7 +1556,7 @@ func TestCreatePreparation(t *testing.T) {
 				t.Errorf("submission lost review or Training authorization: %+v", input.Job)
 			}
 		}).Return(workflow, nil)
-	body := fmt.Sprintf(`{"id":"preparation-submitted","model":"model-a","prepare":{"dataset_id":%q,"model":" catalog/qwen ","goal":"question_answer","instructions":"  Answer briefly.  "}}`, file.ID)
+	body := fmt.Sprintf(`{"id":"preparation-submitted","model":"model-a","prepare":{"dataset_id":%q,"model":" catalog/qwen ","goal":"question_answer","instructions":"  Answer briefly.  ","page_start":11,"page_end":25,"max_questions":50}}`, file.ID)
 	w = httptest.NewRecorder()
 	api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/training/runs", strings.NewReader(body)))
 	if w.Code != http.StatusOK {
@@ -1460,6 +1639,8 @@ func TestCreatePreparationRejectsInput(t *testing.T) {
 		{"unknown nested field", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","unknown":true}}`, document.ID), http.StatusBadRequest},
 		{"premature reviewed records", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","reviewed_records":[]}}`, document.ID), http.StatusBadRequest},
 		{"invalid preview count", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","preview_records":6}}`, document.ID), http.StatusBadRequest},
+		{"negative question cap", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","max_questions":-1}}`, document.ID), http.StatusBadRequest},
+		{"fractional question cap", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","max_questions":2.5}}`, document.ID), http.StatusBadRequest},
 		{"unapproved training model", fmt.Sprintf(`{"model":"catalog/qwen","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer"}}`, document.ID), http.StatusBadRequest},
 	} {
 		t.Run(test.name, func(t *testing.T) {

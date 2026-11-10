@@ -283,7 +283,8 @@ func Run(ctx context.Context, completer preparation.ModelCompleter, request prep
 				}
 			}
 			if count >= 3 {
-				return reject("a passage may have at most three examples including saved candidates")
+				fail("a passage may have at most three examples including saved candidates")
+				continue
 			}
 			if err := training.ValidateRecords(append(records, r)); err != nil {
 				fail("generated example violates dataset integrity: " + err.Error())

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,21 @@ type Document struct {
 	Markdown       string          `json:"markdown"`
 	StructuredJSON json.RawMessage `json:"structured_json"`
 	ProcessingTime float64         `json:"processing_time"`
+}
+
+// DocumentOptions bounds PDF conversion to inclusive, one-based pages.
+// Both zero selects the entire document.
+type DocumentOptions struct {
+	PageStart int
+	PageEnd   int
+}
+
+// Validate rejects partial, reversed, or nonpositive page ranges.
+func (o DocumentOptions) Validate() error {
+	if o != (DocumentOptions{}) && (o.PageStart < 1 || o.PageEnd < o.PageStart) {
+		return fmt.Errorf("%w: page range requires a positive first page and a last page at or after it", tmprl.ErrInvalidArgument)
+	}
+	return nil
 }
 
 // DoclingExtractor converts documents using an existing Docling service.
@@ -51,7 +67,10 @@ func NewDoclingExtractor(endpoint string, client *http.Client) (*DoclingExtracto
 func (*DoclingExtractor) ExtractionProfile() string { return "tuning-docling-dlparse_v4-accurate-v1" }
 
 // Convert uploads a PDF or DOCX and waits for its converted content.
-func (e *DoclingExtractor) Convert(ctx context.Context, path string) (Document, error) {
+func (e *DoclingExtractor) Convert(ctx context.Context, path string, options DocumentOptions) (Document, error) {
+	if err := options.Validate(); err != nil {
+		return Document{}, err
+	}
 	mediaType := "application/pdf"
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".pdf":
@@ -59,6 +78,9 @@ func (e *DoclingExtractor) Convert(ctx context.Context, path string) (Document, 
 		mediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	default:
 		return Document{}, fmt.Errorf("%w: Docling accepts PDF or DOCX", tmprl.ErrInvalidArgument)
+	}
+	if options != (DocumentOptions{}) && mediaType != "application/pdf" {
+		return Document{}, fmt.Errorf("%w: page ranges require a PDF", tmprl.ErrInvalidArgument)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -69,11 +91,14 @@ func (e *DoclingExtractor) Convert(ctx context.Context, path string) (Document, 
 	form := multipart.NewWriter(writer)
 	go func() {
 		defer file.Close()
-		options := [][2]string{{"to_formats", "md"}, {"to_formats", "json"}, {"include_images", "false"}, {"table_mode", "accurate"}, {"image_export_mode", "placeholder"}}
+		fields := [][2]string{{"to_formats", "md"}, {"to_formats", "json"}, {"include_images", "false"}, {"table_mode", "accurate"}, {"image_export_mode", "placeholder"}}
 		if mediaType == "application/pdf" {
-			options = append(options, [2]string{"pdf_backend", "dlparse_v4"})
+			fields = append(fields, [2]string{"pdf_backend", "dlparse_v4"})
 		}
-		for _, option := range options {
+		if options.PageStart > 0 {
+			fields = append(fields, [2]string{"page_range", strconv.Itoa(options.PageStart)}, [2]string{"page_range", strconv.Itoa(options.PageEnd)})
+		}
+		for _, option := range fields {
 			if err := form.WriteField(option[0], option[1]); err != nil {
 				writer.CloseWithError(err)
 				return

@@ -47,11 +47,12 @@ const storageDirectory = "training-jobs"
 
 // Request selects either document preparation or an imported prepared dataset.
 type Request struct {
-	ID        string                          `json:"id"`
-	Model     string                          `json:"model"`
-	Training  optimization.Training           `json:"training"`
-	DatasetID string                          `json:"dataset_id,omitzero"`
-	Prepare   *preparation.PreparationRequest `json:"prepare,omitzero"`
+	ID              string                          `json:"id"`
+	PreparationOnly bool                            `json:"preparation_only,omitzero"`
+	Model           string                          `json:"model"`
+	Training        optimization.Training           `json:"training"`
+	DatasetID       string                          `json:"dataset_id,omitzero"`
+	Prepare         *preparation.PreparationRequest `json:"prepare,omitzero"`
 }
 
 // Artifacts retains the outputs owned by each stage of the job.
@@ -67,6 +68,7 @@ type Artifacts struct {
 type Config struct {
 	TaskQueue   string
 	Uploads     *uploads.Store
+	Datasets    *preparation.DatasetStore
 	StorageRoot string
 	Models      map[string]string
 	Trainer     optimization.Trainer
@@ -85,14 +87,20 @@ type Job struct {
 // New constructs the job without contacting Temporal or loading a model.
 // The host owns the client, providers, storage, and worker lifetimes.
 func New(c client.Client, cfg Config) (*Job, error) {
-	if cfg.Uploads == nil || cfg.StorageRoot == "" || len(cfg.Models) == 0 {
-		return nil, fmt.Errorf("%w: uploads, execution storage root, and approved models are required", tmprl.ErrInvalidArgument)
+	if cfg.Uploads == nil || cfg.StorageRoot == "" {
+		return nil, fmt.Errorf("%w: uploads and execution storage root are required", tmprl.ErrInvalidArgument)
 	}
 	root, err := filepath.Abs(cfg.StorageRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolving execution storage: %w", err)
 	}
 	cfg.StorageRoot = root
+	if cfg.Datasets == nil {
+		cfg.Datasets, err = preparation.NewDatasetStore(filepath.Join(root, "preparation-datasets"))
+		if err != nil {
+			return nil, err
+		}
+	}
 	if cfg.TaskQueue == "" {
 		cfg.TaskQueue = "moxie-training"
 	}
@@ -146,8 +154,12 @@ func New(c client.Client, cfg Config) (*Job, error) {
 // Submit training requests through Start so training validation is applied.
 func (j *Job) Jobs() *tmprl.Jobs[Request, Artifacts] { return j.jobs }
 
+// Datasets exposes preparation's durable asset store to the application API.
+func (j *Job) Datasets() *preparation.DatasetStore { return j.cfg.Datasets }
+
 // Start submits the embedded plan after validating and copying training inputs.
-// Prepared JSONL skips preparation. Documents wait for Preview review and for
+// Prepared JSONL skips preparation. Documents wait for Preview review;
+// preparation-only runs finish after Verify, while combined runs wait for
 // explicit authorization to enter Training, using one reserved worker.
 func (j *Job) Start(ctx context.Context, input Request) (tmprl.Run[Request, Artifacts], error) {
 	input, err := j.validate(ctx, input)
@@ -160,6 +172,10 @@ func (j *Job) Start(ctx context.Context, input Request) (tmprl.Run[Request, Arti
 	}
 	if input.Prepare == nil {
 		plan.Stages = slices.DeleteFunc(plan.Stages, func(stage tmprl.Stage) bool { return stage.Name == "preparation" })
+	}
+	if input.PreparationOnly {
+		plan.Stages = slices.DeleteFunc(plan.Stages, func(stage tmprl.Stage) bool { return stage.Name == "training" })
+		plan.Stages[0].WaitAfter = ""
 	}
 	if input.ID == "" {
 		input.ID = "training-" + rand.Text()
@@ -258,15 +274,49 @@ func (j *Job) OpenAdapter(ctx context.Context, e tmprl.Execution) (io.ReadCloser
 	return file, nil
 }
 
+// OpenDataset streams a completed preparation dataset, even if it is too small
+// for training. The caller closes it. Artifact paths never select the file.
+func (j *Job) OpenDataset(ctx context.Context, e tmprl.Execution) (io.ReadCloser, error) {
+	run, err := j.jobs.Get(ctx, e)
+	if err != nil {
+		return nil, err
+	}
+	if run.Request.Prepare == nil || run.Artifacts.Preparation == nil || run.Artifacts.Preparation.RecordsPath == "" || run.Artifacts.Preparation.DatasetID != run.Request.Prepare.DatasetID {
+		return nil, fmt.Errorf("%w: prepared dataset is not available", tmprl.ErrInvalidArgument)
+	}
+	if result := run.Artifacts.Preparation; result.SavedDatasetID != "" {
+		records, err := j.cfg.Datasets.Records(ctx, result.SavedDatasetID, result.SavedVersion)
+		if err != nil {
+			return nil, err
+		}
+		var data bytes.Buffer
+		for _, record := range records {
+			if err := json.NewEncoder(&data).Encode(record); err != nil {
+				return nil, err
+			}
+		}
+		return io.NopCloser(&data), nil
+	}
+	root, err := os.OpenRoot(j.cfg.StorageRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.Open(filepath.Join(storageDirectory, run.RunID, "steps", "preparation", "dataset.jsonl"))
+}
+
 // =============================================================================
 
 func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 	r.ID, r.Model, r.DatasetID = strings.TrimSpace(r.ID), strings.TrimSpace(r.Model), strings.TrimSpace(r.DatasetID)
-	if len(r.ID) > 200 || j.cfg.Models[r.Model] == "" {
+	if len(r.ID) > 200 || !r.PreparationOnly && j.cfg.Models[r.Model] == "" {
 		return Request{}, fmt.Errorf("%w: approved model and ID of at most 200 bytes are required", tmprl.ErrInvalidArgument)
 	}
 	if (r.Prepare == nil) == (r.DatasetID == "") {
 		return Request{}, fmt.Errorf("%w: select exactly one document preparation or prepared dataset", tmprl.ErrInvalidArgument)
+	}
+	if r.PreparationOnly && r.Prepare == nil {
+		return Request{}, fmt.Errorf("%w: preparation-only requires a source document", tmprl.ErrInvalidArgument)
 	}
 	if r.Training == (optimization.Training{}) {
 		r.Training = optimization.Training{MaximumEpochs: 3, BatchSize: 2, LearningRate: 0.0002, Seed: 3407}
@@ -278,7 +328,7 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 		r.Training.LoRAAlpha = 8
 	}
 	t := r.Training
-	if t.MaximumEpochs < 1 || t.MaximumEpochs > 100 || t.BatchSize < 1 || t.BatchSize > 128 || t.Seed < 0 || t.LoRARank < 1 || t.LoRAAlpha <= 0 || math.IsNaN(t.LoRAAlpha) || math.IsInf(t.LoRAAlpha, 0) || t.LearningRate <= 0 || t.LearningRate > 1 || math.IsNaN(t.LearningRate) || math.IsInf(t.LearningRate, 0) {
+	if !r.PreparationOnly && (t.MaximumEpochs < 1 || t.MaximumEpochs > 100 || t.BatchSize < 1 || t.BatchSize > 128 || t.Seed < 0 || t.LoRARank < 1 || t.LoRAAlpha <= 0 || math.IsNaN(t.LoRAAlpha) || math.IsInf(t.LoRAAlpha, 0) || t.LearningRate <= 0 || t.LearningRate > 1 || math.IsNaN(t.LearningRate) || math.IsInf(t.LearningRate, 0)) {
 		return Request{}, fmt.Errorf("%w: invalid training hyperparameters", tmprl.ErrInvalidArgument)
 	}
 	if r.Prepare != nil {
@@ -293,6 +343,18 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 			return Request{}, err
 		}
 		r.Prepare = &prepared
+		if prepared.TargetDatasetID != "" {
+			if !r.PreparationOnly {
+				return Request{}, fmt.Errorf("%w: saving to a reusable dataset requires a preparation-only run", tmprl.ErrInvalidArgument)
+			}
+			dataset, err := j.cfg.Datasets.Get(ctx, prepared.TargetDatasetID, 0)
+			if err != nil {
+				return Request{}, err
+			}
+			if dataset.Version != prepared.BaseVersion {
+				return Request{}, preparation.ErrDatasetConflict
+			}
+		}
 	} else if _, err := j.records(ctx, r, Artifacts{}, ""); err != nil {
 		return Request{}, err
 	}
@@ -487,6 +549,25 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 		artifacts := r.Artifacts
 		artifacts.Preview = output.Artifacts.Preview
 		artifacts.Preparation = output.Artifacts.Preparation
+		if err == nil && step.Name() == "verify" && request.TargetDatasetID != "" && artifacts.Preparation != nil {
+			file, openErr := input.Workspace.Open("dataset.jsonl")
+			if openErr != nil {
+				return tmprl.StepResult[Artifacts]{}, openErr
+			}
+			records, readErr := optimization.ReadRecords(ctx, file)
+			file.Close()
+			if readErr != nil {
+				return tmprl.StepResult[Artifacts]{}, stepError(readErr)
+			}
+			saved, saveErr := j.cfg.Datasets.Add(ctx, request.TargetDatasetID, request.BaseVersion, preparation.DatasetAddition{
+				PublicationID: r.RunID, Source: source, PageStart: request.PageStart, PageEnd: request.PageEnd, Records: records,
+			})
+			if saveErr != nil {
+				return tmprl.StepResult[Artifacts]{}, stepError(saveErr)
+			}
+			artifacts.Preparation.SavedDatasetID, artifacts.Preparation.SavedVersion = saved.ID, saved.Version
+			artifacts.Preparation.SavedRecordCount, artifacts.Preparation.SavedTrainingReady = saved.RecordCount, saved.TrainingReady
+		}
 		return tmprl.StepResult[Artifacts]{Artifacts: artifacts, Status: output.Status}, stepError(err)
 	})
 }
@@ -512,7 +593,7 @@ func invalidInput(message string) error {
 }
 
 func stepError(err error) error {
-	if errors.Is(err, tmprl.ErrInvalidArgument) || errors.Is(err, uploads.ErrInvalidArgument) || errors.Is(err, uploads.ErrNotFound) {
+	if errors.Is(err, tmprl.ErrInvalidArgument) || errors.Is(err, uploads.ErrInvalidArgument) || errors.Is(err, uploads.ErrNotFound) || errors.Is(err, preparation.ErrInvalidArgument) || errors.Is(err, preparation.ErrDatasetConflict) || errors.Is(err, preparation.ErrDatasetNotFound) {
 		return temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
 	}
 	return err

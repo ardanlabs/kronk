@@ -272,6 +272,76 @@ func source(t *testing.T, document bool) (string, string) {
 	return "source.jsonl", data.String()
 }
 
+func TestPreparationOnlySavedDataset(t *testing.T) {
+	env := newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	storage, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, content := source(t, true)
+	upload, err := storage.Put(ctx, uploads.Input{Name: name}, strings.NewReader(content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compute := &trainer{}
+	j, err := job.New(env.Client, job.Config{TaskQueue: env.TaskQueue, Uploads: storage, StorageRoot: t.TempDir(), Trainer: compute, Completer: completer{}, Log: env.Log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err := j.Datasets().Create(ctx, "Device manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Preserve an unrelated existing contribution throughout preparation.
+	original := optimization.Record{Prompt: "When does the harbor open?", Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: "old-upload", FactID: "harbor-opening"}
+	destination, err = j.Datasets().Add(ctx, destination.ID, destination.Version, preparation.DatasetAddition{
+		PublicationID: "old-run", Source: uploads.File{ID: "old-upload", Name: "harbor.txt", SHA256: "old-hash"}, Records: []optimization.Record{original},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := j.Jobs().NewWorker()
+	if err := worker.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(worker.Stop)
+	run, err := j.Start(ctx, job.Request{PreparationOnly: true, Prepare: &preparation.PreparationRequest{
+		DatasetID: upload.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer, MaxQuestions: 5,
+		TargetDatasetID: destination.ID, BaseVersion: destination.Version,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := waitForCheckpoint(t, ctx, j, run.Execution, "preview-review")
+	payload, err := json.Marshal(preparation.Review{Records: waiting.Artifacts.Preview.Preview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.ContinuePreview(ctx, run.Execution, tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "review", Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := j.Jobs().Wait(ctx, run.Execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := result.Artifacts.Preparation
+	if result.Status != tmprl.StatusCompleted || len(result.Stages) != 1 || compute.attempts.Load() != 0 || prepared == nil || prepared.RecordCount != 5 || prepared.SavedRecordCount != 6 || prepared.SavedVersion != 3 {
+		t.Fatalf("preparation-only did not complete/save independently: %+v", result)
+	}
+	file, err := j.OpenDataset(ctx, run.Execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	records, err := optimization.ReadRecords(ctx, file)
+	if err != nil || len(records) != 6 || records[0] != original {
+		t.Fatalf("combined download lost original records or cap: %+v, %v", records, err)
+	}
+	assertSteps(t, env, run.Execution, []string{"preparation/extract", "preparation/preview", "preparation/generate", "preparation/verify"})
+}
+
 func waitForCheckpoint(t *testing.T, ctx context.Context, j *job.Job, e tmprl.Execution, name string) tmprl.Run[job.Request, job.Artifacts] {
 	t.Helper()
 	for {
