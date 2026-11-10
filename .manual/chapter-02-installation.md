@@ -95,14 +95,14 @@ kronk server stop
 
 The prerequisites depend on how you install Kronk:
 
-| Method | Platforms | Prerequisite |
-| ------ | --------- | ------------ |
-| Homebrew | macOS and Linux | Homebrew |
-| DEB / RPM package | Linux amd64 and arm64 | apt or dnf; systemd for the optional user service |
-| Release archive | Supported release platforms | None beyond the host OS |
-| `go install` | Platforms supported by the Go toolchain and Kronk libraries | Go 1.27.3 or later for this release |
-| Container | Any host supported by the selected Linux image | Docker or another OCI runtime |
-| Kubernetes / Helm | Linux nodes supported by the selected image | Helm, kubectl, a cluster, and a suitable StorageClass |
+| Method            | Platforms                                                   | Prerequisite                                          |
+| ----------------- | ----------------------------------------------------------- | ----------------------------------------------------- |
+| Homebrew          | macOS and Linux                                             | Homebrew                                              |
+| DEB / RPM package | Linux amd64 and arm64                                       | apt or dnf; systemd for the optional user service     |
+| Release archive   | Supported release platforms                                 | None beyond the host OS                               |
+| `go install`      | Platforms supported by the Go toolchain and Kronk libraries | Go 1.27.0 or later for this release                   |
+| Container         | Any host supported by the selected Linux image              | Docker or another OCI runtime                         |
+| Kubernetes / Helm | Linux nodes supported by the selected image                 | Helm, kubectl, a cluster, and a suitable StorageClass |
 
 Regardless of installation method, model downloads require enough disk space,
 and inference requires enough RAM or VRAM for the selected model and
@@ -220,13 +220,13 @@ arm64 images do not. The tag identifies the llama.cpp backend, not a guarantee
 that every inference engine uses that backend: ROCm images use Vulkan for
 transcription, and CUDA images provide Vulkan or CPU for image generation.
 
-| Tag | Intended hardware | Published platforms |
-| --- | ----------------- | ------------------- |
-| `latest` or `latest-cpu` | CPU inference | `linux/amd64`, `linux/arm64` |
-| `latest-cuda` | NVIDIA GPU | `linux/amd64`, `linux/arm64` |
-| `latest-vulkan` | AMD, NVIDIA, or Intel through Vulkan | `linux/amd64`, `linux/arm64` |
-| `latest-rocm` | AMD GPU through ROCm | `linux/amd64` |
-| `latest-all` | All backends built for the target architecture | `linux/amd64`, `linux/arm64` |
+| Tag                      | Intended hardware                              | Published platforms          |
+| ------------------------ | ---------------------------------------------- | ---------------------------- |
+| `latest` or `latest-cpu` | CPU inference                                  | `linux/amd64`, `linux/arm64` |
+| `latest-cuda`            | NVIDIA GPU                                     | `linux/amd64`, `linux/arm64` |
+| `latest-vulkan`          | AMD, NVIDIA, or Intel through Vulkan           | `linux/amd64`, `linux/arm64` |
+| `latest-rocm`            | AMD GPU through ROCm                           | `linux/amd64`                |
+| `latest-all`             | All backends built for the target architecture | `linux/amd64`, `linux/arm64` |
 
 Versioned tags use the form `vX.Y.Z-<variant>`. Pin a versioned tag for a
 reproducible deployment; `latest-*` tags move when a release is published.

@@ -1,6 +1,6 @@
 module github.com/ardanlabs/kronk
 
-go 1.27.3
+go 1.27.0
 
 require (
 	github.com/ardanlabs/bucky v1.1.5

@@ -204,7 +204,7 @@ export default function DocsManual() {
               <tr>
                 <td><code>go install</code></td>
                 <td>Platforms supported by the Go toolchain and Kronk libraries</td>
-                <td>Go 1.27.3 or later for this release</td>
+                <td>Go 1.27.0 or later for this release</td>
               </tr>
               <tr>
                 <td>Container</td>
