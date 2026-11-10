@@ -55,7 +55,7 @@ func TestValidateRequest(t *testing.T) {
 		{name: "model", change: func(r *preparation.PreparationRequest) { r.Model = " " }},
 		{name: "instructions", change: func(r *preparation.PreparationRequest) { r.Instructions = strings.Repeat("界", 2001) }},
 		{name: "goal", change: func(r *preparation.PreparationRequest) { r.Goal = "unknown" }},
-		{name: "preview count", change: func(r *preparation.PreparationRequest) { r.PreviewRecords = 1 }},
+		{name: "preview count", change: func(r *preparation.PreparationRequest) { r.PreviewRecords = 6 }},
 		{name: "negative preview count", change: func(r *preparation.PreparationRequest) { r.PreviewRecords = -1 }},
 		{name: "reviewed", change: func(r *preparation.PreparationRequest) {
 			r.ReviewedRecords = []training.Record{{Prompt: "Missing evidence?"}}

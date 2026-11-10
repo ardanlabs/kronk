@@ -30,6 +30,15 @@ func newApp(cfg Config) *app {
 	return &app{training: cfg.Job, uploads: cfg.Uploads}
 }
 
+func (a *app) requireJob(next web.HandlerFunc) web.HandlerFunc {
+	return func(ctx context.Context, r *http.Request) web.Encoder {
+		if a.training == nil {
+			return errs.Errorf(errs.Unavailable, "training service is unavailable; check server startup logs")
+		}
+		return next(ctx, r)
+	}
+}
+
 func (a *app) upload(ctx context.Context, r *http.Request) web.Encoder {
 	// Bound the entire request, including multipart framing, before parsing it.
 	r.Body = http.MaxBytesReader(web.GetWriter(ctx), r.Body, a.uploads.MaximumBytes()+(1<<20))
@@ -117,6 +126,18 @@ func (a *app) startTraining(ctx context.Context, r *http.Request) web.Encoder {
 		return toAppError(err)
 	}
 	return toAppDecisionReceipt(receipt)
+}
+
+// stop acknowledges cooperative cancellation; polling establishes terminal state.
+func (a *app) stop(ctx context.Context, r *http.Request) web.Encoder {
+	execution := tmprl.Execution{WorkflowID: r.PathValue("workflow_id"), RunID: r.PathValue("run_id")}
+	if err := execution.Validate(); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+	if err := a.training.Jobs().Stop(ctx, execution); err != nil {
+		return toAppError(err)
+	}
+	return nil
 }
 
 func (a *app) query(ctx context.Context, r *http.Request) web.Encoder {

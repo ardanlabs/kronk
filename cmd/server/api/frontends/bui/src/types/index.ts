@@ -1455,6 +1455,7 @@ export interface PreparationOptions {
   model: string;
   goal: 'question_answer' | 'classification' | 'numeric_prediction' | 'text_generation';
   instructions: string;
+  preview_records?: number;
 }
 
 export type NewTrainingRun = {

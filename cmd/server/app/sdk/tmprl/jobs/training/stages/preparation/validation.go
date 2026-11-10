@@ -34,8 +34,8 @@ func ValidateRequest(ctx context.Context, store *uploads.Store, input Preparatio
 	default:
 		return PreparationRequest{}, fmt.Errorf("%w: unsupported preparation goal", ErrInvalidArgument)
 	}
-	if input.PreviewRecords != 0 || len(input.ReviewedRecords) > 5 {
-		return PreparationRequest{}, fmt.Errorf("%w: full preparation accepts at most five reviewed records, not a preview count", ErrInvalidArgument)
+	if input.PreviewRecords < 0 || input.PreviewRecords > 5 || len(input.ReviewedRecords) > 5 {
+		return PreparationRequest{}, fmt.Errorf("%w: preparation accepts a preview count of zero through five and at most five reviewed records", ErrInvalidArgument)
 	}
 	if err := training.ValidateReviewedRecords(input.ReviewedRecords); err != nil {
 		return PreparationRequest{}, fmt.Errorf("%w: reviewed records: %s", ErrInvalidArgument, err)

@@ -203,6 +203,12 @@ kms:
   download:
     enabled: true
   insecure-logging: true
+  training:
+    enabled: true
+    address: 127.0.0.1:7233
+    namespace: default
+    models:
+      - ggml-org/gemma-3-1b-it-Q8_0
 
 models:
   # nseq-max: 1  ~46GB VRAM

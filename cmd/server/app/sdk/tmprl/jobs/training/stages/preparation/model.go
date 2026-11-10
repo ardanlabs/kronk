@@ -66,6 +66,20 @@ type PreparationResult struct {
 	CompletionTokens int               `json:"completion_tokens"`
 	TrainingReady    bool              `json:"training_ready"`
 	Warnings         []string          `json:"warnings,omitzero"`
+	Exclusions       []SourceExclusion `json:"source_exclusions,omitzero"`
+}
+
+// SourceUnit couples one whole focal block's targets with bounded source context.
+type SourceUnit struct {
+	Reference string   `json:"reference"`
+	Evidence  string   `json:"evidence"`
+	Targets   []string `json:"targets"`
+}
+
+// SourceExclusion identifies source content omitted from preparation and why.
+type SourceExclusion struct {
+	Reference string `json:"reference"`
+	Reason    string `json:"reason"`
 }
 
 // PreparationInput preserves durable preparation and checkpoint identity.

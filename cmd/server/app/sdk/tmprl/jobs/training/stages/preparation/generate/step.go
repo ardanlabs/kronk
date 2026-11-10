@@ -5,12 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/internal/checkpoint"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"go.temporal.io/sdk/temporal"
 )
+
+// Three durable request reservations per pending source batch, across activity runs.
+const maxRequestAttempts uint32 = 3
 
 // Step generates examples and held-out questions with durable batch checkpoints.
 type Step struct{}
@@ -37,7 +43,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("%w: %s", preparation.ErrInvalidArgument, err)
 		}
 		for _, r := range input.Review.Records {
-			if !r.UserApproved || r.SourceDocument != p.Source.ID || !slices.Contains(state.Passages, r.Evidence) {
+			if !r.UserApproved || r.SourceDocument != p.Source.ID || !slices.ContainsFunc(state.Units, func(u preparation.SourceUnit) bool { return u.Evidence == r.Evidence }) {
 				return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("%w: reviewed example must belong to the extracted passages", preparation.ErrInvalidArgument)
 			}
 			if err := ValidateRecord(p.Input.Request.Goal, r); err != nil {
@@ -46,9 +52,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		}
 		state.Records = slices.Clone(input.Review.Records)
 		state.ReviewID, state.ReviewedCount = input.ReviewID, len(state.Records)
-		state.Passages = slices.DeleteFunc(state.Passages, func(passage string) bool {
-			return slices.ContainsFunc(state.Records, func(r training.Record) bool { return r.Evidence == passage })
-		})
+		// Reviewed examples consume passage capacity, not the entire passage.
 		if input.Artifacts.Preview != nil {
 			state.Result.PromptTokens += input.Artifacts.Preview.PromptTokens
 			state.Result.CompletionTokens += input.Artifacts.Preview.CompletionTokens
@@ -65,27 +69,133 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			input.Publish(progress)
 		}
 	}
-	report(tmprl.Progress{Completed: state.Next, Total: len(state.Passages), Message: "Generating training examples"})
-	for state.Next < len(state.Passages) {
+	commitBatch := func(end int) error {
+		for _, decision := range state.GenerationDecisions {
+			state.Records = append(state.Records, decision.Records...)
+			switch {
+			case !decision.Complete:
+				reason := fmt.Sprintf("generation failed after %d batch requests; valid candidates retained: %s", state.GenerationAttempts, decision.Reason)
+				state.Result.Exclusions = append(state.Result.Exclusions, preparation.SourceExclusion{Reference: decision.Reference, Reason: reason})
+				state.Result.Warnings = append(state.Result.Warnings, "Incomplete source coverage: "+decision.Reference+": "+reason)
+			case decision.Reason == "model abstained: no_supported_example":
+				state.Result.Exclusions = append(state.Result.Exclusions, preparation.SourceExclusion{Reference: decision.Reference, Reason: decision.Reason})
+			}
+		}
+		state.Next = end
+		state.GenerationAttempts = 0
+		state.GenerationRejections, state.GenerationRejectedPrompt, state.GenerationRejectionReason = 0, "", ""
+		state.GenerationDecisions = nil
+		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+			return err
+		}
+		report(tmprl.Progress{Completed: state.Next, Total: len(state.Units), Message: "Generated batch saved; verification still required"})
+		return nil
+	}
+	report(tmprl.Progress{Completed: state.Next, Total: len(state.Units), Message: "Generating training examples"})
+	for state.Next < len(state.Units) {
 		if err := ctx.Err(); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		end := min(state.Next+5, len(state.Passages))
-		records, usage, err := Run(ctx, p.Completer, p.Input.Request, state.Passages[state.Next:end], state.Records)
-		if err != nil {
-			return tmprl.StepResult[preparation.Artifacts]{}, err
+		end := min(state.Next+5, len(state.Units))
+		if len(state.GenerationDecisions) == 0 {
+			for _, unit := range state.Units[state.Next:end] {
+				state.GenerationDecisions = append(state.GenerationDecisions, checkpoint.GenerationDecision{Reference: unit.Reference})
+			}
 		}
-		for i := range records {
-			records[i].SourceDocument = p.Source.ID
+		var pending []preparation.SourceUnit
+		var positions []int
+		previous := slices.Clone(state.Records)
+		var feedback strings.Builder
+		feedback.WriteString(state.GenerationRejectionReason)
+		if state.GenerationRejectedPrompt != "" {
+			feedback.WriteString(" The previous batch contained this rejected duplicate prompt: " + strconv.Quote(state.GenerationRejectedPrompt))
 		}
-		state.Records = append(state.Records, records...)
-		state.Result.PromptTokens += usage.PromptTokens
-		state.Result.CompletionTokens += usage.CompletionTokens
-		state.Next = end
+		for i, decision := range state.GenerationDecisions {
+			for _, record := range decision.Records {
+				if err := ValidateRecord(p.Input.Request.Goal, record); err != nil {
+					return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("invalid staged candidate: %w", err)
+				}
+				previous = append(previous, record)
+			}
+			if decision.Complete {
+				continue
+			}
+			pending = append(pending, state.Units[state.Next+i])
+			positions = append(positions, i)
+			if decision.Reason != "" {
+				feedback.WriteString(fmt.Sprintf("\nSource %s: %s", decision.Reference, decision.Reason))
+			}
+		}
+		if len(pending) == 0 {
+			if err := commitBatch(end); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+			continue
+		}
+		if state.GenerationAttempts >= maxRequestAttempts {
+			var references []string
+			for _, unit := range pending {
+				references = append(references, unit.Reference)
+			}
+			return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError(fmt.Sprintf("generation request budget exhausted at source index %d; unresolved sources: %s; provisional candidates preserved; invalid responses are not source omissions", state.Next, strings.Join(references, ", ")), "preparation-request-budget-exhausted", nil)
+		}
+		state.GenerationAttempts++
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		report(tmprl.Progress{Completed: state.Next, Total: len(state.Passages), Message: "Generating training examples"})
+		outcome, usage, err := Run(ctx, p.Completer, p.Input.Request, pending, previous, state.GenerationAttempts-1, feedback.String())
+		if canceled := ctx.Err(); canceled != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, canceled
+		}
+		state.Result.PromptTokens += usage.PromptTokens
+		state.Result.CompletionTokens += usage.CompletionTokens
+		if err != nil {
+			if rejected, ok := errors.AsType[*rejectedCompletion](err); ok {
+				state.GenerationRejections++
+				state.GenerationRejectionReason = rejected.reason
+				state.GenerationRejectedPrompt = ""
+				if saveErr := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); saveErr != nil {
+					return tmprl.StepResult[preparation.Artifacts]{}, saveErr
+				}
+				continue // Local correction; does not spend a Temporal retry.
+			}
+			if saveErr := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); saveErr != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, saveErr
+			}
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+		state.GenerationRejectionReason, state.GenerationRejectedPrompt = "", outcome.RejectedPrompt
+		unresolved := false
+		for i, decision := range outcome.Decisions {
+			for j := range decision.Records {
+				decision.Records[j].SourceDocument = p.Source.ID
+			}
+			if !decision.Complete {
+				unresolved = true
+			}
+			decision.Records = append(state.GenerationDecisions[positions[i]].Records, decision.Records...)
+			state.GenerationDecisions[positions[i]] = decision
+		}
+		// Only a validated final response can resolve individual source failures.
+		// Unknown/interrupted requests and malformed envelopes retain the fatal gate.
+		if unresolved && state.GenerationAttempts == maxRequestAttempts {
+			if err := commitBatch(end); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+			continue
+		}
+		if unresolved {
+			state.GenerationRejections++
+			state.GenerationRejectionReason = "repair only the unresolved source units; saved candidates must not be repeated"
+		} else if state.GenerationRejections > 0 {
+			state.GenerationRejectionReason = "all batch candidates staged; commit pending"
+		}
+		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+	}
+	if len(state.Records) == 0 {
+		return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError("no supported examples were generated; source exclusions are saved in the preparation checkpoint", "preparation-no-examples", nil)
 	}
 	training := slices.DeleteFunc(slices.Clone(state.Records), func(r training.Record) bool { return r.ValidationPrompt || r.IndependentPrompt })
 	if p.Input.Kind == preparation.PreparationFull && p.Input.Request.Goal == preparation.GoalQuestionAnswer && len(training) >= 20 {

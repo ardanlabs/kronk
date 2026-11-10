@@ -4,6 +4,7 @@ package training
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -453,7 +454,7 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 		}
 		request := *r.Request.Prepare
 		if step.Name() == "preview" {
-			request.PreviewRecords = 3
+			request.PreviewRecords = cmp.Or(request.PreviewRecords, 3)
 			request.ReviewedRecords = nil
 		}
 		var review *preparation.Review

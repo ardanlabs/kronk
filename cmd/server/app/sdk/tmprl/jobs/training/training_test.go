@@ -19,6 +19,10 @@ import (
 
 	job "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/generate"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/preview"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/verify"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
@@ -88,6 +92,7 @@ func (t *trainer) Predict(ctx context.Context, _ optimization.TrainingJob, adapt
 
 type completer struct {
 	generationCalls *atomic.Int32
+	excludedTarget  string
 }
 
 func (c completer) Complete(_ context.Context, r providers.CompletionRequest) (providers.Completion, error) {
@@ -118,18 +123,132 @@ func (c completer) Complete(_ context.Context, r providers.CompletionRequest) (p
 		}
 		_, source, _ := strings.Cut(prompt, "SOURCE:\n")
 		var rows []map[string]any
-		for i, section := range strings.Split(source, "[PASSAGE ")[1:] {
-			_, passage, _ := strings.Cut(section, "]\n")
+		for i, section := range strings.Split(source, "[EVIDENCE ")[1:] {
+			_, target, ok := strings.Cut(section, "ANSWER SOURCES:\nTARGET 1: ")
+			if !ok {
+				return providers.Completion{}, errors.New("missing selectable focal target")
+			}
+			if strings.Contains(section, "[SAVED EXAMPLE]") {
+				rows = append(rows, map[string]any{"reason": "none", "examples": []any{}, "evidence_id": i + 1})
+				continue
+			}
+			if strings.TrimSpace(target) == c.excludedTarget {
+				rows = append(rows, map[string]any{"reason": "no_supported_example", "examples": []any{}, "evidence_id": i + 1})
+				continue
+			}
 			var index int
-			if _, err := fmt.Sscanf(passage, "Device %d", &index); err != nil {
+			if _, err := fmt.Sscanf(target, "Device %d", &index); err != nil {
 				return providers.Completion{}, err
 			}
-			rows = append(rows, map[string]any{"prompt": fmt.Sprintf("What calibration code applies to device %02d?", index), "evidence_id": i + 1, "target_id": 1})
+			rows = append(rows, map[string]any{"reason": "none", "evidence_id": i + 1, "examples": []map[string]any{{"prompt": fmt.Sprintf("What calibration code applies to device %02d?", index), "answer_quote": strings.TrimSpace(target), "target_id": 0}}})
 		}
-		output = map[string]any{"records": rows}
+		output = map[string]any{"decisions": rows}
 	}
 	data, err := json.Marshal(output)
 	return providers.Completion{Content: string(data)}, err
+}
+
+// Exercise real preparation steps without a Temporal server, models or training.
+func TestPreparationSourceContract(t *testing.T) {
+	store, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, content := source(t, true)
+	unsupported := "What happens next without a supplied answer?"
+	file, err := store.Put(t.Context(), uploads.Input{Name: name}, strings.NewReader(content+"## Unsupported\n\n"+unsupported))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { workspace.Close() })
+	completion := completer{excludedTarget: unsupported}
+	input := preparation.StepContext{Workspace: workspace, Preparation: &preparation.PreparationContext{
+		Input: preparation.PreparationInput{Kind: preparation.PreparationFull, Request: preparation.PreparationRequest{
+			DatasetID: file.ID, Model: "controlled", Goal: preparation.GoalQuestionAnswer, PreviewRecords: 3,
+		}},
+		Source: file, OpenSource: func(ctx context.Context) (io.ReadCloser, error) { return store.Open(ctx, file.ID) }, Completer: completion,
+	}}
+	if _, err := (extract.Step{}).Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	sample, err := (preview.Step{}).Execute(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Artifacts = sample.Artifacts
+	if sample.Artifacts.Preview == nil || len(sample.Artifacts.Preview.Preview) != 3 || sample.Artifacts.Preview.TrainingReady {
+		t.Fatalf("incorrect isolated Preview: %+v", sample.Artifacts)
+	}
+	review := preparation.Review{Records: slices.Clone(sample.Artifacts.Preview.Preview)}
+	review.Records[0].Target = "Device 00 uses calibration code C00."
+	payload, err := json.Marshal(review)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := preview.ValidateReview(input.Preparation.Input.Request, sample.Artifacts.Preview, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Review, input.ReviewID = &accepted, "approved-review"
+	generated, err := (generate.Step{}).Execute(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generated.Artifacts.Preparation != nil {
+		t.Fatal("Generate published a dataset before Verify")
+	}
+	for _, path := range []string{"dataset.jsonl", "result.json"} {
+		if _, err := workspace.ReadFile(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("premature publication of %s: %v", path, err)
+		}
+	}
+	// A rejected batch must still block full publication under the unchanged policy.
+	input.Preparation.Completer = preparationCompleter(func(context.Context, providers.CompletionRequest) (providers.Completion, error) {
+		return providers.Completion{Content: `{"record_1":"grounding","record_2":"pass","record_3":"pass"}`}, nil
+	})
+	if _, err := (verify.Step{}).Execute(t.Context(), input); err == nil || !strings.Contains(err.Error(), "grounding") {
+		t.Fatalf("full Preparation must reject the failed reviewed example: %v", err)
+	}
+	if _, err := workspace.ReadFile("dataset.jsonl"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed Verify published records: %v", err)
+	}
+	input.Preparation.Completer = completion
+	verified, err := (verify.Step{}).Execute(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := verified.Artifacts.Preparation
+	if result == nil || result.RecordCount != 50 || !result.TrainingReady || len(result.Exclusions) != 1 || result.Exclusions[0] != (preparation.SourceExclusion{Reference: "markdown:line:83", Reason: "model abstained: no_supported_example"}) {
+		t.Fatalf("incorrect result/exclusion accounting: %+v", result)
+	}
+	recordFile, err := workspace.Open("dataset.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, readErr := optimization.ReadRecords(t.Context(), recordFile)
+	if err := errors.Join(readErr, recordFile.Close()); err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 50 || !slices.Equal(records[:3], accepted.Records) || records[0].Evidence != sample.Artifacts.Preview.Preview[0].Evidence {
+		t.Fatal("reviewed records, local evidence or dataset count changed")
+	}
+	data, err := workspace.ReadFile("dataset-report.json")
+	var report struct {
+		Result preparation.PreparationResult `json:"result"`
+	}
+	if err != nil || json.Unmarshal(data, &report) != nil || !reflect.DeepEqual(report.Result.Exclusions, result.Exclusions) {
+		t.Fatalf("exclusions did not reach the saved report: %s, %v", data, err)
+	}
+}
+
+type preparationCompleter func(context.Context, providers.CompletionRequest) (providers.Completion, error)
+
+func (f preparationCompleter) Complete(ctx context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+	return f(ctx, request)
 }
 
 func source(t *testing.T, document bool) (string, string) {
@@ -137,7 +256,7 @@ func source(t *testing.T, document bool) (string, string) {
 	var data strings.Builder
 	for i := range 20 {
 		if document {
-			fmt.Fprintf(&data, "Device %02d has calibration code C%02d.\n\n", i, i)
+			fmt.Fprintf(&data, "## Device %02d\n\nDevice %02d has calibration code C%02d.\n\n", i, i, i)
 			continue
 		}
 		for variant := range 3 {

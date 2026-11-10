@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
-import type { TrainingEvaluation, TrainingPreviewRecord, TrainingRun as Run, TrainingStep } from '../types';
+import type { TrainingEvaluation, TrainingPreviewRecord, TrainingRun as Run, TrainingStage, TrainingStep } from '../types';
 import { FieldLabel } from './ParamTooltips';
 
 function formatDate(value?: string): string {
@@ -88,59 +88,119 @@ export default function TrainingRun() {
   );
 }
 
-export function TrainingJobState({ run, onRefresh }: { run: Run; onRefresh: () => void }) {
+export function TrainingJobState({ run, onRefresh, view = 'all' }: { run: Run; onRefresh: () => void; view?: 'all' | 'preparation' | 'training' }) {
+  const { stopSubmission, stopRun } = useFineTuningRunner();
+  const stop = stopSubmission(run);
+  const terminal = ['completed', 'needs_improvement', 'failed', 'stopped'].includes(run.status);
+  const controlStage = run.stage || run.stages[0]?.name;
+  const canStop = !terminal && (view === 'all' || controlStage === view);
+  const stopping = stop?.status === 'sending' || stop?.status === 'requested';
+  const stopLabel = controlStage === 'preparation' ? 'Preparation' : 'Training';
+  const stages = run.stages.filter((stage) => view === 'all' || stage.name === view);
+  const currentStage = stages.find((stage) => stage.name === run.stage)
+    ?? stages.find((stage) => stage.status !== 'completed') ?? stages.at(-1);
   return (
-    <section className="fine-run-card" aria-label="Training job state">
+    <section className="fine-job-view" aria-label={view === 'preparation' ? 'Preparation job state' : 'Training job state'}>
       <div className="fine-run-heading">
-        <div><span className="fine-eyebrow">Job</span><h3>{run.workflow_id}</h3></div>
+        <div><span className="fine-eyebrow">{view === 'preparation' ? 'Document preparation' : 'Model training'}</span><h3>{view === 'preparation' ? 'Preparation progress' : 'Training progress'}</h3></div>
         <div className="fine-actions">
           <span className="fine-status">{run.status}</span>
           <button className="btn btn-secondary" onClick={onRefresh}>Refresh</button>
+          {canStop && <button className="btn btn-danger" type="button" disabled={stopping} onClick={() => void stopRun(run)}>{stop?.status === 'sending' ? 'Requesting cancellation…' : stop?.status === 'requested' ? 'Cancellation requested' : `Stop ${stopLabel}`}</button>}
         </div>
       </div>
-      <div className="fine-run-facts">
-        <span><strong>Run ID</strong>{run.run_id}</span>
-        <span><strong>Started</strong>{formatDate(run.started_at)}</span>
-        <span><strong>Updated</strong>{formatDate(run.updated_at)}</span>
-        {run.closed_at && <span><strong>Closed</strong>{formatDate(run.closed_at)}</span>}
-        {run.stage && <span><strong>Current stage</strong>{run.stage}</span>}
-        {run.step && <span><strong>Current step</strong>{run.step}</span>}
-      </div>
+      {!terminal && stopping && <p role="status" className="fine-action-note">{stop.status === 'sending' ? 'Requesting cancellation for this job…' : 'Cancellation requested. The job may still be running; progress is preserved until the service reports a terminal state.'}</p>}
+      {!terminal && stop?.error && <p role="alert" className="fine-error">Could not confirm cancellation: {stop.error} The job may still be running. Retry Stop {stopLabel} to request cancellation for this job.</p>}
       {run.state_stale && <p role="status" className="fine-action-note">This is the last reported state and may be out of date. Refresh to request the latest state.</p>}
-      {run.progress && <p className="fine-action-note">Reported progress · {run.progress.stage} / {run.progress.step}: {run.progress.completed} / {run.progress.total}</p>}
+      {run.status === 'queued' && !run.stage && <p role="status" className="fine-action-note">Your job was submitted and is waiting for a training worker. This server runs one reserved job at a time, including Preparation. It will start when the worker becomes available; Stop cancels this queued request.</p>}
+      {currentStage ? <JobProgress key={`${run.workflow_id}/${run.run_id}/${currentStage.name}`} run={run} stage={currentStage} /> : <p role="status">No steps reported yet.</p>}
+      {view !== 'training' && run.preview && <PreviewReview key={JSON.stringify([run.workflow_id, run.run_id, run.checkpoint?.id])} run={run} savedRecords={run.preview.records} onRefresh={onRefresh} />}
+      {view !== 'preparation' && <StartPreparedTraining run={run} onRefresh={onRefresh} />}
+      {stages.filter((stage) => stage !== currentStage).map((stage) => <section className="fine-panel" key={stage.name}><StepStates caption={`${stage.name} steps`} steps={stage.steps} /></section>)}
+      <details className="fine-panel fine-job-details">
+        <summary>Job details</summary>
+        <div className="fine-run-facts">
+          <span><strong>Workflow ID</strong>{run.workflow_id}</span>
+          <span><strong>Run ID</strong>{run.run_id}</span>
+          <span><strong>Started</strong>{formatDate(run.started_at)}</span>
+          <span><strong>Updated</strong>{formatDate(run.updated_at)}</span>
+          {run.closed_at && <span><strong>Closed</strong>{formatDate(run.closed_at)}</span>}
+        </div>
+      </details>
+      {view !== 'preparation' && <>
+        <EvaluationResults key={JSON.stringify([run.workflow_id, run.run_id, run.evaluation_available])} run={run} />
+        <AdapterDownload key={JSON.stringify([run.workflow_id, run.run_id, run.adapter_available, run.state_stale])} run={run} />
+      </>}
+    </section>
+  );
+}
 
-      <ol className="training-job-stages" aria-label="Job stages">
-        {run.stages.map((stage) => {
-          const previewIndex = stage.name === 'preparation' && run.preview ? stage.steps.findIndex((step) => step.name === 'preview') : -1;
-          return (
-            <li key={stage.name} className="training-job-stage">
-              <div className="fine-panel-heading">
-                <div><span>Stage</span><h4>{stage.name}</h4></div>
-                <span className="fine-status">{stage.status}</span>
-              </div>
-              <StepStates caption={`${stage.name} steps`} steps={previewIndex < 0 ? stage.steps : stage.steps.slice(0, previewIndex + 1)} />
-              {previewIndex >= 0 && run.preview && (
-                <>
-                  <PreviewReview
-                    key={JSON.stringify([run.workflow_id, run.run_id, run.checkpoint?.id])}
-                    run={run}
-                    savedRecords={run.preview.records}
-                    onRefresh={onRefresh}
-                  />
-                  {previewIndex + 1 < stage.steps.length && <StepStates caption={`Remaining ${stage.name} steps`} steps={stage.steps.slice(previewIndex + 1)} />}
-                </>
-              )}
-              {stage.steps.length === 0 && <p className="fine-action-note">No steps reported yet.</p>}
-              {stage.name === 'preparation' && (
-                <StartPreparedTraining key={JSON.stringify([run.workflow_id, run.run_id])} run={run} onRefresh={onRefresh} />
-              )}
-            </li>
-          );
-        })}
-      </ol>
-      {run.stages.length === 0 && <p className="fine-action-note">No stages reported yet.</p>}
-      <EvaluationResults key={JSON.stringify([run.workflow_id, run.run_id, run.evaluation_available])} run={run} />
-      <AdapterDownload key={JSON.stringify([run.workflow_id, run.run_id, run.adapter_available, run.state_stale])} run={run} />
+const stepLabels: Record<string, string> = {
+  extract: 'Extract document', preview: 'Generate preview', generate: 'Generate examples', verify: 'Verify examples',
+  split: 'Split dataset', train: 'Train adapter', evaluate: 'Evaluate adapter', publish: 'Publish adapter',
+};
+
+function duration(milliseconds: number): string {
+  const minutes = Math.max(1, Math.ceil(milliseconds / 60000));
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} hr ${minutes % 60} min`;
+}
+
+function JobProgress({ run, stage }: { run: Run; stage: TrainingStage }) {
+  const [now, setNow] = useState(Date.now);
+  const step = stage.steps.find((item) => item.name === run.step && stage.name === run.stage)
+    ?? stage.steps.find((item) => item.status === 'failed' || item.status === 'running');
+  const complete = stage.status === 'completed';
+  const waiting = run.status === 'waiting' && run.stage === stage.name;
+  const running = run.status === 'running' && stage.status === 'running' && !run.state_stale;
+  const progress = !complete && run.progress?.stage === stage.name && run.progress.step === step?.name ? run.progress : undefined;
+  const sampleKey = `${stage.name}/${step?.name}/${step?.attempt}`;
+  const sample = useRef<{ key: string; completed: number; total: number; at: number }>();
+  const [rate, setRate] = useState<number>();
+
+  useEffect(() => {
+    if (!running || waiting) { sample.current = undefined; setRate(undefined); return; }
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [running, waiting, sampleKey]);
+
+  useEffect(() => {
+    if (!running || waiting || !progress || progress.total <= 0) { sample.current = undefined; setRate(undefined); return; }
+    const previous = sample.current;
+    if (!previous || previous.key !== sampleKey || progress.total !== previous.total || progress.completed < previous.completed) {
+      sample.current = { key: sampleKey, completed: progress.completed, total: progress.total, at: Date.now() };
+      setRate(undefined);
+    } else if (progress.completed > previous.completed && Date.now() - previous.at >= 10000) {
+      setRate((progress.completed - previous.completed) / (Date.now() - previous.at));
+    }
+  }, [sampleKey, progress?.completed, progress?.total, running, waiting]);
+
+  const percentage = progress && progress.total > 0 ? Math.max(0, Math.min(100, Math.floor(progress.completed / progress.total * 100))) : undefined;
+  const elapsedStart = step?.started_at;
+  const elapsedEnd = running ? now : Date.parse(step?.closed_at ?? run.updated_at ?? '');
+  const elapsed = elapsedStart ? elapsedEnd - Date.parse(elapsedStart) : NaN;
+  const remaining = rate && running && !waiting && progress && progress.completed < progress.total ? (progress.total - progress.completed) / rate : undefined;
+  const title = complete ? `${stage.name === 'preparation' ? 'Preparation' : 'Training'} complete`
+    : waiting ? run.checkpoint?.name === 'preview-review' ? 'Preview ready for review' : 'Ready to start training'
+      : step ? stepLabels[step.name] ?? step.name : `Waiting to start ${stage.name}`;
+
+  return (
+    <section className="fine-panel fine-job-progress" aria-label={`${stage.name} progress`}>
+      <div className="fine-panel-heading">
+        <div><span>{complete ? 'Finished' : waiting ? 'Your next action' : 'Current step'}</span><h3>{title}</h3></div>
+        <span className={`fine-status fine-status-${stage.status}`}>{stage.status.replaceAll('_', ' ')}</span>
+      </div>
+      {stage.status === 'failed' && <p className="fine-error" role="alert">This step failed. Saved progress remains attached to this job.</p>}
+      {waiting && <p className="fine-panel-copy">{run.checkpoint?.name === 'preview-review' ? 'Open the preview to review your examples before building the full dataset.' : 'Preparation is finished. Training starts only when you authorize it.'}</p>}
+      {progress && !waiting && <>
+        <div className="fine-job-count"><strong>{progress.completed.toLocaleString()} <span>/ {progress.total.toLocaleString()}</span></strong><span>{percentage === undefined ? 'In progress' : `${percentage}%`}</span></div>
+        {percentage !== undefined && <div className="fine-progress-track" role="progressbar" aria-label={`${stepLabels[progress.step] ?? progress.step} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentage}><span style={{ width: `${percentage}%` }} /></div>}
+      </>}
+      {!complete && !waiting && <div className="fine-job-timing">
+        <div><span>Step elapsed</span><strong>{Number.isFinite(elapsed) && elapsed >= 0 ? elapsed < 60000 ? 'Less than a minute' : duration(elapsed) : 'Not started'}</strong></div>
+        <div><span>Estimated step remaining</span><strong>{run.state_stale ? 'Unavailable · state is out of date' : !running ? 'Unavailable · not running' : remaining ? `About ${duration(remaining)}` : progress?.completed === progress?.total && progress?.total ? 'Finishing up…' : 'Estimating as progress arrives…'}</strong></div>
+      </div>}
+      {!complete && !waiting && <p className="fine-action-note">{progress ? 'Counts apply to this step, not the final accepted dataset size. ' : ''}Time estimates use progress observed while this page is open; later steps are not included.</p>}
+      <StepStates caption={`${stage.name === 'preparation' ? 'Preparation' : 'Training'} steps`} steps={stage.steps} />
     </section>
   );
 }
@@ -260,7 +320,7 @@ function EvaluationResults({ run }: { run: Run }) {
   );
 }
 
-function StartPreparedTraining({ run, onRefresh }: { run: Run; onRefresh: () => void }) {
+export function StartPreparedTraining({ run, onRefresh, onStarted }: { run: Run; onRefresh: () => void; onStarted?: () => void }) {
   const { trainingSubmission, startPreparedTraining } = useFineTuningRunner();
   const submission = trainingSubmission(run);
   const mounted = useRef(false);
@@ -277,7 +337,10 @@ function StartPreparedTraining({ run, onRefresh }: { run: Run; onRefresh: () => 
   if (!waiting && !submission) return null;
 
   async function handleStart() {
-    if (await startPreparedTraining(run) && mounted.current) onRefresh();
+    if (await startPreparedTraining(run) && mounted.current) {
+      onRefresh();
+      onStarted?.();
+    }
   }
 
   return (
@@ -306,17 +369,18 @@ function StartPreparedTraining({ run, onRefresh }: { run: Run; onRefresh: () => 
 
 function StepStates({ caption, steps }: { caption: string; steps: TrainingStep[] }) {
   return (
-    <div className="fine-history-table-wrap">
-      <table className="fine-history-table">
-        <caption className="training-job-caption">{caption}</caption>
-        <thead><tr><th scope="col">Step</th><th scope="col">Status</th><th scope="col">Attempt</th><th scope="col">Started</th><th scope="col">Closed</th></tr></thead>
-        <tbody>{steps.map((step) => (
-          <tr key={step.name}>
-            <th scope="row">{step.name}</th><td>{step.status}</td><td>{step.attempt}</td>
-            <td>{formatDate(step.started_at)}</td><td>{formatDate(step.closed_at)}</td>
-          </tr>
-        ))}</tbody>
-      </table>
+    <div className="fine-step-plan">
+      <h4>{caption}</h4>
+      <ol aria-label={caption}>
+        {steps.map((step, index) => (
+          <li key={step.name} className={`fine-step-item fine-step-${step.status}`} aria-current={step.status === 'running' ? 'step' : undefined}>
+            <span className="fine-step-marker" aria-hidden="true">{step.status === 'completed' ? '✓' : step.status === 'failed' ? '!' : index + 1}</span>
+            <div><strong>{stepLabels[step.name] ?? step.name}</strong><span>{step.status.replaceAll('_', ' ') || 'Pending'}{step.attempt > 1 ? ` · Attempt ${step.attempt}` : ''}</span></div>
+            {step.closed_at && <span className="fine-step-time">{formatDate(step.closed_at)}</span>}
+          </li>
+        ))}
+      </ol>
+      {steps.length === 0 && <p className="fine-action-note">No steps reported yet.</p>}
     </div>
   );
 }
@@ -334,6 +398,17 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
   }, []);
   const waiting = run.status === 'waiting' && run.checkpoint?.name === 'preview-review'
     && run.checkpoint.stage === 'preparation' && run.checkpoint.step === 'preview';
+  const [open, setOpen] = useState(waiting);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (waiting) setOpen(true); }, [waiting]);
+  useEffect(() => {
+    const element = dialog.current;
+    if (!element || !open) return;
+    element.showModal();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { element.close(); document.body.style.overflow = previousOverflow; };
+  }, [open]);
   const submitting = submission?.status === 'sending';
   const uncertain = submission?.status === 'uncertain';
   const accepted = submission?.status === 'accepted';
@@ -341,7 +416,7 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
   const records = submission && submission.status !== 'rejected' ? submission.request.records : waiting ? draft : savedRecords;
 
   async function handleContinue() {
-    if (await continuePreview(run, records) && mounted.current) onRefresh();
+    if (await continuePreview(run, records) && mounted.current) { setOpen(false); onRefresh(); }
   }
 
   function updateRecord(index: number, field: 'prompt' | 'target', value: string) {
@@ -349,13 +424,25 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
   }
 
   return (
+    <>
+    <section className="fine-panel fine-preview-launcher" aria-label="Dataset preview">
+      <div><h3>{waiting ? 'Review your preview' : 'Saved preview'}</h3><p>{records.length} {records.length === 1 ? 'example' : 'examples'} · {waiting ? 'Review before building the full dataset.' : 'View the examples saved with this job.'}</p></div>
+      <button className="btn btn-primary" type="button" onClick={() => setOpen(true)}>{waiting ? 'Review Preview' : 'View Preview'}</button>
+    </section>
+    <dialog ref={dialog} className="fine-preview-dialog" aria-labelledby="fine-preview-title" onCancel={() => setOpen(false)} onClose={(event) => { if (!event.currentTarget.open) setOpen(false); }} onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }} onKeyDown={(event) => {
+      if (event.key !== 'Tab') return;
+      const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]')].filter((element) => element.getClientRects().length > 0);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }}>
     <section className="fine-panel fine-review-panel" aria-label="Review Examples">
       <div className="fine-panel-heading">
-        <div><span>Preparation · Preview</span><h3>Review Examples</h3></div>
-        <strong>{records.length} Records</strong>
+        <div><span>Dataset preview · {records.length} {records.length === 1 ? 'record' : 'records'}</span><h3 id="fine-preview-title">Review Examples</h3></div>
+        <button className="btn btn-secondary" type="button" autoFocus onClick={() => setOpen(false)}>Close preview</button>
       </div>
       <p className="fine-panel-copy">
-        {waiting ? 'Review and edit these examples before continuing preparation of the full dataset. Continue does not start training.' : 'Saved preview examples. Review is read-only because this job is not waiting at Preview.'}
+        {waiting ? 'Review and edit these examples before building the full dataset. Build Training Dataset does not start training.' : 'Saved preview examples. Review is read-only because this job is not waiting at Preview.'}
       </p>
       {run.preview?.warnings && run.preview.warnings.length > 0 && (
         <ul aria-label="Preparation warnings">{run.preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
@@ -382,15 +469,17 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
       <div className="fine-review-actions">
         <span className="fine-action-note" role="status">
           {accepted ? 'Review accepted. Follow the job state for preparation progress.'
-            : uncertain ? 'Could not confirm acceptance. Retry Continue sends the same submitted examples. Editing is locked until acceptance is confirmed.'
+            : uncertain ? 'Could not confirm acceptance. Retry Build Training Dataset sends the same submitted examples. Editing is locked until acceptance is confirmed.'
               : submitting ? 'Submitting reviewed examples…'
-                : editable ? 'Continue submits these examples and allows preparation to finish. Training remains a separate choice.'
-                  : 'Continue is available only while Preview is waiting for review with current job state.'}
+                : editable ? 'Build Training Dataset submits these examples and continues full-dataset preparation. Training remains a separate choice.'
+                  : 'Build Training Dataset is available only while Preview is waiting for review with current job state.'}
         </span>
         <button className="btn btn-primary" type="button" disabled={submitting || accepted || (!uncertain && (!editable || records.length === 0))} onClick={() => void handleContinue()}>
-          {submitting ? 'Submitting…' : uncertain ? 'Retry Continue' : accepted ? 'Review Accepted' : 'Continue'}
+          {submitting ? 'Submitting…' : uncertain ? 'Retry Build Training Dataset' : accepted ? 'Review Accepted' : 'Build Training Dataset'}
         </button>
       </div>
     </section>
+    </dialog>
+    </>
   );
 }

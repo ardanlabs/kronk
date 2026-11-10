@@ -11,7 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
 
-// Config supplies the host-owned training job, its upload store, and authorization.
+// Config supplies the host-owned upload store, optional training job, and authorization.
 type Config struct {
 	Job               *training.Job
 	Uploads           *uploads.Store
@@ -23,12 +23,16 @@ type Config struct {
 func Routes(webApp *web.App, cfg Config) {
 	api := newApp(cfg)
 	access := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/uploads", api.upload, access.Administration())
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs", api.create, access.Administration())
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preview/continue", api.continuePreview, access.Administration())
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/start-training", api.startTraining, access.Administration())
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs", api.query, access.Management())
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}", api.queryByID, access.Management())
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/evaluation", api.evaluation, access.Management())
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/adapter", api.adapter, access.Management())
+	if cfg.Uploads != nil {
+		webApp.HandlerFunc(http.MethodPost, "v1", "/training/uploads", api.upload, access.Administration())
+	}
+
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs", api.create, access.Administration(), api.requireJob)
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preview/continue", api.continuePreview, access.Administration(), api.requireJob)
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/start-training", api.startTraining, access.Administration(), api.requireJob)
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/stop", api.stop, access.Administration(), api.requireJob)
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs", api.query, access.Management(), api.requireJob)
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}", api.queryByID, access.Management(), api.requireJob)
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/evaluation", api.evaluation, access.Management(), api.requireJob)
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/adapter", api.adapter, access.Management(), api.requireJob)
 }
