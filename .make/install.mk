@@ -74,6 +74,10 @@ install-test-models: install-kronk ## Download test models
 	@echo
 	kronk model pull --local "LiquidAI/LFM3-1.7B-Q4_K_M"
 	@echo
+	kronk model pull --local "ggml-org/chatterbox-turbo-Q8_0"
+	@echo
+	kronk model pull --local "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0"
+	@echo
 	@echo ========== INSTALL BUCKY MODELS ==========
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo

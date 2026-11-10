@@ -165,6 +165,12 @@ documents the portable API message formats that templates consume.
 
 ### 3.2 Automatic Tuning
 
+Speech models are an exception to the chat tuning described below: they resolve
+fixed context, batch, and cache limits while preserving supported concurrency
+overrides. They do not receive hardware-derived chat recommendations. See
+[Chapter 11 §11.9](https://www.kronkai.com/manual#119-text-to-speech-sdk)
+for the speech SDK's settings and qualified memory-planning scope.
+
 The Kronk Model Server runs automatic tuning by default for every model it
 loads. No `auto-tune` key is required in `model_config.yaml`. The server derives
 a starting configuration from GGUF metadata and the available hardware. This

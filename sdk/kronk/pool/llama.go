@@ -288,10 +288,12 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 		return nil
 	}
 
-	projOnCPU := !l.resman.HasGPUs() || (cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU)
+	// Unified-memory accounting omits GPU buckets, not GPU execution.
+	projOnCPU := (!l.resman.HasGPUs() && !l.resman.UnifiedMemory()) || (cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU)
 	if err := addFile(cfg.ProjFile, projOnCPU, []string{cfg.ProjDevice}, nil, 0); err != nil {
 		return err
 	}
+
 	if cfg.SpeculationMode() != model.SpeculationDisabled {
 		mtpOnCPU := !l.resman.HasGPUs() || cfg.NGpuLayers() == -1
 		if err := addFile(cfg.MTPDrafterFile, mtpOnCPU, cfg.Devices, cfg.TensorSplit, cfg.MainGPU()); err != nil {

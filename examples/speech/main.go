@@ -3,6 +3,10 @@
 // The first time you run this program the system will download and install
 // the model, its matching audio decoder, and the native libraries.
 // It writes a complete PCM16 mono WAV to speech.wav in the working directory.
+// Speech detection and decoder discovery are automatic; WithSpeech is optional.
+// The verified bundles are Chatterbox Turbo and Qwen3-TTS 1.7B Base on Metal.
+// Change modelSource below to switch between them, without a decoder URL.
+// Streaming audio, voice cloning, and a language selector are not exposed.
 //
 // Run the example like this from the root of the project:
 // $ make example-speech
@@ -13,6 +17,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -36,7 +41,7 @@ func main() {
 	}
 }
 
-func run() error {
+func run() (err error) {
 	mp, err := installSystem()
 	if err != nil {
 		return fmt.Errorf("unable to install system: %w", err)
@@ -49,8 +54,8 @@ func run() error {
 
 	defer func() {
 		fmt.Println("\nUnloading Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			fmt.Printf("failed to unload model: %v", err)
+		if unloadErr := krn.Unload(context.Background()); unloadErr != nil {
+			err = errors.Join(err, fmt.Errorf("unloading model: %w", unloadErr))
 		}
 	}()
 
@@ -96,7 +101,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 		model.WithProjFile(mp.ProjFile),
-		model.WithSpeech(&model.SpeechConfig{MaxFrames: 512}),
+		// Limits default to 512 frames; optionally lower them with
+		// model.WithSpeech(&model.SpeechConfig{MaxFrames: 256}).
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create speech model: %w", err)
@@ -126,7 +132,7 @@ func speech(krn *kronk.Kronk) error {
 
 	request := model.SpeechRequest{
 		Input: "Mary had a little lamb, Its fleece was white as snow; And everywhere that Mary went, The lamb was sure to go.",
-		Voice: "", // Empty selects the model's default preset voice.
+		Voice: "", // Empty uses default conditioning, even without named presets.
 	}
 	fmt.Println("\nTEXT:", request.Input)
 

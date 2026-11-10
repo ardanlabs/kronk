@@ -1407,7 +1407,7 @@ export default function DocsSDKModel() {
 	MaxFrames int
 }`}</code>
               </pre>
-              <p className="doc-description">SpeechConfig configures speech generation limits. It does not select the model's runtime; speech models are identified from their model bundle. The initial runtime uses 2,048 context tokens per sequence, 512-token logical and physical batches, and partitioned F16 KV cache. Incompatible overrides, IMC, speculative decoding, and adapters are rejected during model loading.</p>
+              <p className="doc-description">SpeechConfig configures speech generation limits. It does not select the model's runtime; speech models are identified from their model bundle. The initial runtime uses 2,048 context tokens per sequence, 512-token logical and physical batches, and partitioned F16 KV cache. Incompatible overrides, IMC, speculative decoding, and adapters are rejected during model loading. NSeqMax controls overlapping requests (default one); native execution remains serialized. Chat sampling settings do not configure speech generation.</p>
             </div>
 
             <div className="doc-section" id="type-speechrequest">
@@ -1415,10 +1415,10 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`type SpeechRequest struct {
 	Input string // Text to speak.
-	Voice string // Preset voice name; empty selects the model's default voice.
+	Voice string // Preset voice name; empty or "default" uses default conditioning.
 }`}</code>
               </pre>
-              <p className="doc-description">SpeechRequest supplies text and an optional preset voice for speech generation. Input must be nonblank UTF-8 without NUL bytes, at most 64 KiB, and fit the context window together with voice conditioning and the full frame budget.</p>
+              <p className="doc-description">SpeechRequest supplies text and an optional preset voice for speech generation. Input must be nonblank UTF-8 without NUL bytes, at most 64 KiB, and fit the context window together with voice conditioning and the full frame budget. Empty Voice or "default" uses default model conditioning; other names must be presets in the loaded decoder. A bundle need not contain a named preset. Language selection, reference audio, and voice cloning are not exposed.</p>
             </div>
 
             <div className="doc-section" id="type-speechresponse">

@@ -25,6 +25,8 @@ var ErrSpeechLimit = errors.New("speech frame limit reached")
 // The initial runtime uses 2,048 context tokens per sequence, 512-token logical
 // and physical batches, and partitioned F16 KV cache. Incompatible overrides,
 // IMC, speculative decoding, and adapters are rejected during model loading.
+// NSeqMax controls overlapping requests (default one); native execution remains
+// serialized. Chat sampling settings do not configure speech generation.
 type SpeechConfig struct {
 	// MaxFrames limits generated speech frames. Zero uses 512. The initial
 	// supported range is 1 through 512. Frames are model-specific units, not
@@ -36,9 +38,12 @@ type SpeechConfig struct {
 // SpeechRequest supplies text and an optional preset voice for speech generation.
 // Input must be nonblank UTF-8 without NUL bytes, at most 64 KiB, and fit the
 // context window together with voice conditioning and the full frame budget.
+// Empty Voice or "default" uses default model conditioning; other names must
+// be presets in the loaded decoder. A bundle need not contain a named preset.
+// Language selection, reference audio, and voice cloning are not exposed.
 type SpeechRequest struct {
 	Input string // Text to speak.
-	Voice string // Preset voice name; empty selects the model's default voice.
+	Voice string // Preset voice name; empty or "default" uses default conditioning.
 }
 
 // SpeechResponse contains a complete PCM16 little-endian mono WAV. Audio is

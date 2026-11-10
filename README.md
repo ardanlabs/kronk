@@ -11,7 +11,7 @@ Kronk is a Go SDK and model server for hardware-accelerated local inference. It
 provides high-level Go APIs over native inference engines without requiring Python or
 a separate model-serving stack:
 
-- **Kronk** runs text, vision, embedding, reranking, and decision models through
+- **Kronk** runs text, vision, embedding, reranking, decision, and text-to-speech models through
   [llama.cpp](https://github.com/ggml-org/llama.cpp) and
   [yzma](https://github.com/hybridgroup/yzma).
 - **Bucky** provides speech-to-text through
@@ -26,7 +26,8 @@ Responses, embeddings, reranking, and audio transcription, an Anthropic-compatib
 Messages API, and Decision endpoints at `/v1/systemone` and `/v1/decide`. It also
 includes a browser interface, model management, security, observability, and
 integrations with OpenWebUI, OpenCode, and Claude Code. Malina is currently SDK-only
-and is not integrated into the model server.
+and is not integrated into the model server. Text-to-speech is also currently
+SDK-only; there is no HTTP speech-generation endpoint or BUI speech playground.
 
 Visit [kronkai.com](https://kronkai.com) or read the
 [manual](https://www.kronkai.com/manual) for complete documentation.
@@ -71,8 +72,12 @@ The model server is built on the same public SDKs available to Go applications.
 | Application-specific caching and concurrency   | Authentication, rate limiting, metrics, and tracing |
 
 The Kronk SDK supports text generation, streaming, reasoning, tool calls, vision,
-embeddings, reranking, typed Decision questions, concurrent processing, and incremental
-message caching. Bucky supports file transcription, translation, channel-separated
+embeddings, reranking, typed Decision questions, buffered text-to-speech, concurrent
+processing, and incremental message caching. Speech support is verified with
+Chatterbox Turbo and Qwen3-TTS 1.7B Base; speech memory planning and typed-pool
+support are qualified on Metal. See [Text-to-Speech SDK](.manual/chapter-11-multi-modal-models.md#119-text-to-speech-sdk)
+for model installation, configuration limits, and the public contract.
+Bucky supports file transcription, translation, channel-separated
 diarization, and live streaming transcription. Experimental Malina supports
 text-to-image, image-to-image, Canny ControlNet conditioning, ADetailer face refinement,
 AnimateDiff video generation, Real-ESRGAN upscaling, single-checkpoint and multi-file
@@ -150,6 +155,7 @@ make example-agent    # Run a small coding agent.
 make example-vision   # Prompt a vision model with an image.
 make example-audio    # Prompt a audio model with an audio file.
 make example-decision # Evaluate typed questions with a decision model.
+make example-speech   # Generate a complete PCM16 mono WAV from text.
 make example-bucky    # Transcribe an audio file with Bucky.
 make example-malina   # Generate an image with experimental Malina.
 ```

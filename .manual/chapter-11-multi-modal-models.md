@@ -10,12 +10,15 @@
 - [11.6 Configuration and Resources](#116-configuration-and-resources)
 - [11.7 Message Caching](#117-message-caching)
 - [11.8 Limitations](#118-limitations)
+- [11.9 Text-to-Speech SDK](#119-text-to-speech-sdk)
 
 ---
 
 Multimodal models combine a language model with a media projector that turns
 images or audio into input the language model can process. They use the Chat
 Completions endpoint described in [Chapter 9](https://www.kronkai.com/manual#chapter-9-api-endpoints).
+Text-to-speech is a separate SDK operation described in [§11.9](#119-text-to-speech-sdk);
+it does not use Chat Completions or Bucky's transcription API.
 
 ## 11.1 Models and Projectors
 
@@ -191,6 +194,173 @@ behavior and limitations.
   and a request can retain multiple decoded media items at once. Applications
   that accept media from untrusted sources must validate those resources before
   passing them to Kronk.
+
+## 11.9 Text-to-Speech SDK
+
+`krn.Speech(ctx, model.SpeechRequest{Input: text})` generates a complete PCM16
+little-endian mono WAV. Speech models are detected automatically; `WithSpeech`
+is optional configuration, not a switch required to enable speech. This is a
+Go SDK feature: no `/v1/audio/speech` endpoint or BUI speech playground is
+provided yet. The normal model-download tools can still install these bundles.
+
+### 11.9.1 Models and Installation
+
+The verified bundles are:
+
+| Model source | Matching companion | Verified output and voice selection |
+| --- | --- | --- |
+| `ggml-org/chatterbox-turbo-Q8_0` | F16 audio decoder | English, 24 kHz WAV; empty voice uses the bundled `default` voice |
+| `ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0` | Matching Q8_0 audio decoder | 24 kHz WAV; use an empty voice, including when the bundle has no named presets |
+
+Install with the regular Hugging Face/catalog downloader. It discovers and
+downloads the matching decoder; you do not need to supply a separate projector
+URL:
+
+```shell
+kronk model pull --local ggml-org/chatterbox-turbo-Q8_0
+kronk model pull --local ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0
+```
+
+From a source checkout, `make install-speak-models` installs both bundles.
+Files remain in the normal model store under `~/.kronk/models/` unless you
+configure a different data root. The companion is named `mmproj-*.gguf`, but
+it is an audio decoder, not an image projector. Use the matching companion,
+not an arbitrary GGUF with the same model family name.
+
+Run the complete SDK example from the repository root:
+
+```shell
+make example-speech
+afplay examples/speech.wav # macOS playback; use a WAV player on other systems.
+```
+
+The example installs compatible native libraries and the selected model on
+first use, writes `examples/speech.wav` only after successful synthesis, and
+prints its sample rate, sample count, duration, and byte count. Its
+`modelSource` constant selects Qwen by default; the commented Chatterbox
+source can be substituted without specifying a decoder URL. A failed run
+does not replace a WAV left by an earlier successful run.
+
+Use Kronk's library manager to install the compatible native bundle before
+calling `kronk.Init`. Older or incompatible libraries without native audio
+generation return `model.ErrSpeechUnsupported`. Soprano, Pocket TTS, other
+Qwen sizes/variants, and Chatterbox Multilingual are not qualified by these
+two working bundles; upstream native support alone is not Kronk support.
+
+### 11.9.2 Go SDK Usage
+
+`models.Download` returns both `ModelFiles` and the automatically discovered
+`ProjFile`. After native initialization, a buffered speech operation can use
+that returned `models.Path` directly:
+
+```go
+func speak(ctx context.Context, mp models.Path) (err error) {
+    krn, err := kronk.New(
+        model.WithModelFiles(mp.ModelFiles),
+        model.WithProjFile(mp.ProjFile),
+    )
+    if err != nil {
+        return err
+    }
+    defer func() {
+        err = errors.Join(err, krn.Unload(context.Background()))
+    }()
+
+    response, err := krn.Speech(ctx, model.SpeechRequest{
+        Input: "I played column four. Your turn!",
+    })
+    if err != nil {
+        return err
+    }
+    return os.WriteFile("speech.wav", response.Audio, 0644)
+}
+```
+
+This uses the standard `context`, `errors`, and `os` packages plus
+`github.com/ardanlabs/kronk/sdk/kronk`, `sdk/kronk/model`, and
+`sdk/tools/models`. See `examples/speech/main.go` for complete installation,
+initialization, and error handling.
+
+`SpeechResponse.Audio` contains the WAV header and audio data, not base64 or
+raw PCM. `SampleRate` is samples per second and `Samples` excludes the header;
+duration is `float64(Samples) / float64(SampleRate)` seconds. The caller owns
+the bytes, which remain valid after another request or model unload. No
+partial audio is returned on failure. Speech calls do not require a chat
+template and must not be sent through chat, embedding, or reranking methods.
+
+### 11.9.3 Inputs, Voices, and Configuration
+
+- `Input` must be nonblank valid UTF-8 without NUL bytes, at most 64 KiB. That
+  byte limit is not a promise that the text fits: text, model/voice
+  conditioning, and the entire generation-frame budget must fit the context.
+- Empty `Voice`, or the compatibility alias `"default"`, uses the model's
+  default conditioning. Other voice names must be presets in that exact
+  decoder bundle. OpenAI voice names such as `alloy` are not a supported
+  universal voice list. Qwen Base does not need a preset named `default`.
+- The request has no language, reference-audio, voice-cloning, speed, or
+  speech-sampling options. The tested path is English; Qwen currently uses
+  the native English default rather than exposing its family's language
+  selector. Chat sampling settings and `max_tokens` do not configure speech.
+- `model.WithSpeech(&model.SpeechConfig{MaxFrames: 256})` can lower the
+  generation ceiling. Nil configuration or `MaxFrames: 0` uses **512**;
+  accepted explicit limits are **1–512**. Frames are model-specific units,
+  not characters, PCM samples, or a common duration across models. Reaching
+  the ceiling without end-of-speech returns `model.ErrSpeechLimit`, not
+  successful truncated audio.
+- Runtime settings are **2,048 context tokens per slot**, **512-token
+  prefill and physical batches**, and **partitioned F16 K/V caches**.
+  Incompatible explicit overrides, IMC, speculative decoding, and adapters
+  are rejected. Speech resolves these fixed limits instead of applying chat
+  AutoTune recommendations.
+- `model.WithNSeqMax(n)` sets the number of concurrent speech slots; the
+  default is **1**. Requests can overlap, but native inference is serialized;
+  more slots do not promise a throughput speedup. Memory requirements grow
+  with slot count even though the loaded model weights are shared.
+
+Use a context deadline for processing. Cancellation is checked between native
+steps and around final audio generation; it may wait for an in-flight native
+call. A canceled call returns only after its sequence cleanup, so its slot
+can be reused without discarding a neighboring request. The handle's normal
+admission timeout and queue controls also apply.
+
+Match errors with `errors.Is`:
+
+| Error | Meaning |
+| --- | --- |
+| `model.ErrInvalidRequest` | Invalid input, unknown named voice, or insufficient context for the request |
+| `model.ErrSpeechUnsupported` | Non-speech model, missing/incompatible decoder, or unavailable native speech capability |
+| `model.ErrSpeechLimit` | No end-of-speech within `MaxFrames`; no audio is returned |
+| `context.Canceled`, `context.DeadlineExceeded` | Caller cancellation or deadline |
+| `kronk.ErrAdmissionTimeout` | Could not obtain a request permit within the configured admission timeout |
+
+### 11.9.4 Memory Planning and Typed Pools
+
+The `sdk/kronk/pool` package acquires speech models through the normal
+`AquireModel` operation. The returned handle supports the same `Speech`
+method. Decoder discovery, fixed runtime defaults, and speech-aware memory
+reservations are automatic. `WithSpeech` is a Go SDK option; there is no
+`speech`/`max-frames` entry in `model_config.yaml` at present. Custom pooled
+configurations can carry `model.Config.PtrSpeech` through `AquireCustom`.
+
+Memory planning includes the backbone, decoder, KV caches, slot-dependent
+host memory, and retained working buffers. On unified-memory systems these
+are charged once to RAM, not again to a separate VRAM budget. An active
+speech request protects its model from eviction. Failed loads release their
+reservations; idle eviction or pool shutdown unloads the model and releases
+its reservation. A bundle that cannot fit returns `pool.ErrNoCapacity`;
+temporary pressure with no idle eviction candidate returns `pool.ErrServerBusy`.
+
+**Qualified memory policies are limited to the verified b12223 Metal bundles
+above**, through 512 frames. Their estimates include calibrated allowances,
+not portable peak-memory guarantees. CPU/CUDA decoder estimates and unknown
+decoder layouts fail planning explicitly rather than silently reserving only
+file size or using a chat estimate. Direct SDK synthesis is not disabled by
+this calculator restriction, but a working direct call does not establish
+qualified pooled memory support on another backend. Lower frame limits can
+reduce output allowances without reducing all retained decoder workspace.
+
+Incremental/streaming audio delivery, selectable output formats, reference
+voices, and an HTTP/BUI synthesis interface remain outside this SDK contract.
 
 ---
 

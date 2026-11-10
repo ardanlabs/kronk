@@ -70,11 +70,11 @@ export default function DocsManual() {
           <h3 id="11-what-is-kronk">1.1 What Is Kronk</h3>
           <p>Kronk is a Go SDK and model server for running open-source models on your own hardware. It uses three C++ inference engines:</p>
           <ul>
-            <li><a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> runs GGUF text, vision, embedding, and reranking models.</li>
+            <li><a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> runs GGUF text, vision, embedding, reranking, and text-to-speech models.</li>
             <li><a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a> runs speech-to-text models through Kronk's <strong>Bucky</strong> subsystem.</li>
             <li><a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> runs image-generation models through Kronk's experimental <strong>Malina</strong> subsystem.</li>
           </ul>
-          <p>Kronk provides hardware-accelerated text generation, image understanding, audio transcription, image generation, embeddings, and reranking from Go without requiring Python or a CGO build toolchain. Runtime inference still requires compatible native libraries, which Kronk's library managers can download for supported platforms.</p>
+          <p>Kronk provides hardware-accelerated text generation, image understanding, audio transcription, speech generation, image generation, embeddings, and reranking from Go without requiring Python or a CGO build toolchain. Runtime inference still requires compatible native libraries, which Kronk's library managers can download for supported platforms.</p>
           <h3 id="12-sdk-or-model-server">1.2 SDK or Model Server</h3>
           <p>The model server's inference functionality is built on the same public SDK that is available to Go applications. You can either embed inference directly in an application or run the server for network access.</p>
           <table className="flags-table">
@@ -110,6 +110,7 @@ export default function DocsManual() {
             <li><strong>Text generation</strong> — chat completions and responses, including streaming, reasoning, and tool calls.</li>
             <li><strong>Vision</strong> — image understanding with compatible multimodal models.</li>
             <li><strong>Audio transcription</strong> — speech-to-text through Bucky and whisper.cpp. See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a>.</li>
+            <li><strong>Speech generation</strong> — buffered text-to-speech through the Go SDK, returning a complete WAV. Chatterbox Turbo and Qwen3-TTS 1.7B Base are verified, with speech pool/memory policies qualified on Metal. HTTP/BUI synthesis is not provided yet. See <a href="https://www.kronkai.com/manual#119-text-to-speech-sdk">Chapter 11 §11.9</a>.</li>
             <li><strong>Image generation and editing</strong> — text-to-image and image-to-image through experimental Malina and stable-diffusion.cpp. See <a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19: Malina</a> for server capabilities and additional SDK-only operations.</li>
             <li><strong>Embeddings and reranking</strong> — vector generation and document relevance scoring for search and retrieval systems.</li>
             <li><strong>Structured decisions</strong> — evaluate choice, score, and calibrated yes/no questions against shared application state with supported decision models.</li>
@@ -574,6 +575,7 @@ malina-models:
           <p>Prefer the model's supplied template unless you are correcting known-bad metadata or deliberately testing a custom protocol. A template override must remain compatible with the model and with any tool-call output parser. Sampling controls such as <code>temperature</code>, <code>top_p</code>, penalties, and <code>max_tokens</code> do not become prompt text; they govern token selection and stopping after the template has rendered.</p>
           <p><a href="https://www.kronkai.com/manual#45-stage-2-—-prepare-model-work">Chapter 4 §4.5</a> shows this template protocol as part of Stage 2 request preparation, where the portable request becomes the exact prompt that Kronk tokenizes and executes. <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> explains why IMC renders the complete conversation both with and without the generation suffix. <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> documents the portable API message formats that templates consume.</p>
           <h3 id="32-automatic-tuning">3.2 Automatic Tuning</h3>
+          <p>Speech models are an exception to the chat tuning described below: they resolve fixed context, batch, and cache limits while preserving supported concurrency overrides. They do not receive hardware-derived chat recommendations. See <a href="https://www.kronkai.com/manual#119-text-to-speech-sdk">Chapter 11 §11.9</a> for the speech SDK's settings and qualified memory-planning scope.</p>
           <p>The Kronk Model Server runs automatic tuning by default for every model it loads. No <code>auto-tune</code> key is required in <code>model_config.yaml</code>. The server derives a starting configuration from GGUF metadata and the available hardware. This analysis chooses values such as:</p>
           <ul>
             <li>context window;</li>
@@ -3743,7 +3745,7 @@ make example-decision-audio`}</code></pre>
           <p>Each entry in <code>choices[].logprobs.content</code> contains the generated <code>token</code>, its <code>logprob</code>, its UTF-8 <code>bytes</code>, and up to <code>top_logprobs</code> alternatives. Values closer to zero were more probable under that generation step, but they are not proof of factual correctness.</p>
           <p>Streaming responses attach logprob data to individual delta chunks. Non-streaming responses collect the entries in the final choice. This data is useful for token-level diagnostics and comparative scoring; it does not alter sampling after generation has occurred.</p>
           <h2 id="chapter-11-multimodal-models">Chapter 11: Multimodal Models</h2>
-          <p>Multimodal models combine a language model with a media projector that turns images or audio into input the language model can process. They use the Chat Completions endpoint described in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>.</p>
+          <p>Multimodal models combine a language model with a media projector that turns images or audio into input the language model can process. They use the Chat Completions endpoint described in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>. Text-to-speech is a separate SDK operation described in <a href="#119-text-to-speech-sdk">§11.9</a>; it does not use Chat Completions or Bucky's transcription API.</p>
           <h2 id="111-models-and-projectors">11.1 Models and Projectors</h2>
           <p>Use the catalog to find models with image or audio capabilities:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list`}</code></pre>
@@ -3841,6 +3843,110 @@ EOF`}</code></pre>
             <li>Model quality and practical media limits vary by model and projector.</li>
             <li>Kronk does not impose fixed media payload, image-dimension, or media-count limits. Image decoding allocates memory in proportion to decoded dimensions, and a request can retain multiple decoded media items at once. Applications that accept media from untrusted sources must validate those resources before passing them to Kronk.</li>
           </ul>
+          <h2 id="119-text-to-speech-sdk">11.9 Text-to-Speech SDK</h2>
+          <p><code>krn.Speech(ctx, model.SpeechRequest&#123;Input: text&#125;)</code> generates a complete PCM16 little-endian mono WAV. Speech models are detected automatically; <code>WithSpeech</code> is optional configuration, not a switch required to enable speech. This is a Go SDK feature: no <code>/v1/audio/speech</code> endpoint or BUI speech playground is provided yet. The normal model-download tools can still install these bundles.</p>
+          <h3 id="1191-models-and-installation">11.9.1 Models and Installation</h3>
+          <p>The verified bundles are:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Model source</th>
+                <th>Matching companion</th>
+                <th>Verified output and voice selection</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>ggml-org/chatterbox-turbo-Q8_0</code></td>
+                <td>F16 audio decoder</td>
+                <td>English, 24 kHz WAV; empty voice uses the bundled <code>default</code> voice</td>
+              </tr>
+              <tr>
+                <td><code>ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0</code></td>
+                <td>Matching Q8_0 audio decoder</td>
+                <td>24 kHz WAV; use an empty voice, including when the bundle has no named presets</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Install with the regular Hugging Face/catalog downloader. It discovers and downloads the matching decoder; you do not need to supply a separate projector URL:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull --local ggml-org/chatterbox-turbo-Q8_0
+kronk model pull --local ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0`}</code></pre>
+          <p>From a source checkout, <code>make install-speak-models</code> installs both bundles. Files remain in the normal model store under <code>~/.kronk/models/</code> unless you configure a different data root. The companion is named <code>mmproj-*.gguf</code>, but it is an audio decoder, not an image projector. Use the matching companion, not an arbitrary GGUF with the same model family name.</p>
+          <p>Run the complete SDK example from the repository root:</p>
+          <pre className="code-block"><code className="language-shell">{`make example-speech
+afplay examples/speech.wav # macOS playback; use a WAV player on other systems.`}</code></pre>
+          <p>The example installs compatible native libraries and the selected model on first use, writes <code>examples/speech.wav</code> only after successful synthesis, and prints its sample rate, sample count, duration, and byte count. Its <code>modelSource</code> constant selects Qwen by default; the commented Chatterbox source can be substituted without specifying a decoder URL. A failed run does not replace a WAV left by an earlier successful run.</p>
+          <p>Use Kronk's library manager to install the compatible native bundle before calling <code>kronk.Init</code>. Older or incompatible libraries without native audio generation return <code>model.ErrSpeechUnsupported</code>. Soprano, Pocket TTS, other Qwen sizes/variants, and Chatterbox Multilingual are not qualified by these two working bundles; upstream native support alone is not Kronk support.</p>
+          <h3 id="1192-go-sdk-usage">11.9.2 Go SDK Usage</h3>
+          <p><code>models.Download</code> returns both <code>ModelFiles</code> and the automatically discovered <code>ProjFile</code>. After native initialization, a buffered speech operation can use that returned <code>models.Path</code> directly:</p>
+          <pre className="code-block"><code className="language-go">{`func speak(ctx context.Context, mp models.Path) (err error) {
+    krn, err := kronk.New(
+        model.WithModelFiles(mp.ModelFiles),
+        model.WithProjFile(mp.ProjFile),
+    )
+    if err != nil {
+        return err
+    }
+    defer func() {
+        err = errors.Join(err, krn.Unload(context.Background()))
+    }()
+
+    response, err := krn.Speech(ctx, model.SpeechRequest{
+        Input: "I played column four. Your turn!",
+    })
+    if err != nil {
+        return err
+    }
+    return os.WriteFile("speech.wav", response.Audio, 0644)
+}`}</code></pre>
+          <p>This uses the standard <code>context</code>, <code>errors</code>, and <code>os</code> packages plus <code>github.com/ardanlabs/kronk/sdk/kronk</code>, <code>sdk/kronk/model</code>, and <code>sdk/tools/models</code>. See <code>examples/speech/main.go</code> for complete installation, initialization, and error handling.</p>
+          <p><code>SpeechResponse.Audio</code> contains the WAV header and audio data, not base64 or raw PCM. <code>SampleRate</code> is samples per second and <code>Samples</code> excludes the header; duration is <code>float64(Samples) / float64(SampleRate)</code> seconds. The caller owns the bytes, which remain valid after another request or model unload. No partial audio is returned on failure. Speech calls do not require a chat template and must not be sent through chat, embedding, or reranking methods.</p>
+          <h3 id="1193-inputs-voices-and-configuration">11.9.3 Inputs, Voices, and Configuration</h3>
+          <ul>
+            <li><code>Input</code> must be nonblank valid UTF-8 without NUL bytes, at most 64 KiB. That byte limit is not a promise that the text fits: text, model/voice conditioning, and the entire generation-frame budget must fit the context.</li>
+            <li>Empty <code>Voice</code>, or the compatibility alias <code>"default"</code>, uses the model's default conditioning. Other voice names must be presets in that exact decoder bundle. OpenAI voice names such as <code>alloy</code> are not a supported universal voice list. Qwen Base does not need a preset named <code>default</code>.</li>
+            <li>The request has no language, reference-audio, voice-cloning, speed, or speech-sampling options. The tested path is English; Qwen currently uses the native English default rather than exposing its family's language selector. Chat sampling settings and <code>max_tokens</code> do not configure speech.</li>
+            <li><code>model.WithSpeech(&model.SpeechConfig&#123;MaxFrames: 256&#125;)</code> can lower the generation ceiling. Nil configuration or <code>MaxFrames: 0</code> uses <strong>512</strong>; accepted explicit limits are <strong>1–512</strong>. Frames are model-specific units, not characters, PCM samples, or a common duration across models. Reaching the ceiling without end-of-speech returns <code>model.ErrSpeechLimit</code>, not successful truncated audio.</li>
+            <li>Runtime settings are <strong>2,048 context tokens per slot</strong>, <strong>512-token prefill and physical batches</strong>, and <strong>partitioned F16 K/V caches</strong>. Incompatible explicit overrides, IMC, speculative decoding, and adapters are rejected. Speech resolves these fixed limits instead of applying chat AutoTune recommendations.</li>
+            <li><code>model.WithNSeqMax(n)</code> sets the number of concurrent speech slots; the default is <strong>1</strong>. Requests can overlap, but native inference is serialized; more slots do not promise a throughput speedup. Memory requirements grow with slot count even though the loaded model weights are shared.</li>
+          </ul>
+          <p>Use a context deadline for processing. Cancellation is checked between native steps and around final audio generation; it may wait for an in-flight native call. A canceled call returns only after its sequence cleanup, so its slot can be reused without discarding a neighboring request. The handle's normal admission timeout and queue controls also apply.</p>
+          <p>Match errors with <code>errors.Is</code>:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Error</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>model.ErrInvalidRequest</code></td>
+                <td>Invalid input, unknown named voice, or insufficient context for the request</td>
+              </tr>
+              <tr>
+                <td><code>model.ErrSpeechUnsupported</code></td>
+                <td>Non-speech model, missing/incompatible decoder, or unavailable native speech capability</td>
+              </tr>
+              <tr>
+                <td><code>model.ErrSpeechLimit</code></td>
+                <td>No end-of-speech within <code>MaxFrames</code>; no audio is returned</td>
+              </tr>
+              <tr>
+                <td><code>context.Canceled</code>, <code>context.DeadlineExceeded</code></td>
+                <td>Caller cancellation or deadline</td>
+              </tr>
+              <tr>
+                <td><code>kronk.ErrAdmissionTimeout</code></td>
+                <td>Could not obtain a request permit within the configured admission timeout</td>
+              </tr>
+            </tbody>
+          </table>
+          <h3 id="1194-memory-planning-and-typed-pools">11.9.4 Memory Planning and Typed Pools</h3>
+          <p>The <code>sdk/kronk/pool</code> package acquires speech models through the normal <code>AquireModel</code> operation. The returned handle supports the same <code>Speech</code> method. Decoder discovery, fixed runtime defaults, and speech-aware memory reservations are automatic. <code>WithSpeech</code> is a Go SDK option; there is no <code>speech</code>/<code>max-frames</code> entry in <code>model_config.yaml</code> at present. Custom pooled configurations can carry <code>model.Config.PtrSpeech</code> through <code>AquireCustom</code>.</p>
+          <p>Memory planning includes the backbone, decoder, KV caches, slot-dependent host memory, and retained working buffers. On unified-memory systems these are charged once to RAM, not again to a separate VRAM budget. An active speech request protects its model from eviction. Failed loads release their reservations; idle eviction or pool shutdown unloads the model and releases its reservation. A bundle that cannot fit returns <code>pool.ErrNoCapacity</code>; temporary pressure with no idle eviction candidate returns <code>pool.ErrServerBusy</code>.</p>
+          <p><strong>Qualified memory policies are limited to the verified b12223 Metal bundles above</strong>, through 512 frames. Their estimates include calibrated allowances, not portable peak-memory guarantees. CPU/CUDA decoder estimates and unknown decoder layouts fail planning explicitly rather than silently reserving only file size or using a chat estimate. Direct SDK synthesis is not disabled by this calculator restriction, but a working direct call does not establish qualified pooled memory support on another backend. Lower frame limits can reduce output allowances without reducing all retained decoder workspace.</p>
+          <p>Incremental/streaming audio delivery, selectable output formats, reference voices, and an HTTP/BUI synthesis interface remain outside this SDK contract.</p>
           <hr />
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
           <h2 id="chapter-12-security-and-authentication">Chapter 12: Security and Authentication</h2>
@@ -6597,6 +6703,15 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             </div>
             <div className="doc-index-section">
               <a href="#118-limitations" className={`doc-index-header ${activeSection === '118-limitations' ? 'active' : ''}`}>11.8 Limitations</a>
+            </div>
+            <div className="doc-index-section">
+              <a href="#119-text-to-speech-sdk" className={`doc-index-header ${activeSection === '119-text-to-speech-sdk' ? 'active' : ''}`}>11.9 Text-to-Speech SDK</a>
+              <ul>
+                <li><a href="#1191-models-and-installation" className={activeSection === '1191-models-and-installation' ? 'active' : ''}>11.9.1 Models and Installation</a></li>
+                <li><a href="#1192-go-sdk-usage" className={activeSection === '1192-go-sdk-usage' ? 'active' : ''}>11.9.2 Go SDK Usage</a></li>
+                <li><a href="#1193-inputs-voices-and-configuration" className={activeSection === '1193-inputs-voices-and-configuration' ? 'active' : ''}>11.9.3 Inputs, Voices, and Configuration</a></li>
+                <li><a href="#1194-memory-planning-and-typed-pools" className={activeSection === '1194-memory-planning-and-typed-pools' ? 'active' : ''}>11.9.4 Memory Planning and Typed Pools</a></li>
+              </ul>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-12-security-and-authentication" className={`doc-index-header ${activeSection === 'chapter-12-security-and-authentication' ? 'active' : ''}`}>Chapter 12: Security and Authentication</a>

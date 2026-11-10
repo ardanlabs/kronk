@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 func TestResolveSpeechConfig(t *testing.T) {
@@ -71,23 +71,37 @@ func TestResolveSpeechConfig(t *testing.T) {
 	}
 }
 
-// TestSpeechModelLifecycle uses an explicitly selected local speech bundle.
-// Set KRONK_TEST_SPEECH_MODEL and KRONK_TEST_SPEECH_DECODER to the backbone and
-// matching decoder paths; KRONK_TEST_LIB_PATH optionally selects native libraries.
+// TestSpeechModelLifecycle exercises both speech bundles installed by
+// make install-test-models. Missing fixtures fail rather than skip.
 func TestSpeechModelLifecycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("native speech lifecycle skipped in short mode")
 	}
-	file := os.Getenv("KRONK_TEST_SPEECH_MODEL")
-	decoder := os.Getenv("KRONK_TEST_SPEECH_DECODER")
-	if file == "" || decoder == "" {
-		t.Skip("set KRONK_TEST_SPEECH_MODEL and KRONK_TEST_SPEECH_DECODER to run native speech lifecycle checks")
-	}
-	if err := kronk.Init(kronk.WithLibPath(os.Getenv("KRONK_TEST_LIB_PATH"))); err != nil {
+	mdls, err := models.New()
+	if err != nil {
 		t.Fatal(err)
 	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{
+		"ggml-org/chatterbox-turbo-Q8_0",
+		"ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0",
+	} {
+		t.Run(id, func(t *testing.T) {
+			mp, err := mdls.FullPath(id)
+			if err != nil || len(mp.ModelFiles) == 0 || mp.ProjFile == "" {
+				t.Fatalf("missing speech fixture %s: %v; run make install-test-models", id, err)
+			}
+			testSpeechModelLifecycle(t, mp)
+		})
+	}
+}
+
+func testSpeechModelLifecycle(t *testing.T, mp models.Path) {
+	t.Helper()
 	opts := []model.Option{
-		model.WithModelFiles([]string{file}), model.WithProjFile(decoder),
+		model.WithModelFiles(mp.ModelFiles), model.WithProjFile(mp.ProjFile),
 		// A speech load must never try to retrieve a chat template.
 		model.WithJinjaFile("/does-not-exist/speech-must-not-load-chat.jinja"),
 	}
@@ -262,7 +276,7 @@ func TestSpeechModelLifecycle(t *testing.T) {
 	})
 
 	t.Run("missing decoder", func(t *testing.T) {
-		mdl, err := model.NewModel(t.Context(), model.NewConfig(model.WithModelFiles([]string{file})))
+		mdl, err := model.NewModel(t.Context(), model.NewConfig(model.WithModelFiles(mp.ModelFiles)))
 		if mdl != nil {
 			unloadErr := mdl.Unload(context.Background())
 			t.Fatalf("speech without a decoder constructed a model; unload: %v", unloadErr)

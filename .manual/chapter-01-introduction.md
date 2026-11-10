@@ -16,14 +16,14 @@ Kronk is a Go SDK and model server for running open-source models on your own
 hardware. It uses three C++ inference engines:
 
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) runs GGUF text, vision,
-  embedding, and reranking models.
+  embedding, reranking, and text-to-speech models.
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp) runs speech-to-text
   models through Kronk's **Bucky** subsystem.
 - [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) runs
   image-generation models through Kronk's experimental **Malina** subsystem.
 
 Kronk provides hardware-accelerated text generation, image understanding,
-audio transcription, image generation, embeddings, and reranking from Go
+audio transcription, speech generation, image generation, embeddings, and reranking from Go
 without requiring Python or a CGO build toolchain. Runtime inference still
 requires compatible native libraries, which Kronk's library managers can
 download for supported platforms.
@@ -53,6 +53,10 @@ Standalone SDK examples are available in the
 - **Vision** — image understanding with compatible multimodal models.
 - **Audio transcription** — speech-to-text through Bucky and whisper.cpp. See
   [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
+- **Speech generation** — buffered text-to-speech through the Go SDK, returning
+  a complete WAV. Chatterbox Turbo and Qwen3-TTS 1.7B Base are verified, with
+  speech pool/memory policies qualified on Metal. HTTP/BUI synthesis is not
+  provided yet. See [Chapter 11 §11.9](https://www.kronkai.com/manual#119-text-to-speech-sdk).
 - **Image generation and editing** — text-to-image and image-to-image through
   experimental Malina and stable-diffusion.cpp. See
   [Chapter 19: Malina](https://www.kronkai.com/manual#chapter-19-malina-image-generation)
