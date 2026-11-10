@@ -19,6 +19,8 @@ func TestResolveSpeechPurpose(t *testing.T) {
 		{"tagged renamed backbone", map[string]string{"general.architecture": "gpt2", "general.tags": "[text-to-speech speech]"}, nil, modelprofile.PurposeSpeech},
 		{"quoted tags", map[string]string{"general.architecture": "gpt2", "general.tags": `["audio", "speech-generation"]`}, nil, modelprofile.PurposeSpeech},
 		{"decoder without tags", map[string]string{"general.architecture": "gpt2"}, decoder, modelprofile.PurposeSpeech},
+		{"qwen tts without decoder or tags", map[string]string{"general.architecture": "qwen3tts"}, nil, modelprofile.PurposeSpeech},
+		{"plain qwen is not speech", map[string]string{"general.architecture": "qwen3"}, nil, modelprofile.PurposeGeneration},
 		{"plain gpt2", map[string]string{"general.architecture": "gpt2"}, nil, modelprofile.PurposeGeneration},
 		{"speech name is insufficient", map[string]string{"general.architecture": "gpt2", "general.name": "chatterbox-turbo text-to-speech"}, nil, modelprofile.PurposeGeneration},
 		{"generic audio tags", map[string]string{"general.architecture": "gpt2", "general.tags": "[audio speech transcription]"}, nil, modelprofile.PurposeGeneration},

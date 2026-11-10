@@ -80,6 +80,19 @@ install-test-models: install-kronk ## Download test models
 	kronk bucky model pull --local "silero-vad"
 	@echo
 
+# Download published llama.cpp speech bundles and their auto-discovered decoders.
+# Soprano and Pocket TTS still need compatible backbone/mmproj publications;
+# the single-file GGUFs for other runtimes are not interchangeable with these.
+install-speak-models: install-kronk ## Download published speech model bundles
+	@echo ========== INSTALL SPEECH MODELS ==========
+	kronk model pull --local "ggml-org/chatterbox-turbo-Q8_0"
+	@echo
+	kronk model pull --local "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0"
+	@echo
+	@echo "Soprano and Pocket TTS are not installed: compatible backbone/mmproj bundles have not been verified."
+	@echo "Downloading these models does not verify Kronk speech runtime or pool support."
+	@echo
+
 # Use this to install the library and model required by the opt-in Malina tests.
 install-test-malina: install-kronk ## Download Malina test fixtures
 	@echo ========== INSTALL STABLE DIFFUSION LIBRARIES ==========

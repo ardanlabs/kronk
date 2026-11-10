@@ -26,12 +26,24 @@ func FromBytes(data []byte, totalSize int64, cfg Config) (Result, error) {
 // buildFromMetadata resolves architecture-specific facts once for both local
 // and remote inputs. Model profiles own architecture rules; Calculate owns math.
 func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, modelSizeBytes int64, cfg Config) (Result, error) {
-	profile := arch.Resolve(metadata)
+	var tensors []gguf.TensorInfo
+	for _, shard := range shards {
+		tensors = append(tensors, shard...)
+	}
+
+	profile := arch.ResolveWithTensors(metadata, tensors)
 	if err := profile.ValidateForVRAM(); err != nil {
 		return Result{}, fmt.Errorf("build-from-metadata: %w", err)
 	}
 
 	if profile.Role == modelprofile.RoleVisionEncoder {
+		if metadata["clip.has_gen_audio_encoder"] == "true" {
+			if profile.ComputeKind != modelprofile.ComputeChatterboxTurboDecoder {
+				return Result{}, fmt.Errorf("build-from-metadata: unsupported speech decoder allocation family")
+			}
+			return chatterboxTurboDecoderResult(metadata, tensors, modelSizeBytes, cfg)
+		}
+
 		// A projector also reserves a compute arena. Retain the common
 		// small-model floor; image-dependent peaks remain approximate.
 		compute := EstimateComputeBuffer(Input{ModelSizeBytes: modelSizeBytes})
@@ -41,6 +53,33 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 			ModelWeightsGPU:  modelSizeBytes,
 			ComputeBufferEst: compute,
 		}, nil
+	}
+
+	if profile.Purpose == modelprofile.PurposeSpeech || profile.ComputeKind == modelprofile.ComputeChatterboxTurboBackbone {
+		if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone {
+			return Result{}, fmt.Errorf("build-from-metadata: unsupported speech backbone allocation family")
+		}
+		frames, err := speechFrames(cfg.Speech)
+		if err != nil {
+			return Result{}, err
+		}
+		cfg.Speech = &SpeechConfig{MaxFrames: frames}
+		if cfg.ContextWindow <= 0 {
+			cfg.ContextWindow = 2048
+		}
+		if cfg.NUBatch <= 0 {
+			cfg.NUBatch = 512
+		}
+		if cfg.Slots <= 0 {
+			cfg.Slots = 1
+		}
+		if cfg.BytesPerElement <= 0 {
+			cfg.BytesPerElement = BytesPerElementF16
+		}
+	}
+
+	if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone {
+		cfg.Speech = nil
 	}
 
 	blockCount := profile.Dimensions.BlockCount
@@ -54,10 +93,6 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		moePtr = &moeInfo
 	}
 
-	var tensors []gguf.TensorInfo
-	for _, shard := range shards {
-		tensors = append(tensors, shard...)
-	}
 	var weights *gguf.WeightBreakdown
 	if len(tensors) > 0 {
 		wb := gguf.CategorizeWeights(tensors, blockCount)
@@ -112,6 +147,10 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		}
 	}
 
+	if cfg.Speech != nil && (vocabularySize <= 0 || embeddingLength <= 0) {
+		return Result{}, fmt.Errorf("build-from-metadata: speech requires vocabulary and embedding dimensions")
+	}
+
 	input := Input{
 		WeightLoading:         cfg.WeightLoading,
 		LazyTable:             LazyTableForShards(profile, shards),
@@ -160,6 +199,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		RecurrentStateBytes:   att.RecurrentStateBytes,
 		RecurrentStateCopies:  recurrentStateCopies,
 		NUBatch:               cfg.NUBatch,
+		Speech:                cfg.Speech,
 		OutputRows:            outputRows,
 		KVUnified:             cfg.KVUnified,
 		EmbeddingLength:       embeddingLength,

@@ -65,6 +65,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">MTMDGenAudioGetVoice creates a preset voice bitmap. The caller must free it with mtmd.BitmapFree after the helper has finished using it.</p>
             </div>
 
+            <div className="doc-section" id="func-mtmdgenaudiovoicename">
+              <h4>MTMDGenAudioVoiceName</h4>
+              <pre className="code-block">
+                <code>func MTMDGenAudioVoiceName(ctx mtmd.Context, index int32) (string, error)</code>
+              </pre>
+              <p className="doc-description">MTMDGenAudioVoiceName returns the indexed preset voice name, or an empty string when the index is out of range or the model has no preset voices.</p>
+            </div>
+
             <div className="doc-section" id="func-mtmdhelpergenaudioflush">
               <h4>MTMDHelperGenAudioFlush</h4>
               <pre className="code-block">
@@ -3407,6 +3415,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
                 <li><a href="#func-mtmdgenaudiogetvoice">MTMDGenAudioGetVoice</a></li>
+                <li><a href="#func-mtmdgenaudiovoicename">MTMDGenAudioVoiceName</a></li>
                 <li><a href="#func-mtmdhelpergenaudioflush">MTMDHelperGenAudioFlush</a></li>
                 <li><a href="#func-mtmdhelpergenaudiofree">MTMDHelperGenAudioFree</a></li>
                 <li><a href="#func-mtmdhelpergenaudiogetoutput">MTMDHelperGenAudioGetOutput</a></li>

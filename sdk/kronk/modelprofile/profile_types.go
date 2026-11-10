@@ -313,6 +313,10 @@ var (
 	ComputeLFM3 = newComputeKind(13)
 	// ComputeKimiK3 identifies Kimi K3/K3.1's generic workspace allowance and native cache layout.
 	ComputeKimiK3 = newComputeKind(14)
+	// ComputeChatterboxTurboBackbone identifies Turbo backbone and per-helper allocations.
+	ComputeChatterboxTurboBackbone = newComputeKind(15)
+	// ComputeChatterboxTurboDecoder identifies shared Turbo flow/vocoder allocations.
+	ComputeChatterboxTurboDecoder = newComputeKind(16)
 )
 
 func newComputeKind(value uint8) ComputeKind {

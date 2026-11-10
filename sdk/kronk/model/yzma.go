@@ -54,6 +54,7 @@ var (
 	mtmdGenAudioStepGenFunc      ffi.Fun
 	mtmdGenAudioGetOutputFunc    ffi.Fun
 	mtmdGenAudioFlushFunc        ffi.Fun
+	mtmdGenAudioVoiceNameFunc    ffi.Fun
 	mtmdGenAudioGetVoiceFunc     ffi.Fun
 )
 
@@ -89,6 +90,7 @@ func InitYzmaWorkarounds(path string) error {
 		{"mtmd_helper_gen_audio_step_gen", &mtmdGenAudioStepGenFunc, &ffi.TypeSint32, []*ffi.Type{&ffi.TypePointer, &ffi.TypeSint32, &ffi.TypePointer, &ffi.TypePointer, &ffi.TypePointer}},
 		{"mtmd_helper_gen_audio_get_output", &mtmdGenAudioGetOutputFunc, &ffi.TypeSint32, []*ffi.Type{&ffi.TypePointer, &ffi.TypePointer, &ffi.TypePointer, &ffi.TypePointer, &ffi.TypePointer}},
 		{"mtmd_helper_gen_audio_flush", &mtmdGenAudioFlushFunc, &ffi.TypeSint32, []*ffi.Type{&ffi.TypePointer}},
+		{"mtmd_gen_audio_voice_name", &mtmdGenAudioVoiceNameFunc, &ffi.TypePointer, []*ffi.Type{&ffi.TypePointer, &ffi.TypeSint32}},
 		{"mtmd_gen_audio_get_voice", &mtmdGenAudioGetVoiceFunc, &ffi.TypePointer, []*ffi.Type{&ffi.TypePointer, &ffi.TypePointer}},
 	}
 	for _, function := range functions {
@@ -229,6 +231,20 @@ func MTMDHelperGenAudioFlush(ctx MTMDHelperGenAudio) error {
 		return fmt.Errorf("mtmd_helper_gen_audio_flush failed: %d", int32(result))
 	}
 	return nil
+}
+
+// MTMDGenAudioVoiceName returns the indexed preset voice name, or an empty
+// string when the index is out of range or the model has no preset voices.
+func MTMDGenAudioVoiceName(ctx mtmd.Context, index int32) (string, error) {
+	if !mtmdGenAudioAvailable {
+		return "", ErrSpeechUnsupported
+	}
+	if ctx == 0 {
+		return "", errors.New("invalid mtmd context")
+	}
+	var name *byte
+	mtmdGenAudioVoiceNameFunc.Call(unsafe.Pointer(&name), &ctx, &index)
+	return utils.BytePtrToString(name), nil
 }
 
 // MTMDGenAudioGetVoice creates a preset voice bitmap. The caller must free it

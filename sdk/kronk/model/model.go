@@ -362,6 +362,11 @@ func NewModel(ctx context.Context, cfg Config) (_ *Model, err error) {
 		if err := initSpeechRuntime(ctx, &m); err != nil {
 			return nil, fmt.Errorf("load speech model %q: %w", modelInfo.ID, err)
 		}
+		var diag string
+		m.modelInfo.VRAMTotal, m.modelInfo.SlotMemory, diag = calculateVRAMDiag(m.cfg, m.modelInfo)
+		l(ctx, "calculate-vram", "vram-total", humanBytes(m.modelInfo.VRAMTotal),
+			"slot-memory", humanBytes(m.modelInfo.SlotMemory), "diag", diag)
+		metrics.SetVRAM(modelInfo.ID, m.modelInfo.VRAMTotal, m.modelInfo.SlotMemory)
 		metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
 		loaded = true
 		return &m, nil
@@ -1728,6 +1733,11 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),
 		ComputeContexts:        SpeculativeContextCount(cfg),
 	}
+
+	if cfg.PtrSpeech != nil {
+		vramCfg.Speech = &vram.SpeechConfig{MaxFrames: int64(cfg.SpeechMaxFrames())}
+	}
+
 	swaFull := vramCfg.SWAFull
 
 	result, err := vram.FromFiles(cfg.ModelFiles, vramCfg)

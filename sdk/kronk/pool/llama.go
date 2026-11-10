@@ -156,6 +156,10 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		ComputeContexts:        model.SpeculativeContextCount(cfg),
 	}
 
+	if cfg.PtrSpeech != nil {
+		vramCfg.Speech = &vram.SpeechConfig{MaxFrames: int64(cfg.SpeechMaxFrames())}
+	}
+
 	result, source, err := predictResult(l.models, req.ModelID, vramCfg)
 	if err != nil {
 		return resman.PlanRequest{}, fmt.Errorf("plan: modelID[%s]: %w", req.ModelID, err)
@@ -258,19 +262,28 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 			placementCfg := cfg
 			placementCfg.Devices = names
 			fileCfg.WeightLoading = placementCfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false)))
+
+			// Projector placement is independent of backbone offloading.
+			if target.Input.Speech != nil && path == cfg.ProjFile {
+				fileCfg.GPULayers = 0
+			}
+
 			if onCPU {
 				fileCfg.GPULayers = -1
 			}
+
 			fileCfg.ComputeContexts = 1
 			fileCfg.RecurrentStateCopies = 1
 			fileCfg.EmbeddedMTPStateCopies = 1
 			fileCfg.MoECacheSize = 0
 			fileCfg.MTPContext = path == cfg.MTPDrafterFile && (target.Input.ComputeKind == modelprofile.ComputeIndexed || target.Input.ComputeKind == modelprofile.ComputeQwen35)
+
 			result, err = vram.FromFiles([]string{path}, fileCfg)
 			if err != nil {
 				return fmt.Errorf("companion %s: %w", path, err)
 			}
 		}
+
 		l.addResult(plan, result, !onCPU, names, split, main)
 		return nil
 	}
@@ -804,14 +817,27 @@ func autoTuneGPUCapacity(cfg models.ModelConfig, devs []resman.DeviceUsage, budg
 // TotalVRAM so the caller's bucket-mapping logic still gates
 // concurrent loads, even though the breakdown is unavailable.
 func predictResult(m *models.Models, modelID string, cfg vram.Config) (vram.Result, string, error) {
-	if v, err := m.CalculateVRAM(modelID, cfg); err == nil {
+	v, estimateErr := m.CalculateVRAM(modelID, cfg)
+	if estimateErr == nil {
+		if cfg.Speech != nil && v.Input.Speech == nil {
+			return vram.Result{}, "", fmt.Errorf("predict-result: resolved speech runtime has no supported allocation family")
+		}
 		return v, "calculate-vram", nil
+	}
+
+	if cfg.Speech != nil {
+		return vram.Result{}, "", fmt.Errorf("predict-result: speech memory: %w", estimateErr)
 	}
 
 	info, err := m.ModelInformation(modelID)
 	if err != nil {
 		return vram.Result{}, "", fmt.Errorf("predict-result: model-information: %w", err)
 	}
+
+	if info.IsSpeechModel {
+		return vram.Result{}, "", fmt.Errorf("predict-result: speech memory: %w", estimateErr)
+	}
+
 	return vram.Result{
 		Input:           vram.Input{ModelSizeBytes: int64(info.Size)},
 		TotalVRAM:       int64(info.Size),

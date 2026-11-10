@@ -146,9 +146,15 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	if got := llama.NCtxSeq(lctx); got != speechContextWindow {
 		return fmt.Errorf("speech context per sequence: got %d, want %d", got, speechContextWindow)
 	}
-	engine.voice, err = MTMDGenAudioGetVoice(m.mtmdMetaCtx, "default")
+	voiceName, err := MTMDGenAudioVoiceName(m.mtmdMetaCtx, 0)
 	if err != nil {
 		return fmt.Errorf("speech default voice: %w: %w", ErrSpeechUnsupported, err)
+	}
+	if voiceName != "" {
+		engine.voice, err = MTMDGenAudioGetVoice(m.mtmdMetaCtx, voiceName)
+		if err != nil {
+			return fmt.Errorf("speech default voice: %w: %w", ErrSpeechUnsupported, err)
+		}
 	}
 	input.SpeakerRef = engine.voice
 	vocab := llama.ModelGetVocab(m.model)

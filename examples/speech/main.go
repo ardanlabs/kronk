@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	modelSource = "ggml-org/chatterbox-turbo-Q8_0"
+	// modelSource = "ggml-org/chatterbox-turbo-Q8_0"
+	modelSource = "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0"
 	outputFile  = "speech.wav"
 )
 
