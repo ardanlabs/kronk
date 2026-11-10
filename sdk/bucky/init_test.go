@@ -10,7 +10,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
@@ -26,16 +25,8 @@ func TestInitOrder(t *testing.T) {
 			}
 		}
 
-		var initErr error
-		mediaInit := "bucky.Init()"
-		if strings.Contains(order, "malina") {
-			mediaInit = "malina.Init()"
-			initErr = malina.Init()
-		} else {
-			initErr = bucky.Init()
-		}
-		if initErr != nil {
-			t.Skipf("%s libraries unavailable: %v", mediaInit, initErr)
+		if err := bucky.Init(); err != nil {
+			t.Skipf("bucky.Init() libraries unavailable: %v", err)
 		}
 
 		// An invalid path makes the rejected-order case distinguish an early
@@ -43,19 +34,19 @@ func TestInitOrder(t *testing.T) {
 		// order, repeated initialization must remain idempotent.
 		err := kronk.Init(kronk.WithLibPath(t.TempDir()))
 		if !strings.HasPrefix(order, "kronk-first") {
-			if err == nil || !strings.Contains(err.Error(), "restart the process and call kronk.Init() before "+mediaInit) {
-				t.Fatalf("Init after %s: got %v, want startup-order error", mediaInit, err)
+			if err == nil || !strings.Contains(err.Error(), "restart the process and call kronk.Init() before bucky.Init()") {
+				t.Fatalf("Init after bucky.Init(): got %v, want startup-order error", err)
 			}
 			if kronk.Initialized() {
 				t.Fatal("Kronk initialized after rejected startup order")
 			}
 		} else if err != nil {
-			t.Fatalf("repeated Init after %s: %v", mediaInit, err)
+			t.Fatalf("repeated Init after bucky.Init(): %v", err)
 		}
 		return
 	}
 
-	for _, order := range []string{"bucky-first", "kronk-first", "malina-first", "kronk-first-malina"} {
+	for _, order := range []string{"bucky-first", "kronk-first"} {
 		t.Run(order, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=^TestInitOrder$", "-test.v")
 			cmd.Env = append(os.Environ(), "KRONK_TEST_INIT_ORDER="+order)

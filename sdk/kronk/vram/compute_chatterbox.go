@@ -55,12 +55,9 @@ func chatterboxTurboBackboneMemory(input Input) ComputeMemory {
 	return memory
 }
 
-// chatterboxTurboDecoderResult normalizes the verified family into calculator
-// input, rejecting configurations outside the b12223 Metal calibration.
+// chatterboxTurboDecoderResult normalizes the supported family into calculator
+// input. Non-Metal backends use provisional allowances based on Metal measurements.
 func chatterboxTurboDecoderResult(metadata map[string]string, tensors []gguf.TensorInfo, size int64, cfg Config) (Result, error) {
-	if !strings.EqualFold(cfg.ComputeBackend, "metal") || cfg.GPULayers == -1 {
-		return Result{}, fmt.Errorf("speech decoder memory estimate is calibrated only for Metal GPU execution")
-	}
 	for key, want := range map[string]string{
 		"clip.gen.audio.embedding_length":     "512",
 		"clip.gen.audio.feed_forward_length":  "2048",
@@ -132,6 +129,17 @@ func chatterboxTurboDecoderMemory(input Input) ComputeMemory {
 	host := hostWaveform + 4*512*(4*flowTokens-1) + references
 	workspace := int64(531 * 1024 * 1024)
 	runtime := int64(128 * 1024 * 1024)
+	// Other backends have not been measured. Provisionally add 50% to shared
+	// arenas and host scratch before applying the normal 10% margin.
+	if !strings.EqualFold(input.ComputeBackend, "metal") {
+		workspace += workspace / 2
+		runtime += runtime / 2
+		host += host / 2
+	}
+	if input.GPULayers == -1 {
+		host += workspace + runtime
+		workspace, runtime = 0, 0
+	}
 	return ComputeMemory{
 		WorkspaceGPU: workspace, RuntimeAllowanceGPU: runtime,
 		WorkspaceCPU: host, MarginGPU: (workspace + runtime) / 10,

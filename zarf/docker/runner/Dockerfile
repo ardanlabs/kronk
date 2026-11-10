@@ -99,6 +99,7 @@ RUN apt-get update \
         clinfo \
         curl \
         ffmpeg \
+        libc6 \
         libcurl4t64 \
         libffi8 \
         libgomp1 \
@@ -110,6 +111,12 @@ RUN apt-get update \
         vulkan-tools \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Fail overridden or stale bases at build time rather than skipping native
+# loading tests later. Malina's pinned CPU/Vulkan bundle needs GLIBC_2.43.
+RUN set -eux; \
+    glibc_version="$(getconf GNU_LIBC_VERSION | cut -d ' ' -f 2)"; \
+    dpkg --compare-versions "${glibc_version}" ge 2.43
 
 # -----------------------------------------------------------------------------
 # rocm — the CI target: ROCm on top of base, so it carries both backends

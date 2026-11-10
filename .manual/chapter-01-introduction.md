@@ -54,9 +54,10 @@ Standalone SDK examples are available in the
 - **Audio transcription** — speech-to-text through Bucky and whisper.cpp. See
   [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
 - **Speech generation** — buffered text-to-speech through the Go SDK, returning
-  a complete WAV. Chatterbox Turbo and Qwen3-TTS 1.7B Base are verified, with
-  speech pool/memory policies qualified on Metal. HTTP/BUI synthesis is not
-  provided yet. See [Chapter 11 §11.9](https://www.kronkai.com/manual#119-text-to-speech-sdk).
+  a complete WAV. Supports Chatterbox Turbo and Qwen3-TTS 1.7B Base, with
+  memory planning and typed pools across native backends. Non-Metal memory
+  estimates are provisional. HTTP/BUI synthesis is not provided yet. See
+  [Chapter 11 §11.9](https://www.kronkai.com/manual#119-text-to-speech-sdk).
 - **Image generation and editing** — text-to-image and image-to-image through
   experimental Malina and stable-diffusion.cpp. See
   [Chapter 19: Malina](https://www.kronkai.com/manual#chapter-19-malina-image-generation)

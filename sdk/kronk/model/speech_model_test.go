@@ -168,6 +168,17 @@ func testSpeechModelLifecycle(t *testing.T, mp models.Path) {
 			if bytes.Equal(references[0].Audio, references[1].Audio) {
 				t.Fatal("asymmetric utterances returned identical audio")
 			}
+			// Establish serial repeatability and the default-voice alias before
+			// attributing a later mismatch to overlapping requests.
+			for _, voice := range []string{"", "default"} {
+				for i, prompt := range prompts {
+					resp, err := krn.Speech(t.Context(), model.SpeechRequest{Input: prompt, Voice: voice})
+					if err != nil {
+						t.Fatalf("serial repeat %d voice %q: %v", i, voice, err)
+					}
+					compareSpeechAudio(t, fmt.Sprintf("serial repeat %d voice %q", i, voice), resp, references[i])
+				}
+			}
 			for _, req := range []model.SpeechRequest{
 				{}, {Input: " \n"}, {Input: "bad\x00text"}, {Input: string([]byte{0xff})},
 				{Input: strings.Repeat("x", 65537)}, {Input: strings.Repeat("hello ", 3000)},
@@ -193,10 +204,11 @@ func testSpeechModelLifecycle(t *testing.T, mp models.Path) {
 			close(start)
 			wg.Wait()
 			for i, output := range outputs {
-				want := references[i%len(prompts)]
-				if errorsByCall[i] != nil || output.SampleRate != want.SampleRate || output.Samples != want.Samples || !bytes.Equal(output.Audio, want.Audio) {
-					t.Fatalf("overlapping speech %d differs from serial: %v", i, errorsByCall[i])
+				if errorsByCall[i] != nil {
+					t.Errorf("overlapping speech %d: %v", i, errorsByCall[i])
+					continue
 				}
+				compareSpeechAudio(t, fmt.Sprintf("overlapping speech %d", i), output, references[i%len(prompts)])
 			}
 
 			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
@@ -211,13 +223,18 @@ func testSpeechModelLifecycle(t *testing.T, mp models.Path) {
 			if !errors.Is(errorsByCall[0], context.DeadlineExceeded) || len(outputs[0].Audio) != 0 {
 				t.Errorf("canceled speech: got %v, bytes=%d", errorsByCall[0], len(outputs[0].Audio))
 			}
-			if errorsByCall[1] != nil || !bytes.Equal(outputs[1].Audio, references[0].Audio) {
-				t.Errorf("cancellation changed neighboring speech: %v", errorsByCall[1])
+			if errorsByCall[1] != nil {
+				t.Fatalf("neighboring speech during cancellation: %v", errorsByCall[1])
 			}
+			compareSpeechAudio(t, "neighboring speech during cancellation", outputs[1], references[0])
 			resp, err := krn.Speech(t.Context(), model.SpeechRequest{Input: prompts[1]})
-			if err != nil || !bytes.Equal(resp.Audio, references[1].Audio) || krn.ActiveStreams() != 0 {
-				t.Fatalf("speech reuse after cancellation: %v, active=%d", err, krn.ActiveStreams())
+			if err != nil {
+				t.Fatalf("speech reuse after cancellation: %v", err)
 			}
+			if active := krn.ActiveStreams(); active != 0 {
+				t.Errorf("speech reuse after cancellation: got %d active requests, want 0", active)
+			}
+			compareSpeechAudio(t, "speech reuse after cancellation", resp, references[1])
 			owned := bytes.Clone(resp.Audio)
 			if err := krn.Unload(context.Background()); err != nil {
 				t.Fatal(err)
@@ -285,4 +302,44 @@ func testSpeechModelLifecycle(t *testing.T, mp models.Path) {
 			t.Errorf("load: got %v, want ErrSpeechUnsupported", err)
 		}
 	})
+}
+
+// compareSpeechAudio retains exact equality checks but reports metadata and
+// waveform differences independently so backend variation is distinguishable
+// from changed duration, malformed output, or an operation failure.
+func compareSpeechAudio(t *testing.T, label string, got, want model.SpeechResponse) {
+	t.Helper()
+	if got.SampleRate != want.SampleRate {
+		t.Errorf("%s sample rate: got %d, want %d", label, got.SampleRate, want.SampleRate)
+	}
+	if got.Samples != want.Samples {
+		t.Errorf("%s sample count: got %d, want %d", label, got.Samples, want.Samples)
+	}
+	if len(got.Audio) != len(want.Audio) {
+		t.Errorf("%s WAV length: got %d, want %d", label, len(got.Audio), len(want.Audio))
+	}
+	if bytes.Equal(got.Audio, want.Audio) {
+		return
+	}
+	for i := range min(len(got.Audio), len(want.Audio)) {
+		if got.Audio[i] != want.Audio[i] {
+			t.Errorf("%s WAV first differing byte at offset %d: got %#02x, want %#02x", label, i, got.Audio[i], want.Audio[i])
+			break
+		}
+	}
+	// WAV payload starts at byte 44 for this API's PCM16 mono output.
+	var different, maximumDelta, totalDelta int64
+	paired := max(0, (min(len(got.Audio), len(want.Audio))-44)/2)
+	for i := range paired {
+		offset := 44 + 2*i
+		actual := int64(int16(binary.LittleEndian.Uint16(got.Audio[offset:])))
+		expected := int64(int16(binary.LittleEndian.Uint16(want.Audio[offset:])))
+		delta := max(actual-expected, expected-actual)
+		if delta != 0 {
+			different++
+		}
+		maximumDelta = max(maximumDelta, delta)
+		totalDelta += delta
+	}
+	t.Logf("%s PCM comparison: differing=%d/%d paired samples, max absolute delta=%d, mean absolute delta=%.4f", label, different, paired, maximumDelta, float64(totalDelta)/float64(max(paired, 1)))
 }

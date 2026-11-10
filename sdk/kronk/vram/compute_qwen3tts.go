@@ -36,9 +36,6 @@ func qwen3TTSBackboneMemory(input Input) ComputeMemory {
 // qwen3TTSDecoderResult checks the b12223 1.7B Base decoder layout used for
 // calibration. Its 72-frame codec graph is fixed regardless of MaxFrames.
 func qwen3TTSDecoderResult(metadata map[string]string, tensors []gguf.TensorInfo, size int64, cfg Config) (Result, error) {
-	if !strings.EqualFold(cfg.ComputeBackend, "metal") || cfg.GPULayers == -1 {
-		return Result{}, fmt.Errorf("Qwen3-TTS decoder memory estimate is calibrated only for Metal GPU execution")
-	}
 	for key, want := range map[string]string{
 		"clip.audio.projector_type": "qwen3tts_spkenc", "clip.has_audio_encoder": "true",
 		"clip.audio.embedding_length": "1536", "clip.audio.block_count": "3",
@@ -113,11 +110,24 @@ func qwen3TTSDecoderResult(metadata map[string]string, tensors []gguf.TensorInfo
 // This calibration is not a portable allocator upper bound. A smaller frame
 // cap cannot shrink the fixed 72-frame graph or retained scheduler buffers.
 func qwen3TTSDecoderMemory(input Input) ComputeMemory {
-	workspace := int64(1536*1024*1024) + max(input.Slots, 1)*input.speechCodecStateBytes
+	workspace := int64(1536 * 1024 * 1024)
 	runtime := int64(128 * 1024 * 1024)
 	// Both subcontexts retain host workspace, and each active state retains
 	// one full-window waveform readback even when the last window is partial.
 	host := int64(32*1024*1024) + max(input.Slots, 1)*(4*72*1920+256*1024)
+	// Other backends have not been measured. Provisionally add 50% to shared
+	// arenas and host scratch before applying the normal 10% margin.
+	// Codec state has source-derived dimensions and is not scaled with arenas.
+	if !strings.EqualFold(input.ComputeBackend, "metal") {
+		workspace += workspace / 2
+		runtime += runtime / 2
+		host += host / 2
+	}
+	workspace += max(input.Slots, 1) * input.speechCodecStateBytes
+	if input.GPULayers == -1 {
+		host += workspace + runtime
+		workspace, runtime = 0, 0
+	}
 	return ComputeMemory{
 		WorkspaceGPU: workspace, RuntimeAllowanceGPU: runtime, WorkspaceCPU: host,
 		MarginGPU: (workspace + runtime) / 10, MarginCPU: host / 10,

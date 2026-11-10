@@ -350,14 +350,13 @@ reservations; idle eviction or pool shutdown unloads the model and releases
 its reservation. A bundle that cannot fit returns `pool.ErrNoCapacity`;
 temporary pressure with no idle eviction candidate returns `pool.ErrServerBusy`.
 
-**Qualified memory policies are limited to the verified b12223 Metal bundles
-above**, through 512 frames. Their estimates include calibrated allowances,
-not portable peak-memory guarantees. CPU/CUDA decoder estimates and unknown
-decoder layouts fail planning explicitly rather than silently reserving only
-file size or using a chat estimate. Direct SDK synthesis is not disabled by
-this calculator restriction, but a working direct call does not establish
-qualified pooled memory support on another backend. Lower frame limits can
-reduce output allowances without reducing all retained decoder workspace.
+Speech memory planning supports the bundles above through 512 frames, without
+restricting the selected native backend. CPU decoder placement charges weights
+and working memory to RAM rather than VRAM. Non-Metal memory estimates are
+provisional; leave spare RAM and VRAM when choosing pool budgets. Estimates are
+not peak-memory guarantees, and execution requires a compatible native library
+bundle. Unsupported decoder layouts fail planning explicitly. Lower frame
+limits can reduce output allowances without reducing all working memory.
 
 Incremental/streaming audio delivery, selectable output formats, reference
 voices, and an HTTP/BUI synthesis interface remain outside this SDK contract.

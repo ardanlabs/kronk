@@ -27,9 +27,6 @@ func TestSpeechPoolLifecycle(t *testing.T) {
 	if err := kronk.Init(); err != nil {
 		t.Fatal(err)
 	}
-	if devices.Backend() != "metal" {
-		t.Skip("speech memory policies currently qualify Metal GPU execution only")
-	}
 	mdls, err := models.New()
 	if err != nil {
 		t.Fatal(err)

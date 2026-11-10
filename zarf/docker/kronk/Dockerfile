@@ -868,6 +868,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         ffmpeg \
+        libc6 \
         libcurl4t64 \
         libffi8 \
         libgomp1 \
@@ -880,6 +881,12 @@ RUN apt-get update \
         vulkan-tools \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Malina's pinned CPU/Vulkan bundle requires GLIBC_2.43. Check the actual
+# installed runtime rather than relying only on the base image's release tag.
+RUN set -eux; \
+    glibc_version="$(getconf GNU_LIBC_VERSION | cut -d ' ' -f 2)"; \
+    dpkg --compare-versions "${glibc_version}" ge 2.43
 
 # Install ROCm runtime (HIP runtime, rocBLAS, hipBLAS, rocminfo) when
 # `rocm` is present in LLAMA_PROCESSORS AND the target arch is amd64.

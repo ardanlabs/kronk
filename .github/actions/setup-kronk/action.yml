@@ -2,7 +2,7 @@ name: Set up Kronk test environment
 description: >
   Frees disk space on hosted Linux, installs Go pinned to .go-version,
   restores the shared libraries cache, builds the kronk CLI, installs the
-  llama.cpp + whisper.cpp libraries and pulls every model listed in
+  llama.cpp + whisper.cpp + stable-diffusion.cpp libraries and pulls every model listed in
   .github/test-models.txt. On macOS it also stages and verifies the Metal
   capability shim, which every macOS job needs because darwin/arm64 has one
   llama.cpp bundle and it always carries Metal
@@ -53,7 +53,20 @@ runs:
         path: |
           ~/.kronk/libraries
           ~/.kronk/bucky-libraries
-        key: ${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}
+          ~/.kronk/malina-libraries
+        key: ${{ runner.os }}-kronk-libs-${{ hashFiles('go.mod', 'sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go', 'sdk/tools/malina/libs/**/*.go') }}
+
+    - name: Verify Linux native runtime
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        glibc_version="$(getconf GNU_LIBC_VERSION | cut -d ' ' -f 2)"
+        echo "Native bundle runtime: glibc ${glibc_version}"
+        if ! dpkg --compare-versions "$glibc_version" ge 2.43; then
+          echo "::error::Pinned Malina libraries require glibc 2.43 or newer. Rebuild zarf/docker/runner with --pull --no-cache and recreate the runners."
+          exit 1
+        fi
 
     # Must precede every step below that shells out to kronk. The libraries
     # root is $HOME/.kronk, the same tree the cache above restores into.
@@ -82,6 +95,7 @@ runs:
 
         kronk libs --local
         kronk bucky libs --local
+        kronk malina libs --local
 
     # Selecting a bundle does not guarantee that the GPU is visible inside
     # the runner container. Fail instead of silently testing on CPU.
@@ -191,6 +205,19 @@ runs:
           echo "::error::no Metal GPU device enumerated; the suites would run on CPU"
           exit 1
         fi
+
+    # Load all three bundles together before downloading models. This checks
+    # dynamic linking and startup order, not image generation or inference.
+    - name: Verify native bundle coexistence
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          export DYLD_INSERT_LIBRARIES="$RUNNER_TEMP/LumeMetalCapabilities.dylib"
+          export LUME_METAL_APPLE_FAMILY_MAX=1009
+          export LUME_METAL_MAX_THREADGROUP_MEMORY=32768
+        fi
+        go test -v -count=1 -timeout 2m -run '^TestNativeBundles$' ./sdk/pool
 
     # sand recreates the macOS VM per job, so ~/.kronk never survives; the host
     # mount makes that a one-time cost. Only models: their renames stay in-tree.

@@ -128,17 +128,43 @@ func TestFromBytesSpeechDecoderMemory(t *testing.T) {
 	if err != nil || short.ComputeBufferEst != multiple.ComputeBufferEst || short.ComputeBufferCPU >= multiple.ComputeBufferCPU {
 		t.Fatalf("short output must retain calibrated GPU envelope but reduce host outputs: %+v, %v", short, err)
 	}
-	for _, backend := range []string{"", "cpu", "cuda"} {
-		cfg.ComputeBackend = backend
-		if _, err := FromBytes(header, 555371392, cfg); err == nil {
-			t.Errorf("accepted uncalibrated backend %q", backend)
+	for _, backend := range []string{"vulkan", "cuda", "rocm", "", "opencl"} {
+		cfg.ComputeBackend, cfg.Speech, cfg.Slots = backend, nil, 4
+		provisional, err := FromBytes(header, 555371392, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if provisional.ComputeBufferEst <= multiple.ComputeBufferEst || provisional.ComputeBufferCPU <= multiple.ComputeBufferCPU || provisional.ModelWeightsGPU != single.ModelWeightsGPU || provisional.SlotMemory != 0 {
+			t.Fatalf("%s must retain shared weights and add provisional workspace allowance without KV: %+v", backend, provisional)
+		}
+		cfg.Slots = 1
+		provisionalSingle, err := FromBytes(header, 555371392, cfg)
+		if err != nil || provisionalSingle.ComputeBufferEst != provisional.ComputeBufferEst || provisionalSingle.ComputeBufferCPU >= provisional.ComputeBufferCPU {
+			t.Fatalf("%s decoder arenas must be shared while host references scale: %+v, %v", backend, provisionalSingle, err)
+		}
+	}
+	for _, backend := range []string{"metal", "cpu"} {
+		cfg.ComputeBackend, cfg.GPULayers = backend, 0
+		gpu, err := FromBytes(header, 555371392, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.GPULayers = -1
+		cpu, err := FromBytes(header, 555371392, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cpu.TotalVRAM != 0 || cpu.ModelWeightsCPU != 555371392 || cpu.SlotMemory != 0 {
+			t.Fatalf("%s CPU placement must reserve decoder weights and workspace in RAM only: %+v", backend, cpu)
+		}
+		// Moving the same estimate to RAM preserves the total, apart from
+		// one byte from rounding the combined safety margin.
+		difference := cpu.ComputeBufferCPU - gpu.ComputeBufferCPU - gpu.ComputeBufferEst
+		if difference < 0 || difference > 1 {
+			t.Fatalf("%s CPU placement lost decoder workspace: difference %d", backend, difference)
 		}
 	}
 	cfg.ComputeBackend = "metal"
-	cfg.GPULayers = -1
-	if _, err := FromBytes(header, 555371392, cfg); err == nil {
-		t.Error("accepted uncalibrated CPU decoder placement")
-	}
 	cfg.GPULayers = 0
 	tensors[1].Dims[0] = 251
 	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 555371392, cfg); err == nil {
@@ -250,16 +276,45 @@ func TestFromBytesQwen3TTSDecoderMemory(t *testing.T) {
 	if err != nil || short.ComputeBufferEst != multiple.ComputeBufferEst {
 		t.Fatalf("frame cap changed the fixed 72-frame decoder graph: %+v, %v", short, err)
 	}
-	for _, backend := range []string{"", "cpu", "cuda"} {
-		cfg.ComputeBackend = backend
-		if _, err := FromBytes(header, 669081472, cfg); err == nil {
-			t.Errorf("accepted uncalibrated Qwen backend %q", backend)
+	for _, backend := range []string{"vulkan", "cuda", "rocm", "", "opencl"} {
+		cfg.ComputeBackend, cfg.Speech, cfg.Slots = backend, nil, 4
+		provisional, err := FromBytes(header, 669081472, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if provisional.ComputeBufferEst <= multiple.ComputeBufferEst || provisional.ComputeBufferCPU <= multiple.ComputeBufferCPU || provisional.ModelWeightsGPU != single.ModelWeightsGPU || provisional.SlotMemory != 0 {
+			t.Fatalf("%s must add provisional shared workspace without duplicating weights or KV: %+v", backend, provisional)
+		}
+		cfg.Slots = 1
+		provisionalSingle, err := FromBytes(header, 669081472, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delta := provisional.ComputeBufferEst - provisionalSingle.ComputeBufferEst
+		if delta < 3*5218948 || delta > 20<<20 {
+			t.Fatalf("%s must scale codec state, not multiply shared arenas: got GPU delta %d", backend, delta)
 		}
 	}
-	cfg.ComputeBackend, cfg.GPULayers = "metal", -1
-	if _, err := FromBytes(header, 669081472, cfg); err == nil {
-		t.Fatal("accepted uncalibrated Qwen CPU decoder")
+	for _, backend := range []string{"metal", "cpu"} {
+		cfg.ComputeBackend, cfg.GPULayers = backend, 0
+		gpu, err := FromBytes(header, 669081472, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.GPULayers = -1
+		cpu, err := FromBytes(header, 669081472, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cpu.TotalVRAM != 0 || cpu.ModelWeightsCPU != 669081472 || cpu.SlotMemory != 0 {
+			t.Fatalf("%s CPU placement must reserve Qwen weights and codec state in RAM only: %+v", backend, cpu)
+		}
+		difference := cpu.ComputeBufferCPU - gpu.ComputeBufferCPU - gpu.ComputeBufferEst
+		if difference < 0 || difference > 1 {
+			t.Fatalf("%s CPU placement lost Qwen decoder workspace/state: difference %d", backend, difference)
+		}
 	}
+	cfg.ComputeBackend = "metal"
 	cfg.GPULayers = 0
 	tensors[0].Dims[2] = 14
 	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 669081472, cfg); err == nil {

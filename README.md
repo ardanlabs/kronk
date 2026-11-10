@@ -73,9 +73,9 @@ The model server is built on the same public SDKs available to Go applications.
 
 The Kronk SDK supports text generation, streaming, reasoning, tool calls, vision,
 embeddings, reranking, typed Decision questions, buffered text-to-speech, concurrent
-processing, and incremental message caching. Speech support is verified with
-Chatterbox Turbo and Qwen3-TTS 1.7B Base; speech memory planning and typed-pool
-support are qualified on Metal. See [Text-to-Speech SDK](.manual/chapter-11-multi-modal-models.md#119-text-to-speech-sdk)
+processing, and incremental message caching. Speech supports Chatterbox Turbo
+and Qwen3-TTS 1.7B Base, with memory planning and typed pools across native backends.
+Non-Metal memory estimates are provisional. See [Text-to-Speech SDK](.manual/chapter-11-multi-modal-models.md#119-text-to-speech-sdk)
 for model installation, configuration limits, and the public contract.
 Bucky supports file transcription, translation, channel-separated
 diarization, and live streaming transcription. Experimental Malina supports
