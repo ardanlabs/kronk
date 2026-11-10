@@ -45,6 +45,19 @@ func (m *Models) resolvedModelConfig(modelID string, mc map[string]ModelConfig, 
 		return ModelConfig{}, false, Path{}, fmt.Errorf("kronk-resolved-config: unable to get model[%s] path: %w", modelID, err)
 	}
 
+	// Speech has a fixed runtime envelope, not chat AutoTune recommendations.
+	// Resolve it before the fallback can introduce incompatible chat defaults.
+	if info, err := m.ModelInformation(modelID); err == nil && info.IsSpeechModel {
+		cfg, err := resolveSpeechModelConfig(mc[modelID])
+		if err != nil {
+			return ModelConfig{}, false, Path{}, fmt.Errorf("kronk-resolved-config: %w", err)
+		}
+		if err := m.ResolveGrammar(&cfg.Sampling); err != nil {
+			return ModelConfig{}, false, Path{}, fmt.Errorf("kronk-resolved-config: %w", err)
+		}
+		return cfg, true, fp, nil
+	}
+
 	// Layer 1: hardware-aware defaults derived from the GGUF file metadata.
 	// Memory-affecting user settings participate in the analysis so the
 	// recommendation is sized for the final overlaid configuration.
@@ -129,7 +142,29 @@ func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 		return model.Config{}, fmt.Errorf("kronk-resolved-config: %w", err)
 	}
 
+	if info, err := m.ModelInformation(modelID); err == nil && info.IsSpeechModel {
+		return model.ResolveSpeechConfig(out)
+	}
+
 	return out, nil
+}
+
+// resolveSpeechModelConfig preserves user settings while materializing the
+// model-owned speech limits in the configuration used by analysis callers.
+func resolveSpeechModelConfig(cfg ModelConfig) (ModelConfig, error) {
+	runtimeCfg, err := model.ResolveSpeechConfig(cfg.ToKronkConfig())
+	if err != nil {
+		return ModelConfig{}, err
+	}
+	cfg.PtrContextWindow = runtimeCfg.PtrContextWindow
+	cfg.PtrNSeqMax = runtimeCfg.PtrNSeqMax
+	cfg.PtrPrefillBatchSize = runtimeCfg.PtrPrefillBatchSize
+	cfg.PtrPhysicalBatchSize = runtimeCfg.PtrPhysicalBatchSize
+	cfg.CacheTypeK = runtimeCfg.CacheTypeK
+	cfg.CacheTypeV = runtimeCfg.CacheTypeV
+	cfg.Speculation = runtimeCfg.Speculation
+	cfg.PtrIncrementalCache = runtimeCfg.PtrIncrementalCache
+	return cfg, nil
 }
 
 func autoTuneApplied(cfg ModelConfig) bool {
@@ -274,6 +309,10 @@ func AutoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constrain
 }
 
 func autoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constraints ModelConfig, budget *AutoTuneBudget) (ModelConfig, error) {
+	if info.IsSpeechModel {
+		return resolveSpeechModelConfig(constraints)
+	}
+
 	analysis, err := analyzeModelWithConfigAndBudget(info, devs, constraints, budget)
 	if err != nil {
 		return ModelConfig{}, fmt.Errorf("auto-tune: %w", err)

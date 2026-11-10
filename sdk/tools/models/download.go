@@ -42,6 +42,8 @@ var hasNetworkFn = hasNetwork
 //   - A direct HuggingFace URL ("https://huggingface.co/.../Qwen3-0.6B-Q8_0.gguf")
 //   - A canonical model id ("unsloth/Qwen3-0.6B-Q8_0")
 //   - A "provider/repo:tag" quant selector ("unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")
+//   - An "owner/repo/file" shorthand, with or without ".gguf", optionally
+//     prefixed with "hf.co/" or "huggingface.co/". Nested paths are supported.
 //
 // In every case the projection file (when applicable) is located
 // automatically through the resolver. Split (multi-file) models are
@@ -169,9 +171,8 @@ func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL 
 	return mp, nil
 }
 
-// downloadByID resolves a canonical id ("unsloth/Qwen3-0.6B-Q8_0") through
-// the resolver and downloads the resulting files, including any companion
-// projection or MTP file.
+// downloadByID resolves a canonical id or pinned repository/file shorthand and
+// downloads the resulting files, including any projection or MTP companion.
 func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSource string, progress DownloadProgressFunc) (Path, error) {
 	rfile, err := defaults.CatalogFile("", m.basePath)
 	if err != nil {
@@ -180,7 +181,7 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 
 	r := NewResolver(m, rfile)
 
-	res, err := r.Resolve(ctx, modelSource)
+	res, err := m.ResolveSource(ctx, modelSource)
 	if err != nil {
 		return Path{}, fmt.Errorf("download: resolve %q: %w", modelSource, err)
 	}

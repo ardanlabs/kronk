@@ -156,6 +156,10 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		ComputeContexts:        model.SpeculativeContextCount(cfg),
 	}
 
+	if cfg.PtrSpeech != nil {
+		vramCfg.Speech = &vram.SpeechConfig{MaxFrames: int64(cfg.SpeechMaxFrames())}
+	}
+
 	result, source, err := predictResult(l.models, req.ModelID, vramCfg)
 	if err != nil {
 		return resman.PlanRequest{}, fmt.Errorf("plan: modelID[%s]: %w", req.ModelID, err)
@@ -258,27 +262,38 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 			placementCfg := cfg
 			placementCfg.Devices = names
 			fileCfg.WeightLoading = placementCfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false)))
+
+			// Projector placement is independent of backbone offloading.
+			if target.Input.Speech != nil && path == cfg.ProjFile {
+				fileCfg.GPULayers = 0
+			}
+
 			if onCPU {
 				fileCfg.GPULayers = -1
 			}
+
 			fileCfg.ComputeContexts = 1
 			fileCfg.RecurrentStateCopies = 1
 			fileCfg.EmbeddedMTPStateCopies = 1
 			fileCfg.MoECacheSize = 0
 			fileCfg.MTPContext = path == cfg.MTPDrafterFile && (target.Input.ComputeKind == modelprofile.ComputeIndexed || target.Input.ComputeKind == modelprofile.ComputeQwen35)
+
 			result, err = vram.FromFiles([]string{path}, fileCfg)
 			if err != nil {
 				return fmt.Errorf("companion %s: %w", path, err)
 			}
 		}
+
 		l.addResult(plan, result, !onCPU, names, split, main)
 		return nil
 	}
 
-	projOnCPU := !l.resman.HasGPUs() || (cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU)
+	// Unified-memory accounting omits GPU buckets, not GPU execution.
+	projOnCPU := (!l.resman.HasGPUs() && !l.resman.UnifiedMemory()) || (cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU)
 	if err := addFile(cfg.ProjFile, projOnCPU, []string{cfg.ProjDevice}, nil, 0); err != nil {
 		return err
 	}
+
 	if cfg.SpeculationMode() != model.SpeculationDisabled {
 		mtpOnCPU := !l.resman.HasGPUs() || cfg.NGpuLayers() == -1
 		if err := addFile(cfg.MTPDrafterFile, mtpOnCPU, cfg.Devices, cfg.TensorSplit, cfg.MainGPU()); err != nil {
@@ -663,13 +678,19 @@ func effectivePrefillBatchSize(cfg model.Config) int64 {
 
 // resolveConfig produces a model.Config for the request. When the
 // caller has supplied a pre-built config via req.Custom (the
-// playground path) it is used as-is. Otherwise the catalog resolver is
-// consulted with the per-model overrides Llama was constructed with.
+// playground path), speech limits are resolved before planning. Otherwise the
+// catalog resolver is consulted with Llama's per-model overrides.
 func (l *Llama) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 	if req.Custom != nil {
 		cfg, ok := req.Custom.(model.Config)
 		if !ok {
 			return model.Config{}, fmt.Errorf("resolve-config: custom config is %T, want model.Config", req.Custom)
+		}
+		// Preserve the existing planning/load error path when metadata cannot
+		// be read; only positively classified speech changes configuration here.
+		info, err := models.ModelInfoFromPath(req.ModelID, cfg.ModelFiles, cfg.ProjFile, cfg.MTPDrafterFile)
+		if err == nil && info.IsSpeechModel {
+			return model.ResolveSpeechConfig(cfg)
 		}
 		return cfg, nil
 	}
@@ -798,14 +819,27 @@ func autoTuneGPUCapacity(cfg models.ModelConfig, devs []resman.DeviceUsage, budg
 // TotalVRAM so the caller's bucket-mapping logic still gates
 // concurrent loads, even though the breakdown is unavailable.
 func predictResult(m *models.Models, modelID string, cfg vram.Config) (vram.Result, string, error) {
-	if v, err := m.CalculateVRAM(modelID, cfg); err == nil {
+	v, estimateErr := m.CalculateVRAM(modelID, cfg)
+	if estimateErr == nil {
+		if cfg.Speech != nil && v.Input.Speech == nil {
+			return vram.Result{}, "", fmt.Errorf("predict-result: resolved speech runtime has no supported allocation family")
+		}
 		return v, "calculate-vram", nil
+	}
+
+	if cfg.Speech != nil {
+		return vram.Result{}, "", fmt.Errorf("predict-result: speech memory: %w", estimateErr)
 	}
 
 	info, err := m.ModelInformation(modelID)
 	if err != nil {
 		return vram.Result{}, "", fmt.Errorf("predict-result: model-information: %w", err)
 	}
+
+	if info.IsSpeechModel {
+		return vram.Result{}, "", fmt.Errorf("predict-result: speech memory: %w", estimateErr)
+	}
+
 	return vram.Result{
 		Input:           vram.Input{ModelSizeBytes: int64(info.Size)},
 		TotalVRAM:       int64(info.Size),

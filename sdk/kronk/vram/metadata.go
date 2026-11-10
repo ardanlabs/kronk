@@ -26,12 +26,28 @@ func FromBytes(data []byte, totalSize int64, cfg Config) (Result, error) {
 // buildFromMetadata resolves architecture-specific facts once for both local
 // and remote inputs. Model profiles own architecture rules; Calculate owns math.
 func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, modelSizeBytes int64, cfg Config) (Result, error) {
-	profile := arch.Resolve(metadata)
+	var tensors []gguf.TensorInfo
+	for _, shard := range shards {
+		tensors = append(tensors, shard...)
+	}
+
+	profile := arch.ResolveWithTensors(metadata, tensors)
 	if err := profile.ValidateForVRAM(); err != nil {
 		return Result{}, fmt.Errorf("build-from-metadata: %w", err)
 	}
 
 	if profile.Role == modelprofile.RoleVisionEncoder {
+		if metadata["clip.has_gen_audio_encoder"] == "true" {
+			switch profile.ComputeKind {
+			case modelprofile.ComputeChatterboxTurboDecoder:
+				return chatterboxTurboDecoderResult(tensors, modelSizeBytes, cfg)
+			case modelprofile.ComputeQwen3TTSDecoder:
+				return qwen3TTSDecoderResult(tensors, modelSizeBytes, cfg)
+			default:
+				return Result{}, fmt.Errorf("build-from-metadata: unsupported speech decoder allocation family")
+			}
+		}
+
 		// A projector also reserves a compute arena. Retain the common
 		// small-model floor; image-dependent peaks remain approximate.
 		compute := EstimateComputeBuffer(Input{ModelSizeBytes: modelSizeBytes})
@@ -41,6 +57,33 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 			ModelWeightsGPU:  modelSizeBytes,
 			ComputeBufferEst: compute,
 		}, nil
+	}
+
+	if profile.Purpose == modelprofile.PurposeSpeech || profile.ComputeKind == modelprofile.ComputeChatterboxTurboBackbone {
+		if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone && profile.ComputeKind != modelprofile.ComputeQwen3TTSBackbone {
+			return Result{}, fmt.Errorf("build-from-metadata: unsupported speech backbone allocation family")
+		}
+		frames, err := speechFrames(cfg.Speech)
+		if err != nil {
+			return Result{}, err
+		}
+		cfg.Speech = &SpeechConfig{MaxFrames: frames}
+		if cfg.ContextWindow <= 0 {
+			cfg.ContextWindow = 2048
+		}
+		if cfg.NUBatch <= 0 {
+			cfg.NUBatch = 512
+		}
+		if cfg.Slots <= 0 {
+			cfg.Slots = 1
+		}
+		if cfg.BytesPerElement <= 0 {
+			cfg.BytesPerElement = BytesPerElementF16
+		}
+	}
+
+	if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone && profile.ComputeKind != modelprofile.ComputeQwen3TTSBackbone {
+		cfg.Speech = nil
 	}
 
 	blockCount := profile.Dimensions.BlockCount
@@ -54,10 +97,6 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		moePtr = &moeInfo
 	}
 
-	var tensors []gguf.TensorInfo
-	for _, shard := range shards {
-		tensors = append(tensors, shard...)
-	}
 	var weights *gguf.WeightBreakdown
 	if len(tensors) > 0 {
 		wb := gguf.CategorizeWeights(tensors, blockCount)
@@ -112,6 +151,24 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		}
 	}
 
+	var speechEmbeddingBytes int64
+	if profile.ComputeKind == modelprofile.ComputeQwen3TTSBackbone {
+		vocabularySize = 0
+		for _, tensor := range tensors {
+			if tensor.Name == "token_embd.weight" && len(tensor.Dims) == 2 && tensor.Dims[0] == embeddingLength {
+				// Qwen's table combines text and codec vocabularies; its
+				// output projection has fewer rows than this helper cache.
+				vocabularySize = tensor.Dims[1]
+				if tensor.GGMLType != 0 {
+					speechEmbeddingBytes = tensor.Bytes
+				}
+			}
+		}
+	}
+	if cfg.Speech != nil && (vocabularySize <= 0 || embeddingLength <= 0) {
+		return Result{}, fmt.Errorf("build-from-metadata: speech requires vocabulary and embedding dimensions")
+	}
+
 	input := Input{
 		WeightLoading:         cfg.WeightLoading,
 		LazyTable:             LazyTableForShards(profile, shards),
@@ -160,6 +217,8 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		RecurrentStateBytes:   att.RecurrentStateBytes,
 		RecurrentStateCopies:  recurrentStateCopies,
 		NUBatch:               cfg.NUBatch,
+		Speech:                cfg.Speech,
+		speechEmbeddingBytes:  speechEmbeddingBytes,
 		OutputRows:            outputRows,
 		KVUnified:             cfg.KVUnified,
 		EmbeddingLength:       embeddingLength,

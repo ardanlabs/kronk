@@ -23,6 +23,7 @@ func TestRegisteredStringValues(t *testing.T) {
 		{modelprofile.PurposeGeneration, "generation"},
 		{modelprofile.PurposeEmbedding, "embedding"},
 		{modelprofile.PurposeRerank, "rerank"},
+		{modelprofile.PurposeSpeech, "speech"},
 		{modelprofile.MemorySemantics{}, ""},
 		{modelprofile.MemoryAttention, "attention"},
 		{modelprofile.MemoryRecurrent, "recurrent"},
@@ -102,6 +103,8 @@ func TestComputeKindNumericWireValues(t *testing.T) {
 		modelprofile.ComputeLFM2, modelprofile.ComputeGLM4MoE, modelprofile.ComputeGemma3,
 		modelprofile.ComputeLlama, modelprofile.ComputeClef, modelprofile.ComputeModernBERT,
 		modelprofile.ComputeDeepSeek41, modelprofile.ComputeLFM3, modelprofile.ComputeKimiK3,
+		modelprofile.ComputeChatterboxTurboBackbone, modelprofile.ComputeChatterboxTurboDecoder,
+		modelprofile.ComputeQwen3TTSBackbone, modelprofile.ComputeQwen3TTSDecoder,
 	}
 	for index, member := range members {
 		if member.Value() != uint8(index) || !modelprofile.MustParseComputeKind(uint8(index)).Equal(member) {

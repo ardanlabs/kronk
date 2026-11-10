@@ -59,6 +59,7 @@ type Config struct {
 	TypeV                  int32         // Kronk GGML cache type ID (0 = use BytesPerElement).
 	Slots                  int64         // n_seq_max - number of concurrent sequences
 	NUBatch                int64         // Effective physical batch size.
+	Speech                 *SpeechConfig // Resolved speech limits; nil uses defaults for detected speech artifacts.
 	GPULayers              int64         // Native offload count: output first, then blocks (0 = all, -1 = none).
 	ExpertLayersOnGPU      int64         // 0 = all experts on CPU.
 	MoECacheSize           int64         // GPU expert-cache budget in bytes per context; ignored for dense models.
@@ -123,6 +124,7 @@ type Input struct {
 	RecurrentStateBytes   int64                    // State bytes per recurrent layer, sequence, and copy.
 	RecurrentStateCopies  int64                    // Current state plus speculative rollback copies.
 	NUBatch               int64                    // Effective physical batch size.
+	Speech                *SpeechConfig            // Limits for the selected speech allocation family; nil uses its defaults.
 	OutputRows            int64                    // Maximum logits rows; 0 conservatively uses the full physical batch.
 	KVUnified             bool                     // Whether all sequence slots share one KV pool.
 	EmbeddingLength       int64                    // needed for compute buffer estimate
@@ -138,6 +140,12 @@ type Input struct {
 	SWAFull               bool                     // Size SWA layers against the full context window.
 	VTransposed           bool                     // Size V using the model-wide transposed layout.
 	cacheLayerDevices     []int                    // Internal placement for shared compressed-cache mirrors.
+	speechReferenceTokens int64                    // Largest preset reference read from the decoder tensors.
+	speechReferenceBytes  int64                    // Largest materialized preset reference copied into a helper.
+	speechVoiceBytes      int64                    // Materialized preset voice payload.
+	speechEmbeddingBytes  int64                    // Encoded embedding readback during lazy helper initialization.
+	speechCodecStateBytes int64                    // F32 persistent codec state per active helper.
+	speechSamplesPerFrame int64                    // Waveform expansion derived from decoder convolution strides.
 }
 
 // Result contains the calculated VRAM requirements.

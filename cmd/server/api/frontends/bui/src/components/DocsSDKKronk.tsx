@@ -46,7 +46,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func AutoTuneConfig(ctx context.Context, cfg model.Config) model.Config</code>
               </pre>
-              <p className="doc-description">AutoTuneConfig seeds unset settings from a hardware-aware analysis of the model and returns the resulting Config. It uses the same shared models.AutoTune logic as the model pool so the SDK and pool seed defaults identically; the only SDK-specific part is preserving all settings outside AutoTune's ownership. On any failure the original cfg is returned unchanged so auto-tune never blocks a load.</p>
+              <p className="doc-description">AutoTuneConfig seeds unset settings from a hardware-aware analysis of the model and returns the resulting Config. It uses the same shared models.AutoTune logic as the model pool so the SDK and pool seed defaults identically; the only SDK-specific part is preserving all settings outside AutoTune's ownership. On any failure the original cfg is returned unchanged so auto-tune never blocks a load. Speech models resolve supported runtime limits instead of hardware-derived recommendations; speech memory-aware tuning is not supported.</p>
             </div>
 
             <div className="doc-section" id="func-autotuneconfigwithbudget">
@@ -54,7 +54,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func AutoTuneConfigWithBudget(ctx context.Context, cfg model.Config, budget models.AutoTuneBudget) model.Config</code>
               </pre>
-              <p className="doc-description">AutoTuneConfigWithBudget seeds unset settings using a stable memory budget. Pool callers use this so custom loads honor the same resource-manager limits as catalog-driven loads.</p>
+              <p className="doc-description">AutoTuneConfigWithBudget seeds unset settings using a stable memory budget. Pool callers use this so custom loads honor the same resource-manager limits as catalog-driven loads. Speech models currently resolve fixed runtime limits without memory-budget tuning.</p>
             </div>
 
             <div className="doc-section" id="func-init">
@@ -475,6 +475,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">ResponseStreamingHTTP provides http handler support for a responses call. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-speech">
+              <h4>Kronk.Speech</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) Speech(ctx context.Context, req model.SpeechRequest) (model.SpeechResponse, error)</code>
+              </pre>
+              <p className="doc-description">Speech generates a complete PCM16 mono WAV from text and an optional preset voice. The returned bytes belong to the caller. Cancellation can wait for an in-flight native step or vocoder call to finish; failed calls return no audio. A speech model and matching audio decoder are required; model.WithSpeech is optional and only overrides limits. The default frame ceiling is 512, and exhaustion returns model.ErrSpeechLimit rather than truncated audio. Input/voice/context errors return model.ErrInvalidRequest; unsupported speech capability returns model.ErrSpeechUnsupported. Match errors with errors.Is. Speech uses the handle's normal admission and active-use protection, including when acquired from sdk/kronk/pool. Audio streaming is not exposed.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-systeminfo">
               <h4>Kronk.SystemInfo</h4>
               <pre className="code-block">
@@ -625,6 +633,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-response">Kronk.Response</a></li>
                 <li><a href="#method-kronk-responsestreaming">Kronk.ResponseStreaming</a></li>
                 <li><a href="#method-kronk-responsestreaminghttp">Kronk.ResponseStreamingHTTP</a></li>
+                <li><a href="#method-kronk-speech">Kronk.Speech</a></li>
                 <li><a href="#method-kronk-systeminfo">Kronk.SystemInfo</a></li>
                 <li><a href="#method-kronk-tokenize">Kronk.Tokenize</a></li>
                 <li><a href="#method-kronk-tokenizehttp">Kronk.TokenizeHTTP</a></li>

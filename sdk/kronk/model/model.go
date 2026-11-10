@@ -197,6 +197,7 @@ type Model struct {
 	adapterScales    []float32
 	batch            *batchEngine
 	decision         *decisionEngine
+	speech           *speechEngine
 	protocol         decision.Protocol
 	template         Template
 	compiledTmpl     *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
@@ -226,20 +227,22 @@ type Model struct {
 // NewModel loads a model from the GGUF files specified in cfg and returns
 // a *Model ready to serve requests. It validates the configuration, builds
 // llama.cpp model parameters, applies NUMA settings, performs the actual
-// GGUF load, computes VRAM/KV diagnostics,
-// retrieves the chat template, and initializes the per-model runtime —
+// GGUF load, and discovers model/projector capabilities before resolving
+// runtime configuration, VRAM/KV diagnostics, and the chat template.
+// It then initializes the per-model runtime —
 // either the sequence-batch runtime or context-pool fallback for embed/rerank
-// models, or a batch engine plus parser plugin and optional draft model for
-// generation models.
+// models, a dedicated speech runtime, or a batch engine plus parser plugin and
+// optional draft model for generation models.
 //
 // The returned *Model owns the underlying llama.Model, llama.Context, KV
 // memory, batch engine, and (when configured) draft model; release them
 // via Model.Unload when finished.
-func NewModel(ctx context.Context, cfg Config) (*Model, error) {
+func NewModel(ctx context.Context, cfg Config) (_ *Model, err error) {
 	l := cfg.Log
 	if cfg.Log == nil {
 		l = func(ctx context.Context, msg string, args ...any) {}
 	}
+
 	if cfg.ChatTemplateKwargs != nil {
 		cfg.ChatTemplateKwargs = cfg.ChatTemplateKwargs.Clone()
 	}
@@ -282,12 +285,32 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		return nil, err
 	}
 
+	m := Model{
+		cfg:        cfg,
+		log:        l,
+		model:      mdl,
+		projFile:   cfg.ProjFile,
+		projDevice: projDevice,
+	}
+
+	// Until construction succeeds, this function owns the shared resources.
+	// Runtime initialization releases its own partial resources on failure.
+	// The projector must always be freed before the backbone it references.
+	loaded := false
+	defer func() {
+		if !loaded {
+			if m.mtmdMetaCtx != 0 {
+				mtmd.Free(m.mtmdMetaCtx)
+			}
+			err = errors.Join(err, llama.ModelFree(mdl))
+		}
+	}()
+
 	if plan.Source == speculationSourceMTP && plan.MTPArtifact == mtpArtifactEmbedded {
 		targetEmbeddingWidth := llama.ModelNEmbd(mdl)
 		mtpOutputWidth := llama.ModelNEmbdOut(mdl)
 		compatiblePlan, err := resolveEmbeddedMTPCompatibility(plan, targetEmbeddingWidth, mtpOutputWidth)
 		if err != nil {
-			llama.ModelFree(mdl)
 			return nil, fmt.Errorf("resolve speculation compatibility: %w", err)
 		}
 		if compatiblePlan.Source == speculationSourceNone {
@@ -304,13 +327,55 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	configuredPrefillBatchSize := cfg.PrefillBatchSize()
 	modelInfo, err := toModelInfo(cfg, mdl)
 	if err != nil {
-		llama.ModelFree(mdl)
 		return nil, err
 	}
+
 	cfg.DecisionProtocol = modelInfo.decisionProtocol
+
+	// Capability discovery needs the same thread defaults as the eventual
+	// runtime, but must precede its batch, cache, sampler and template setup.
+	cfg = adjustThreads(cfg)
+	m.cfg = cfg
+	m.modelInfo = modelInfo
+	if err := m.loadCapabilities(ctx); err != nil {
+		return nil, err
+	}
+
+	// Native-only detection covers bundles without explicit speech metadata.
+	// Mixed chat/audio models retain their existing chat runtime.
+	if m.mtmdCapsKnown && m.mtmdCapabilities.AudioGen && !m.mtmdCapabilities.Chat &&
+		(!modelInfo.IsEmbedModel && !modelInfo.IsRerankModel && !modelInfo.IsDecisionModel) {
+		modelInfo.IsSpeechModel = true
+		modelInfo.profile.Purpose = modelprofile.PurposeSpeech
+	}
+
+	if modelInfo.IsSpeechModel {
+		switch {
+		case cfg.ProjFile == "":
+			return nil, fmt.Errorf("load speech model %q: matching audio decoder is required: %w", modelInfo.ID, ErrSpeechUnsupported)
+		case !m.mtmdCapsKnown:
+			return nil, fmt.Errorf("load speech model %q: native audio-generation capabilities are unavailable: %w", modelInfo.ID, ErrSpeechUnsupported)
+		case !m.mtmdCapabilities.AudioGen:
+			return nil, fmt.Errorf("load speech model %q: native bundle does not support audio generation: %w", modelInfo.ID, ErrSpeechUnsupported)
+		}
+		m.modelInfo = modelInfo
+		if err := initSpeechRuntime(ctx, &m); err != nil {
+			return nil, fmt.Errorf("load speech model %q: %w", modelInfo.ID, err)
+		}
+		var diag string
+		m.modelInfo.VRAMTotal, m.modelInfo.SlotMemory, diag = calculateVRAMDiag(m.cfg, m.modelInfo)
+		l(ctx, "calculate-vram", "vram-total", humanBytes(m.modelInfo.VRAMTotal),
+			"slot-memory", humanBytes(m.modelInfo.SlotMemory), "diag", diag)
+		metrics.SetVRAM(modelInfo.ID, m.modelInfo.VRAMTotal, m.modelInfo.SlotMemory)
+		metrics.AddModelFileLoadTime(modelInfo.ID, loadDuration)
+		loaded = true
+		return &m, nil
+	}
+
+	// All model/bundle capabilities are now available for runtime selection.
+	// Keep the existing classification and initialization behavior unchanged.
 	pooled := modelInfo.IsEmbedModel || modelInfo.IsRerankModel
 	if err := validateIMCSessionCapacity(cfg, pooled); err != nil {
-		llama.ModelFree(mdl)
 		return nil, err
 	}
 	cfg = adjustConfig(cfg, mdl, pooled)
@@ -323,7 +388,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			moe.PtrCacheSize = nil
 			cfg.PtrMoE = &moe
 		case cfg.PtrSplitMode != nil && *cfg.PtrSplitMode == SplitModeTensor:
-			llama.ModelFree(mdl)
 			return nil, fmt.Errorf("validate-config: moe cache-size does not support tensor parallelism")
 		}
 	}
@@ -338,7 +402,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	generationReserve := cfg.NSeqMax() * generationRowsPerSlot
 	if err := validateGenerationBatchCapacity(cfg.EffectiveNBatch(), generationReserve); err != nil {
-		llama.ModelFree(mdl)
 		return nil, fmt.Errorf("resolve batch sizing: %w", err)
 	}
 	effectivePrefill := min(prefillChunk, max(cfg.EffectiveNBatch()-generationReserve, 0))
@@ -384,7 +447,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	template, err := retrieveTemplate(cfg, modelInfo.ID, mdl)
 	if err != nil {
-		llama.ModelFree(mdl)
 		return nil, fmt.Errorf("retrieve-template: failed to retrieve model template: %w", err)
 	}
 
@@ -416,44 +478,89 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	m := Model{
-		cfg:            cfg,
-		log:            l,
-		model:          mdl,
-		vocab:          vocab,
-		suppressTokens: copySuppressTokens(vocab),
-		ctxParams:      ctxParams,
-		template:       template,
-		projFile:       cfg.ProjFile,
-		projDevice:     projDevice,
-		modelInfo:      modelInfo,
-		paramsResolved: true,
-		addBOSToken:    addBOSToken,
-	}
+	m.cfg = cfg
+	m.vocab = vocab
+	m.suppressTokens = copySuppressTokens(vocab)
+	m.ctxParams = ctxParams
+	m.template = template
+	m.modelInfo = modelInfo
+	m.paramsResolved = true
+	m.addBOSToken = addBOSToken
 
 	// Initialize the runtime selected for this model. Supported embed/rerank
 	// models use the sequence-batch engine, other embed/rerank models use the
 	// context-pool fallback, and generation models use the generation engine.
 	nSlots := max(cfg.NSeqMax(), 1)
 
-	// Load a single, long-lived mtmd context for capability discovery. Per-request
-	// processing contexts are owned by generation slots or decision preparation.
 	isGenerationModel := !(modelInfo.IsEmbedModel || modelInfo.IsRerankModel || modelInfo.IsDecisionModel)
-	if (isGenerationModel || modelInfo.IsDecisionModel) && m.projFile != "" {
-		l(ctx, "loading-prof-file", "status", "started", "proj", path.Base(m.projFile))
 
-		start := time.Now()
+	if err := m.loadAdapters(ctx); err != nil {
+		return nil, err
+	}
 
-		mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmdContextParams(cfg, m.projDevice))
+	switch {
+	case modelInfo.IsDecisionModel:
+		if err := initDecisionRuntime(&m); err != nil {
+			adapterErr := m.freeAdapters()
+			return nil, errors.Join(err, adapterErr)
+		}
+		if err := initDecisionProtocol(&m); err != nil {
+			m.decision.scheduler.stop()
+			batchErr := m.decision.batch.free()
+			m.decision = nil
+			llama.Free(m.lctx)
+			m.lctx = 0
+			m.mem = 0
+			adapterErr := m.freeAdapters()
+			return nil, errors.Join(err, batchErr, adapterErr)
+		}
+
+	case supportsBatchSeq(modelInfo):
+		if err := initBatchSeqRuntime(ctx, &m); err != nil {
+			adapterErr := m.freeAdapters()
+			return nil, errors.Join(err, adapterErr)
+		}
+
+	case !isGenerationModel:
+		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
 		if err != nil {
-			llama.ModelFree(mdl)
-			return nil, fmt.Errorf("init-mtmd-meta-context: %w", err)
+			adapterErr := m.freeAdapters()
+			return nil, errors.Join(fmt.Errorf("new-context-pool: unable to create context pool: %w", err), adapterErr)
+		}
+		m.pool = pool
+		if err := m.applyAdaptersToPool(); err != nil {
+			poolErr := m.pool.close()
+			m.pool = nil
+			adapterErr := m.freeAdapters()
+			return nil, errors.Join(err, poolErr, adapterErr)
+		}
+
+	default:
+		if err := initGenerationRuntime(ctx, &m, nSlots, plan); err != nil {
+			adapterErr := m.freeAdapters()
+			return nil, errors.Join(err, adapterErr)
+		}
+	}
+
+	loaded = true
+	return &m, nil
+}
+
+// loadCapabilities discovers native bundle capabilities before runtime-specific
+// configuration and initialization. The metadata projector lives with the Model;
+// per-request contexts remain owned by their respective runtime.
+func (m *Model) loadCapabilities(ctx context.Context) error {
+	mi := m.modelInfo
+	if !(mi.IsEmbedModel || mi.IsRerankModel) && m.projFile != "" {
+		m.log(ctx, "loading-prof-file", "status", "started", "proj", path.Base(m.projFile))
+		start := time.Now()
+		mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmdContextParams(m.cfg, m.projDevice))
+		if err != nil {
+			return fmt.Errorf("init-mtmd-meta-context: %w", err)
 		}
 		m.mtmdMetaCtx = mtmdCtx
-
-		metrics.AddProjFileLoadTime(m.modelInfo.ID, time.Since(start))
-
-		l(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
+		metrics.AddProjFileLoadTime(mi.ID, time.Since(start))
+		m.log(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
 	}
 
 	capabilities, err := mtmd.HelperGetCapabilities(m.model, m.mtmdMetaCtx)
@@ -466,76 +573,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			capabilities.Audio = mtmd.SupportAudio(m.mtmdMetaCtx)
 		}
 	}
+
 	m.mtmdCapabilities = capabilities
-
-	if err := m.loadAdapters(ctx); err != nil {
-		if m.mtmdMetaCtx != 0 {
-			mtmd.Free(m.mtmdMetaCtx)
-		}
-		llama.ModelFree(mdl)
-		return nil, err
-	}
-
-	switch {
-	case modelInfo.IsDecisionModel:
-		if err := initDecisionRuntime(&m); err != nil {
-			if m.mtmdMetaCtx != 0 {
-				mtmd.Free(m.mtmdMetaCtx)
-			}
-			adapterErr := m.freeAdapters()
-			llama.ModelFree(mdl)
-			return nil, errors.Join(err, adapterErr)
-		}
-		if err := initDecisionProtocol(&m); err != nil {
-			m.decision.scheduler.stop()
-			batchErr := m.decision.batch.free()
-			m.decision = nil
-			llama.Free(m.lctx)
-			m.lctx = 0
-			m.mem = 0
-			if m.mtmdMetaCtx != 0 {
-				mtmd.Free(m.mtmdMetaCtx)
-			}
-			adapterErr := m.freeAdapters()
-			llama.ModelFree(mdl)
-			return nil, errors.Join(err, batchErr, adapterErr)
-		}
-
-	case supportsBatchSeq(modelInfo):
-		if err := initBatchSeqRuntime(ctx, &m); err != nil {
-			adapterErr := m.freeAdapters()
-			llama.ModelFree(mdl)
-			return nil, errors.Join(err, adapterErr)
-		}
-
-	case !isGenerationModel:
-		pool, err := newContextPool(ctx, mdl, ctxParams, l, nSlots)
-		if err != nil {
-			adapterErr := m.freeAdapters()
-			llama.ModelFree(mdl)
-			return nil, errors.Join(fmt.Errorf("new-context-pool: unable to create context pool: %w", err), adapterErr)
-		}
-		m.pool = pool
-		if err := m.applyAdaptersToPool(); err != nil {
-			poolErr := m.pool.close()
-			m.pool = nil
-			adapterErr := m.freeAdapters()
-			llama.ModelFree(mdl)
-			return nil, errors.Join(err, poolErr, adapterErr)
-		}
-
-	default:
-		if err := initGenerationRuntime(ctx, &m, nSlots, plan); err != nil {
-			if m.mtmdMetaCtx != 0 {
-				mtmd.Free(m.mtmdMetaCtx)
-			}
-			adapterErr := m.freeAdapters()
-			llama.ModelFree(mdl)
-			return nil, errors.Join(err, adapterErr)
-		}
-	}
-
-	return &m, nil
+	return nil
 }
 
 func validateGenerationBatchCapacity(nBatch, generationReserve int) error {
@@ -1313,6 +1353,13 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.decision.scheduler.stop()
 	}
 
+	if m.speech != nil {
+		if err := m.speech.stop(ctx); err != nil {
+			m.unloaded.Store(false)
+			return fmt.Errorf("unload: %w", err)
+		}
+	}
+
 	m.log(ctx, "unload", "status", "waiting-for-streams", "active", m.activeStreams.Load())
 
 	for m.activeStreams.Load() > 0 {
@@ -1349,6 +1396,13 @@ func (m *Model) Unload(ctx context.Context) error {
 	var poolErr error
 	if m.pool != nil {
 		poolErr = m.pool.close()
+	}
+
+	// Speech helpers borrow both the primary context and shared decoder.
+	// Release them and their voice conditioning before either context is freed.
+	if m.speech != nil {
+		m.speech.free()
+		m.speech = nil
 	}
 
 	// Free the primary generation, decision, or sequence-batch context if it
@@ -1451,9 +1505,9 @@ type InputCapabilities struct {
 func (m *Model) InputCapabilities() InputCapabilities {
 	return InputCapabilities{
 		Available: m.mtmdCapsKnown,
-		Chat:      m.mtmdCapabilities.Chat && !m.modelInfo.IsEmbedModel && !m.modelInfo.IsRerankModel && !m.modelInfo.IsDecisionModel,
-		Vision:    m.mtmdCapabilities.Vision,
-		Audio:     m.mtmdCapabilities.Audio,
+		Chat:      m.mtmdCapabilities.Chat && !m.modelInfo.IsEmbedModel && !m.modelInfo.IsRerankModel && !m.modelInfo.IsDecisionModel && !m.modelInfo.IsSpeechModel,
+		Vision:    m.mtmdCapabilities.Vision && !m.modelInfo.IsSpeechModel,
+		Audio:     m.mtmdCapabilities.Audio && !m.modelInfo.IsSpeechModel,
 	}
 }
 
@@ -1679,6 +1733,11 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),
 		ComputeContexts:        SpeculativeContextCount(cfg),
 	}
+
+	if cfg.PtrSpeech != nil {
+		vramCfg.Speech = &vram.SpeechConfig{MaxFrames: int64(cfg.SpeechMaxFrames())}
+	}
+
 	swaFull := vramCfg.SWAFull
 
 	result, err := vram.FromFiles(cfg.ModelFiles, vramCfg)

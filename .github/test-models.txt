@@ -18,6 +18,8 @@ kronk gpustack/bge-reranker-v2-m3-Q8_0
 kronk chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0
 kronk LiquidAI/d1-Omni-2B-Q8_0
 kronk LiquidAI/LFM3-1.7B-Q4_K_M
+kronk ggml-org/chatterbox-turbo-Q8_0
+kronk ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0
 
 bucky ggml-tiny.bin
 bucky silero-vad

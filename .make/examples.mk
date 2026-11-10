@@ -84,6 +84,9 @@ example-question: ## Run the question example
 example-response: ## Run the response example
 	cd examples && go run ./response/main.go
 
+example-speech: ## Run the speech example and write examples/speech.wav
+	cd examples && go run ./speech/main.go
+
 example-vision: ## Run the vision example
 	cd examples && go run ./vision/main.go
 
@@ -115,6 +118,9 @@ example-yzma-step8: ## Run the yzma step8 example
 
 example-yzma-step9: ## Run the yzma step9 example
 	cd examples && go run ./yzma/step9/main.go
+
+example-yzma-step10: ## Run the yzma step10 speech example
+	cd examples && go run ./yzma/step10/main.go
 
 example-yzma-parallel-curl1: ## Run the yzma parallel curl1 example
 	curl -X POST http://localhost:8090/v1/completions \

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -18,6 +19,185 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestPrepareSpeechConfiguration(t *testing.T) {
+	mdls, err := models.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(mdls.Path(), "test", "family")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Metadata-only fixtures deliberately cannot support generic chat analysis.
+	// Speech resolution must still succeed without invoking its fallback sizing.
+	for _, kind := range []string{"speech", "chat"} {
+		metadata := map[string]string{"general.architecture": "gpt2", "general.tags": kind}
+		if kind == "speech" {
+			metadata["general.tags"] = "[text-to-speech]"
+		}
+		var data bytes.Buffer
+		write := func(value any) {
+			t.Helper()
+			if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		write(gguf.Magic)
+		write(uint32(3))
+		write(uint64(0))
+		write(uint64(len(metadata)))
+		for key, value := range metadata {
+			write(uint64(len(key)))
+			write([]byte(key))
+			write(gguf.MetadataValueTypeString)
+			write(uint64(len(value)))
+			write([]byte(value))
+		}
+		if err := os.WriteFile(filepath.Join(dir, kind+".gguf"), data.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	log := func(context.Context, string, ...any) {}
+	if err := mdls.BuildIndex(log, false); err != nil {
+		t.Fatal(err)
+	}
+	rm, err := resman.New(resman.Config{Snapshot: resman.Snapshot{RAMBytes: 1 << 30, UnifiedMemory: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := newLlama(log, mdls, map[string]models.ModelConfig{"test/speech": {PtrNSeqMax: new(3)}}, rm, devices.Devices{}, false)
+	path := filepath.Join(dir, "speech.gguf")
+	custom := model.Config{ModelFiles: []string{path}, PtrNSeqMax: new(3), PtrSpeech: &model.SpeechConfig{MaxFrames: 137}}
+	catalog, err := mdls.KronkResolvedConfigWithBudget("test/speech", l.modelConfig, models.AutoTuneBudget{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []model.Config{catalog, custom} {
+		req := loader.LoadRequest{ModelID: "test/speech", Custom: input}
+		prepared, err := l.Prepare(t.Context(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := prepared.(model.Config)
+		if cfg.ContextWindow() != 2048 || cfg.NSeqMax() != 3 || cfg.EffectiveNBatch() != 512 || cfg.EffectiveNUBatch() != 512 || cfg.CacheTypeK != model.GGMLTypeF16 || cfg.CacheTypeV != model.GGMLTypeF16 {
+			t.Fatalf("prepared speech: got context=%d slots=%d batch=%d ubatch=%d K=%s V=%s", cfg.ContextWindow(), cfg.NSeqMax(), cfg.EffectiveNBatch(), cfg.EffectiveNUBatch(), cfg.CacheTypeK, cfg.CacheTypeV)
+		}
+		if cfg.SpeechMaxFrames() != input.SpeechMaxFrames() {
+			t.Fatalf("frame limit: got %d, want %d", cfg.SpeechMaxFrames(), input.SpeechMaxFrames())
+		}
+		// A speech artifact without dimensions cannot be budgeted safely.
+		// It must not silently fall back to reserving its tiny file size.
+		cfg.PtrSWAFull = new(true) // Avoid native defaults in this metadata-only test.
+		req.Prepared = cfg
+		if _, err := l.Plan(t.Context(), req); err == nil {
+			t.Fatal("accepted file-size fallback for an unestimable speech model")
+		}
+	}
+	tuned := kronk.AutoTuneConfigWithBudget(t.Context(), custom, models.AutoTuneBudget{})
+	if tuned.ContextWindow() != 2048 || tuned.NSeqMax() != 3 || tuned.SpeechMaxFrames() != 137 || tuned.EffectiveNUBatch() != 512 || !tuned.AutoTuned {
+		t.Fatalf("SDK speech resolution: got %+v", tuned)
+	}
+	resolved, err := mdls.ResolvedModelConfigWithBudget("test/speech", l.modelConfig, models.AutoTuneBudget{}, true)
+	if err != nil || resolved.ToKronkConfig().ContextWindow() != 2048 || resolved.ToKronkConfig().NSeqMax() != 3 || resolved.CacheTypeV != model.GGMLTypeF16 {
+		t.Fatalf("resolved model config: got %+v, %v", resolved, err)
+	}
+	custom.PtrContextWindow = new(8192)
+	if _, err := l.Prepare(t.Context(), loader.LoadRequest{Custom: custom}); !errors.Is(err, model.ErrInvalidRequest) {
+		t.Fatalf("incompatible custom override: got %v, want ErrInvalidRequest", err)
+	}
+	l.modelConfig["test/speech"] = models.ModelConfig{CacheTypeK: model.GGMLTypeQ8_0}
+	if _, err := mdls.KronkResolvedConfigWithBudget("test/speech", l.modelConfig, models.AutoTuneBudget{}, true); !errors.Is(err, model.ErrInvalidRequest) {
+		t.Fatalf("incompatible catalog override: got %v, want ErrInvalidRequest", err)
+	}
+	for _, file := range []string{"chat.gguf", "missing.gguf"} {
+		chat := model.Config{ModelFiles: []string{filepath.Join(dir, file)}, PtrContextWindow: new(8192), CacheTypeK: model.GGMLTypeQ8_0}
+		prepared, err := l.Prepare(t.Context(), loader.LoadRequest{Custom: chat})
+		if err != nil || !reflect.DeepEqual(prepared, chat) {
+			t.Fatalf("non-speech settings changed: got %+v, %v", prepared, err)
+		}
+	}
+}
+
+func TestPlanSpeechMemory(t *testing.T) {
+	mdls, err := models.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(mdls.Path(), "test", "family")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	metadata := map[string]string{
+		"general.architecture": "gpt2", "general.tags": "[text-to-speech]",
+		"gpt2.block_count": "24", "gpt2.embedding_length": "1024",
+		"gpt2.attention.head_count": "16", "gpt2.vocab_size": "56839",
+		"gpt2.feed_forward_length":    "4096",
+		"tokenizer.ggml.bos_token_id": "56837", "tokenizer.ggml.eos_token_id": "56838",
+	}
+	tensors := []gguf.TensorInfo{
+		{Name: "token_embd.weight", Dims: []int64{1024, 56839}},
+		{Name: "position_embd.weight", Dims: []int64{1024, 8196}},
+	}
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(len(tensors)))
+	write(uint64(len(metadata)))
+	for key, value := range metadata {
+		write(uint64(len(key)))
+		write([]byte(key))
+		write(gguf.MetadataValueTypeString)
+		write(uint64(len(value)))
+		write([]byte(value))
+	}
+	for _, tensor := range tensors {
+		write(uint64(len(tensor.Name)))
+		write([]byte(tensor.Name))
+		write(uint32(len(tensor.Dims)))
+		for _, dim := range tensor.Dims {
+			write(uint64(dim))
+		}
+		write(tensor.GGMLType)
+		write(tensor.Offset)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "speech.gguf"), data.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	log := func(context.Context, string, ...any) {}
+	if err := mdls.BuildIndex(log, false); err != nil {
+		t.Fatal(err)
+	}
+	rm, err := resman.New(resman.Config{Snapshot: resman.Snapshot{RAMBytes: 8 << 30, UnifiedMemory: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := newLlama(log, mdls, nil, rm, devices.Devices{}, false)
+	cfg, err := model.ResolveSpeechConfig(model.Config{PtrNSeqMax: new(3), PtrSWAFull: new(true), PtrSpeech: &model.SpeechConfig{MaxFrames: 137}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := loader.LoadRequest{ModelID: "test/speech", Prepared: cfg}
+	short, err := l.Plan(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if short.RAMBytes < 3*(232812544+192<<20) || short.VRAMBytes != 0 {
+		t.Fatalf("unified speech reservation omitted helper tables or KV: %+v", short)
+	}
+	cfg.PtrSpeech = &model.SpeechConfig{MaxFrames: 512}
+	req.Prepared = cfg
+	long, err := l.Plan(t.Context(), req)
+	if err != nil || long.RAMBytes <= short.RAMBytes {
+		t.Fatalf("planner did not inherit speech frame limit: short=%+v long=%+v err=%v", short, long, err)
+	}
+}
 
 func TestPlanFallbackReservesUnifiedModelWeights(t *testing.T) {
 	mdls, err := models.NewWithPaths(t.TempDir())

@@ -13,6 +13,7 @@ func resolvePurpose(metadata Metadata, modelID string, profile *modelprofile.Pro
 	if profile.Role != modelprofile.RoleLanguage {
 		return
 	}
+
 	if profile.Decision.Type != "" {
 		return
 	}
@@ -27,14 +28,35 @@ func resolvePurpose(metadata Metadata, modelID string, profile *modelprofile.Pro
 		return
 	}
 
+	// Preserve speech identified by an architecture adapter after explicit
+	// decision and pooling metadata have taken precedence.
+	if profile.Purpose == modelprofile.PurposeSpeech {
+		return
+	}
+
+	// Explicit generation tags identify speech; names and generic audio tags
+	// do not. Chat-capable bundles retain their existing generation path.
+	if !profile.HasChatTemplate {
+		for _, tag := range strings.FieldsFunc(strings.ToLower(metadata.value("general.tags")), func(r rune) bool {
+			return unicode.IsSpace(r) || strings.ContainsRune("[],\"'", r)
+		}) {
+			if tag == "text-to-speech" || tag == "speech-generation" {
+				profile.Purpose = modelprofile.PurposeSpeech
+				return
+			}
+		}
+	}
+
 	hint := strings.ToLower(strings.Join([]string{
 		modelID, metadata.value("general.name"), metadata.value("general.basename"),
 		metadata.value("general.tags"), profile.Architecture,
 	}, " "))
+
 	if protocol := decisionNameHint(hint); protocol != "" {
 		profile.Decision.Type = protocol
 		return
 	}
+
 	switch {
 	case strings.Contains(hint, "rerank"):
 		profile.Purpose = modelprofile.PurposeRerank

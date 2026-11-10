@@ -8,6 +8,40 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
+func TestResolveSpeechPurpose(t *testing.T) {
+	decoder := map[string]string{"general.architecture": "clip", "clip.has_gen_audio_encoder": "true"}
+	for _, tt := range []struct {
+		name      string
+		metadata  map[string]string
+		projector map[string]string
+		want      modelprofile.Purpose
+	}{
+		{"tagged renamed backbone", map[string]string{"general.architecture": "gpt2", "general.tags": "[text-to-speech speech]"}, nil, modelprofile.PurposeSpeech},
+		{"quoted tags", map[string]string{"general.architecture": "gpt2", "general.tags": `["audio", "speech-generation"]`}, nil, modelprofile.PurposeSpeech},
+		{"decoder without tags", map[string]string{"general.architecture": "gpt2"}, decoder, modelprofile.PurposeSpeech},
+		{"qwen tts without decoder or tags", map[string]string{"general.architecture": "qwen3tts"}, nil, modelprofile.PurposeSpeech},
+		{"plain qwen is not speech", map[string]string{"general.architecture": "qwen3"}, nil, modelprofile.PurposeGeneration},
+		{"plain gpt2", map[string]string{"general.architecture": "gpt2"}, nil, modelprofile.PurposeGeneration},
+		{"speech name is insufficient", map[string]string{"general.architecture": "gpt2", "general.name": "chatterbox-turbo text-to-speech"}, nil, modelprofile.PurposeGeneration},
+		{"generic audio tags", map[string]string{"general.architecture": "gpt2", "general.tags": "[audio speech transcription]"}, nil, modelprofile.PurposeGeneration},
+		{"tag boundary", map[string]string{"general.architecture": "gpt2", "general.tags": "[not-text-to-speech]"}, nil, modelprofile.PurposeGeneration},
+		{"audio input only", map[string]string{"general.architecture": "gpt2"}, map[string]string{"general.architecture": "clip", "clip.has_audio_encoder": "true"}, modelprofile.PurposeGeneration},
+		{"generation disabled", map[string]string{"general.architecture": "gpt2"}, map[string]string{"general.architecture": "clip", "clip.has_gen_audio_encoder": "false"}, modelprofile.PurposeGeneration},
+		{"invalid generation flag", map[string]string{"general.architecture": "gpt2"}, map[string]string{"general.architecture": "clip", "clip.has_gen_audio_encoder": "invalid"}, modelprofile.PurposeGeneration},
+		{"standalone decoder", decoder, nil, modelprofile.PurposeGeneration},
+		{"mixed chat retains runtime", map[string]string{"general.architecture": "gpt2", "general.tags": "[text-to-speech]", "tokenizer.chat_template": "chat"}, decoder, modelprofile.PurposeGeneration},
+		{"embedding retains purpose", map[string]string{"general.architecture": "bert", "bert.pooling_type": "1", "general.tags": "[text-to-speech]"}, decoder, modelprofile.PurposeEmbedding},
+		{"decision retains purpose", map[string]string{"general.architecture": "modern-bert", "modern-bert.decision.type": "laya", "general.tags": "[text-to-speech]"}, decoder, modelprofile.PurposeGeneration},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			profile := arch.ResolveBundle(tt.metadata, tt.projector, "renamed")
+			if profile.Purpose != tt.want {
+				t.Errorf("purpose: got %s, want %s", profile.Purpose, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveRequiresFileMetadata(t *testing.T) {
 	for _, tt := range []struct {
 		architecture string

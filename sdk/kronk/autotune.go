@@ -16,14 +16,16 @@ import (
 // the model pool so the SDK and pool seed defaults identically; the only
 // SDK-specific part is preserving all settings outside AutoTune's ownership.
 // On any failure the original cfg is returned unchanged so auto-tune never
-// blocks a load.
+// blocks a load. Speech models resolve supported runtime limits instead of
+// hardware-derived recommendations; speech memory-aware tuning is not supported.
 func AutoTuneConfig(ctx context.Context, cfg model.Config) model.Config {
 	return autoTuneConfig(ctx, cfg, nil)
 }
 
 // AutoTuneConfigWithBudget seeds unset settings using a stable memory budget.
 // Pool callers use this so custom loads honor the same resource-manager limits
-// as catalog-driven loads.
+// as catalog-driven loads. Speech models currently resolve fixed runtime limits
+// without memory-budget tuning.
 func AutoTuneConfigWithBudget(ctx context.Context, cfg model.Config, budget models.AutoTuneBudget) model.Config {
 	return autoTuneConfig(ctx, cfg, &budget)
 }
@@ -38,6 +40,20 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 	if err != nil {
 		logAutoTune(ctx, cfg.Log, "status", "skipped", "error", fmt.Sprintf("model-info: %v", err))
 		return cfg
+	}
+
+	// Speech currently resolves fixed supported limits, not hardware-derived
+	// recommendations. Preserve all other options, including its frame budget.
+	if info.IsSpeechModel {
+		resolved, err := model.ResolveSpeechConfig(cfg)
+		if err != nil {
+			logAutoTune(ctx, cfg.Log, "status", "skipped", "error", err.Error())
+			return cfg
+		}
+		resolved.AutoTune = true
+		resolved.AutoTuned = true
+		logAutoTune(ctx, cfg.Log, "status", "resolved", "reason", "speech runtime limits")
+		return resolved
 	}
 
 	constraints := models.ModelConfig{

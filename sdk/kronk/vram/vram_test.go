@@ -3,13 +3,388 @@ package vram
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
+
+func TestFromBytesSpeechMemory(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture": "gpt2", "general.tags": "[text-to-speech]",
+		"gpt2.block_count": "24", "gpt2.embedding_length": "1024",
+		"gpt2.attention.head_count": "16", "gpt2.attention.head_count_kv": "16",
+		"gpt2.vocab_size": "56839", "gpt2.feed_forward_length": "4096",
+		"tokenizer.ggml.bos_token_id": "56837", "tokenizer.ggml.eos_token_id": "56838",
+	}
+	tensors := []gguf.TensorInfo{
+		{Name: "token_embd.weight", Dims: []int64{1024, 56839}},
+		{Name: "position_embd.weight", Dims: []int64{1024, 8196}},
+	}
+	header := deepseek41Header(t, metadata, tensors)
+	var single Result
+	for _, slots := range []int64{1, 3} {
+		result, err := FromBytes(header, 481791712, Config{ComputeBackend: "metal", Slots: slots})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Input.Speech == nil || result.Input.Speech.MaxFrames != 512 || result.Input.NUBatch != 512 || result.Input.ContextWindow != 2048 {
+			t.Fatalf("speech limits not detected: %+v", result.Input)
+		}
+		if result.Input.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone {
+			t.Fatal("backbone allocation family not selected")
+		}
+		if result.SlotMemory != slots*192<<20 {
+			t.Errorf("KV: got %d, want %d", result.SlotMemory, slots*192<<20)
+		}
+		// The native helper owns a complete F32 copy of the embedding table
+		// per slot, independent of quantized model-weight residency.
+		if result.ComputeBufferCPU < slots*232812544 {
+			t.Error("host budget omitted per-helper embedding copies")
+		}
+		if slots == 1 {
+			single = result
+			continue
+		}
+		if result.ComputeBufferCPU-single.ComputeBufferCPU < 2*232812544 {
+			t.Error("additional helpers did not receive independent host tables")
+		}
+	}
+	short, err := FromBytes(header, 481791712, Config{Speech: &SpeechConfig{MaxFrames: 137}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if short.Input.Speech.MaxFrames != 137 || short.ComputeBufferCPU >= single.ComputeBufferCPU {
+		t.Error("resolved frame limit did not reduce bounded host outputs")
+	}
+	for _, frames := range []int64{-1, 513} {
+		if _, err := FromBytes(header, 481791712, Config{Speech: &SpeechConfig{MaxFrames: frames}}); err == nil {
+			t.Errorf("accepted invalid frame limit %d", frames)
+		}
+	}
+	delete(metadata, "general.tags")
+	untagged, err := FromBytes(deepseek41Header(t, metadata, tensors), 481791712, Config{})
+	if err != nil || untagged.Input.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone {
+		t.Fatalf("untagged Turbo graph not identified: %+v, %v", untagged.Input, err)
+	}
+	chat, err := FromBytes(deepseek41Header(t, metadata, nil), 481791712, Config{})
+	if err != nil || chat.Input.Speech != nil {
+		t.Fatalf("ordinary GPT2 classified as speech: %+v, %v", chat.Input, err)
+	}
+	configuredChat, err := FromBytes(deepseek41Header(t, metadata, nil), 481791712, Config{Speech: &SpeechConfig{MaxFrames: 137}})
+	if err != nil || configuredChat.ComputeBufferCPU != chat.ComputeBufferCPU || configuredChat.ComputeBufferEst != chat.ComputeBufferEst || configuredChat.Input.Speech != nil {
+		t.Fatalf("SpeechConfig selected a policy for ordinary GPT2: %+v, %v", configuredChat, err)
+	}
+	input := single.Input
+	input.Speech = nil
+	if withoutConfig := Calculate(input); withoutConfig.ComputeBufferCPU != single.ComputeBufferCPU || withoutConfig.ComputeBufferEst != single.ComputeBufferEst {
+		t.Error("allocation family must work without an optional SpeechConfig")
+	}
+	metadata["general.tags"] = "[text-to-speech]"
+	if _, err := FromBytes(deepseek41Header(t, metadata, nil), 481791712, Config{}); err == nil {
+		t.Error("speech tags alone selected a Turbo memory policy")
+	}
+}
+
+func TestFromBytesSpeechDecoderMemory(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture": "clip", "clip.has_gen_audio_encoder": "true",
+		"clip.gen.audio.projector_type": "chatterbox", "clip.gen.audio.embedding_length": "512",
+		"clip.gen.audio.feed_forward_length": "2048", "clip.gen.audio.block_count": "6",
+		"clip.gen.audio.attention.head_count": "8", "clip.gen.audio.projection_dim": "80",
+	}
+	tensors := []gguf.TensorInfo{
+		{Name: "a.gen.est.time_embed_mixer.weight", Dims: []int64{2048, 1024}},
+		{Name: "voice.default.ref_tokens", Dims: []int64{250}},
+		{Name: "voice.default.ref_feat", Dims: []int64{80, 500}},
+		{Name: "voice.default.ref_spk", Dims: []int64{192}},
+		{Name: "voice.default", Dims: []int64{1024, 376}},
+	}
+	header := deepseek41Header(t, metadata, tensors)
+	cfg := Config{ComputeBackend: "metal", Slots: 1}
+	single, err := FromBytes(header, 555371392, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if single.Input.ComputeKind != modelprofile.ComputeChatterboxTurboDecoder {
+		t.Fatal("decoder allocation family not selected")
+	}
+	if single.SlotMemory != 0 || single.ModelWeightsGPU != 555371392 || single.ComputeBufferEst < 659<<20 {
+		t.Fatalf("decoder omitted shared retained memory or allocated KV: %+v", single)
+	}
+	cfg.Slots = 4
+	multiple, err := FromBytes(header, 555371392, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if multiple.ComputeBufferEst != single.ComputeBufferEst || multiple.ModelWeightsGPU != single.ModelWeightsGPU || multiple.ComputeBufferCPU <= single.ComputeBufferCPU {
+		t.Error("decoder weights/workspace must be shared, while helper reference copies scale with slots")
+	}
+	cfg.Speech = &SpeechConfig{MaxFrames: 1}
+	short, err := FromBytes(header, 555371392, cfg)
+	if err != nil || short.ComputeBufferEst != multiple.ComputeBufferEst || short.ComputeBufferCPU >= multiple.ComputeBufferCPU {
+		t.Fatalf("short output must retain calibrated GPU envelope but reduce host outputs: %+v, %v", short, err)
+	}
+	for _, backend := range []string{"vulkan", "cuda", "rocm", "", "opencl"} {
+		cfg.ComputeBackend, cfg.Speech, cfg.Slots = backend, nil, 4
+		provisional, err := FromBytes(header, 555371392, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if provisional.ComputeBufferEst <= multiple.ComputeBufferEst || provisional.ComputeBufferCPU <= multiple.ComputeBufferCPU || provisional.ModelWeightsGPU != single.ModelWeightsGPU || provisional.SlotMemory != 0 {
+			t.Fatalf("%s must retain shared weights and add provisional workspace allowance without KV: %+v", backend, provisional)
+		}
+		cfg.Slots = 1
+		provisionalSingle, err := FromBytes(header, 555371392, cfg)
+		if err != nil || provisionalSingle.ComputeBufferEst != provisional.ComputeBufferEst || provisionalSingle.ComputeBufferCPU >= provisional.ComputeBufferCPU {
+			t.Fatalf("%s decoder arenas must be shared while host references scale: %+v, %v", backend, provisionalSingle, err)
+		}
+	}
+	for _, backend := range []string{"metal", "cpu"} {
+		cfg.ComputeBackend, cfg.GPULayers = backend, 0
+		gpu, err := FromBytes(header, 555371392, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.GPULayers = -1
+		cpu, err := FromBytes(header, 555371392, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cpu.TotalVRAM != 0 || cpu.ModelWeightsCPU != 555371392 || cpu.SlotMemory != 0 {
+			t.Fatalf("%s CPU placement must reserve decoder weights and workspace in RAM only: %+v", backend, cpu)
+		}
+		// Moving the same estimate to RAM preserves the total, apart from
+		// one byte from rounding the combined safety margin.
+		difference := cpu.ComputeBufferCPU - gpu.ComputeBufferCPU - gpu.ComputeBufferEst
+		if difference < 0 || difference > 1 {
+			t.Fatalf("%s CPU placement lost decoder workspace: difference %d", backend, difference)
+		}
+	}
+	cfg.ComputeBackend = "metal"
+	cfg.GPULayers = 0
+	changedMetadata := maps.Clone(metadata)
+	for _, key := range []string{"embedding_length", "feed_forward_length", "block_count", "attention.head_count", "projection_dim"} {
+		changedMetadata["clip.gen.audio."+key] = "17"
+	}
+	changedTensors := slices.Clone(tensors)
+	changedTensors[3].Dims = []int64{256}
+	changed, err := FromBytes(deepseek41Header(t, changedMetadata, changedTensors), 555371392, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An extra 64 speaker elements occupy 256 bytes in both the shared voice
+	// and the selected helper's reference copy. Native graph dimensions stay fixed.
+	if changed.ComputeMemory.WorkspaceCPU-single.ComputeMemory.WorkspaceCPU != 512 || changed.ComputeBufferEst != single.ComputeBufferEst {
+		t.Fatalf("Chatterbox reference tensor sizing: got %+v, baseline %+v", changed.ComputeMemory, single.ComputeMemory)
+	}
+	tensors[1].Dims[0] = 251
+	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 555371392, cfg); err == nil {
+		t.Error("accepted reference beyond calibrated length")
+	}
+	tensors[1].Dims[0] = 250
+	tensors = append(tensors, gguf.TensorInfo{Name: "a.gen.t3.text_pos_emb", Dims: []int64{1024, 2048}})
+	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 555371392, cfg); err == nil {
+		t.Error("accepted multilingual decoder as Turbo")
+	}
+}
+
+func TestFromBytesQwen3TTSMemory(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture": "qwen3tts", "qwen3tts.block_count": "28",
+		"qwen3tts.embedding_length": "2048", "qwen3tts.feed_forward_length": "6144",
+		"qwen3tts.attention.head_count": "16", "qwen3tts.attention.head_count_kv": "8",
+		"qwen3tts.attention.key_length": "128", "qwen3tts.attention.value_length": "128",
+		"qwen3tts.vocab_size": "3072",
+	}
+	tensors := []gguf.TensorInfo{
+		{Name: "token_embd.weight", Dims: []int64{2048, 155008}, GGMLType: 8},
+		{Name: "output.weight", Dims: []int64{2048, 3072}, GGMLType: 8},
+	}
+	header := deepseek41Header(t, metadata, tensors)
+	single, err := FromBytes(header, 1847874400, Config{ComputeBackend: "metal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if single.Input.Speech == nil || single.Input.ContextWindow != 2048 || single.Input.NUBatch != 512 || single.SlotMemory != 224<<20 {
+		t.Fatalf("Qwen speech limits/KV: %+v", single)
+	}
+	// The helper copies the combined 155008-row embedding table, not just the
+	// 3072-row output vocabulary. Initialization also reads the encoded table.
+	if single.ComputeBufferCPU < 1269825536+337297408 {
+		t.Fatalf("Qwen helper table/readback omitted: got %d", single.ComputeBufferCPU)
+	}
+	multiple, err := FromBytes(header, 1847874400, Config{ComputeBackend: "metal", Slots: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if multiple.SlotMemory != 896<<20 || multiple.ComputeBufferCPU-single.ComputeBufferCPU < 3*1269825536 {
+		t.Fatal("Qwen per-helper tables or backbone KV did not scale with slots")
+	}
+	short, err := FromBytes(header, 1847874400, Config{ComputeBackend: "metal", Speech: &SpeechConfig{MaxFrames: 71}})
+	if err != nil || short.ComputeBufferCPU != single.ComputeBufferCPU || short.SlotMemory != single.SlotMemory {
+		t.Fatalf("frame cap must not change backbone memory; decoder owns waveform buffers: %+v, %v", short, err)
+	}
+	if _, err := FromBytes(deepseek41Header(t, metadata, tensors[1:]), 1847874400, Config{}); err == nil {
+		t.Fatal("accepted missing combined embedding table")
+	}
+	for _, frames := range []int64{-1, 513} {
+		if _, err := FromBytes(header, 1847874400, Config{Speech: &SpeechConfig{MaxFrames: frames}}); err == nil {
+			t.Errorf("accepted invalid Qwen frame limit %d", frames)
+		}
+	}
+}
+
+func TestFromBytesQwen3TTSDecoderMemory(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture": "clip", "clip.has_gen_audio_encoder": "true",
+		"clip.gen.audio.projector_type": "qwen3tts_gen",
+		"clip.has_audio_encoder":        "true", "clip.audio.projector_type": "qwen3tts_spkenc",
+		"clip.audio.embedding_length": "1536", "clip.audio.block_count": "3",
+		"clip.audio.attention.head_count": "1", "clip.audio.projection_dim": "2048",
+		"clip.gen.audio.embedding_length": "1024", "clip.gen.audio.block_count": "5",
+		"clip.gen.audio.feed_forward_length": "3072", "clip.gen.audio.projection_dim": "2048",
+		"clip.gen.audio.attention.head_count": "16", "clip.gen.audio.attention.head_count_kv": "8",
+	}
+	tensors := []gguf.TensorInfo{
+		{Name: "a.gen.code.head.weight", Dims: []int64{1024, 2048, 15}},
+		{Name: "a.gen.code.out_embd.weight", Dims: []int64{2048, 3072}},
+		{Name: "a.gen.wav.tfm.blk.0.attn_q.weight", Dims: []int64{512, 1024}},
+		{Name: "a.gen.wav.tfm.blk.7.attn_q.weight", Dims: []int64{512, 1024}},
+		{Name: "a.gen.wav.pre_conv.weight", Dims: []int64{3, 512, 1024}},
+		{Name: "a.gen.wav.up.blk.0.dwconv.weight", Dims: []int64{7, 1, 1024}},
+		{Name: "a.gen.wav.up.blk.1.dwconv.weight", Dims: []int64{7, 1, 1024}},
+		{Name: "a.gen.wav.dac.entry.weight", Dims: []int64{7, 1024, 1536}},
+		{Name: "a.gen.wav.dac.post_conv.weight", Dims: []int64{7, 96, 1}},
+	}
+	for block, shape := range [][]int64{{16, 768, 1536}, {10, 384, 768}, {8, 192, 384}, {6, 96, 192}} {
+		tensors = append(tensors, gguf.TensorInfo{Name: fmt.Sprintf("a.gen.wav.dac.blk.%d.conv.weight", block), Dims: shape})
+		for residual := range 3 {
+			tensors = append(tensors, gguf.TensorInfo{Name: fmt.Sprintf("a.gen.wav.dac.blk.%d.res.%d.conv1.weight", block, residual), Dims: []int64{7, shape[1], shape[1]}})
+		}
+	}
+	header := deepseek41Header(t, metadata, tensors)
+	cfg := Config{ComputeBackend: "metal"}
+	single, err := FromBytes(header, 669081472, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if single.SlotMemory != 0 || single.ModelWeightsGPU != 669081472 || single.ComputeBufferEst < 1536<<20 {
+		t.Fatalf("Qwen decoder shared weights/workspace or graph-local KV: %+v", single)
+	}
+	cfg.Slots = 4
+	multiple, err := FromBytes(header, 669081472, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Native's 38 F32 state slots hold 5,218,948 payload bytes per helper.
+	// Only this state scales on GPU: shared arenas must not be multiplied.
+	delta := multiple.ComputeBufferEst - single.ComputeBufferEst
+	if delta < 3*5218948 || delta > 20<<20 || multiple.ModelWeightsGPU != single.ModelWeightsGPU {
+		t.Fatalf("Qwen decoder slot scaling: got GPU delta %d", delta)
+	}
+	cfg.Speech = &SpeechConfig{MaxFrames: 71}
+	short, err := FromBytes(header, 669081472, cfg)
+	if err != nil || short.ComputeBufferEst != multiple.ComputeBufferEst || short.ComputeBufferCPU >= multiple.ComputeBufferCPU {
+		t.Fatalf("frame cap must reduce host outputs, not the fixed 72-frame decoder graph: %+v, %v", short, err)
+	}
+	for _, backend := range []string{"vulkan", "cuda", "rocm", "", "opencl"} {
+		cfg.ComputeBackend, cfg.Speech, cfg.Slots = backend, nil, 4
+		provisional, err := FromBytes(header, 669081472, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if provisional.ComputeBufferEst <= multiple.ComputeBufferEst || provisional.ComputeBufferCPU <= multiple.ComputeBufferCPU || provisional.ModelWeightsGPU != single.ModelWeightsGPU || provisional.SlotMemory != 0 {
+			t.Fatalf("%s must add provisional shared workspace without duplicating weights or KV: %+v", backend, provisional)
+		}
+		cfg.Slots = 1
+		provisionalSingle, err := FromBytes(header, 669081472, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delta := provisional.ComputeBufferEst - provisionalSingle.ComputeBufferEst
+		if delta < 3*5218948 || delta > 20<<20 {
+			t.Fatalf("%s must scale codec state, not multiply shared arenas: got GPU delta %d", backend, delta)
+		}
+	}
+	for _, backend := range []string{"metal", "cpu"} {
+		cfg.ComputeBackend, cfg.GPULayers = backend, 0
+		gpu, err := FromBytes(header, 669081472, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.GPULayers = -1
+		cpu, err := FromBytes(header, 669081472, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cpu.TotalVRAM != 0 || cpu.ModelWeightsCPU != 669081472 || cpu.SlotMemory != 0 {
+			t.Fatalf("%s CPU placement must reserve Qwen weights and codec state in RAM only: %+v", backend, cpu)
+		}
+		difference := cpu.ComputeBufferCPU - gpu.ComputeBufferCPU - gpu.ComputeBufferEst
+		if difference < 0 || difference > 1 {
+			t.Fatalf("%s CPU placement lost Qwen decoder workspace/state: difference %d", backend, difference)
+		}
+	}
+	for _, tt := range []struct {
+		name     string
+		tensor   int
+		dims     []int64
+		gpuDelta int64
+		cpuDelta int64
+		wantErr  bool
+	}{
+		{name: "predictor codebooks", tensor: 0, dims: []int64{1024, 2048, 14}},
+		// Eight F32 K/V pairs, each retaining 71 frames: 256 fewer channels.
+		{name: "codec attention width", tensor: 2, dims: []int64{512, 768}, gpuDelta: -1163264},
+		// Left context grows from 2×512 to 4×640 F32 elements.
+		{name: "convolution width and kernel", tensor: 4, dims: []int64{5, 640, 1024}, gpuDelta: 6144},
+		// Depthwise state uses ne2, not the singleton ne1 channel dimension.
+		{name: "depthwise width and kernel", tensor: 5, dims: []int64{9, 1, 1280}, gpuDelta: 16384},
+		// DAC stride rises from 8 to 10: 1536 more tail elements, and
+		// 2400 samples/frame instead of 1920 for readback and buffered output.
+		{name: "DAC stride", tensor: 9, dims: []int64{20, 768, 1536}, gpuDelta: 6144, cpuDelta: 6036480},
+		{name: "missing state tensor", tensor: 2, dims: nil, wantErr: true},
+		{name: "wrong tensor rank", tensor: 2, dims: []int64{512, 1024, 1}, wantErr: true},
+		{name: "zero tensor width", tensor: 2, dims: []int64{512, 0}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			changedMetadata := maps.Clone(metadata)
+			// Predictor and optional speaker metadata must not be a model-size allowlist.
+			for key := range changedMetadata {
+				if key != "general.architecture" && key != "clip.has_gen_audio_encoder" && key != "clip.gen.audio.projector_type" {
+					delete(changedMetadata, key)
+				}
+			}
+			changedTensors := slices.Clone(tensors)
+			changedTensors[tt.tensor].Dims = tt.dims
+			if tt.dims == nil {
+				changedTensors = append(changedTensors[:tt.tensor:tt.tensor], changedTensors[tt.tensor+1:]...)
+			}
+			changed, err := FromBytes(deepseek41Header(t, changedMetadata, changedTensors), 669081472, Config{ComputeBackend: "metal"})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("accepted missing or malformed codec tensor")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := changed.ComputeMemory.WorkspaceGPU - single.ComputeMemory.WorkspaceGPU; got != tt.gpuDelta {
+				t.Errorf("GPU payload delta: got %d, want %d", got, tt.gpuDelta)
+			}
+			if got := changed.ComputeMemory.WorkspaceCPU - single.ComputeMemory.WorkspaceCPU; got != tt.cpuDelta {
+				t.Errorf("host payload delta: got %d, want %d", got, tt.cpuDelta)
+			}
+		})
+	}
+}
 
 func TestCalculateUnifiedLFM2Reservation(t *testing.T) {
 	input := Input{

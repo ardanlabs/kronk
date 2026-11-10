@@ -81,6 +81,8 @@ var (
 	PurposeEmbedding = newPurpose("embedding")
 	// PurposeRerank identifies reranking.
 	PurposeRerank = newPurpose("rerank")
+	// PurposeSpeech identifies dedicated speech generation.
+	PurposeSpeech = newPurpose("speech")
 )
 
 func newPurpose(value string) Purpose {
@@ -311,6 +313,14 @@ var (
 	ComputeLFM3 = newComputeKind(13)
 	// ComputeKimiK3 identifies Kimi K3/K3.1's generic workspace allowance and native cache layout.
 	ComputeKimiK3 = newComputeKind(14)
+	// ComputeChatterboxTurboBackbone identifies Turbo backbone and per-helper allocations.
+	ComputeChatterboxTurboBackbone = newComputeKind(15)
+	// ComputeChatterboxTurboDecoder identifies shared Turbo flow/vocoder allocations.
+	ComputeChatterboxTurboDecoder = newComputeKind(16)
+	// ComputeQwen3TTSBackbone identifies Qwen speech backbone and helper allocations.
+	ComputeQwen3TTSBackbone = newComputeKind(17)
+	// ComputeQwen3TTSDecoder identifies shared Qwen predictor/codec and per-helper state.
+	ComputeQwen3TTSDecoder = newComputeKind(18)
 )
 
 func newComputeKind(value uint8) ComputeKind {

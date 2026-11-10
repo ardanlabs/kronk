@@ -74,10 +74,27 @@ install-test-models: install-kronk ## Download test models
 	@echo
 	kronk model pull --local "LiquidAI/LFM3-1.7B-Q4_K_M"
 	@echo
+	kronk model pull --local "ggml-org/chatterbox-turbo-Q8_0"
+	@echo
+	kronk model pull --local "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0"
+	@echo
 	@echo ========== INSTALL BUCKY MODELS ==========
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
 	kronk bucky model pull --local "silero-vad"
+	@echo
+
+# Download published llama.cpp speech bundles and their auto-discovered decoders.
+# Soprano and Pocket TTS still need compatible backbone/mmproj publications;
+# the single-file GGUFs for other runtimes are not interchangeable with these.
+install-speak-models: install-kronk ## Download published speech model bundles
+	@echo ========== INSTALL SPEECH MODELS ==========
+	kronk model pull --local "ggml-org/chatterbox-turbo-Q8_0"
+	@echo
+	kronk model pull --local "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0"
+	@echo
+	@echo "Soprano and Pocket TTS are not installed: compatible backbone/mmproj bundles have not been verified."
+	@echo "Downloading these models does not verify Kronk speech runtime or pool support."
 	@echo
 
 # Use this to install the library and model required by the opt-in Malina tests.
@@ -105,15 +122,15 @@ install-test-decision: install-kronk ## Download local decision test fixtures
 	kronk model pull --local "ggml-org/Bespoke-Nimble-9B-v3-Q4_K_M" && \
 	kronk model pull --local "ggml-org/Clef-Flash-Q4_K_M" && \
 	kronk model pull --local "ggml-org/Clef-Q4_K_M" && \
-	kronk model pull --local "https://huggingface.co/turintech/pplx-decider-27B-Artemis-GGUF/resolve/73579d07957b9e2185f4d4435bef30398a86b4ca/pplx-decider-27B-Artemis-IQ3_M.gguf" && \
-	kronk model pull --local "https://huggingface.co/ibm-granite/granite-switch-4.1-8b-GGUF/resolve/844a3df25e1b257eb08561ef9a4a34e3973e3f58/granite-switch-4.1-8b-Q4_K_M.gguf" && \
-	kronk model pull --local "https://huggingface.co/h2oai/h2o-lightning-4b-gguf/resolve/61f8d8b7a8c2d84426d0d143ca187f65d235934b/h2o-lightning-4b-Q4_K_M.gguf" && \
-	kronk model pull --local "https://huggingface.co/LiquidAI/d1-3B-GGUF/resolve/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/d1-3B-Q4_K_M.gguf" && \
-	kronk model pull --local "https://huggingface.co/LiquidAI/d1-omni-600M-GGUF/resolve/8eb2d2a1c5404bba8a34a88bd8e159c242197d51/d1-omni-600M-Q8_0.gguf" && \
-	kronk model pull --local "https://huggingface.co/LiquidAI/d1-2B-GGUF/resolve/4a181094d1b6addfaa3a0956f78e7ab2aa406a0c/d1-2B-Q4_K_M.gguf" && \
+	kronk model pull --local "turintech/pplx-decider-27B-Artemis-IQ3_M" && \
+	kronk model pull --local "ibm-granite/granite-switch-4.1-8b-Q4_K_M" && \
+	kronk model pull --local "h2oai/h2o-lightning-4b-Q4_K_M" && \
+	kronk model pull --local "LiquidAI/d1-3B-Q4_K_M" && \
+	kronk model pull --local "LiquidAI/d1-omni-600M-Q8_0" && \
+	kronk model pull --local "LiquidAI/d1-2B-GGUF/d1-2B-Q4_K_M" && \
 	kronk model pull --local "LiquidAI/d1-Omni-2B-Q8_0" && \
-	kronk model pull --local "https://huggingface.co/ggml-org/vllm-d3-edge-GGUF/resolve/83b6dacde181a41ea143cd627c0495dc0dee9ba1/vllm-d3-edge-Q8_0.gguf"
-	@echo "Decision2 requires KRONK_TEST_DECISION2_MODEL; see sdk/kronk/model/decision_model_test.go"
+	kronk model pull --local "ggml-org/vllm-d3-edge-Q8_0"
+	@echo "Decision2 is skipped until an upstream-compatible GGUF is published."
 	@echo
 
 # Use this to install models for the class.

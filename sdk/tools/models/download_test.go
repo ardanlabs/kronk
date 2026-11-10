@@ -176,6 +176,59 @@ func TestDownloadURLsWithProgress(t *testing.T) {
 	}
 }
 
+func TestDownloadSourceForms(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "model.gguf")
+	writeCatalogTestGGUF(t, file, nil)
+	modelBody, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projBody := []byte("matching F16 projection")
+	for _, source := range []string{
+		"test/model-Q8_0",
+		"test/test-repo/weights/model-Q8_0",
+		"test/test-repo/weights/model-Q8_0.gguf",
+		"hf.co/test/test-repo/weights/model-Q8_0.gguf",
+		"huggingface.co/test/test-repo/weights/model-Q8_0.gguf",
+		"https://huggingface.co/test/test-repo/resolve/main/weights/model-Q8_0.gguf",
+	} {
+		t.Run(source, func(t *testing.T) {
+			g := &fakeGetter{contents: map[string][]byte{
+				"/test/test-repo/resolve/main/weights/model-Q8_0.gguf": modelBody,
+				"/test/test-repo/resolve/main/mmproj-F16.gguf":         projBody,
+			}}
+			withFakeGetter(t, g)
+			m := newTestModels(t)
+			r := NewResolver(m, filepath.Join(m.BasePath(), "catalog", "catalog.yaml"))
+			if err := r.Save(Catalog{Models: map[string]CatalogEntry{
+				"test/model-Q8_0": {
+					Provider: "test", Family: "test-repo", Revision: "main",
+					Files:  []string{"weights/model-Q8_0.gguf"},
+					MMProj: "mmproj-model-Q8_0.gguf", MMProjOrig: "mmproj-F16.gguf", MTPChecked: true,
+				},
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			mp, err := m.Download(t.Context(), testLog, source)
+			if err != nil {
+				t.Fatalf("Download: %v", err)
+			}
+			if len(mp.ModelFiles) != 1 || mp.ProjFile == "" {
+				t.Fatalf("Download: got models=%v projection=%q, want one model and its projection", mp.ModelFiles, mp.ProjFile)
+			}
+			for _, artifact := range []struct {
+				file string
+				want []byte
+			}{{mp.ModelFiles[0], modelBody}, {mp.ProjFile, projBody}} {
+				got, err := os.ReadFile(artifact.file)
+				if err != nil || !bytes.Equal(got, artifact.want) {
+					t.Errorf("downloaded %s: got %d bytes, err=%v, want matching artifact", artifact.file, len(got), err)
+				}
+			}
+		})
+	}
+}
+
 func TestLogDownloadProgressContainsNoTerminalControls(t *testing.T) {
 	var got string
 	log := func(_ context.Context, msg string, _ ...any) {

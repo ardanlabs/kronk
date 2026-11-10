@@ -214,6 +214,7 @@ const menuStructure: MenuCategory[] = [
             { page: 'docs-sdk-examples', label: 'Rag', hash: 'example-rag' },
             { page: 'docs-sdk-examples', label: 'Rerank', hash: 'example-rerank' },
             { page: 'docs-sdk-examples', label: 'Response', hash: 'example-response' },
+            { page: 'docs-sdk-examples', label: 'Speech', hash: 'example-speech' },
             { page: 'docs-sdk-examples', label: 'Vision', hash: 'example-vision' },
           ] },
         ],

@@ -60,6 +60,16 @@ func selectMemoryPolicy(input Input) memoryPolicy {
 	}
 
 	switch {
+	case input.ComputeKind == modelprofile.ComputeChatterboxTurboBackbone:
+		policy.compute = chatterboxTurboBackboneMemory
+	case input.ComputeKind == modelprofile.ComputeChatterboxTurboDecoder:
+		policy.compute = chatterboxTurboDecoderMemory
+		policy.cache = noPersistentCache
+	case input.ComputeKind == modelprofile.ComputeQwen3TTSBackbone:
+		policy.compute = qwen3TTSBackboneMemory
+	case input.ComputeKind == modelprofile.ComputeQwen3TTSDecoder:
+		policy.compute = qwen3TTSDecoderMemory
+		policy.cache = noPersistentCache
 	case input.ComputeKind == modelprofile.ComputeDeepSeek41:
 		policy.compute = deepseek41ComputeMemory
 		policy.cache = deepseek41Cache
