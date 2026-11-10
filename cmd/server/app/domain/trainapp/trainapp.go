@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
@@ -24,10 +26,94 @@ import (
 type app struct {
 	training *training.Job
 	uploads  *uploads.Store
+	datasets *preparation.DatasetStore
 }
 
 func newApp(cfg Config) *app {
-	return &app{training: cfg.Job, uploads: cfg.Uploads}
+	if cfg.Datasets == nil && cfg.Job != nil {
+		cfg.Datasets = cfg.Job.Datasets()
+	}
+	return &app{training: cfg.Job, uploads: cfg.Uploads, datasets: cfg.Datasets}
+}
+
+func (a *app) requireDatasets(next web.HandlerFunc) web.HandlerFunc {
+	return func(ctx context.Context, r *http.Request) web.Encoder {
+		if a.datasets == nil {
+			return errs.Errorf(errs.Unavailable, "preparation dataset storage is unavailable")
+		}
+		return next(ctx, r)
+	}
+}
+
+func (a *app) listDatasets(ctx context.Context, r *http.Request) web.Encoder {
+	web.GetWriter(ctx).Header().Set("Cache-Control", "no-store")
+	datasets, err := a.datasets.List(ctx)
+	if err != nil {
+		return toAppError(err)
+	}
+	result := Datasets{Datasets: make([]Dataset, len(datasets))}
+	for i, dataset := range datasets {
+		result.Datasets[i] = toAppDataset(dataset)
+	}
+	return result
+}
+
+func (a *app) createDataset(ctx context.Context, r *http.Request) web.Encoder {
+	r.Body = http.MaxBytesReader(web.GetWriter(ctx), r.Body, 4096)
+	var input NewDataset
+	if err := web.Decode(r, &input); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+	dataset, err := a.datasets.Create(ctx, input.Name)
+	if err != nil {
+		return toAppError(err)
+	}
+	return toAppDataset(dataset)
+}
+
+func (a *app) getDataset(ctx context.Context, r *http.Request) web.Encoder {
+	web.GetWriter(ctx).Header().Set("Cache-Control", "no-store")
+	dataset, err := a.datasets.Get(ctx, r.PathValue("dataset_id"), 0)
+	if err != nil {
+		return toAppError(err)
+	}
+	return toAppDataset(dataset)
+}
+
+func (a *app) removeDocument(ctx context.Context, r *http.Request) web.Encoder {
+	version, err := strconv.Atoi(r.URL.Query().Get("base_version"))
+	if err != nil || version < 1 {
+		return errs.Errorf(errs.InvalidArgument, "base_version must be a positive integer")
+	}
+	dataset, err := a.datasets.Remove(ctx, r.PathValue("dataset_id"), version, r.PathValue("document_id"))
+	if err != nil {
+		return toAppError(err)
+	}
+	return toAppDataset(dataset)
+}
+
+func (a *app) downloadDatasetVersion(ctx context.Context, r *http.Request) web.Encoder {
+	version, err := strconv.Atoi(r.PathValue("version"))
+	if err != nil || version < 1 {
+		return errs.Errorf(errs.InvalidArgument, "version must be a positive integer")
+	}
+	records, err := a.datasets.Records(ctx, r.PathValue("dataset_id"), version)
+	if err != nil {
+		return toAppError(err)
+	}
+	w := web.GetWriter(ctx)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="dataset-v%d.jsonl"`, version))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	for _, record := range records {
+		if err := encoder.Encode(record); err != nil {
+			return web.NewNoResponseError(errs.New(errs.Internal, err))
+		}
+	}
+	return web.NewNoResponse()
 }
 
 func (a *app) requireJob(next web.HandlerFunc) web.HandlerFunc {
@@ -236,27 +322,39 @@ func (a *app) evaluation(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) adapter(ctx context.Context, r *http.Request) web.Encoder {
+	return a.downloadArtifact(ctx, r, "adapter")
+}
+
+func (a *app) dataset(ctx context.Context, r *http.Request) web.Encoder {
+	return a.downloadArtifact(ctx, r, "dataset")
+}
+
+func (a *app) downloadArtifact(ctx context.Context, r *http.Request, kind string) web.Encoder {
 	w := web.GetWriter(ctx)
 	w.Header().Set("Cache-Control", "no-store")
 	execution := tmprl.Execution{WorkflowID: r.PathValue("workflow_id"), RunID: r.PathValue("run_id")}
 	if err := execution.Validate(); err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
-	file, err := a.training.OpenAdapter(ctx, execution)
+	open, filename := a.training.OpenAdapter, "adapter.gguf"
+	if kind == "dataset" {
+		open, filename = a.training.OpenDataset, "dataset.jsonl"
+	}
+	file, err := open(ctx, execution)
 	if err != nil {
 		if errors.Is(err, tmprl.ErrInvalidArgument) {
-			return errs.Errorf(errs.NotFound, "adapter is not available")
+			return errs.Errorf(errs.NotFound, "%s is not available", kind)
 		}
 		appError := toAppError(err)
 		if appError.Code == errs.Internal {
-			return errs.Errorf(errs.Internal, "adapter could not be read")
+			return errs.Errorf(errs.Internal, "%s could not be read", kind)
 		}
 		return appError
 	}
 	defer file.Close()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", `attachment; filename="adapter.gguf"`)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	if _, err := io.Copy(w, tmprl.ContextReader{Context: ctx, Reader: file}); err != nil {
@@ -267,6 +365,10 @@ func (a *app) adapter(ctx context.Context, r *http.Request) web.Encoder {
 
 func toAppError(err error) *errs.Error {
 	switch {
+	case errors.Is(err, preparation.ErrDatasetConflict):
+		return errs.New(errs.Aborted, err)
+	case errors.Is(err, preparation.ErrDatasetNotFound):
+		return errs.Errorf(errs.NotFound, "preparation dataset or document not found")
 	case errors.Is(err, tmprl.ErrInvalidArgument), errors.Is(err, uploads.ErrInvalidArgument):
 		return errs.New(errs.InvalidArgument, err)
 	case errors.Is(err, tmprl.ErrUnsupportedWorkflow), errors.Is(err, uploads.ErrNotFound):

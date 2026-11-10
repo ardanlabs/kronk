@@ -96,6 +96,20 @@ type Progress struct {
 	Completed int       `json:"completed"`
 	Total     int       `json:"total"`
 	Message   string    `json:"message"`
+	// Timing is scoped to one activity attempt and one monotonic work counter.
+	// The initial completed count excludes work restored from a checkpoint.
+	InitialCompleted int       `json:"initial_completed,omitzero"`
+	StartedAt        time.Time `json:"started_at,omitzero"`
+	UpdatedAt        time.Time `json:"updated_at,omitzero"`
+}
+
+// Remaining estimates current-phase work from timed progress, not a deadline.
+// Zero means no estimate is available, or all reported work is complete.
+func (p Progress) Remaining() time.Duration {
+	if p.StartedAt.IsZero() || !p.UpdatedAt.After(p.StartedAt) || p.InitialCompleted < 0 || p.Completed <= p.InitialCompleted || p.Completed >= p.Total {
+		return 0
+	}
+	return time.Duration(float64(p.UpdatedAt.Sub(p.StartedAt)) * float64(p.Total-p.Completed) / float64(p.Completed-p.InitialCompleted))
 }
 
 // StepRequest carries a stable idempotency key and the incoming artifact set.

@@ -127,7 +127,8 @@ func TestJobsGetPendingDiagnostics(t *testing.T) {
 					{Name: "publish", Status: tmprl.StatusRunning, Steps: []tmprl.StepState{{Name: "index", Status: tmprl.StatusCompleted, Attempt: 1, LastError: "previous-step"}, {Name: "upload", Status: tmprl.StatusRunning}}},
 				},
 			}
-			progress := tmprl.Progress{Execution: e, Stage: "publish", Step: "upload", Completed: 7, Total: 19, Message: "uploading shard"}
+			stamp := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+			progress := tmprl.Progress{Execution: e, Stage: "publish", Step: "upload", Completed: 7, Total: 19, Message: "uploading shard", InitialCompleted: 3, StartedAt: stamp, UpdatedAt: stamp.Add(2 * time.Minute)}
 			description := &workflowservice.DescribeWorkflowExecutionResponse{PendingActivities: []*workflowpb.PendingActivityInfo{{
 				ActivityType: &commonpb.ActivityType{Name: "example.Step"}, Attempt: 4,
 				LastHeartbeatTime: timestamppb.New(time.Now().Add(-time.Hour)),

@@ -67,7 +67,56 @@ The validated request and effective definition are captured in Temporal input.
 Each submission parses a fresh copy of the embedded YAML, so returned snapshots
 cannot mutate future execution plans.
 
+The BUI submits documents with `Request.PreparationOnly` enabled. These jobs
+retain Extract → Preview → Generate → Verify, including Preview approval, and
+finish after Verify without reserving a worker for a later training decision.
+They do not require an approved training model or training hyperparameters.
+
+`preparation.DatasetStore` in `stages/preparation/dataset.go` owns named datasets
+and immutable versions. Supply `Prepare.TargetDatasetID` and `Prepare.BaseVersion`
+on a preparation-only request to append that document's verified examples. Existing
+documents are not extracted or generated again. Additions merge concurrent updates;
+removal requires the latest version and excludes only that document's contribution.
+Original uploads, previous versions, and adapters are unchanged. Publication is
+idempotent by run ID, including replay after a document was removed. The saved
+dataset/version and combined count/readiness are retained in the run result.
+`Job.OpenDataset` downloads that saved version rather than only the new contribution.
+
+The application exposes create/list/get dataset routes, document removal with
+`base_version`, and `/v1/training/datasets/{dataset_id}/versions/{version}/download`.
+History separates saved datasets and preparation-only runs from training runs.
+
 ## Document review and training authorization
+
+In the BUI's Prepare Dataset settings, **Maximum questions** controls the per-document
+cap. It maps to `prepare.max_questions` (a nonnegative integer); omitted or `0`
+means unlimited. For a small preparation test, set it to `20`. The cap includes
+accepted Preview examples and held-out evaluation questions, and applies to every
+preparation goal. Generation stops after the batch that reaches the cap, retaining
+at most that many records. Grounding and verification can leave fewer records;
+the cap is not a quota. Small capped datasets can be inspected but may not satisfy
+the existing training-readiness requirements. The setting is captured when a new
+job starts and does not change an already-running job.
+
+For PDFs, the BUI's optional **First page** and **Last page** fields map to
+`prepare.page_start` and `prepare.page_end`. Set both to positive PDF viewer
+page numbers (inclusive), or leave both blank/zero for the whole document.
+Docling converts only the selected pages; Preview and full generation use that
+same extraction. The original upload is unchanged, and the page range is part of
+the extraction cache identity. Page ranges are rejected for non-PDF sources.
+For example, pages 11–25 with `max_questions: 50` prepares at most 50 examples
+from that section without converting the rest of the PDF.
+
+Training requires at least 20 training, 10 validation, and 20 protected test
+examples, with valid fact coverage and split isolation. A cap of 20 is a
+preparation-only test; even 50 records does not guarantee training readiness.
+
+The BUI's estimated step remaining time comes from worker timing saved in Temporal
+heartbeats, not browser-local samples. Reloading the page retains the latest
+estimate. Each activity attempt starts a new timing baseline, excluding already
+checkpointed work; changes in work totals or counter resets start a new sample.
+An estimate needs completed work after that baseline. Stale or paused runs do not
+show an estimate. Later steps, queueing and human review waits are not predicted.
 
 Preparation has four ordered steps: Extract → Preview → Generate → Verify.
 Preview reads the committed extraction, creates up to three examples, and stays
@@ -89,7 +138,7 @@ batches after interruption. Verify checks the complete dataset, including edited
 examples, before publishing it. Acceptance of edits is not a claim that their
 content has passed model verification.
 
-When Preparation finishes, its stage is completed and the same job waits at
+For legacy combined requests, when Preparation finishes, its stage is completed and the same job waits at
 `start-training`. `Job.StartTraining` accepts a payload-free decision only for
 that pending checkpoint and a published, training-ready dataset. Training never
 starts automatically for document input. Identical retries of either public

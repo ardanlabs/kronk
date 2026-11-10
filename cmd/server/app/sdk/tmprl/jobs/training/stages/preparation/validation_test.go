@@ -57,6 +57,12 @@ func TestValidateRequest(t *testing.T) {
 		{name: "goal", change: func(r *preparation.PreparationRequest) { r.Goal = "unknown" }},
 		{name: "preview count", change: func(r *preparation.PreparationRequest) { r.PreviewRecords = 6 }},
 		{name: "negative preview count", change: func(r *preparation.PreparationRequest) { r.PreviewRecords = -1 }},
+		{name: "negative question cap", change: func(r *preparation.PreparationRequest) { r.MaxQuestions = -1 }},
+		{name: "negative first page", change: func(r *preparation.PreparationRequest) { r.PageStart, r.PageEnd = -1, 5 }},
+		{name: "missing last page", change: func(r *preparation.PreparationRequest) { r.PageStart = 11 }},
+		{name: "missing first page", change: func(r *preparation.PreparationRequest) { r.PageEnd = 25 }},
+		{name: "reversed pages", change: func(r *preparation.PreparationRequest) { r.PageStart, r.PageEnd = 25, 11 }},
+		{name: "pages for non-PDF", change: func(r *preparation.PreparationRequest) { r.PageStart, r.PageEnd = 11, 25 }},
 		{name: "reviewed", change: func(r *preparation.PreparationRequest) {
 			r.ReviewedRecords = []training.Record{{Prompt: "Missing evidence?"}}
 		}},

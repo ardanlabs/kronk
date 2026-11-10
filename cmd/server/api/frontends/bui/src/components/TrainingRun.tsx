@@ -4,6 +4,9 @@ import { api } from '../services/api';
 import { useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
 import type { TrainingEvaluation, TrainingPreviewRecord, TrainingRun as Run, TrainingStage, TrainingStep } from '../types';
 import { FieldLabel } from './ParamTooltips';
+import { PreparedDatasetResult } from './PreparationDatasetHistory';
+
+const previewDrafts = new Map<string, TrainingPreviewRecord[]>();
 
 function formatDate(value?: string): string {
   return !value || value.startsWith('0001-') ? '—' : new Date(value).toLocaleString();
@@ -106,7 +109,9 @@ export function TrainingJobState({ run, onRefresh, view = 'all' }: { run: Run; o
         <div className="fine-actions">
           <span className="fine-status">{run.status}</span>
           <button className="btn btn-secondary" onClick={onRefresh}>Refresh</button>
-          {canStop && <button className="btn btn-danger" type="button" disabled={stopping} onClick={() => void stopRun(run)}>{stop?.status === 'sending' ? 'Requesting cancellation…' : stop?.status === 'requested' ? 'Cancellation requested' : `Stop ${stopLabel}`}</button>}
+          {canStop && <button className="btn btn-danger" type="button" disabled={stopping} onClick={() => {
+            if (window.confirm(`Stop ${stopLabel}? This requests cancellation of this job. Existing saved dataset versions are unchanged. A stopped job cannot be resumed from this screen.`)) void stopRun(run);
+          }}>{stop?.status === 'sending' ? 'Requesting cancellation…' : stop?.status === 'requested' ? 'Cancellation requested' : `Stop ${stopLabel}`}</button>}
         </div>
       </div>
       {!terminal && stopping && <p role="status" className="fine-action-note">{stop.status === 'sending' ? 'Requesting cancellation for this job…' : 'Cancellation requested. The job may still be running; progress is preserved until the service reports a terminal state.'}</p>}
@@ -114,6 +119,9 @@ export function TrainingJobState({ run, onRefresh, view = 'all' }: { run: Run; o
       {run.state_stale && <p role="status" className="fine-action-note">This is the last reported state and may be out of date. Refresh to request the latest state.</p>}
       {run.status === 'queued' && !run.stage && <p role="status" className="fine-action-note">Your job was submitted and is waiting for a training worker. This server runs one reserved job at a time, including Preparation. It will start when the worker becomes available; Stop cancels this queued request.</p>}
       {currentStage ? <JobProgress key={`${run.workflow_id}/${run.run_id}/${currentStage.name}`} run={run} stage={currentStage} /> : <p role="status">No steps reported yet.</p>}
+      {run.prepared_dataset_id
+        ? <PreparedDatasetResult key={`${run.prepared_dataset_id}:${run.prepared_dataset_version}`} id={run.prepared_dataset_id} version={run.prepared_dataset_version} />
+        : <ArtifactDownload key={JSON.stringify([run.workflow_id, run.run_id, run.dataset_available, run.state_stale])} run={run} artifact="dataset" />}
       {view !== 'training' && run.preview && <PreviewReview key={JSON.stringify([run.workflow_id, run.run_id, run.checkpoint?.id])} run={run} savedRecords={run.preview.records} onRefresh={onRefresh} />}
       {view !== 'preparation' && <StartPreparedTraining run={run} onRefresh={onRefresh} />}
       {stages.filter((stage) => stage !== currentStage).map((stage) => <section className="fine-panel" key={stage.name}><StepStates caption={`${stage.name} steps`} steps={stage.steps} /></section>)}
@@ -129,7 +137,7 @@ export function TrainingJobState({ run, onRefresh, view = 'all' }: { run: Run; o
       </details>
       {view !== 'preparation' && <>
         <EvaluationResults key={JSON.stringify([run.workflow_id, run.run_id, run.evaluation_available])} run={run} />
-        <AdapterDownload key={JSON.stringify([run.workflow_id, run.run_id, run.adapter_available, run.state_stale])} run={run} />
+        <ArtifactDownload key={JSON.stringify([run.workflow_id, run.run_id, run.adapter_available, run.state_stale])} run={run} artifact="adapter" />
       </>}
     </section>
   );
@@ -153,32 +161,17 @@ function JobProgress({ run, stage }: { run: Run; stage: TrainingStage }) {
   const waiting = run.status === 'waiting' && run.stage === stage.name;
   const running = run.status === 'running' && stage.status === 'running' && !run.state_stale;
   const progress = !complete && run.progress?.stage === stage.name && run.progress.step === step?.name ? run.progress : undefined;
-  const sampleKey = `${stage.name}/${step?.name}/${step?.attempt}`;
-  const sample = useRef<{ key: string; completed: number; total: number; at: number }>();
-  const [rate, setRate] = useState<number>();
-
   useEffect(() => {
-    if (!running || waiting) { sample.current = undefined; setRate(undefined); return; }
+    if (!running || waiting) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [running, waiting, sampleKey]);
-
-  useEffect(() => {
-    if (!running || waiting || !progress || progress.total <= 0) { sample.current = undefined; setRate(undefined); return; }
-    const previous = sample.current;
-    if (!previous || previous.key !== sampleKey || progress.total !== previous.total || progress.completed < previous.completed) {
-      sample.current = { key: sampleKey, completed: progress.completed, total: progress.total, at: Date.now() };
-      setRate(undefined);
-    } else if (progress.completed > previous.completed && Date.now() - previous.at >= 10000) {
-      setRate((progress.completed - previous.completed) / (Date.now() - previous.at));
-    }
-  }, [sampleKey, progress?.completed, progress?.total, running, waiting]);
+  }, [running, waiting]);
 
   const percentage = progress && progress.total > 0 ? Math.max(0, Math.min(100, Math.floor(progress.completed / progress.total * 100))) : undefined;
   const elapsedStart = step?.started_at;
   const elapsedEnd = running ? now : Date.parse(step?.closed_at ?? run.updated_at ?? '');
   const elapsed = elapsedStart ? elapsedEnd - Date.parse(elapsedStart) : NaN;
-  const remaining = rate && running && !waiting && progress && progress.completed < progress.total ? (progress.total - progress.completed) / rate : undefined;
+  const remaining = running && !waiting && progress?.remaining_seconds && progress.completed < progress.total ? progress.remaining_seconds * 1000 : undefined;
   const title = complete ? `${stage.name === 'preparation' ? 'Preparation' : 'Training'} complete`
     : waiting ? run.checkpoint?.name === 'preview-review' ? 'Preview ready for review' : 'Ready to start training'
       : step ? stepLabels[step.name] ?? step.name : `Waiting to start ${stage.name}`;
@@ -199,19 +192,22 @@ function JobProgress({ run, stage }: { run: Run; stage: TrainingStage }) {
         <div><span>Step elapsed</span><strong>{Number.isFinite(elapsed) && elapsed >= 0 ? elapsed < 60000 ? 'Less than a minute' : duration(elapsed) : 'Not started'}</strong></div>
         <div><span>Estimated step remaining</span><strong>{run.state_stale ? 'Unavailable · state is out of date' : !running ? 'Unavailable · not running' : remaining ? `About ${duration(remaining)}` : progress?.completed === progress?.total && progress?.total ? 'Finishing up…' : 'Estimating as progress arrives…'}</strong></div>
       </div>}
-      {!complete && !waiting && <p className="fine-action-note">{progress ? 'Counts apply to this step, not the final accepted dataset size. ' : ''}Time estimates use progress observed while this page is open; later steps are not included.</p>}
+      {!complete && !waiting && <p className="fine-action-note">{progress ? 'Counts apply to this step, not the final accepted dataset size. ' : ''}Time estimates use worker progress retained in Temporal heartbeats and survive page reloads. Later steps and review waits are not included; retries and changing model speed can affect the estimate.</p>}
       <StepStates caption={`${stage.name === 'preparation' ? 'Preparation' : 'Training'} steps`} steps={stage.steps} />
     </section>
   );
 }
 
-function AdapterDownload({ run }: { run: Run }) {
+function ArtifactDownload({ run, artifact }: { run: Run; artifact: 'adapter' | 'dataset' }) {
   const request = useRef<AbortController | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
   useEffect(() => () => request.current?.abort(), []);
-  if (!run.adapter_available) return null;
+  const dataset = artifact === 'dataset';
+  const title = dataset ? 'Prepared Dataset' : 'Published Adapter';
+  const filename = dataset ? 'dataset.jsonl' : 'adapter.gguf';
+  if (!(dataset ? run.dataset_available : run.adapter_available)) return null;
 
   async function download() {
     if (request.current || run.state_stale) return;
@@ -221,13 +217,13 @@ function AdapterDownload({ run }: { run: Run }) {
     setError('');
     setSent(false);
     try {
-      const blob = await api.downloadTrainingAdapter(run.workflow_id, run.run_id, controller.signal);
+      const blob = await api.downloadTrainingArtifact(run.workflow_id, run.run_id, artifact, controller.signal);
       if (controller.signal.aborted) return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       try {
         link.href = url;
-        link.download = 'adapter.gguf';
+        link.download = filename;
         document.body.appendChild(link);
         link.click();
       } finally {
@@ -236,7 +232,7 @@ function AdapterDownload({ run }: { run: Run }) {
       }
       setSent(true);
     } catch (err) {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not download adapter.');
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : `Could not download ${artifact}.`);
     } finally {
       if (!controller.signal.aborted) setDownloading(false);
       request.current = null;
@@ -244,16 +240,16 @@ function AdapterDownload({ run }: { run: Run }) {
   }
 
   return (
-    <section className="fine-panel" aria-label="Published Adapter">
-      <div className="fine-panel-heading"><div><span>Training · Published artifact</span><h3>Published Adapter</h3></div></div>
-      <p className="fine-panel-copy">Download this job's published adapter. The service checks availability again when you download.</p>
-      {error && <p className="fine-error" role="alert">Could not download adapter: {error}</p>}
+    <section className="fine-panel" aria-label={title}>
+      <div className="fine-panel-heading"><div><span>{dataset ? 'Preparation · Completed artifact' : 'Training · Published artifact'}</span><h3>{title}</h3></div></div>
+      <p className="fine-panel-copy">{dataset ? `${run.dataset_record_count} verified examples. Download your dataset as JSONL, including small test datasets that are not ready for training.` : "Download this job's published adapter. The service checks availability again when you download."}</p>
+      {error && <p className="fine-error" role="alert">Could not download {artifact}: {error}</p>}
       <div className="fine-actions">
         <button className="btn btn-primary" type="button" disabled={downloading || run.state_stale} onClick={() => void download()}>
-          {downloading ? 'Downloading…' : error ? 'Retry Download' : 'Download Adapter'}
+          {downloading ? 'Downloading…' : error ? 'Retry Download' : dataset ? 'Download Dataset' : 'Download Adapter'}
         </button>
         <span className="fine-action-note" role="status">
-          {run.state_stale ? 'Refresh to confirm current job state before downloading.' : sent ? 'Download sent to your browser.' : downloading ? 'Fetching adapter…' : 'Saves as adapter.gguf.'}
+          {run.state_stale ? 'Refresh to confirm current job state before downloading.' : sent ? 'Download sent to your browser.' : downloading ? `Fetching ${artifact}…` : `Saves as ${filename}.`}
         </span>
       </div>
     </section>
@@ -334,7 +330,7 @@ export function StartPreparedTraining({ run, onRefresh, onStarted }: { run: Run;
   const submitting = submission?.status === 'sending';
   const uncertain = submission?.status === 'uncertain';
   const accepted = submission?.status === 'accepted';
-  if (!waiting && !submission) return null;
+  if (run.preparation_only || (!waiting && !submission)) return null;
 
   async function handleStart() {
     if (await startPreparedTraining(run) && mounted.current) {
@@ -349,6 +345,7 @@ export function StartPreparedTraining({ run, onRefresh, onStarted }: { run: Run;
         <div><span>Preparation complete</span><h3>Dataset Prepared</h3></div>
       </div>
       <p className="fine-panel-copy">Preparation is complete. Start Training uses this job's prepared dataset and the training settings saved when the job was submitted.</p>
+      {!run.training_ready && <p className="fine-action-note" role="status">This dataset has {run.dataset_record_count} examples and is not training-ready. Training needs at least 20 training, 10 validation, and 20 protected test examples, with sufficient distinct facts and valid splits. Small capped datasets are for preparation tests; download this dataset or prepare a larger one to train.</p>}
       {submission?.error && <p className="fine-error" role="alert">{submission.error}</p>}
       <div className="fine-review-actions">
         <span className="fine-action-note" role="status">
@@ -356,10 +353,11 @@ export function StartPreparedTraining({ run, onRefresh, onStarted }: { run: Run;
             : uncertain ? 'Could not confirm authorization. Retry Start Training sends the same submission; it does not create another job.'
               : submitting ? 'Requesting Training authorization…'
                 : run.state_stale ? 'Refresh to confirm the current job state before starting Training.'
-                  : waiting ? 'Training will not start until you choose Start Training.'
+                  : !run.training_ready ? 'Start Training is unavailable for this dataset.'
+                    : waiting ? 'Training will not start until you choose Start Training.'
                     : 'Start Training is available only at the completed Preparation checkpoint.'}
         </span>
-        <button className="btn btn-primary" type="button" disabled={submitting || accepted || (!uncertain && (!waiting || run.state_stale))} onClick={() => void handleStart()}>
+        <button className="btn btn-primary" type="button" disabled={submitting || accepted || (!uncertain && (!waiting || run.state_stale || !run.training_ready))} onClick={() => void handleStart()}>
           {submitting ? 'Submitting…' : uncertain ? 'Retry Start Training' : accepted ? 'Training Authorized' : 'Start Training'}
         </button>
       </div>
@@ -385,12 +383,13 @@ function StepStates({ caption, steps }: { caption: string; steps: TrainingStep[]
   );
 }
 
-// Unsubmitted edits stay local; the provider retains submitted snapshots across
-// navigation so an uncertain request can only be retried with identical input.
+// Keep unsubmitted edits across in-app navigation. Submitted snapshots belong
+// to the provider so uncertain retries cannot change their input.
 function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecords: TrainingPreviewRecord[]; onRefresh: () => void }) {
   const { previewSubmission, continuePreview } = useFineTuningRunner();
   const submission = previewSubmission(run);
-  const [draft, setDraft] = useState(() => (submission?.request.records ?? savedRecords).map((record) => ({ ...record })));
+  const draftKey = JSON.stringify([run.workflow_id, run.run_id, run.checkpoint?.id]);
+  const [draft, setDraft] = useState(() => (submission?.request.records ?? previewDrafts.get(draftKey) ?? savedRecords).map((record) => ({ ...record })));
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -416,11 +415,16 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
   const records = submission && submission.status !== 'rejected' ? submission.request.records : waiting ? draft : savedRecords;
 
   async function handleContinue() {
-    if (await continuePreview(run, records) && mounted.current) { setOpen(false); onRefresh(); }
+    if (await continuePreview(run, records)) {
+      previewDrafts.delete(draftKey);
+      if (mounted.current) { setOpen(false); onRefresh(); }
+    }
   }
 
   function updateRecord(index: number, field: 'prompt' | 'target', value: string) {
-    setDraft((current) => current.map((record, recordIndex) => recordIndex === index ? { ...record, [field]: value } : record));
+    const updated = draft.map((record, recordIndex) => recordIndex === index ? { ...record, [field]: value } : record);
+    previewDrafts.set(draftKey, updated);
+    setDraft(updated);
   }
 
   return (
@@ -444,6 +448,7 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
       <p className="fine-panel-copy">
         {waiting ? 'Review and edit these examples before building the full dataset. Build Training Dataset does not start training.' : 'Saved preview examples. Review is read-only because this job is not waiting at Preview.'}
       </p>
+      {editable && <p className="fine-action-note">Closing this preview does not stop preparation. Your edits stay in this browser session as you move between screens; submit them before reloading or closing this browser tab.</p>}
       {run.preview?.warnings && run.preview.warnings.length > 0 && (
         <ul aria-label="Preparation warnings">{run.preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
       )}

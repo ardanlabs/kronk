@@ -290,8 +290,10 @@ func TestRunSavedCandidateLimit(t *testing.T) {
 			if err != nil || len(out.Decisions) != 1 || out.Decisions[0].Complete || len(out.Decisions[0].Records) != 0 || out.Decisions[0].Reason != "a passage with new or saved examples requires reason=none; " {
 				t.Fatalf("unsupported exclusion of saved work must remain a source conflict: %+v, %v", out, err)
 			}
-		case err == nil || len(out.Decisions) != 0:
-			t.Fatalf("accepted cumulative fourth candidate or exclusion of saved work: %+v, %v", out, err)
+		default:
+			if err != nil || len(out.Decisions) != 1 || out.Decisions[0].Complete || len(out.Decisions[0].Records) != 0 || !strings.Contains(out.Decisions[0].Reason, "at most three") {
+				t.Fatalf("fourth candidate must remain a source conflict without discarding peers: %+v, %v", out, err)
+			}
 		}
 	}
 }
@@ -392,6 +394,114 @@ func generationInput(t *testing.T) (preparation.StepContext, checkpoint.State) {
 	return input, state
 }
 
+func TestDocumentQuestionCap(t *testing.T) {
+	for _, test := range []struct {
+		limit int
+		want  int
+	}{
+		{3, 3}, {20, 20}, {21, 21}, {40, 40}, {0, 64},
+	} {
+		t.Run(fmt.Sprint(test.limit), func(t *testing.T) {
+			input, state := generationInput(t)
+			input.Preparation.Input.Request.MaxQuestions = test.limit
+			if err := input.Workspace.Remove(checkpoint.File); err != nil {
+				t.Fatal(err)
+			}
+			identity, _, err := checkpoint.Load(t.Context(), input, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state.Fingerprint = identity.Fingerprint
+			state.Records = state.Records[:3]
+			state.Next = 0
+			if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+				t.Fatal(err)
+			}
+			evaluations := 0
+			input.Preparation.Completer = completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+				if !strings.Contains(request.Messages[1].Content, "[EVIDENCE 1]") {
+					evaluations++
+					return providers.Completion{Content: fmt.Sprintf(`{"record_1":"What is the opening time for evaluation question %d?"}`, evaluations)}, nil
+				}
+				var decisions []any
+				for _, unit := range state.Units {
+					if !strings.Contains(request.Messages[1].Content, "\n"+unit.Evidence+"\n") {
+						continue
+					}
+					decisions = append(decisions, map[string]any{"evidence_id": len(decisions) + 1, "reason": "none", "examples": []any{map[string]any{"prompt": "What is the opening schedule? " + unit.Reference + "?", "answer_quote": unit.Evidence, "target_id": 0}}})
+				}
+				data, err := json.Marshal(map[string]any{"decisions": decisions})
+				return providers.Completion{Content: string(data)}, err
+			})
+			if _, err := (generate.Step{}).Execute(t.Context(), input); err != nil {
+				t.Fatal(err)
+			}
+			got := savedState(t, input)
+			if len(got.Records) != test.want || !got.Generated || !slices.Equal(got.Records[:3], input.Review.Records) {
+				t.Fatalf("cap %d: got %d records, generated=%v; want %d with review preserved", test.limit, len(got.Records), got.Generated, test.want)
+			}
+			if test.limit > 0 && test.limit <= 34 && evaluations != 0 {
+				t.Fatal("evaluation exceeded the document question cap")
+			}
+			reopen(t, &input)
+			input.Preparation.Completer = completionFunc(func(context.Context, providers.CompletionRequest) (providers.Completion, error) {
+				t.Fatal("completed capped generation called the provider on replay")
+				return providers.Completion{}, nil
+			})
+			if _, err := (generate.Step{}).Execute(t.Context(), input); err != nil {
+				t.Fatal(err)
+			}
+			if replay := savedState(t, input); !reflect.DeepEqual(replay, got) {
+				t.Fatal("replay changed capped results")
+			}
+		})
+	}
+}
+
+func TestFiveQuestionCapWithReviewedPassage(t *testing.T) {
+	input, state := evaluationInput(t)
+	input.Preparation.Input.Request.MaxQuestions = 5
+	if err := input.Workspace.Remove(checkpoint.File); err != nil {
+		t.Fatal(err)
+	}
+	identity, _, err := checkpoint.Load(t.Context(), input, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Fingerprint = identity.Fingerprint
+	unit := preparation.SourceUnit{Reference: "schedule", Evidence: "Harbor opens at dawn; ferry leaves at noon; café closes at dusk; gate locks at midnight.", Targets: []string{"Harbor opens at dawn; ferry leaves at noon; café closes at dusk; gate locks at midnight."}}
+	state.Records = state.Records[:3]
+	state.Records[0].Evidence, state.Records[0].Target = unit.Evidence, "dawn"
+	state.Records[0].FactID = training.FactID(unit.Evidence, "dawn")
+	state.Units = append([]preparation.SourceUnit{unit}, state.Units...)
+	state.Next, state.EvaluationNext = 0, 0
+	input.Review.Records = slices.Clone(state.Records)
+	if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	input.Preparation.Completer = completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+		calls++
+		if calls > 1 {
+			t.Fatal("generation retried after enough valid questions filled the cap")
+		}
+		if strings.Contains(request.Messages[1].Content, "[EVIDENCE 3]") {
+			t.Fatal("requested more passages than the two remaining questions")
+		}
+		return providers.Completion{Content: `{"decisions":[{"evidence_id":1,"examples":[{"prompt":"When does the ferry leave?","answer_quote":"noon","target_id":0},{"prompt":"When does the café close?","answer_quote":"dusk","target_id":0},{"prompt":"When does the gate lock?","answer_quote":"midnight","target_id":0}],"reason":"none"},{"evidence_id":2,"examples":[{"prompt":"What is the next harbor schedule?","answer_quote":"Harbor 3 opens at dawn.","target_id":0}],"reason":"none"}]}`}, nil
+	})
+	if _, err := (generate.Step{}).Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	got := savedState(t, input)
+	if !got.Generated || len(got.Records) != 5 || !slices.Equal(got.Records[:3], input.Review.Records) || got.Records[3].Target != "noon" || got.Records[4].Target != "dusk" {
+		t.Fatalf("lost reviewed or valid generated examples: %+v", got)
+	}
+	if _, err := (generate.Step{}).Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGenerationReviewedPassageCapacity(t *testing.T) {
 	for _, mode := range []string{"two new answers", "approved only", "approved counts toward cap"} {
 		t.Run(mode, func(t *testing.T) {
@@ -433,7 +543,7 @@ func TestGenerationReviewedPassageCapacity(t *testing.T) {
 			if mode == "two new answers" && (len(pending.GenerationDecisions[0].Records) != 1 || pending.GenerationDecisions[0].Records[0].Target != "noon" || pending.GenerationDecisions[0].Complete) {
 				t.Fatalf("partial candidate was not preserved beside approved example: %+v", pending.GenerationDecisions)
 			}
-			if mode == "approved counts toward cap" && (len(pending.GenerationDecisions[0].Records) != 0 || !strings.Contains(pending.GenerationRejectionReason, "at most three")) {
+			if mode == "approved counts toward cap" && (len(pending.GenerationDecisions[0].Records) != 2 || !strings.Contains(pending.GenerationDecisions[0].Reason, "at most three")) {
 				t.Fatalf("approved peer did not consume capacity: %+v", pending)
 			}
 			input.Preparation.Completer = completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {

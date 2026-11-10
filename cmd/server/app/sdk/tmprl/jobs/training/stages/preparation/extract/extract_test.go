@@ -27,7 +27,7 @@ type extractor struct {
 }
 
 func (e extractor) ExtractionProfile() string { return e.profile }
-func (e extractor) Convert(ctx context.Context, path string) (providers.Document, error) {
+func (e extractor) Convert(ctx context.Context, path string, _ providers.DocumentOptions) (providers.Document, error) {
 	return e.convert(ctx, path)
 }
 
@@ -152,6 +152,29 @@ func TestRunRejectsInvalidSources(t *testing.T) {
 				t.Fatalf("invalid result cached: %v", err)
 			}
 		})
+	}
+}
+
+func TestPageRangeExtraction(t *testing.T) {
+	source, workspace, info := roots(t, ".pdf", "original complete PDF")
+	want := providers.Document{Markdown: "Selected chapter has 42 examples.", StructuredJSON: json.RawMessage(`{"texts":[{"text":"Selected chapter has 42 examples."}]}`)}
+	e := extractor{profile: "v1", convert: func(context.Context, string) (providers.Document, error) { return want, nil }}
+	input := preparation.StepContext{Workspace: workspace, Preparation: &preparation.PreparationContext{
+		Input:  preparation.PreparationInput{Kind: preparation.PreparationFull, Request: preparation.PreparationRequest{Goal: preparation.GoalQuestionAnswer, PageStart: 11, PageEnd: 25}},
+		Source: info, Extractor: e, OpenSource: openSource(source, info),
+	}}
+	if _, err := (extract.Step{}).Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := extract.Read(t.Context(), e, info, workspace); !errors.Is(err, preparation.ErrInvalidArgument) {
+		t.Fatalf("selected pages were reused as a whole-document extraction: %v", err)
+	}
+	if _, err := extract.Read(t.Context(), e, info, workspace, providers.DocumentOptions{PageStart: 12, PageEnd: 25}); !errors.Is(err, preparation.ErrInvalidArgument) {
+		t.Fatalf("selected pages were reused for a different range: %v", err)
+	}
+	got, err := extract.Read(t.Context(), e, info, workspace, providers.DocumentOptions{PageStart: 11, PageEnd: 25})
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("could not resume selected-page extraction: %+v, %v", got, err)
 	}
 }
 

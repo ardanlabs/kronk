@@ -32,6 +32,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}
 	p := input.Preparation
+	limit := p.Input.Request.MaxQuestions
 	if p.Completer == nil {
 		return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("%w: preparation completer is required", preparation.ErrInvalidArgument)
 	}
@@ -41,6 +42,9 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		}
 		if err := training.ValidateReviewedRecords(input.Review.Records); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("%w: %s", preparation.ErrInvalidArgument, err)
+		}
+		if limit > 0 && len(input.Review.Records) > limit {
+			return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("%w: reviewed examples exceed max_questions", preparation.ErrInvalidArgument)
 		}
 		for _, r := range input.Review.Records {
 			if !r.UserApproved || r.SourceDocument != p.Source.ID || !slices.ContainsFunc(state.Units, func(u preparation.SourceUnit) bool { return u.Evidence == r.Evidence }) {
@@ -71,7 +75,11 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 	commitBatch := func(end int) error {
 		for _, decision := range state.GenerationDecisions {
-			state.Records = append(state.Records, decision.Records...)
+			records := decision.Records
+			if limit > 0 {
+				records = records[:min(len(records), max(0, limit-len(state.Records)))]
+			}
+			state.Records = append(state.Records, records...)
 			switch {
 			case !decision.Complete:
 				reason := fmt.Sprintf("generation failed after %d batch requests; valid candidates retained: %s", state.GenerationAttempts, decision.Reason)
@@ -82,6 +90,10 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			}
 		}
 		state.Next = end
+		if limit > 0 && len(state.Records) >= limit {
+			state.Next = len(state.Units)
+			state.Result.Warnings = append(state.Result.Warnings, "Document question cap reached; remaining source coverage and evaluation questions may be omitted")
+		}
 		state.GenerationAttempts = 0
 		state.GenerationRejections, state.GenerationRejectedPrompt, state.GenerationRejectionReason = 0, "", ""
 		state.GenerationDecisions = nil
@@ -96,7 +108,21 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		if err := ctx.Err(); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		end := min(state.Next+5, len(state.Units))
+		if limit > 0 && len(state.Records) >= limit {
+			if err := commitBatch(state.Next); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+			break
+		}
+		batchSize := 5
+		if limit > 0 {
+			batchSize = min(batchSize, limit-len(state.Records))
+		}
+		// A resumed request keeps its original passage boundaries.
+		if len(state.GenerationDecisions) > 0 {
+			batchSize = len(state.GenerationDecisions)
+		}
+		end := min(state.Next+batchSize, len(state.Units))
 		if len(state.GenerationDecisions) == 0 {
 			for _, unit := range state.Units[state.Next:end] {
 				state.GenerationDecisions = append(state.GenerationDecisions, checkpoint.GenerationDecision{Reference: unit.Reference})
@@ -176,6 +202,18 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			decision.Records = append(state.GenerationDecisions[positions[i]].Records, decision.Records...)
 			state.GenerationDecisions[positions[i]] = decision
 		}
+		candidates := len(state.Records)
+		for _, decision := range state.GenerationDecisions {
+			candidates += len(decision.Records)
+		}
+		// The envelope was validated and these candidates passed grounding and
+		// integrity checks. Unneeded candidates must not block a capped run.
+		if limit > 0 && candidates >= limit {
+			if err := commitBatch(end); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+			continue
+		}
 		// Only a validated final response can resolve individual source failures.
 		// Unknown/interrupted requests and malformed envelopes retain the fatal gate.
 		if unresolved && state.GenerationAttempts == maxRequestAttempts {
@@ -200,7 +238,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	training := slices.DeleteFunc(slices.Clone(state.Records), func(r training.Record) bool { return r.ValidationPrompt || r.IndependentPrompt })
 	if p.Input.Kind == preparation.PreparationFull && p.Input.Request.Goal == preparation.GoalQuestionAnswer && len(training) >= 20 {
 		report(tmprl.Progress{Completed: state.EvaluationNext, Total: 30, Message: "Generating evaluation questions"})
-		for state.EvaluationNext < 30 {
+		for state.EvaluationNext < 30 && (limit == 0 || len(state.Records) < limit) {
 			if err := ctx.Err(); err != nil {
 				return tmprl.StepResult[preparation.Artifacts]{}, err
 			}

@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import type { TrainingRun, TrainingRunsResponse } from '../types';
 
-export default function TrainingHistory({ onSelect }: { onSelect: (run: TrainingRun) => void }) {
+export default function TrainingHistory({ onSelect, preparationOnly = false }: { onSelect: (run: TrainingRun) => void; preparationOnly?: boolean }) {
   const [pages, setPages] = useState<TrainingRunsResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const request = useRef<AbortController | null>(null);
   const watch = useRef<AbortController | null>(null);
-  const runs = pages.flatMap((page) => page.runs);
+  const runs = pages.flatMap((page) => page.runs).filter((run) => !!run.preparation_only === preparationOnly);
+  const title = preparationOnly ? 'Preparation Runs' : 'Training History';
   const nextPageToken = pages.at(-1)?.next_page_token;
   const loaded = pages.length > 0;
 
@@ -31,7 +32,7 @@ export default function TrainingHistory({ onSelect }: { onSelect: (run: Training
       }
       setPages((previous) => token ? [...previous, ...updated] : updated);
     } catch (err) {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load training history.');
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load history.');
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -73,14 +74,14 @@ export default function TrainingHistory({ onSelect }: { onSelect: (run: Training
   }, [pages, load]);
 
   return (
-    <section className="fine-panel fine-history" aria-label="Training History" aria-busy={loading}>
+    <section className="fine-panel fine-history" aria-label={title} aria-busy={loading}>
       <div className="fine-panel-heading">
-        <div><span>Archive</span><h3>Training History</h3></div>
+        <div><span>Archive</span><h3>{title}</h3></div>
         <button className="btn btn-primary" disabled={loading} onClick={() => void load('', Math.max(1, pages.length))}>Refresh</button>
       </div>
-      {error && <div className="fine-error" role="alert">Could not load training history: {error}. {loaded ? 'The displayed jobs are from the last successful request. ' : ''}Select Refresh to retry.</div>}
-      {loading && <p role="status">Loading training history…</p>}
-      {loaded && runs.length === 0 && !loading && !error && <div className="fine-history-empty"><strong>No saved runs</strong><span>Training jobs will appear here after they are submitted.</span></div>}
+      {error && <div className="fine-error" role="alert">Could not load {preparationOnly ? 'preparation runs' : 'training history'}: {error}. {loaded ? 'The displayed jobs are from the last successful request. ' : ''}Select Refresh to retry.</div>}
+      {loading && <p role="status">Loading {preparationOnly ? 'preparation runs' : 'training history'}…</p>}
+      {loaded && runs.length === 0 && !loading && !error && <div className="fine-history-empty"><strong>No saved runs</strong><span>{preparationOnly ? 'Preparation' : 'Training'} jobs will appear here after they are submitted.</span></div>}
       {runs.length > 0 && (
         <div className="fine-history-table-wrap">
           <table className="fine-history-table">

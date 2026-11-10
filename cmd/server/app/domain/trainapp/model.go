@@ -37,20 +37,26 @@ func (app Upload) Encode() ([]byte, string, error) {
 // NewTraining submits one job using an uploaded document or prepared JSONL dataset.
 // The job owns model approval, dataset readiness, defaults, and training policy.
 type NewTraining struct {
-	ID        string              `json:"id"`
-	Model     string              `json:"model"`
-	DatasetID string              `json:"dataset_id"`
-	Prepare   *PreparationOptions `json:"prepare,omitzero"`
-	Training  TrainingOptions     `json:"training"`
+	ID              string              `json:"id"`
+	PreparationOnly bool                `json:"preparation_only"`
+	Model           string              `json:"model"`
+	DatasetID       string              `json:"dataset_id"`
+	Prepare         *PreparationOptions `json:"prepare,omitzero"`
+	Training        TrainingOptions     `json:"training"`
 }
 
 // PreparationOptions selects a source document and its preparation model.
 type PreparationOptions struct {
-	DatasetID      string `json:"dataset_id"`
-	Model          string `json:"model"`
-	Goal           string `json:"goal"`
-	Instructions   string `json:"instructions,omitzero"`
-	PreviewRecords int    `json:"preview_records,omitzero"`
+	DatasetID       string `json:"dataset_id"`
+	TargetDatasetID string `json:"target_dataset_id,omitzero"`
+	BaseVersion     int    `json:"base_version,omitzero"`
+	Model           string `json:"model"`
+	Goal            string `json:"goal"`
+	Instructions    string `json:"instructions,omitzero"`
+	PreviewRecords  int    `json:"preview_records,omitzero"`
+	MaxQuestions    int    `json:"max_questions,omitzero"` // Zero leaves document preparation unlimited.
+	PageStart       int    `json:"page_start,omitzero"`
+	PageEnd         int    `json:"page_end,omitzero"`
 }
 
 // TrainingOptions carries user-selected settings without applying job policy.
@@ -79,7 +85,7 @@ func (app *NewTraining) Decode(data []byte) error {
 
 func toJobRequest(app NewTraining) (training.Request, error) {
 	var fields errs.FieldErrors
-	if strings.TrimSpace(app.Model) == "" {
+	if !app.PreparationOnly && strings.TrimSpace(app.Model) == "" {
 		fields.Add("model", fmt.Errorf("is required"))
 	}
 	if app.Prepare == nil && strings.TrimSpace(app.DatasetID) == "" {
@@ -89,7 +95,7 @@ func toJobRequest(app NewTraining) (training.Request, error) {
 		return training.Request{}, fields
 	}
 	request := training.Request{
-		ID: app.ID, Model: app.Model, DatasetID: app.DatasetID,
+		ID: app.ID, Model: app.Model, DatasetID: app.DatasetID, PreparationOnly: app.PreparationOnly,
 		Training: optimization.Training{
 			MaximumEpochs: app.Training.MaximumEpochs, BatchSize: app.Training.BatchSize,
 			LearningRate: app.Training.LearningRate, Seed: app.Training.Seed,
@@ -99,8 +105,12 @@ func toJobRequest(app NewTraining) (training.Request, error) {
 	if app.Prepare != nil {
 		request.Prepare = &preparation.PreparationRequest{
 			DatasetID: app.Prepare.DatasetID, Model: app.Prepare.Model,
+			TargetDatasetID: app.Prepare.TargetDatasetID, BaseVersion: app.Prepare.BaseVersion,
 			Goal: preparation.Goal(app.Prepare.Goal), Instructions: app.Prepare.Instructions,
 			PreviewRecords: app.Prepare.PreviewRecords,
+			MaxQuestions:   app.Prepare.MaxQuestions,
+			PageStart:      app.Prepare.PageStart,
+			PageEnd:        app.Prepare.PageEnd,
 		}
 	}
 	return request, nil
@@ -122,21 +132,27 @@ func (r Runs) Encode() ([]byte, string, error) {
 // Run is the public state of one training execution. Internal requests,
 // artifact paths, worker identities, and backend error messages are not exposed.
 type Run struct {
-	WorkflowID          string     `json:"workflow_id"`
-	RunID               string     `json:"run_id"`
-	Status              string     `json:"status"`
-	Stage               string     `json:"stage,omitzero"`
-	Step                string     `json:"step,omitzero"`
-	StateStale          bool       `json:"state_stale"`
-	StartedAt           time.Time  `json:"started_at"`
-	UpdatedAt           time.Time  `json:"updated_at,omitzero"`
-	ClosedAt            time.Time  `json:"closed_at,omitzero"`
-	Stages              []Stage    `json:"stages"`
-	Progress            Progress   `json:"progress,omitzero"`
-	Checkpoint          Checkpoint `json:"checkpoint,omitzero"`
-	Preview             Preview    `json:"preview,omitzero"`
-	EvaluationAvailable bool       `json:"evaluation_available"`
-	AdapterAvailable    bool       `json:"adapter_available"`
+	WorkflowID             string     `json:"workflow_id"`
+	PreparationOnly        bool       `json:"preparation_only"`
+	PreparedDatasetID      string     `json:"prepared_dataset_id,omitzero"`
+	PreparedDatasetVersion int        `json:"prepared_dataset_version,omitzero"`
+	RunID                  string     `json:"run_id"`
+	Status                 string     `json:"status"`
+	Stage                  string     `json:"stage,omitzero"`
+	Step                   string     `json:"step,omitzero"`
+	StateStale             bool       `json:"state_stale"`
+	StartedAt              time.Time  `json:"started_at"`
+	UpdatedAt              time.Time  `json:"updated_at,omitzero"`
+	ClosedAt               time.Time  `json:"closed_at,omitzero"`
+	Stages                 []Stage    `json:"stages"`
+	Progress               Progress   `json:"progress,omitzero"`
+	Checkpoint             Checkpoint `json:"checkpoint,omitzero"`
+	Preview                Preview    `json:"preview,omitzero"`
+	DatasetAvailable       bool       `json:"dataset_available"`
+	DatasetRecordCount     int        `json:"dataset_record_count"`
+	TrainingReady          bool       `json:"training_ready"`
+	EvaluationAvailable    bool       `json:"evaluation_available"`
+	AdapterAvailable       bool       `json:"adapter_available"`
 }
 
 // Evaluation exposes persisted scores, not a new acceptance calculation.
@@ -174,6 +190,67 @@ func toAppEvaluation(report evaluate.EvaluationReport) Evaluation {
 			Prompt: answer.Prompt, Expected: answer.Expected,
 			BaseAnswer: answer.BaseAnswer, AdapterAnswer: answer.AdapterAnswer,
 		}
+	}
+	return result
+}
+
+// Dataset exposes preparation assets without filesystem paths or record bodies.
+type Dataset struct {
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Version       int               `json:"version"`
+	RecordCount   int               `json:"record_count"`
+	TrainingReady bool              `json:"training_ready"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	Versions      []int             `json:"versions"`
+	Documents     []DatasetDocument `json:"documents"`
+}
+
+type DatasetDocument struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	RecordCount int    `json:"record_count"`
+	PageStart   int    `json:"page_start"`
+	PageEnd     int    `json:"page_end"`
+}
+
+func (d Dataset) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(d)
+	return data, "application/json", err
+}
+
+type Datasets struct {
+	Datasets []Dataset `json:"datasets"`
+}
+
+func (d Datasets) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(d)
+	return data, "application/json", err
+}
+
+type NewDataset struct {
+	Name string `json:"name"`
+}
+
+func (d *NewDataset) Decode(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(d); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return fmt.Errorf("request body must contain one dataset object")
+	}
+	return nil
+}
+
+func toAppDataset(d preparation.Dataset) Dataset {
+	result := Dataset{ID: d.ID, Name: d.Name, Version: d.Version, RecordCount: d.RecordCount, TrainingReady: d.TrainingReady,
+		CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt, Versions: slices.Clone(d.Versions), Documents: make([]DatasetDocument, len(d.Documents))}
+	for i, document := range d.Documents {
+		result.Documents[i] = DatasetDocument{ID: document.ID, Name: document.Name, RecordCount: document.RecordCount, PageStart: document.PageStart, PageEnd: document.PageEnd}
 	}
 	return result
 }
@@ -294,10 +371,11 @@ type Step struct {
 
 // Progress contains backend-reported counts, not an estimated percentage.
 type Progress struct {
-	Stage     string `json:"stage"`
-	Step      string `json:"step"`
-	Completed int    `json:"completed"`
-	Total     int    `json:"total"`
+	Stage            string `json:"stage"`
+	Step             string `json:"step"`
+	Completed        int    `json:"completed"`
+	Total            int    `json:"total"`
+	RemainingSeconds int64  `json:"remaining_seconds,omitzero"`
 }
 
 // Encode implements web.Encoder.
@@ -309,12 +387,16 @@ func (r Run) Encode() ([]byte, string, error) {
 func toAppRun(run tmprl.Run[training.Request, training.Artifacts]) Run {
 	result := Run{
 		WorkflowID: run.WorkflowID, RunID: run.RunID, Status: string(run.Status),
-		Stage: string(run.Stage), Step: run.Step, StateStale: run.StateStale,
+		PreparationOnly: run.Request.PreparationOnly,
+		Stage:           string(run.Stage), Step: run.Step, StateStale: run.StateStale,
 		StartedAt: run.StartedAt, UpdatedAt: run.UpdatedAt, ClosedAt: run.ClosedAt,
 		Stages:              make([]Stage, len(run.Stages)),
 		EvaluationAvailable: run.Artifacts.Training.Report != "",
 		AdapterAvailable: run.Status == tmprl.StatusCompleted && run.Artifacts.Training.Accepted &&
 			run.Artifacts.Training.Report != "" && run.Artifacts.Training.Adapter != "",
+	}
+	if prepared := run.Artifacts.Preparation; prepared != nil {
+		result.PreparedDatasetID, result.PreparedDatasetVersion = prepared.SavedDatasetID, prepared.SavedVersion
 	}
 	for i, stage := range run.Stages {
 		result.Stages[i] = Stage{
@@ -334,11 +416,23 @@ func toAppRun(run tmprl.Run[training.Request, training.Artifacts]) Run {
 			Stage: string(run.Progress.Stage), Step: run.Progress.Step,
 			Completed: run.Progress.Completed, Total: run.Progress.Total,
 		}
+		if run.Status == tmprl.StatusRunning && !run.StateStale && run.Progress.Stage == run.Stage && run.Progress.Step == run.Step {
+			result.Progress.RemainingSeconds = int64(run.Progress.Remaining().Round(time.Second) / time.Second)
+		}
 	}
 	if run.Checkpoint != nil {
 		result.Checkpoint = Checkpoint{
 			ID: run.Checkpoint.ID, Name: run.Checkpoint.Name,
 			Stage: run.Checkpoint.Stage, Step: run.Checkpoint.Step,
+		}
+	}
+	if prepared := run.Artifacts.Preparation; prepared != nil {
+		result.DatasetAvailable = run.Request.Prepare != nil && prepared.DatasetID == run.Request.Prepare.DatasetID && prepared.RecordsPath != ""
+		result.DatasetRecordCount = prepared.RecordCount
+		result.TrainingReady = result.DatasetAvailable && prepared.TrainingReady
+		if prepared.SavedDatasetID != "" {
+			result.DatasetRecordCount = prepared.SavedRecordCount
+			result.TrainingReady = result.DatasetAvailable && prepared.SavedTrainingReady
 		}
 	}
 	if preview := run.Artifacts.Preview; preview != nil {

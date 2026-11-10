@@ -1417,13 +1417,32 @@ export interface PreparationOptions {
   model: string;
   goal: 'question_answer' | 'classification' | 'numeric_prediction' | 'text_generation';
   instructions: string;
+  target_dataset_id?: string;
+  base_version?: number;
   preview_records?: number;
+  max_questions?: number;
+  page_start?: number;
+  page_end?: number;
 }
 
 export type NewTrainingRun = {
+  id?: string;
   model: string;
   training: TrainingOptions;
+  preparation_only?: boolean;
 } & ({ dataset_id: string; prepare?: never } | { prepare: PreparationOptions & { dataset_id: string }; dataset_id?: never });
+
+export interface PreparationDataset {
+  id: string;
+  name: string;
+  version: number;
+  record_count: number;
+  training_ready: boolean;
+  created_at: string;
+  updated_at: string;
+  versions: number[];
+  documents: { id: string; name: string; record_count: number; page_start: number; page_end: number }[];
+}
 
 // Statuses and ordered stages/steps come from the job runner.
 export interface TrainingRunsResponse {
@@ -1458,17 +1477,23 @@ export interface TrainingDecisionReceipt {
 export interface TrainingRun {
   workflow_id: string;
   run_id: string;
+  preparation_only: boolean;
+  prepared_dataset_id?: string;
+  prepared_dataset_version?: number;
   status: string;
   stage?: string;
   step?: string;
   state_stale: boolean;
   evaluation_available: boolean;
   adapter_available: boolean;
+  dataset_available: boolean;
+  dataset_record_count: number;
+  training_ready: boolean;
   started_at: string;
   updated_at?: string;
   closed_at?: string;
   stages: TrainingStage[];
-  progress?: { stage: string; step: string; completed: number; total: number };
+  progress?: { stage: string; step: string; completed: number; total: number; remaining_seconds?: number };
   checkpoint?: { id: string; name: string; stage: string; step?: string };
   preview?: { records: TrainingPreviewRecord[]; warnings?: string[] };
 }

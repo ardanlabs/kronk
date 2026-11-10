@@ -1404,6 +1404,11 @@ tr.selected:hover td {
     padding: 24px;
 }
 
+.fine-current-preparation {
+    margin-bottom: 18px;
+    border-left: 4px solid var(--color-orange);
+}
+
 .fine-panel-heading,
 .fine-run-heading {
     display: flex;
@@ -2315,6 +2320,45 @@ tr.selected:hover td {
 
 .fine-history-table-wrap {
     overflow-x: auto;
+}
+
+.fine-dataset-collection {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+    gap: 18px;
+}
+
+.fine-dataset-card {
+    box-shadow: none;
+}
+
+.fine-dataset-card .fine-panel-heading {
+    flex-wrap: wrap;
+}
+
+.fine-dataset-card h3 {
+    overflow-wrap: anywhere;
+}
+
+.fine-dataset-card > .fine-actions {
+    margin-top: 16px;
+}
+
+.fine-dataset-download {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.fine-dataset-download .form-group {
+    flex: 1 1 140px;
+    margin-bottom: 0;
+}
+
+.fine-dataset-download .fine-error {
+    flex-basis: 100%;
 }
 
 .fine-history-table {

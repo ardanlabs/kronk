@@ -151,7 +151,11 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 	}
 	if len(state.GenerationDecisions) > 0 {
 		end := min(state.Next+5, len(state.Units))
-		if state.GenerationAttempts == 0 || state.Generated || state.EvaluationNext != 0 || state.Verified != 0 || len(state.GenerationDecisions) != end-state.Next {
+		validSize := len(state.GenerationDecisions) == end-state.Next
+		if limit := p.Input.Request.MaxQuestions; limit > 0 {
+			validSize = validSize || len(state.GenerationDecisions) == min(end-state.Next, max(0, limit-len(state.Records)))
+		}
+		if state.GenerationAttempts == 0 || state.Generated || state.EvaluationNext != 0 || state.Verified != 0 || !validSize {
 			return State{}, false, fmt.Errorf("pending generation decisions do not match the reserved batch")
 		}
 		candidates := slices.Clone(state.Records)

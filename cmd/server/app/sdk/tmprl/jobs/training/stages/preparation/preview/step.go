@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/internal/checkpoint"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/verify"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 )
 
 // Step produces reviewable examples, never a training-ready dataset.
@@ -37,7 +38,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	resources.Input.Kind = preparation.PreparationPreview
 
 	// Extract must already have produced this document. Never convert here.
-	document, err := extract.Read(ctx, resources.Extractor, resources.Source, input.Workspace)
+	document, err := extract.Read(ctx, resources.Extractor, resources.Source, input.Workspace, providers.DocumentOptions{PageStart: resources.Input.Request.PageStart, PageEnd: resources.Input.Request.PageEnd})
 	if err != nil {
 		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}

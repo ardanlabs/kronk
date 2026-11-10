@@ -54,6 +54,7 @@ import type {
   DecisionRequest,
   DecisionResponse,
   NewTrainingRun,
+  PreparationDataset,
   TrainingUpload,
   TrainingRun,
   TrainingEvaluation,
@@ -1296,6 +1297,28 @@ class ApiService {
 
   // ── Training app ──
 
+  async preparationDatasets(signal?: AbortSignal): Promise<{ datasets: PreparationDataset[] }> {
+    return this.request('/training/datasets', { signal, cache: 'no-store' });
+  }
+
+  async createPreparationDataset(name: string): Promise<PreparationDataset> {
+    return this.request('/training/datasets', { method: 'POST', body: JSON.stringify({ name }) });
+  }
+
+  async preparationDataset(id: string, signal?: AbortSignal): Promise<PreparationDataset> {
+    return this.request(`/training/datasets/${encodeURIComponent(id)}`, { signal, cache: 'no-store' });
+  }
+
+  async removePreparationDocument(id: string, documentID: string, baseVersion: number): Promise<PreparationDataset> {
+    return this.request(`/training/datasets/${encodeURIComponent(id)}/documents/${encodeURIComponent(documentID)}?base_version=${baseVersion}`, { method: 'DELETE' });
+  }
+
+  async downloadPreparationDataset(id: string, version: number): Promise<Blob> {
+    const response = await this.fetch(`${this.baseUrl}/training/datasets/${encodeURIComponent(id)}/versions/${version}/download`, { cache: 'no-store' });
+    if (!response.ok) throw new ApiError(response.status, await this.parseErrorMessage(response));
+    return response.blob();
+  }
+
   async uploadTrainingDataset(file: File, signal?: AbortSignal): Promise<TrainingUpload> {
     const form = new FormData();
     form.append('file', file, file.name);
@@ -1365,8 +1388,8 @@ class ApiService {
     });
   }
 
-  async downloadTrainingAdapter(workflowID: string, runID: string, signal?: AbortSignal): Promise<Blob> {
-    const response = await this.fetch(`${this.baseUrl}/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/adapter`, {
+  async downloadTrainingArtifact(workflowID: string, runID: string, artifact: 'adapter' | 'dataset', signal?: AbortSignal): Promise<Blob> {
+    const response = await this.fetch(`${this.baseUrl}/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/${artifact}`, {
       signal,
       cache: 'no-store',
     });

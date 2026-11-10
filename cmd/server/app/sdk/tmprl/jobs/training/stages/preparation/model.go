@@ -42,10 +42,15 @@ const (
 // PreparationRequest refers to an imported document, never an arbitrary path.
 type PreparationRequest struct {
 	DatasetID       string            `json:"dataset_id"`
+	TargetDatasetID string            `json:"target_dataset_id,omitzero"`
+	BaseVersion     int               `json:"base_version,omitzero"`
 	Model           string            `json:"model"`
 	Goal            Goal              `json:"goal"`
 	Instructions    string            `json:"instructions,omitzero"`
 	PreviewRecords  int               `json:"preview_records,omitzero"`
+	MaxQuestions    int               `json:"max_questions,omitzero"` // Maximum saved examples, including review and evaluation; zero is unlimited.
+	PageStart       int               `json:"page_start,omitzero"`
+	PageEnd         int               `json:"page_end,omitzero"`
 	ReviewedRecords []training.Record `json:"reviewed_records,omitzero"`
 }
 
@@ -57,16 +62,20 @@ type Review struct {
 
 // PreparationResult identifies published records and preparation usage.
 type PreparationResult struct {
-	DatasetID        string            `json:"dataset_id"`
-	RecordsPath      string            `json:"records_path"`
-	ReportPath       string            `json:"report_path"`
-	RecordCount      int               `json:"record_count"`
-	Preview          []training.Record `json:"preview,omitzero"`
-	PromptTokens     int               `json:"prompt_tokens"`
-	CompletionTokens int               `json:"completion_tokens"`
-	TrainingReady    bool              `json:"training_ready"`
-	Warnings         []string          `json:"warnings,omitzero"`
-	Exclusions       []SourceExclusion `json:"source_exclusions,omitzero"`
+	DatasetID          string            `json:"dataset_id"`
+	SavedDatasetID     string            `json:"saved_dataset_id,omitzero"`
+	SavedVersion       int               `json:"saved_version,omitzero"`
+	SavedRecordCount   int               `json:"saved_record_count,omitzero"`
+	SavedTrainingReady bool              `json:"saved_training_ready,omitzero"`
+	RecordsPath        string            `json:"records_path"`
+	ReportPath         string            `json:"report_path"`
+	RecordCount        int               `json:"record_count"`
+	Preview            []training.Record `json:"preview,omitzero"`
+	PromptTokens       int               `json:"prompt_tokens"`
+	CompletionTokens   int               `json:"completion_tokens"`
+	TrainingReady      bool              `json:"training_ready"`
+	Warnings           []string          `json:"warnings,omitzero"`
+	Exclusions         []SourceExclusion `json:"source_exclusions,omitzero"`
 }
 
 // SourceUnit couples one whole focal block's targets with bounded source context.
@@ -90,7 +99,7 @@ type PreparationInput struct {
 
 // DocumentExtractor converts a source and identifies its extraction profile.
 type DocumentExtractor interface {
-	Convert(context.Context, string) (providers.Document, error)
+	Convert(context.Context, string, providers.DocumentOptions) (providers.Document, error)
 	ExtractionProfile() string
 }
 
