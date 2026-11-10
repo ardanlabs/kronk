@@ -113,7 +113,7 @@ install-test-decision: install-kronk ## Download local decision test fixtures
 	kronk model pull --local "LiquidAI/d1-2B-GGUF/d1-2B-Q4_K_M" && \
 	kronk model pull --local "LiquidAI/d1-Omni-2B-Q8_0" && \
 	kronk model pull --local "ggml-org/vllm-d3-edge-Q8_0"
-	@echo "Decision2 requires KRONK_TEST_DECISION2_MODEL; see sdk/kronk/model/decision_model_test.go"
+	@echo "Decision2 is skipped until an upstream-compatible GGUF is published."
 	@echo
 
 # Use this to install models for the class.
