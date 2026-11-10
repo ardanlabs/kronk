@@ -38,10 +38,14 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 
 	if profile.Role == modelprofile.RoleVisionEncoder {
 		if metadata["clip.has_gen_audio_encoder"] == "true" {
-			if profile.ComputeKind != modelprofile.ComputeChatterboxTurboDecoder {
+			switch profile.ComputeKind {
+			case modelprofile.ComputeChatterboxTurboDecoder:
+				return chatterboxTurboDecoderResult(metadata, tensors, modelSizeBytes, cfg)
+			case modelprofile.ComputeQwen3TTSDecoder:
+				return qwen3TTSDecoderResult(metadata, tensors, modelSizeBytes, cfg)
+			default:
 				return Result{}, fmt.Errorf("build-from-metadata: unsupported speech decoder allocation family")
 			}
-			return chatterboxTurboDecoderResult(metadata, tensors, modelSizeBytes, cfg)
 		}
 
 		// A projector also reserves a compute arena. Retain the common
@@ -56,7 +60,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 	}
 
 	if profile.Purpose == modelprofile.PurposeSpeech || profile.ComputeKind == modelprofile.ComputeChatterboxTurboBackbone {
-		if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone {
+		if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone && profile.ComputeKind != modelprofile.ComputeQwen3TTSBackbone {
 			return Result{}, fmt.Errorf("build-from-metadata: unsupported speech backbone allocation family")
 		}
 		frames, err := speechFrames(cfg.Speech)
@@ -78,7 +82,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		}
 	}
 
-	if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone {
+	if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone && profile.ComputeKind != modelprofile.ComputeQwen3TTSBackbone {
 		cfg.Speech = nil
 	}
 
@@ -147,6 +151,20 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		}
 	}
 
+	var speechEmbeddingBytes int64
+	if profile.ComputeKind == modelprofile.ComputeQwen3TTSBackbone {
+		vocabularySize = 0
+		for _, tensor := range tensors {
+			if tensor.Name == "token_embd.weight" && len(tensor.Dims) == 2 && tensor.Dims[0] == embeddingLength {
+				// Qwen's table combines text and codec vocabularies; its
+				// output projection has fewer rows than this helper cache.
+				vocabularySize = tensor.Dims[1]
+				if tensor.GGMLType != 0 {
+					speechEmbeddingBytes = tensor.Bytes
+				}
+			}
+		}
+	}
 	if cfg.Speech != nil && (vocabularySize <= 0 || embeddingLength <= 0) {
 		return Result{}, fmt.Errorf("build-from-metadata: speech requires vocabulary and embedding dimensions")
 	}
@@ -200,6 +218,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		RecurrentStateCopies:  recurrentStateCopies,
 		NUBatch:               cfg.NUBatch,
 		Speech:                cfg.Speech,
+		speechEmbeddingBytes:  speechEmbeddingBytes,
 		OutputRows:            outputRows,
 		KVUnified:             cfg.KVUnified,
 		EmbeddingLength:       embeddingLength,

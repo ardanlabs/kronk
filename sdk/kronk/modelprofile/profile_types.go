@@ -317,6 +317,10 @@ var (
 	ComputeChatterboxTurboBackbone = newComputeKind(15)
 	// ComputeChatterboxTurboDecoder identifies shared Turbo flow/vocoder allocations.
 	ComputeChatterboxTurboDecoder = newComputeKind(16)
+	// ComputeQwen3TTSBackbone identifies Qwen speech backbone and helper allocations.
+	ComputeQwen3TTSBackbone = newComputeKind(17)
+	// ComputeQwen3TTSDecoder identifies shared Qwen predictor/codec and per-helper state.
+	ComputeQwen3TTSDecoder = newComputeKind(18)
 )
 
 func newComputeKind(value uint8) ComputeKind {

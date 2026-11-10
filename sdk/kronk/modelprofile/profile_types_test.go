@@ -104,6 +104,7 @@ func TestComputeKindNumericWireValues(t *testing.T) {
 		modelprofile.ComputeLlama, modelprofile.ComputeClef, modelprofile.ComputeModernBERT,
 		modelprofile.ComputeDeepSeek41, modelprofile.ComputeLFM3, modelprofile.ComputeKimiK3,
 		modelprofile.ComputeChatterboxTurboBackbone, modelprofile.ComputeChatterboxTurboDecoder,
+		modelprofile.ComputeQwen3TTSBackbone, modelprofile.ComputeQwen3TTSDecoder,
 	}
 	for index, member := range members {
 		if member.Value() != uint8(index) || !modelprofile.MustParseComputeKind(uint8(index)).Equal(member) {

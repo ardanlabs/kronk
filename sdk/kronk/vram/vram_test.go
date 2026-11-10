@@ -3,6 +3,7 @@ package vram
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -147,6 +148,122 @@ func TestFromBytesSpeechDecoderMemory(t *testing.T) {
 	tensors = append(tensors, gguf.TensorInfo{Name: "a.gen.t3.text_pos_emb", Dims: []int64{1024, 2048}})
 	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 555371392, cfg); err == nil {
 		t.Error("accepted multilingual decoder as Turbo")
+	}
+}
+
+func TestFromBytesQwen3TTSMemory(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture": "qwen3tts", "qwen3tts.block_count": "28",
+		"qwen3tts.embedding_length": "2048", "qwen3tts.feed_forward_length": "6144",
+		"qwen3tts.attention.head_count": "16", "qwen3tts.attention.head_count_kv": "8",
+		"qwen3tts.attention.key_length": "128", "qwen3tts.attention.value_length": "128",
+		"qwen3tts.vocab_size": "3072",
+	}
+	tensors := []gguf.TensorInfo{
+		{Name: "token_embd.weight", Dims: []int64{2048, 155008}, GGMLType: 8},
+		{Name: "output.weight", Dims: []int64{2048, 3072}, GGMLType: 8},
+	}
+	header := deepseek41Header(t, metadata, tensors)
+	single, err := FromBytes(header, 1847874400, Config{ComputeBackend: "metal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if single.Input.Speech == nil || single.Input.ContextWindow != 2048 || single.Input.NUBatch != 512 || single.SlotMemory != 224<<20 {
+		t.Fatalf("Qwen speech limits/KV: %+v", single)
+	}
+	// The helper copies the combined 155008-row embedding table, not just the
+	// 3072-row output vocabulary. Initialization also reads the encoded table.
+	if single.ComputeBufferCPU < 1269825536+337297408 {
+		t.Fatalf("Qwen helper table/readback omitted: got %d", single.ComputeBufferCPU)
+	}
+	multiple, err := FromBytes(header, 1847874400, Config{ComputeBackend: "metal", Slots: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if multiple.SlotMemory != 896<<20 || multiple.ComputeBufferCPU-single.ComputeBufferCPU < 3*1269825536 {
+		t.Fatal("Qwen per-helper tables or backbone KV did not scale with slots")
+	}
+	short, err := FromBytes(header, 1847874400, Config{ComputeBackend: "metal", Speech: &SpeechConfig{MaxFrames: 71}})
+	if err != nil || short.ComputeBufferCPU >= single.ComputeBufferCPU || short.SlotMemory != single.SlotMemory {
+		t.Fatalf("frame cap must reduce output allowance, not backbone KV: %+v, %v", short, err)
+	}
+	if _, err := FromBytes(deepseek41Header(t, metadata, tensors[1:]), 1847874400, Config{}); err == nil {
+		t.Fatal("accepted missing combined embedding table")
+	}
+	for _, frames := range []int64{-1, 513} {
+		if _, err := FromBytes(header, 1847874400, Config{Speech: &SpeechConfig{MaxFrames: frames}}); err == nil {
+			t.Errorf("accepted invalid Qwen frame limit %d", frames)
+		}
+	}
+}
+
+func TestFromBytesQwen3TTSDecoderMemory(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture": "clip", "clip.has_gen_audio_encoder": "true",
+		"clip.gen.audio.projector_type": "qwen3tts_gen",
+		"clip.has_audio_encoder":        "true", "clip.audio.projector_type": "qwen3tts_spkenc",
+		"clip.audio.embedding_length": "1536", "clip.audio.block_count": "3",
+		"clip.audio.attention.head_count": "1", "clip.audio.projection_dim": "2048",
+		"clip.gen.audio.embedding_length": "1024", "clip.gen.audio.block_count": "5",
+		"clip.gen.audio.feed_forward_length": "3072", "clip.gen.audio.projection_dim": "2048",
+		"clip.gen.audio.attention.head_count": "16", "clip.gen.audio.attention.head_count_kv": "8",
+	}
+	tensors := []gguf.TensorInfo{
+		{Name: "a.gen.code.head.weight", Dims: []int64{1024, 2048, 15}},
+		{Name: "a.gen.code.out_embd.weight", Dims: []int64{2048, 3072}},
+		{Name: "a.gen.wav.tfm.blk.0.attn_q.weight", Dims: []int64{512, 1024}},
+		{Name: "a.gen.wav.tfm.blk.7.attn_q.weight", Dims: []int64{512, 1024}},
+		{Name: "a.gen.wav.pre_conv.weight", Dims: []int64{3, 512, 1024}},
+		{Name: "a.gen.wav.up.blk.0.dwconv.weight", Dims: []int64{7, 1, 1024}},
+		{Name: "a.gen.wav.up.blk.1.dwconv.weight", Dims: []int64{7, 1, 1024}},
+		{Name: "a.gen.wav.dac.entry.weight", Dims: []int64{7, 1024, 1536}},
+		{Name: "a.gen.wav.dac.post_conv.weight", Dims: []int64{7, 96, 1}},
+	}
+	for block, shape := range [][]int64{{16, 768, 1536}, {10, 384, 768}, {8, 192, 384}, {6, 96, 192}} {
+		tensors = append(tensors, gguf.TensorInfo{Name: fmt.Sprintf("a.gen.wav.dac.blk.%d.conv.weight", block), Dims: shape})
+		for residual := range 3 {
+			tensors = append(tensors, gguf.TensorInfo{Name: fmt.Sprintf("a.gen.wav.dac.blk.%d.res.%d.conv1.weight", block, residual), Dims: []int64{7, shape[1], shape[1]}})
+		}
+	}
+	header := deepseek41Header(t, metadata, tensors)
+	cfg := Config{ComputeBackend: "metal"}
+	single, err := FromBytes(header, 669081472, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if single.SlotMemory != 0 || single.ModelWeightsGPU != 669081472 || single.ComputeBufferEst < 1536<<20 {
+		t.Fatalf("Qwen decoder shared weights/workspace or graph-local KV: %+v", single)
+	}
+	cfg.Slots = 4
+	multiple, err := FromBytes(header, 669081472, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Native's 38 F32 state slots hold 5,218,948 payload bytes per helper.
+	// Only this state scales on GPU: shared arenas must not be multiplied.
+	delta := multiple.ComputeBufferEst - single.ComputeBufferEst
+	if delta < 3*5218948 || delta > 20<<20 || multiple.ModelWeightsGPU != single.ModelWeightsGPU {
+		t.Fatalf("Qwen decoder slot scaling: got GPU delta %d", delta)
+	}
+	cfg.Speech = &SpeechConfig{MaxFrames: 71}
+	short, err := FromBytes(header, 669081472, cfg)
+	if err != nil || short.ComputeBufferEst != multiple.ComputeBufferEst {
+		t.Fatalf("frame cap changed the fixed 72-frame decoder graph: %+v, %v", short, err)
+	}
+	for _, backend := range []string{"", "cpu", "cuda"} {
+		cfg.ComputeBackend = backend
+		if _, err := FromBytes(header, 669081472, cfg); err == nil {
+			t.Errorf("accepted uncalibrated Qwen backend %q", backend)
+		}
+	}
+	cfg.ComputeBackend, cfg.GPULayers = "metal", -1
+	if _, err := FromBytes(header, 669081472, cfg); err == nil {
+		t.Fatal("accepted uncalibrated Qwen CPU decoder")
+	}
+	cfg.GPULayers = 0
+	tensors[0].Dims[2] = 14
+	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 669081472, cfg); err == nil {
+		t.Fatal("accepted uncalibrated Qwen codebook layout")
 	}
 }
 

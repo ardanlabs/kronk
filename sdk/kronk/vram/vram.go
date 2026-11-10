@@ -142,6 +142,8 @@ type Input struct {
 	cacheLayerDevices     []int                    // Internal placement for shared compressed-cache mirrors.
 	speechReferenceTokens int64                    // Largest preset reference read from the decoder tensors.
 	speechVoiceBytes      int64                    // Materialized preset voice payload.
+	speechEmbeddingBytes  int64                    // Encoded embedding readback during lazy helper initialization.
+	speechCodecStateBytes int64                    // F32 persistent codec state per active helper.
 }
 
 // Result contains the calculated VRAM requirements.
