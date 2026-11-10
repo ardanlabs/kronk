@@ -17,7 +17,7 @@ import (
 // in activity errors or logs.
 type duplicateQuestion struct{ prompt string }
 
-func (*duplicateQuestion) Error() string { return "evaluation question repeats an existing prompt" }
+func (*duplicateQuestion) Error() string { return "generated record repeats an existing prompt" }
 
 // EvaluationRecord rephrases an existing question for a locked source fact.
 // It requests one candidate, using the last rejected question on retries.

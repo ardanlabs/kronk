@@ -2,9 +2,9 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { api, ApiError } from '../services/api';
 import type { ContinueTrainingPreview, PreparationOptions, StartPreparedTraining, TrainingOptions, TrainingPreviewRecord, TrainingRun, TrainingUpload } from '../types';
 
-export const FINE_TUNING_MODEL_ID = 'ggml-org/gemma-3-270m-it-Q8_0';
+export const FINE_TUNING_MODEL_ID = 'ggml-org/gemma-3-1b-it-Q8_0';
 
-// Initial form values from the exercised Gemma 270M training run, not model policy.
+// Initial form values, not model policy.
 export const TESTED_TRAINING_OPTIONS: TrainingOptions = {
   maximum_epochs: 1,
   batch_size: 1,
@@ -36,6 +36,11 @@ interface TrainingSubmission {
   error: string;
 }
 
+interface StopSubmission {
+  status: 'sending' | 'requested' | 'failed';
+  error: string;
+}
+
 interface FineTuningRunnerValue {
   inputKind: 'dataset' | 'document';
   preparedFile: File | null;
@@ -43,6 +48,8 @@ interface FineTuningRunnerValue {
   uploading: boolean;
   submitting: boolean;
   currentRun: TrainingRun | null;
+  preparationRun: TrainingRun | null;
+  trainingRun: TrainingRun | null;
   error: string;
   watchError: string;
   preparationActivity: FineTuningActivity | null;
@@ -51,11 +58,13 @@ interface FineTuningRunnerValue {
   cancelPreparation: () => void;
   startRun: (training: TrainingOptions, preparation?: PreparationOptions) => Promise<boolean>;
   selectRun: (run: TrainingRun) => void;
-  refreshRun: () => Promise<void>;
+  refreshRun: (run?: TrainingRun) => Promise<void>;
   previewSubmission: (run: TrainingRun) => PreviewSubmission | undefined;
   continuePreview: (run: TrainingRun, records: TrainingPreviewRecord[]) => Promise<boolean>;
   trainingSubmission: (run: TrainingRun) => TrainingSubmission | undefined;
   startPreparedTraining: (run: TrainingRun) => Promise<boolean>;
+  stopSubmission: (run: TrainingRun) => StopSubmission | undefined;
+  stopRun: (run: TrainingRun) => Promise<void>;
 }
 
 const FineTuningRunnerContext = createContext<FineTuningRunnerValue | null>(null);
@@ -66,7 +75,10 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const [upload, setUpload] = useState<TrainingUpload | null>(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [currentRun, setCurrentRun] = useState<TrainingRun | null>(null);
+  const [preparationRun, setPreparationRun] = useState<TrainingRun | null>(null);
+  const [trainingRun, setTrainingRun] = useState<TrainingRun | null>(null);
+  const [selectedRun, setSelectedRun] = useState<'preparation' | 'training'>('preparation');
+  const currentRun = selectedRun === 'preparation' ? preparationRun : trainingRun;
   const [error, setError] = useState('');
   const [watchError, setWatchError] = useState('');
   const [watchAttempt, setWatchAttempt] = useState(0);
@@ -76,14 +88,18 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const [previewSubmissions, setPreviewSubmissions] = useState<Record<string, PreviewSubmission>>({});
   const trainingRequests = useRef<Record<string, TrainingSubmission>>({});
   const [trainingSubmissions, setTrainingSubmissions] = useState<Record<string, TrainingSubmission>>({});
-  const activeRun = currentRun && !terminalStatuses.has(currentRun.status) ? currentRun : null;
-  const workflowID = activeRun?.workflow_id;
-  const runID = activeRun?.run_id;
+  const stopRequests = useRef<Record<string, StopSubmission>>({});
+  const [stopSubmissions, setStopSubmissions] = useState<Record<string, StopSubmission>>({});
+  const activePreparation = preparationRun && !terminalStatuses.has(preparationRun.status) ? preparationRun : null;
+  const activeTraining = trainingRun && !terminalStatuses.has(trainingRun.status) ? trainingRun : null;
+  const trainingJob = activeTraining ?? (activePreparation?.stage === 'training' ? activePreparation : null);
+  const watchedRuns = JSON.stringify([activePreparation, activeTraining].filter((run) => run !== null).map((run) => [run.workflow_id, run.run_id]));
 
   useEffect(() => () => uploadAbort.current?.abort(), []);
 
   useEffect(() => {
-    if (!workflowID || !runID) return;
+    const identities: [string, string][] = JSON.parse(watchedRuns);
+    if (identities.length === 0) return;
     const controller = new AbortController();
     setWatchError('');
     void (async () => {
@@ -91,11 +107,13 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
         let revision = '';
         while (!controller.signal.aborted) {
           const page = await api.trainingRuns('', controller.signal, revision);
-          const run = page.runs.find((item) => item.workflow_id === workflowID && item.run_id === runID)
-            ?? await api.trainingRun(workflowID, runID, controller.signal);
+          const updates = await Promise.all(identities.map(async ([workflowID, runID]) => page.runs.find((item) => item.workflow_id === workflowID && item.run_id === runID)
+            ?? await api.trainingRun(workflowID, runID, controller.signal)));
           if (controller.signal.aborted) return;
-          setCurrentRun(run);
-          if (terminalStatuses.has(run.status)) return;
+          const update = (selected: TrainingRun | null) => updates.find((run) => selected?.workflow_id === run.workflow_id && selected.run_id === run.run_id) ?? selected;
+          setPreparationRun(update);
+          setTrainingRun(update);
+          if (updates.every((run) => terminalStatuses.has(run.status))) return;
           revision = page.revision;
         }
       } catch (err) {
@@ -103,7 +121,18 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       }
     })();
     return () => controller.abort();
-  }, [workflowID, runID, watchAttempt]);
+  }, [watchedRuns, watchAttempt]);
+
+  const selectRun = (run: TrainingRun) => {
+    setWatchError('');
+    if (run.stages.some((stage) => stage.name === 'preparation')) {
+      setPreparationRun(run);
+      setSelectedRun('preparation');
+    } else {
+      setTrainingRun(run);
+      setSelectedRun('training');
+    }
+  };
 
   const cancelPreparation = () => {
     uploadAbort.current?.abort();
@@ -141,7 +170,8 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   };
 
   const startRun = async (training: TrainingOptions, preparation?: PreparationOptions): Promise<boolean> => {
-    if (!upload || uploading || activeRun || submissionPending.current) return false;
+    if (!upload || uploading || submissionPending.current) return false;
+    if (inputKind === 'document' ? !!activePreparation : !!trainingJob) return false;
     if (inputKind === 'document' && !preparation?.model) return false;
     submissionPending.current = true;
     setSubmitting(true);
@@ -153,8 +183,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
           ? { prepare: { ...preparation, dataset_id: upload.id } }
           : { dataset_id: upload.id }),
       });
-      setCurrentRun(run);
-      setWatchError('');
+      selectRun(run);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Job submission failed');
@@ -165,15 +194,37 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     }
   };
 
-  const refreshRun = async () => {
-    if (!currentRun) return;
+  const refreshRun = async (selected = currentRun) => {
+    if (!selected) return;
     setWatchError('');
     try {
-      const run = await api.trainingRun(currentRun.workflow_id, currentRun.run_id);
-      setCurrentRun((selected) => selected?.workflow_id === run.workflow_id && selected.run_id === run.run_id ? run : selected);
+      const run = await api.trainingRun(selected.workflow_id, selected.run_id);
+      const update = (current: TrainingRun | null) => current?.workflow_id === run.workflow_id && current.run_id === run.run_id ? run : current;
+      setPreparationRun(update);
+      setTrainingRun(update);
       setWatchAttempt((attempt) => attempt + 1);
     } catch (err) {
       setWatchError(err instanceof Error ? err.message : 'Could not refresh training job');
+    }
+  };
+
+  const stopRun = async (run: TrainingRun): Promise<void> => {
+    const key = JSON.stringify([run.workflow_id, run.run_id]);
+    const previous = stopRequests.current[key];
+    if (terminalStatuses.has(run.status) || previous?.status === 'sending' || previous?.status === 'requested') return;
+    const update = (submission: StopSubmission) => {
+      // Guard duplicate clicks synchronously and retain state across Back/navigation.
+      stopRequests.current = { ...stopRequests.current, [key]: submission };
+      setStopSubmissions(stopRequests.current);
+    };
+    update({ status: 'sending', error: '' });
+    try {
+      await api.stopTrainingRun(run.workflow_id, run.run_id);
+      update({ status: 'requested', error: '' });
+      // Cancellation acceptance is not a terminal job state. Polling remains authoritative.
+      setWatchAttempt((attempt) => attempt + 1);
+    } catch (err) {
+      update({ status: 'failed', error: err instanceof Error ? err.message : 'Could not confirm the cancellation request.' });
     }
   };
 
@@ -257,25 +308,27 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
 
   return (
     <FineTuningRunnerContext.Provider value={{
-      inputKind, preparedFile, upload, uploading, submitting, currentRun, error, watchError,
+      inputKind, preparedFile, upload, uploading, submitting, currentRun, preparationRun, trainingRun, error, watchError,
       preparationActivity: uploading ? { kind: 'preparation', title: inputKind === 'document' ? 'Uploading document…' : 'Uploading dataset…', stage: preparedFile?.name ?? '', completed: 0, total: 0 }
-        : activeRun?.stage === 'preparation' ? {
-          kind: 'preparation', title: activeRun.status === 'waiting' ? 'Preparation waiting…' : 'Preparing dataset…',
-          stage: activeRun.step || activeRun.status,
-          completed: activeRun.progress?.completed ?? 0, total: activeRun.progress?.total ?? 0,
+        : activePreparation?.stage === 'preparation' ? {
+          kind: 'preparation', title: activePreparation.status === 'waiting' ? 'Preparation waiting…' : 'Preparing dataset…',
+          stage: activePreparation.step || activePreparation.status,
+          completed: activePreparation.progress?.completed ?? 0, total: activePreparation.progress?.total ?? 0,
         } : null,
-      trainingActivity: activeRun && activeRun.stage !== 'preparation' ? {
+      trainingActivity: trainingJob ? {
         kind: 'training', title: 'Training model…',
-        stage: [activeRun.stage, activeRun.step].filter(Boolean).join(' / ') || activeRun.status,
-        completed: activeRun.progress?.completed ?? 0, total: activeRun.progress?.total ?? 0,
+        stage: [trainingJob.stage, trainingJob.step].filter(Boolean).join(' / ') || trainingJob.status,
+        completed: trainingJob.progress?.completed ?? 0, total: trainingJob.progress?.total ?? 0,
       } : null,
       chooseInput, cancelPreparation, startRun,
-      selectRun: (run) => { setWatchError(''); setCurrentRun(run); },
+      selectRun,
       refreshRun,
       previewSubmission: (run) => previewSubmissions[JSON.stringify([run.workflow_id, run.run_id])],
       continuePreview,
       trainingSubmission: (run) => trainingSubmissions[JSON.stringify([run.workflow_id, run.run_id])],
       startPreparedTraining,
+      stopSubmission: (run) => stopSubmissions[JSON.stringify([run.workflow_id, run.run_id])],
+      stopRun,
     }}>
       {children}
     </FineTuningRunnerContext.Provider>

@@ -1118,6 +1118,10 @@ tr.selected:hover td {
     margin: 0 auto;
 }
 
+.main-content:has(.fine-page) {
+    min-width: 0;
+}
+
 .fine-page-header {
     display: flex;
     align-items: flex-start;
@@ -1279,6 +1283,28 @@ tr.selected:hover td {
     border-left: 4px solid var(--color-orange);
 }
 
+.fine-generation-summary > .btn,
+.fine-model-picker > .btn,
+.fine-preview-launcher > .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.fine-model-picker {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.fine-model-picker > select {
+    min-width: 0;
+    flex: 1;
+}
+
+.fine-preview-count > select {
+    max-width: 180px;
+}
+
 .fine-generation-summary h3 {
     margin-top: 10px;
     color: var(--color-gray-900);
@@ -1289,13 +1315,6 @@ tr.selected:hover td {
     margin-top: 5px;
     color: var(--color-gray-600);
     font-size: 13px;
-}
-
-.fine-workbench {
-    display: grid;
-    grid-template-columns: 190px minmax(0, 1fr);
-    gap: 24px;
-    align-items: start;
 }
 
 .fine-prepare-skip {
@@ -1322,76 +1341,6 @@ tr.selected:hover td {
 .fine-prepare-skip span {
     color: var(--color-gray-600);
     font-size: 13px;
-}
-
-.fine-stage-rail {
-    position: sticky;
-    top: 24px;
-    list-style: none;
-}
-
-.fine-stage-rail li {
-    position: relative;
-    display: grid;
-    grid-template-columns: 30px 1fr;
-    gap: 10px;
-    min-height: 64px;
-    align-items: start;
-    color: var(--color-gray-500);
-    font-size: 13px;
-}
-
-.fine-stage-rail li:not(:last-child)::after {
-    position: absolute;
-    top: 30px;
-    bottom: 0;
-    left: 14px;
-    width: 1px;
-    background: var(--color-gray-300);
-    content: '';
-}
-
-.fine-stage-rail li > span {
-    z-index: 1;
-    display: grid;
-    width: 30px;
-    height: 30px;
-    place-items: center;
-    border: 1px solid var(--color-gray-300);
-    border-radius: 50%;
-    background: var(--color-white);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
-}
-
-.fine-stage-rail li > strong {
-    padding-top: 6px;
-    font-weight: 600;
-}
-
-.fine-stage-rail li.active,
-.fine-stage-rail li.complete {
-    color: var(--color-gray-900);
-}
-
-.fine-stage-rail li.active > span {
-    border-color: var(--color-orange);
-    background: var(--color-orange);
-    color: var(--color-blue);
-    box-shadow: 0 0 0 4px rgba(240, 181, 49, 0.16);
-}
-
-.fine-stage-rail li.complete > span {
-    border-color: var(--color-success);
-    color: var(--color-success-dark);
-}
-
-.fine-workbench > .fine-panel:not(.fine-review-panel) {
-    grid-column: 2;
-}
-
-.fine-review-panel {
-    grid-column: 2;
 }
 
 .fine-document-review-nav {
@@ -1696,6 +1645,15 @@ tr.selected:hover td {
     align-items: center;
 }
 
+.fine-independent-training {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
 .fine-page .btn-secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -1897,27 +1855,203 @@ tr.selected:hover td {
     transition: width 0.3s ease;
 }
 
-.fine-preparation-progress {
+.fine-job-view {
     display: grid;
-    min-height: 250px;
-    align-content: center;
-    gap: 24px;
+    gap: 18px;
 }
 
-.fine-preparation-progress h3 {
-    margin-top: 12px;
+.fine-job-view > .fine-run-heading {
+    margin: 8px 0 0;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.fine-job-progress {
+    border-top: 3px solid var(--color-orange);
+}
+
+.fine-job-progress h3 {
+    margin-top: 8px;
+    font-size: 25px;
+}
+
+.fine-job-count {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: 24px;
+    gap: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-gray-600);
+}
+
+.fine-job-count strong {
+    font-size: 28px;
+    font-weight: 600;
     color: var(--color-gray-900);
-    font-size: 19px;
 }
 
-.fine-preparation-progress p {
+.fine-job-count strong > span {
+    color: var(--color-gray-500);
+    font-size: 18px;
+    font-weight: 400;
+}
+
+.fine-job-progress .fine-progress-track {
+    margin: 12px 0 24px;
+}
+
+.fine-job-timing {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px 48px;
+    margin: 24px 0 14px;
+}
+
+.fine-job-timing > div,
+.fine-step-item > div {
+    display: grid;
+    gap: 5px;
+}
+
+.fine-job-timing span,
+.fine-step-item > div > span,
+.fine-step-time {
+    color: var(--color-gray-600);
+    font-size: 12px;
+}
+
+.fine-job-timing strong {
+    color: var(--color-gray-900);
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+}
+
+.fine-step-plan {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-gray-200);
+}
+
+.fine-step-plan h4 {
+    color: var(--color-gray-600);
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.fine-step-plan ol {
+    display: grid;
+    gap: 6px;
+    list-style: none;
+    padding: 0;
+}
+
+.fine-step-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px;
+    border-radius: 7px;
+    color: var(--color-gray-700);
+    font-size: 13px;
+}
+
+.fine-step-marker {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 50%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+}
+
+.fine-step-running {
+    background: var(--color-active-blue-bg);
+}
+
+.fine-step-running .fine-step-marker {
+    border-color: var(--color-orange);
+    background: var(--color-orange);
+    color: var(--color-blue);
+}
+
+.fine-step-completed .fine-step-marker {
+    border-color: var(--color-success);
+    color: var(--color-success-dark);
+}
+
+.fine-step-failed .fine-step-marker {
+    border-color: var(--color-error);
+    color: var(--color-error);
+}
+
+.fine-step-time {
+    margin-left: auto;
+    text-align: right;
+}
+
+.fine-job-details > summary {
+    cursor: pointer;
+    color: var(--color-gray-700);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.fine-job-details .fine-run-facts {
+    margin-top: 20px;
+}
+
+.fine-preview-launcher {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.fine-preview-launcher h3 {
+    font-size: 16px;
+    color: var(--color-gray-900);
+}
+
+.fine-preview-launcher p {
     margin-top: 6px;
     color: var(--color-gray-600);
     font-size: 13px;
 }
 
-.fine-preparation-progress > .btn {
-    justify-self: end;
+.fine-preview-dialog {
+    width: min(1000px, calc(100vw - 40px));
+    max-height: calc(100dvh - 48px);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 12px;
+    color: var(--color-gray-900);
+    background: var(--color-white);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+}
+
+.fine-preview-dialog::backdrop {
+    background: rgba(20, 22, 38, 0.6);
+}
+
+.fine-preview-dialog .fine-review-panel {
+    border: 0;
+    box-shadow: none;
+}
+
+.fine-preview-dialog .fine-panel-heading {
+    flex-wrap: wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fine-job-progress .fine-progress-track span {
+        transition: none;
+    }
 }
 
 .fine-preparation-status {
@@ -2242,30 +2376,6 @@ tr.selected:hover td {
         grid-column: 1;
     }
 
-    .fine-workbench {
-        grid-template-columns: 1fr;
-    }
-
-    .fine-stage-rail {
-        position: static;
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-    }
-
-    .fine-stage-rail li {
-        grid-template-columns: 30px 1fr;
-        min-height: auto;
-    }
-
-    .fine-stage-rail li:not(:last-child)::after {
-        display: none;
-    }
-
-    .fine-workbench > .fine-panel:not(.fine-review-panel),
-    .fine-review-panel {
-        grid-column: 1;
-    }
-
     .fine-form-grid,
     .fine-run-facts {
         grid-template-columns: 1fr 1fr;
@@ -2277,6 +2387,23 @@ tr.selected:hover td {
 }
 
 @media (max-width: 560px) {
+    .main-content:has(.fine-page) {
+        padding: 20px 14px;
+    }
+
+    .fine-page .fine-panel {
+        padding: 18px;
+    }
+
+    .fine-page .fine-panel-heading {
+        flex-wrap: wrap;
+    }
+
+    .fine-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
     .fine-run-card:has(.training-evaluation),
     .training-evaluation {
         padding: 12px;
@@ -2294,15 +2421,25 @@ tr.selected:hover td {
 
     .fine-dataset-ready,
     .fine-generation-summary,
+    .fine-preview-launcher,
+    .fine-model-picker,
     .fine-prepare-skip,
     .fine-supported-model {
         align-items: stretch;
         flex-direction: column;
     }
 
-    .fine-stage-rail {
-        grid-template-columns: 1fr;
-        gap: 8px;
+    .fine-preview-dialog {
+        width: calc(100vw - 20px);
+        max-height: calc(100dvh - 20px);
+    }
+
+    .fine-preview-dialog .fine-review-panel {
+        padding: 16px;
+    }
+
+    .fine-step-time {
+        display: none;
     }
 
     .fine-form-grid,

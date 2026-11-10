@@ -1351,6 +1351,13 @@ class ApiService {
     });
   }
 
+  async stopTrainingRun(workflowID: string, runID: string): Promise<void> {
+    await this.request<void>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/stop`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(30_000),
+    });
+  }
+
   async trainingEvaluation(workflowID: string, runID: string, signal?: AbortSignal): Promise<TrainingEvaluation> {
     return this.request<TrainingEvaluation>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/evaluation`, {
       signal,

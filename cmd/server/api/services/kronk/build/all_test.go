@@ -51,15 +51,18 @@ func TestTrainingRouteWiring(t *testing.T) {
 		},
 	}, nil)
 	log := logger.New(io.Discard, logger.LevelInfo, "route-test", nil)
-	for _, enabled := range []bool{false, true} {
-		name := "disabled"
-		var cfg build.Config
-		if enabled {
-			name = "enabled"
-			cfg.Training = trainapp.Config{Job: job, Uploads: store}
-		}
-		t.Run(name, func(t *testing.T) {
-			api := mux.WebAPI(mux.Config{Log: log, AuthorizationMode: auth.Open}, build.Routes(cfg))
+	for _, test := range []struct {
+		name       string
+		training   trainapp.Config
+		wantUpload int
+		wantRun    int
+	}{
+		{"disabled", trainapp.Config{}, http.StatusNotFound, http.StatusNotFound},
+		{"uploads-only", trainapp.Config{Uploads: store}, http.StatusBadRequest, http.StatusServiceUnavailable},
+		{"enabled", trainapp.Config{Job: job, Uploads: store}, http.StatusBadRequest, http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			api := mux.WebAPI(mux.Config{Log: log, AuthorizationMode: auth.Open}, build.Routes(build.Config{Training: test.training}))
 			for _, legacy := range []struct{ method, path string }{
 				{http.MethodPost, "/fine-tuning/datasets"},
 				{http.MethodGet, "/fine-tuning/prepare/models"},
@@ -83,23 +86,16 @@ func TestTrainingRouteWiring(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/training/uploads", nil))
-			wantUploadStatus := http.StatusNotFound
-			if enabled {
-				wantUploadStatus = http.StatusBadRequest
-			}
-			if w.Code != wantUploadStatus {
+			if w.Code != test.wantUpload {
 				t.Fatalf("upload route: %d %s", w.Code, w.Body)
 			}
 			w = httptest.NewRecorder()
 			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/training/runs/training-example/run-2", nil))
-			if !enabled {
-				if w.Code != http.StatusNotFound {
-					t.Fatalf("disabled route: %d %s", w.Code, w.Body)
-				}
-				return
+			if w.Code != test.wantRun {
+				t.Fatalf("run route: %d %s", w.Code, w.Body)
 			}
-			if w.Code != http.StatusOK {
-				t.Fatalf("enabled route: %d %s", w.Code, w.Body)
+			if test.wantRun != http.StatusOK {
+				return
 			}
 			var got trainapp.Run
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {

@@ -64,12 +64,12 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 
 	if !exists {
-		passages, warnings, err := Passages(document.Markdown, resources.Input.Request.Goal, resources.Input.Request.PreviewRecords)
+		units, exclusions, err := Units(document, resources.Input.Request.Goal, resources.Input.Request.PreviewRecords)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		state.Passages = passages
-		state.Result.Warnings = append(state.Result.Warnings, warnings...)
+		state.Units = units
+		state.Result.Exclusions = exclusions
 		if err := ctx.Err(); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
@@ -79,22 +79,21 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 
 	if !state.Generated {
-		report(0, len(state.Passages), "Generating preview examples")
-		records, usage, err := generate.Run(ctx, resources.Completer, resources.Input.Request, state.Passages, nil)
+		report(state.Next, len(state.Units), "Generating preview examples")
+		// Reuse the generation owner and the same durable batch-attempt protocol.
+		// Preview kind prevents held-out generation; verification remains below.
+		if _, err := (generate.Step{}).Execute(ctx, previewInput); err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+		state, _, err = checkpoint.Load(ctx, previewInput, false)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		for i := range records {
-			records[i].SourceDocument = resources.Source.ID
-		}
-		state.Records = records
-		state.Generated = true
-		state.Next = len(state.Passages)
-		state.Result.PromptTokens += usage.PromptTokens
-		state.Result.CompletionTokens += usage.CompletionTokens
-		if err := ctx.Err(); err != nil {
-			return tmprl.StepResult[preparation.Artifacts]{}, err
-		}
+	}
+
+	if state.Verified == 0 && len(state.Records) > resources.Input.Request.PreviewRecords {
+		// Sampling is a Preview display bound, not a full-dataset source exclusion.
+		state.Records = sampleRecords(state.Units, state.Records, resources.Input.Request.PreviewRecords)
 		if err := tmprl.WriteJSON(workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
@@ -102,7 +101,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 
 	if state.Verified < len(state.Records) {
 		report(0, len(state.Records), "Checking preview examples")
-		warnings, usage, err := verify.Run(ctx, resources.Completer, resources.Input.Request, document.Markdown, state.Records)
+		warnings, usage, err := verify.Run(ctx, resources.Completer, resources.Input.Request, "", state.Records)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
@@ -110,6 +109,9 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		state.Result.Warnings = append(state.Result.Warnings, warnings...)
 		state.Result.PromptTokens += usage.PromptTokens
 		state.Result.CompletionTokens += usage.CompletionTokens
+		if len(state.Result.Exclusions) > 0 {
+			state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("%d source exclusions recorded; inspect source_exclusions", len(state.Result.Exclusions)))
+		}
 	}
 	state.Result.Preview = state.Records
 	state.Result.RecordCount = len(state.Records)

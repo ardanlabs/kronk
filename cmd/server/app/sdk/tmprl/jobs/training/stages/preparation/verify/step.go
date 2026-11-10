@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/internal/checkpoint"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"go.temporal.io/sdk/temporal"
 )
 
 // Step verifies generated records and owns publication of preparation artifacts.
@@ -22,8 +23,8 @@ type Step struct{}
 // Name identifies the verification step within the preparation stage.
 func (Step) Name() string { return "verify" }
 
-// Execute checkpoints verification batches and publishes only after all required
-// checks succeed. Rejected full datasets are never exposed as training input.
+// Execute checkpoints verification batches and publishes only passing full
+// records. Rejected approved examples still require review; Preview stays intact.
 func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.StepResult[preparation.Artifacts], error) {
 	state, _, err := checkpoint.Load(ctx, input, false)
 	if err != nil {
@@ -50,13 +51,11 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}
-	var documentContext string
 	if state.Verified < len(state.Records) {
-		document, err := extract.Read(ctx, p.Extractor, p.Source, input.Workspace)
+		_, err := extract.Read(ctx, p.Extractor, p.Source, input.Workspace)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		documentContext = document.Markdown
 	}
 	report := func() {
 		if input.Publish != nil {
@@ -80,21 +79,53 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 				}
 			}
 		}
-		warnings, usage, err := Run(ctx, p.Completer, p.Input.Request, documentContext, state.Records[state.Verified:end])
+		outcomes, usage, err := run(ctx, p.Completer, p.Input.Request, "", state.Records[state.Verified:end])
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		if len(warnings) > 0 && p.Input.Kind == preparation.PreparationFull {
-			return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("records failed verification: %s", strings.Join(warnings, "; "))
+		if err := ctx.Err(); err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		state.Result.Warnings = append(state.Result.Warnings, warnings...)
+		// Check approvals before changing any record, warning or cursor in this batch.
+		for i, outcome := range outcomes {
+			r := state.Records[state.Verified+i]
+			if outcome != "pass" && p.Input.Kind == preparation.PreparationFull && (r.UserApproved || state.Verified+i < state.ReviewedCount) {
+				return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("approved example requires review: %q: %s", r.Prompt, outcome)
+			}
+		}
+		kept := state.Records[:state.Verified]
+		for i, outcome := range outcomes {
+			r := state.Records[state.Verified+i]
+			switch {
+			case outcome == "pass":
+				kept = append(kept, r)
+			case p.Input.Kind == preparation.PreparationPreview:
+				kept = append(kept, r)
+				state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("record %d: %s", i+1, outcome))
+			default:
+				reference := r.FactID
+				for _, unit := range state.Units {
+					if unit.Evidence == r.Evidence {
+						reference = unit.Reference
+						break
+					}
+				}
+				reason := fmt.Sprintf("verification rejected example %q: %s", r.Prompt, outcome)
+				state.Result.Exclusions = append(state.Result.Exclusions, preparation.SourceExclusion{Reference: reference, Reason: reason})
+				state.Result.Warnings = append(state.Result.Warnings, reference+": "+reason)
+			}
+		}
 		state.Result.PromptTokens += usage.PromptTokens
 		state.Result.CompletionTokens += usage.CompletionTokens
-		state.Verified = end
+		state.Verified = len(kept)
+		state.Records = append(kept, state.Records[end:]...)
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
 		report()
+	}
+	if p.Input.Kind == preparation.PreparationFull && !slices.ContainsFunc(state.Records, func(r training.Record) bool { return !r.ValidationPrompt && !r.IndependentPrompt }) {
+		return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError("no training examples passed verification; rejection reasons are saved in the preparation checkpoint", "preparation-no-verified-examples", nil)
 	}
 	result := state.Result
 	name := "dataset"

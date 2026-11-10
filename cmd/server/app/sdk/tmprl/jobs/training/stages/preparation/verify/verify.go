@@ -16,6 +16,21 @@ import (
 // Run verifies each record against its own evidence and returns rejection reasons
 // and usage. Document context supplies the topic, never additional factual support.
 func Run(ctx context.Context, completer preparation.ModelCompleter, request preparation.PreparationRequest, documentContext string, records []training.Record) ([]string, providers.Completion, error) {
+	outcomes, usage, err := run(ctx, completer, request, documentContext, records)
+	if err != nil {
+		return nil, usage, err
+	}
+	var warnings []string
+	for i, outcome := range outcomes {
+		if outcome != "pass" {
+			warnings = append(warnings, fmt.Sprintf("record %d: %s", i+1, outcome))
+		}
+	}
+	return warnings, usage, nil
+}
+
+// run returns validated outcomes in record order, without parsing warning text.
+func run(ctx context.Context, completer preparation.ModelCompleter, request preparation.PreparationRequest, documentContext string, records []training.Record) ([]string, providers.Completion, error) {
 	var prompt strings.Builder
 	fmt.Fprintf(&prompt, "[DOCUMENT CONTEXT: TOPIC ONLY]\n%s\n[END DOCUMENT CONTEXT]\n", documentContext)
 	var required []string
@@ -50,16 +65,15 @@ Return grounding for unsupported premises or wrong answers, task_quality for poo
 	if len(outcomes) != len(records) {
 		return nil, completion, fmt.Errorf("verifier returned the wrong number of outcomes")
 	}
-	var warnings []string
+	ordered := make([]string, len(records))
 	for i := range records {
 		outcome := outcomes[fmt.Sprintf("record_%d", i+1)]
 		switch outcome {
-		case "pass":
-		case "grounding", "task_quality", "user_requirements":
-			warnings = append(warnings, fmt.Sprintf("record %d: %s", i+1, outcome))
+		case "pass", "grounding", "task_quality", "user_requirements":
+			ordered[i] = outcome
 		default:
 			return nil, completion, fmt.Errorf("verifier returned an invalid outcome")
 		}
 	}
-	return warnings, completion, nil
+	return ordered, completion, nil
 }

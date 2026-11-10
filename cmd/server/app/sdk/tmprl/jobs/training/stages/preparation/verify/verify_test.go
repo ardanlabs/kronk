@@ -168,6 +168,10 @@ func TestStepRecovery(t *testing.T) {
 			}
 			var savedBeforeFailure []byte
 			offset, batches := 0, 0
+			failureOffset := 3
+			if failure == "rejected" {
+				failureOffset = 0 // Rejected approved examples must still stop publication.
+			}
 			failed := false
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -189,7 +193,7 @@ func TestStepRecovery(t *testing.T) {
 					end = offset + 1
 				}
 				contextBlock, recordBlock, ok := strings.Cut(request.Messages[1].Content, "[END DOCUMENT CONTEXT]\n")
-				if !ok || contextBlock != "[DOCUMENT CONTEXT: TOPIC ONLY]\n"+source.String()+"\n" || strings.Count(recordBlock, "[RECORD ") != end-offset {
+				if !ok || contextBlock != "[DOCUMENT CONTEXT: TOPIC ONLY]\n\n" || strings.Count(recordBlock, "[RECORD ") != end-offset {
 					t.Fatalf("incorrect saved context or recovery batch at %d: %+v", offset, request)
 				}
 				outcomes := make(map[string]string)
@@ -200,7 +204,7 @@ func TestStepRecovery(t *testing.T) {
 					}
 					outcomes[fmt.Sprintf("record_%d", i+1)] = "pass"
 				}
-				if offset == 3 && !failed {
+				if offset == failureOffset && !failed {
 					failed = true
 					var err error
 					savedBeforeFailure, err = input.Workspace.ReadFile(checkpoint.File)
@@ -211,7 +215,7 @@ func TestStepRecovery(t *testing.T) {
 					case "malformed":
 						return providers.Completion{Content: "not JSON", PromptTokens: 999}, nil
 					case "rejected":
-						return providers.Completion{Content: `{"record_1":"pass","record_2":"grounding","record_3":"pass","record_4":"pass","record_5":"pass"}`, PromptTokens: 999}, nil
+						return providers.Completion{Content: `{"record_1":"pass","record_2":"grounding","record_3":"pass"}`, PromptTokens: 999}, nil
 					case "canceled":
 						cancel()
 						return providers.Completion{PromptTokens: 999}, ctx.Err()
@@ -225,7 +229,7 @@ func TestStepRecovery(t *testing.T) {
 				return providers.Completion{Content: string(data), PromptTokens: 9, CompletionTokens: 17}, err
 			}}
 			got, err := (verify.Step{}).Execute(ctx, input)
-			if err == nil || got.Artifacts.Preparation != nil || !failed || offset != 3 {
+			if err == nil || got.Artifacts.Preparation != nil || !failed || offset != failureOffset {
 				t.Fatalf("failed verification published or lost progress: %+v, %v, offset=%d", got, err, offset)
 			}
 			if failure != "malformed" && failure != "rejected" && !errors.Is(err, wantErr) {
@@ -238,7 +242,7 @@ func TestStepRecovery(t *testing.T) {
 			if err := json.Unmarshal(after, &state); err != nil {
 				t.Fatal(err)
 			}
-			if state.Verified != 3 || state.Result.PromptTokens != 109 || state.Result.CompletionTokens != 217 || !slices.Equal(state.Records, records) || state.ReviewID != input.ReviewID || state.ReviewedCount != 3 {
+			if state.Verified != failureOffset || state.Result.PromptTokens != 100+batches*9 || state.Result.CompletionTokens != 200+batches*17 || !slices.Equal(state.Records, records) || state.ReviewID != input.ReviewID || state.ReviewedCount != 3 {
 				t.Fatalf("failed batch changed records, accepted review, usage or cursor: %+v", state)
 			}
 			for _, name := range []string{"dataset.jsonl", "dataset-report.json", "result.json"} {

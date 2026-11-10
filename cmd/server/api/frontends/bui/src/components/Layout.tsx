@@ -327,6 +327,7 @@ export default function Layout({ children }: LayoutProps) {
   const {
     preparationActivity: fineTuningPreparation,
     trainingActivity: fineTuningTraining,
+    inputKind: fineTuningInputKind,
     uploading: fineTuningUploading,
     cancelPreparation: stopFineTuningPreparation,
   } = useFineTuningRunner();
@@ -381,6 +382,15 @@ export default function Layout({ children }: LayoutProps) {
       return false;
     }
   });
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/fine-tuning')) return;
+    const narrow = window.matchMedia('(max-width: 700px)');
+    const collapseForWorkbench = () => { if (narrow.matches) setSidebarCollapsed(true); };
+    collapseForWorkbench();
+    narrow.addEventListener('change', collapseForWorkbench);
+    return () => narrow.removeEventListener('change', collapseForWorkbench);
+  }, [location.pathname]);
 
   const toggleSidebar = () => {
     setSidebarCollapsed(prev => {
@@ -693,7 +703,7 @@ export default function Layout({ children }: LayoutProps) {
             {fineTuningPreparation && (
               <div className="download-indicator">
                 <div className="download-indicator-link autotest-indicator-link">
-                  <Link to={`${routeMap['fine-tuning']}?view=${fineTuningUploading ? 'configure' : 'run'}`} className="autotest-indicator-top">
+                  <Link to={`${routeMap['fine-tuning']}?view=${fineTuningUploading && fineTuningInputKind === 'dataset' ? 'configure' : 'prepare'}`} className="autotest-indicator-top">
                     <div className="download-indicator-header">
                       <span className="download-indicator-spinner" />
                       <span className="download-indicator-title">{fineTuningPreparation.title}</span>

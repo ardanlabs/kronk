@@ -13,6 +13,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/generate"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 )
 
 // ValidateReview decodes edits for this dataset's saved preview without changing
@@ -59,7 +60,7 @@ func ValidateReview(request preparation.PreparationRequest, saved *preparation.P
 		}
 		r.Prompt = strings.TrimSpace(r.Prompt)
 		r.Target = training.Normalized(r.Target)
-		r.Evidence = training.Normalized(r.Evidence)
+		// Preserve the versioned unit's exact evidence, including code boundaries.
 		r.UserApproved = true
 		r.ValidationPrompt = false
 		r.IndependentPrompt = false
@@ -75,27 +76,44 @@ func ValidateReview(request preparation.PreparationRequest, saved *preparation.P
 	return preparation.Review{Records: reviewed}, nil
 }
 
-// Passages selects up to count supported passages for preview.
-func Passages(markdown string, goal preparation.Goal, count int) ([]string, []string, error) {
+// Units samples the same structural source plan used by full preparation.
+func Units(document providers.Document, goal preparation.Goal, count int) ([]preparation.SourceUnit, []preparation.SourceExclusion, error) {
 	if count < 1 || count > 5 {
 		return nil, nil, fmt.Errorf("%w: preview count must be between 1 and 5", preparation.ErrInvalidArgument)
 	}
-	passages, excluded := extract.Passages(markdown)
-	available := len(passages)
-	passages = slices.DeleteFunc(passages, func(passage string) bool {
-		return len(generate.Targets(passage, goal)) == 0
-	})
-	if len(passages) == 0 {
-		return nil, nil, fmt.Errorf("document contains no supported preview passages")
+	units, exclusions, err := extract.SourceUnits(document, goal)
+	if err != nil {
+		return nil, exclusions, err
 	}
-	count = min(count, len(passages))
-	selected := make([]string, count)
+	count = min(count, len(units))
+	selected := make([]preparation.SourceUnit, count)
 	for i := range count {
-		selected[i] = passages[i*len(passages)/count]
+		selected[i] = units[i*len(units)/count]
 	}
-	var warnings []string
-	if omitted := excluded + available - len(passages); omitted > 0 {
-		warnings = append(warnings, fmt.Sprintf("%d source passages excluded", omitted))
+	return selected, exclusions, nil
+}
+
+// sampleRecords takes one example per passage before taking second examples.
+// Preview's record limit is independent of its number of sampled passages.
+func sampleRecords(units []preparation.SourceUnit, records []training.Record, count int) []training.Record {
+	selected := make([]training.Record, 0, min(count, len(records)))
+	for round := range 3 {
+		for _, unit := range units {
+			index := 0
+			for _, record := range records {
+				if record.Evidence != unit.Evidence {
+					continue
+				}
+				if index == round {
+					selected = append(selected, record)
+					if len(selected) == count {
+						return selected
+					}
+					break
+				}
+				index++
+			}
+		}
 	}
-	return selected, warnings, nil
+	return selected
 }

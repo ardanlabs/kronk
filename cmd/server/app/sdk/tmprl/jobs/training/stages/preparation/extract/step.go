@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/internal/checkpoint"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"go.temporal.io/sdk/temporal"
 )
 
 // Step extracts source passages and commits the preparation checkpoint.
@@ -32,28 +33,33 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		passages, excluded := Passages(document.Markdown)
-		available := len(passages)
-		passages = slices.DeleteFunc(passages, func(passage string) bool { return len(generate.Targets(passage, p.Input.Request.Goal)) == 0 })
-		if len(passages) == 0 {
-			return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("document contains no supported source passages for this goal")
+		units, exclusions, err := SourceUnits(document, p.Input.Request.Goal)
+		if err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		if excluded+available-len(passages) > 0 {
-			state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("%d source passages excluded: too long or no supported targets for this goal", excluded+available-len(passages)))
+		if len(units) == 0 {
+			state.Result.Exclusions = exclusions
+			if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+			return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError("document contains no supported source units for this goal; exclusions are saved", "preparation-no-source-units", nil)
+		}
+		state.Result.Exclusions = exclusions
+		if len(exclusions) > 0 {
+			state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("%d structural/resource source exclusions; see source_exclusions", len(exclusions)))
 		}
 		if p.Input.Kind == preparation.PreparationPreview {
-			count := min(p.Input.Request.PreviewRecords, len(passages))
+			count := min(p.Input.Request.PreviewRecords, len(units))
 			for i := range count {
-				state.Passages = append(state.Passages, passages[i*len(passages)/count])
+				state.Units = append(state.Units, units[i*len(units)/count])
 			}
 		} else {
 			state.Records = slices.Clone(p.Input.Request.ReviewedRecords)
 			for i, r := range state.Records {
 				r.Prompt = strings.TrimSpace(r.Prompt)
 				r.Target = training.Normalized(r.Target)
-				r.Evidence = training.Normalized(r.Evidence)
-				if !strings.Contains(training.Normalized(document.Markdown), r.Evidence) {
-					return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("reviewed evidence is not in the imported document")
+				if r.SourceDocument != p.Source.ID || !r.UserApproved || !slices.ContainsFunc(units, func(u preparation.SourceUnit) bool { return u.Evidence == r.Evidence }) {
+					return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("reviewed evidence must belong to this source-unit plan; obtain a fresh Preview for an older plan")
 				}
 				if err := generate.ValidateRecord(p.Input.Request.Goal, r); err != nil {
 					return tmprl.StepResult[preparation.Artifacts]{}, err
@@ -62,9 +68,8 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 				r.SourceDocument = p.Source.ID
 				state.Records[i] = r
 			}
-			state.Passages = slices.DeleteFunc(passages, func(passage string) bool {
-				return slices.ContainsFunc(state.Records, func(r training.Record) bool { return r.Evidence == passage })
-			})
+			// Accepted examples consume capacity, not all facts in their passage.
+			state.Units = units
 		}
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err

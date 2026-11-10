@@ -95,6 +95,50 @@ func uploadRequest(t *testing.T, fields map[string][]string, data string) *http.
 	return r
 }
 
+func TestUploadOnlyRoutes(t *testing.T) {
+	if os.Getenv("MOXIE_UPLOAD_TESTS") != "1" {
+		t.Skip("set MOXIE_UPLOAD_TESTS=1 to run upload regressions")
+	}
+	store, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		store  *uploads.Store
+		status int
+	}{
+		{"no-dependencies", nil, http.StatusNotFound},
+		{"store-only", store, http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			log := logger.New(io.Discard, logger.LevelInfo, "upload-only-test", nil)
+			api := web.NewApp(log.Info, mid.Errors(log))
+			trainapp.Routes(api, trainapp.Config{Uploads: test.store, AuthorizationMode: auth.Open})
+			w := httptest.NewRecorder()
+			api.ServeHTTP(w, uploadRequest(t, map[string][]string{"file": {"harbor.txt"}}, "The harbor opens at dawn."))
+			if w.Code != test.status {
+				t.Fatalf("upload: %d %s", w.Code, w.Body)
+			}
+			for _, route := range []struct{ method, path string }{
+				{http.MethodPost, "/v1/training/runs"},
+				{http.MethodGet, "/v1/training/runs"},
+				{http.MethodGet, statePath},
+				{http.MethodPost, statePath + "/preview/continue"},
+				{http.MethodPost, statePath + "/start-training"},
+				{http.MethodGet, statePath + "/evaluation"},
+				{http.MethodGet, statePath + "/adapter"},
+			} {
+				w := httptest.NewRecorder()
+				api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), route.method, route.path, nil))
+				if w.Code != http.StatusServiceUnavailable || !json.Valid(w.Body.Bytes()) || !strings.Contains(w.Body.String(), "check server startup logs") {
+					t.Fatalf("%s %s: %d %s", route.method, route.path, w.Code, w.Body)
+				}
+			}
+		})
+	}
+}
+
 func TestUpload(t *testing.T) {
 	api, store := testAPI(t, new(mocks.Client))
 	// Storage must preserve bytes, not parse or process dataset contents.
@@ -1167,10 +1211,43 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = client.Close() })
+			store, err := uploads.New(uploads.Config{Root: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err := training.New(new(mocks.Client), training.Config{
+				Uploads: store, StorageRoot: t.TempDir(), Models: map[string]string{"model-a": "/model.gguf"},
+				Trainer: struct{ optimization.Trainer }{}, Log: func(context.Context, string, ...any) {},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			for _, mode := range []auth.Mode{auth.Management, auth.Authenticated, auth.FullProtected} {
 				t.Run(mode.String(), func(t *testing.T) {
+					t.Run("upload-only", func(t *testing.T) {
+						if os.Getenv("MOXIE_UPLOAD_TESTS") != "1" {
+							t.Skip("set MOXIE_UPLOAD_TESTS=1 to run upload regressions")
+						}
+						api := web.NewApp(log.Info, mid.Errors(log))
+						trainapp.Routes(api, trainapp.Config{Uploads: store, AuthClient: client, AuthorizationMode: mode})
+						w := httptest.NewRecorder()
+						api.ServeHTTP(w, uploadRequest(t, map[string][]string{"file": {"harbor.txt"}}, "The harbor opens at dawn."))
+						if w.Code != test.status {
+							t.Fatalf("upload authorization: %d %s", w.Code, w.Body)
+						}
+						for _, request := range []*http.Request{
+							httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil),
+							httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/training/runs", nil),
+						} {
+							w := httptest.NewRecorder()
+							api.ServeHTTP(w, request)
+							if w.Code != test.status {
+								t.Fatalf("unavailable job authorization: %d %s", w.Code, w.Body)
+							}
+						}
+					})
 					api := web.NewApp(log.Info, mid.Errors(log))
-					trainapp.Routes(api, trainapp.Config{AuthClient: client, AuthorizationMode: mode})
+					trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, AuthClient: client, AuthorizationMode: mode})
 					for _, method := range []string{http.MethodGet, http.MethodPost} {
 						path := statePath
 						if method == http.MethodPost {
@@ -1382,7 +1459,7 @@ func TestCreatePreparationRejectsInput(t *testing.T) {
 		{"prepared JSONL", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer"}}`, datasetID), http.StatusBadRequest},
 		{"unknown nested field", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","unknown":true}}`, document.ID), http.StatusBadRequest},
 		{"premature reviewed records", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","reviewed_records":[]}}`, document.ID), http.StatusBadRequest},
-		{"client preview count", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","preview_records":3}}`, document.ID), http.StatusBadRequest},
+		{"invalid preview count", fmt.Sprintf(`{"model":"model-a","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","preview_records":6}}`, document.ID), http.StatusBadRequest},
 		{"unapproved training model", fmt.Sprintf(`{"model":"catalog/qwen","prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer"}}`, document.ID), http.StatusBadRequest},
 	} {
 		t.Run(test.name, func(t *testing.T) {

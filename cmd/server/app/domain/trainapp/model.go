@@ -46,10 +46,11 @@ type NewTraining struct {
 
 // PreparationOptions selects a source document and its preparation model.
 type PreparationOptions struct {
-	DatasetID    string `json:"dataset_id"`
-	Model        string `json:"model"`
-	Goal         string `json:"goal"`
-	Instructions string `json:"instructions,omitzero"`
+	DatasetID      string `json:"dataset_id"`
+	Model          string `json:"model"`
+	Goal           string `json:"goal"`
+	Instructions   string `json:"instructions,omitzero"`
+	PreviewRecords int    `json:"preview_records,omitzero"`
 }
 
 // TrainingOptions carries user-selected settings without applying job policy.
@@ -99,6 +100,7 @@ func toJobRequest(app NewTraining) (training.Request, error) {
 		request.Prepare = &preparation.PreparationRequest{
 			DatasetID: app.Prepare.DatasetID, Model: app.Prepare.Model,
 			Goal: preparation.Goal(app.Prepare.Goal), Instructions: app.Prepare.Instructions,
+			PreviewRecords: app.Prepare.PreviewRecords,
 		}
 	}
 	return request, nil

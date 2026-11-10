@@ -46,7 +46,7 @@ func (routes all) Add(app *web.App, cfg mux.Config) {
 		Log:   cfg.Log,
 	})
 
-	if trainConfig := routes.cfg.Training; trainConfig.Job != nil {
+	if trainConfig := routes.cfg.Training; trainConfig.Job != nil || trainConfig.Uploads != nil {
 		trainConfig.AuthClient = cfg.AuthClient
 		trainConfig.AuthorizationMode = cfg.AuthorizationMode
 		trainapp.Routes(app, trainConfig)

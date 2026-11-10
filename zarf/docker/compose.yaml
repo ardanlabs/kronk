@@ -8,6 +8,10 @@ services:
       com.ardanlabs.moxie.extraction-profile: docling-v1.38.1-dlparse_v4-accurate-v1
     environment:
       - DOCLING_SERVE_ENABLE_UI=0
+      - DOCLING_SERVE_QUEUE_MAX_SIZE=4
+      - DOCLING_SERVE_OCR_BATCH_SIZE=1
+      - DOCLING_SERVE_LAYOUT_BATCH_SIZE=1
+      - DOCLING_SERVE_TABLE_BATCH_SIZE=1
     ports:
       - "127.0.0.1:5001:5001"
     volumes:
