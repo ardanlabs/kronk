@@ -46,7 +46,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func AutoTuneConfig(ctx context.Context, cfg model.Config) model.Config</code>
               </pre>
-              <p className="doc-description">AutoTuneConfig seeds unset settings from a hardware-aware analysis of the model and returns the resulting Config. It uses the same shared models.AutoTune logic as the model pool so the SDK and pool seed defaults identically; the only SDK-specific part is preserving all settings outside AutoTune's ownership. On any failure the original cfg is returned unchanged so auto-tune never blocks a load.</p>
+              <p className="doc-description">AutoTuneConfig seeds unset settings from a hardware-aware analysis of the model and returns the resulting Config. It uses the same shared models.AutoTune logic as the model pool so the SDK and pool seed defaults identically; the only SDK-specific part is preserving all settings outside AutoTune's ownership. On any failure the original cfg is returned unchanged so auto-tune never blocks a load. Speech models resolve supported runtime limits instead of hardware-derived recommendations; speech memory-aware tuning is not supported.</p>
             </div>
 
             <div className="doc-section" id="func-autotuneconfigwithbudget">
@@ -54,7 +54,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func AutoTuneConfigWithBudget(ctx context.Context, cfg model.Config, budget models.AutoTuneBudget) model.Config</code>
               </pre>
-              <p className="doc-description">AutoTuneConfigWithBudget seeds unset settings using a stable memory budget. Pool callers use this so custom loads honor the same resource-manager limits as catalog-driven loads.</p>
+              <p className="doc-description">AutoTuneConfigWithBudget seeds unset settings using a stable memory budget. Pool callers use this so custom loads honor the same resource-manager limits as catalog-driven loads. Speech models currently resolve fixed runtime limits without memory-budget tuning.</p>
             </div>
 
             <div className="doc-section" id="func-init">

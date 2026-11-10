@@ -193,6 +193,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParseChannel parses a registered channel name.</p>
             </div>
 
+            <div className="doc-section" id="func-resolvespeechconfig">
+              <h4>ResolveSpeechConfig</h4>
+              <pre className="code-block">
+                <code>func ResolveSpeechConfig(cfg Config) (Config, error)</code>
+              </pre>
+              <p className="doc-description">ResolveSpeechConfig resolves the supported speech resource limits for planning and loading a model already classified as speech. It does not select a runtime or apply chat defaults. Incompatible explicit settings return ErrInvalidRequest.</p>
+            </div>
+
             <div className="doc-section" id="func-parsedecisionprotocol">
               <h4>ParseDecisionProtocol</h4>
               <pre className="code-block">
@@ -3415,6 +3423,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
                 <li><a href="#func-verifyartifactwithlogger">VerifyArtifactWithLogger</a></li>
                 <li><a href="#func-parsechannel">ParseChannel</a></li>
+                <li><a href="#func-resolvespeechconfig">ResolveSpeechConfig</a></li>
                 <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
                 <li><a href="#func-parsedecisionquestiontype">ParseDecisionQuestionType</a></li>
                 <li><a href="#func-parseflashattentiontype">ParseFlashAttentionType</a></li>

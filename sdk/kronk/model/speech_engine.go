@@ -50,10 +50,13 @@ type speechSlot struct {
 	voice         mtmd.Bitmap
 }
 
-// adjustSpeechConfig resolves only the verified speech resource envelope. It
-// deliberately does not apply generation defaults, IMC, or sampling parameters.
-func adjustSpeechConfig(cfg Config) (Config, error) {
+// ResolveSpeechConfig resolves the supported speech resource limits for planning
+// and loading a model already classified as speech. It does not select a runtime
+// or apply chat defaults. Incompatible explicit settings return ErrInvalidRequest.
+func ResolveSpeechConfig(cfg Config) (Config, error) {
 	switch {
+	case cfg.SpeechMaxFrames() < 1 || cfg.SpeechMaxFrames() > 512:
+		return cfg, fmt.Errorf("%w: speech max frames must be between 1 and 512", ErrInvalidRequest)
 	case cfg.ContextWindow() != 0 && cfg.ContextWindow() != speechContextWindow:
 		return cfg, fmt.Errorf("%w: speech context window must be %d per sequence", ErrInvalidRequest, speechContextWindow)
 	case cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() != speechBatchSize:
@@ -103,7 +106,7 @@ func adjustSpeechConfig(cfg Config) (Config, error) {
 }
 
 func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
-	cfg, err := adjustSpeechConfig(m.cfg)
+	cfg, err := ResolveSpeechConfig(m.cfg)
 	if err != nil {
 		return err
 	}

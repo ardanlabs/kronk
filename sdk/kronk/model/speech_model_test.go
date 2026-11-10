@@ -16,6 +16,61 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+func TestResolveSpeechConfig(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		cfg  model.Config
+	}{
+		{"defaults", model.Config{}},
+		{"overrides", model.Config{PtrNSeqMax: new(3), PtrSpeech: &model.SpeechConfig{MaxFrames: 137}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := model.ResolveSpeechConfig(tt.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ContextWindow() != 2048 || cfg.PrefillBatchSize() != 512 || cfg.PhysicalBatchSize() != 512 || cfg.EffectiveNBatch() != 512 || cfg.EffectiveNUBatch() != 512 {
+				t.Fatalf("speech limits: got context=%d prefill=%d physical=%d batch=%d ubatch=%d", cfg.ContextWindow(), cfg.PrefillBatchSize(), cfg.PhysicalBatchSize(), cfg.EffectiveNBatch(), cfg.EffectiveNUBatch())
+			}
+			if cfg.NSeqMax() != max(1, tt.cfg.NSeqMax()) || cfg.SpeechMaxFrames() != tt.cfg.SpeechMaxFrames() {
+				t.Errorf("overrides: got slots=%d frames=%d", cfg.NSeqMax(), cfg.SpeechMaxFrames())
+			}
+			if cfg.CacheTypeK != model.GGMLTypeF16 || cfg.CacheTypeV != model.GGMLTypeF16 || cfg.IncrementalCache() || cfg.SpeculationMode() != model.SpeculationDisabled {
+				t.Errorf("speech cache/speculation: got K=%s V=%s IMC=%t speculation=%s", cfg.CacheTypeK, cfg.CacheTypeV, cfg.IncrementalCache(), cfg.SpeculationMode())
+			}
+			loaded, err := model.ResolveSpeechConfig(cfg)
+			if err != nil || loaded.NSeqMax() != cfg.NSeqMax() || loaded.SpeechMaxFrames() != cfg.SpeechMaxFrames() || loaded.EffectiveNUBatch() != cfg.EffectiveNUBatch() {
+				t.Fatalf("resolving prepared config changed limits: %+v, %v", loaded, err)
+			}
+			cfg.PtrSpeech.MaxFrames = 1
+			if tt.cfg.SpeechMaxFrames() != loaded.SpeechMaxFrames() {
+				t.Error("resolution mutated caller-owned speech settings")
+			}
+		})
+	}
+
+	for _, tt := range []struct {
+		name string
+		cfg  model.Config
+	}{
+		{"context", model.Config{PtrContextWindow: new(8192)}},
+		{"prefill", model.Config{PtrPrefillBatchSize: new(256)}},
+		{"physical", model.Config{PtrPhysicalBatchSize: new(1024)}},
+		{"cache", model.Config{CacheTypeV: model.GGMLTypeQ8_0}},
+		{"shared KV", model.Config{PtrKVCacheMode: new(model.KVCacheShared)}},
+		{"IMC", model.Config{PtrIncrementalCache: new(true)}},
+		{"draft", model.Config{PtrDraftModel: &model.DraftModelConfig{}}},
+		{"frames", model.Config{PtrSpeech: &model.SpeechConfig{MaxFrames: 513}}},
+		{"aggregate context", model.Config{PtrNSeqMax: new(1 << 21)}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := model.ResolveSpeechConfig(tt.cfg); !errors.Is(err, model.ErrInvalidRequest) {
+				t.Fatalf("got %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
 // TestSpeechModelLifecycle uses an explicitly selected local speech bundle.
 // Set KRONK_TEST_SPEECH_MODEL and KRONK_TEST_SPEECH_DECODER to the backbone and
 // matching decoder paths; KRONK_TEST_LIB_PATH optionally selects native libraries.
@@ -38,7 +93,8 @@ func TestSpeechModelLifecycle(t *testing.T) {
 	}
 	for _, nSlots := range []int{1, 2, 4} {
 		t.Run(fmt.Sprintf("slots-%d", nSlots), func(t *testing.T) {
-			krn, err := kronk.NewWithContext(t.Context(), append(opts, model.WithNSeqMax(nSlots))...)
+			// Exercise both direct loading and speech-aware AutoTune resolution.
+			krn, err := kronk.NewWithContext(t.Context(), append(opts, model.WithNSeqMax(nSlots), model.WithAutoTune(nSlots == 2))...)
 			if err != nil {
 				t.Fatal(err)
 			}

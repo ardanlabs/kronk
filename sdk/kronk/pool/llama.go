@@ -663,13 +663,19 @@ func effectivePrefillBatchSize(cfg model.Config) int64 {
 
 // resolveConfig produces a model.Config for the request. When the
 // caller has supplied a pre-built config via req.Custom (the
-// playground path) it is used as-is. Otherwise the catalog resolver is
-// consulted with the per-model overrides Llama was constructed with.
+// playground path), speech limits are resolved before planning. Otherwise the
+// catalog resolver is consulted with Llama's per-model overrides.
 func (l *Llama) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 	if req.Custom != nil {
 		cfg, ok := req.Custom.(model.Config)
 		if !ok {
 			return model.Config{}, fmt.Errorf("resolve-config: custom config is %T, want model.Config", req.Custom)
+		}
+		// Preserve the existing planning/load error path when metadata cannot
+		// be read; only positively classified speech changes configuration here.
+		info, err := models.ModelInfoFromPath(req.ModelID, cfg.ModelFiles, cfg.ProjFile, cfg.MTPDrafterFile)
+		if err == nil && info.IsSpeechModel {
+			return model.ResolveSpeechConfig(cfg)
 		}
 		return cfg, nil
 	}
