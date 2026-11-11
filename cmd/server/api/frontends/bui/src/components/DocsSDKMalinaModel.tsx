@@ -58,6 +58,14 @@ export default function DocsSDKMalinaModel() {
               <p className="doc-description">NewConfig constructs and validates Config.</p>
             </div>
 
+            <div className="doc-section" id="func-parsecontroltype">
+              <h4>ParseControlType</h4>
+              <pre className="code-block">
+                <code>func ParseControlType(value string) (ControlType, error)</code>
+              </pre>
+              <p className="doc-description">ParseControlType parses a task name, alias, or the unset value.</p>
+            </div>
+
             <div className="doc-section" id="func-newmodel">
               <h4>NewModel</h4>
               <pre className="code-block">
@@ -146,6 +154,16 @@ export default function DocsSDKMalinaModel() {
               <p className="doc-description">Config controls model loading and request admission. Concurrency controls the number of independently loaded contexts and simultaneous generations. QueueDepth controls how many calls are admitted to wait after every context is busy. ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its companion paths configure a component model. At least one of ModelPath or DiffusionModelPath is required. TokenizerPath loads an external tokenizer JSON file. FlashAttention, DiffusionFlashAttention, and SageAttention enable native attention optimizations for supported models and backends. ConditioningCacheSize limits cached conditioning entries per context; NewConfig defaults it to four, while zero disables it. BatchedCFG requests batched conditional/unconditional branches; NewConfig defaults it to true, but Malina disables it on Metal for correctness. FlashAttentionMode and ConvDirectMode select native on/off/auto policies, optionally per module (for example, "auto,te=off"). Empty selects automatic behavior while honoring legacy true attention flags; use "off" to disable.</p>
             </div>
 
+            <div className="doc-section" id="type-controltype">
+              <h4>ControlType</h4>
+              <pre className="code-block">
+                <code>{`type ControlType struct {
+	// Has unexported fields.
+}`}</code>
+              </pre>
+              <p className="doc-description">ControlType selects how a ControlNet Union model interprets its control image. Its zero value leaves task selection unset.</p>
+            </div>
+
             <div className="doc-section" id="type-detailparams">
               <h4>DetailParams</h4>
               <pre className="code-block">
@@ -157,6 +175,7 @@ export default function DocsSDKMalinaModel() {
 	Steps          int
 	CFGScale       float32
 	Seed           int64
+	Progress       func(GenerationProgress)
 }`}</code>
               </pre>
               <p className="doc-description">DetailParams controls one ADetailer face-refinement pass.</p>
@@ -178,7 +197,9 @@ export default function DocsSDKMalinaModel() {
 	Strength             float32
 	ControlImage         image.Image
 	ControlStrength      float32
+	ControlType          ControlType
 	Canny                *CannyParams
+	Progress             func(GenerationProgress)
 }`}</code>
               </pre>
               <p className="doc-description">GenerateParams controls one text-to-image generation. ImagePreprocessRules contains semicolon-separated native target=...,key=value rules applied to temporary input-image pixels; it does not mutate the caller's images.</p>
@@ -210,6 +231,21 @@ export default function DocsSDKMalinaModel() {
 }`}</code>
               </pre>
               <p className="doc-description">GeneratedVideo contains owned frames, optional generated audio, and the effective frame rate reported by stable-diffusion.cpp. GenerationInfo contains the native sdcpp.generation/v1 JSON record. Seed retains the requested seed; the resolved seed is available in GenerationInfo.</p>
+            </div>
+
+            <div className="doc-section" id="type-generationprogress">
+              <h4>GenerationProgress</h4>
+              <pre className="code-block">
+                <code>{`type GenerationProgress struct {
+	Stage      string
+	Detail     string
+	Unit       string
+	SamplePass int32
+	Completed  int64
+	Total      int64
+}`}</code>
+              </pre>
+              <p className="doc-description">GenerationProgress reports context-local work. Total == 0 means unknown. Callbacks must not panic or reenter the model and may run concurrently.</p>
             </div>
 
             <div className="doc-section" id="type-model">
@@ -296,6 +332,7 @@ export default function DocsSDKMalinaModel() {
 	FPS                  int
 	InitImage            image.Image
 	RefAudios            []Audio
+	Progress             func(GenerationProgress)
 }`}</code>
               </pre>
               <p className="doc-description">VideoParams controls one video generation. ImagePreprocessRules contains semicolon-separated native target=...,key=value rules applied to temporary input-image pixels; it does not mutate the caller's images.</p>
@@ -304,6 +341,46 @@ export default function DocsSDKMalinaModel() {
 
           <div className="card" id="methods">
             <h3>Methods</h3>
+
+            <div className="doc-section" id="method-controltype-equal">
+              <h4>ControlType.Equal</h4>
+              <pre className="code-block">
+                <code>func (ct ControlType) Equal(other ControlType) bool</code>
+              </pre>
+              <p className="doc-description">Equal reports whether the values match.</p>
+            </div>
+
+            <div className="doc-section" id="method-controltype-iszero">
+              <h4>ControlType.IsZero</h4>
+              <pre className="code-block">
+                <code>func (ct ControlType) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether task selection is unset.</p>
+            </div>
+
+            <div className="doc-section" id="method-controltype-marshaltext">
+              <h4>ControlType.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (ct ControlType) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText implements encoding.TextMarshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-controltype-string">
+              <h4>ControlType.String</h4>
+              <pre className="code-block">
+                <code>func (ct ControlType) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the canonical task name.</p>
+            </div>
+
+            <div className="doc-section" id="method-controltype-unmarshaltext">
+              <h4>ControlType.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (ct *ControlType) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText implements encoding.TextUnmarshaler.</p>
+            </div>
 
             <div className="doc-section" id="method-detailparams-validate">
               <h4>DetailParams.Validate</h4>
@@ -434,6 +511,14 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>{`var (`}</code>
               </pre>
+              <p className="doc-description">// ControlTypeNone selects no Union task. ControlTypeNone = newControlType("none") // ControlTypeOpenPose selects pose-skeleton guidance. ControlTypeOpenPose = newControlType("openpose") // ControlTypeDepth selects depth-map guidance. ControlTypeDepth = newControlType("depth") // ControlTypeScribble selects scribble or soft-edge guidance. ControlTypeScribble = newControlType("scribble", "hed", "softedge", "pidi", "ted") // ControlTypeCanny selects edge-map guidance. ControlTypeCanny = newControlType("canny", "lineart", "anime_lineart", "mlsd") // ControlTypeNormal selects surface-normal guidance. ControlTypeNormal = newControlType("normal") // ControlTypeSegment selects segmentation-map guidance. ControlTypeSegment = newControlType("segment", "seg") // ControlTypeTile selects tile guidance for checkpoints that support it. ControlTypeTile = newControlType("tile") // ControlTypeRepaint selects repaint guidance for checkpoints that support it. ControlTypeRepaint = newControlType("repaint", "inpaint", "outpaint")</p>
+            </div>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
               <p className="doc-description">// ErrInvalidRequest identifies invalid generation parameters. ErrInvalidRequest = errors.New("invalid generation request")</p>
               <p className="doc-description">// ErrNativeGeneration identifies a failure returned by stable-diffusion. ErrNativeGeneration = errors.New("native generation failed")</p>
             </div>
@@ -447,6 +532,7 @@ export default function DocsSDKMalinaModel() {
               <ul>
                 <li><a href="#func-saveavi">SaveAVI</a></li>
                 <li><a href="#func-newconfig">NewConfig</a></li>
+                <li><a href="#func-parsecontroltype">ParseControlType</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
                 <li><a href="#func-newupscaler">NewUpscaler</a></li>
               </ul>
@@ -457,10 +543,12 @@ export default function DocsSDKMalinaModel() {
                 <li><a href="#type-audio">Audio</a></li>
                 <li><a href="#type-cannyparams">CannyParams</a></li>
                 <li><a href="#type-config">Config</a></li>
+                <li><a href="#type-controltype">ControlType</a></li>
                 <li><a href="#type-detailparams">DetailParams</a></li>
                 <li><a href="#type-generateparams">GenerateParams</a></li>
                 <li><a href="#type-generatedimage">GeneratedImage</a></li>
                 <li><a href="#type-generatedvideo">GeneratedVideo</a></li>
+                <li><a href="#type-generationprogress">GenerationProgress</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
                 <li><a href="#type-option">Option</a></li>
@@ -473,6 +561,11 @@ export default function DocsSDKMalinaModel() {
             <div className="doc-index-section">
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
+                <li><a href="#method-controltype-equal">ControlType.Equal</a></li>
+                <li><a href="#method-controltype-iszero">ControlType.IsZero</a></li>
+                <li><a href="#method-controltype-marshaltext">ControlType.MarshalText</a></li>
+                <li><a href="#method-controltype-string">ControlType.String</a></li>
+                <li><a href="#method-controltype-unmarshaltext">ControlType.UnmarshalText</a></li>
                 <li><a href="#method-detailparams-validate">DetailParams.Validate</a></li>
                 <li><a href="#method-generateparams-validate">GenerateParams.Validate</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
@@ -493,6 +586,7 @@ export default function DocsSDKMalinaModel() {
             <div className="doc-index-section">
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
+                <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
               </ul>
             </div>

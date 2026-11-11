@@ -5721,6 +5721,7 @@ kronk malina libs --list-installs --local`}</code></pre>
           <p>An explicit library path is authoritative. A nonempty directory without <code>version.json</code> is a read-only user-managed build, not a managed installation. Default verified server startup requires managed metadata and can reject it. Using independently trusted custom builds requires an advanced verification exception; do not disable verification as routine recovery.</p>
           <p>Use the libraries pinned to this Kronk release. Newer native libraries are not necessarily ABI-compatible; upgrade bindings and libraries together. Offline managed installations must match the requested pin and platform. Installation is staged so a failed download does not replace the working bundle. Restart after changing the selected libraries; the process does not hot-reload them.</p>
           <p>After upgrading Kronk, run <code>kronk malina libs --local</code> again. A managed bundle recorded for the previous pin is replaced, even if its files still exist; an arbitrary newer build is not accepted by default either. User-managed library paths are never upgraded automatically. Rebuild or replace those libraries from the pinned revision, especially when an upgrade changes the native ABI.</p>
+          <p>Malina v1.2.1 requires native release <code>master-1088-32d516c</code>, authenticated by manifest SHA-256 <code>5f91839d47bc65edda35fafb9e6943db249c69c1d91f42f68d007c1eaa96770c</code>. Image-generation parameters grew from 552 to 560 bytes; v1.2.0 bindings with the new runtime can corrupt memory. Upgrade the bindings and native libraries together, then restart before generating. New bindings with the old runtime are not supported either.</p>
           <p>With default verification enabled, installation or verification failures stop server startup. Repair the managed bundle locally, then restart. A later native initialization failure can instead leave Malina unavailable while the server continues; BUI repair is useful only if the server actually remains running.</p>
           <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
           <p>Use the curated catalog rather than an arbitrary repository layout:</p>
@@ -5750,7 +5751,7 @@ kronk malina model remove sd-1.5 --local`}</code></pre>
                 <td>Component-based, license-gated image generation</td>
               </tr>
               <tr>
-                <td><code>controlnet-canny-sd1.5</code>, <code>z-image-turbo-controlnet-union</code></td>
+                <td><code>controlnet-canny-sd1.5</code>, <code>controlnet-union-sdxl</code>, <code>z-image-turbo-controlnet-union</code></td>
                 <td>SDK ControlNet workflows</td>
               </tr>
               <tr>
@@ -5775,6 +5776,7 @@ kronk malina model remove sd-1.5 --local`}</code></pre>
             <li><strong>MOSS-Image-SFT:</strong> dimensions divisible by 16 and CFG scale 3. The curated bundle has not been locally inference-validated.</li>
           </ul>
           <p>The server maps the required component roles for supported generation bundles; operators do not need to configure individual component paths.</p>
+          <p>For SDK SDXL Union generation, install <code>controlnet-union-sdxl</code> with <code>kronk malina model pull controlnet-union-sdxl --local</code>. Load its <code>model</code> and <code>control_net</code> paths with <code>model.WithModelPath</code> and <code>model.WithControlNetPath</code>. Supply a preprocessed control image in <code>GenerateParams.ControlImage</code> and select <code>ControlType</code> explicitly: <code>model.ControlTypeOpenPose</code>, <code>model.ControlTypeDepth</code>, <code>model.ControlTypeScribble</code>, <code>model.ControlTypeCanny</code>, <code>model.ControlTypeNormal</code>, or <code>model.ControlTypeSegment</code> for this six-task checkpoint. For example, <code>params.ControlType = model.ControlTypeCanny</code> selects edge-map guidance. <code>model.ParseControlType</code> accepts task names and aliases such as <code>"lineart"</code> and <code>"hed"</code>, rejecting unknown names without requiring native libraries to be loaded. The zero value leaves task selection unset; both unset and <code>model.ControlTypeNone</code> are accepted by ordinary ControlNet but rejected by SDXL Union. Task selection does not preprocess the input; use <code>Canny</code> for built-in edge detection or supply your own map. The Canny-only SD 1.5 bundle does not need a task selector. The bundle's ~9.5 GB download size is not a VRAM estimate.</p>
           <h3 id="194-server-configuration-and-resources">19.4 Server Configuration and Resources</h3>
           <p>Enable media backends and restart after installation. <code>--media-backends-enabled=false</code> / <code>KRONK_MEDIA_BACKENDS_ENABLED=false</code> skips both Malina and Bucky downloads and native initialization. Installing files alone does not override this setting.</p>
           <p>Configure bundles under <code>malina-models</code> in the versioned model configuration:</p>
@@ -5875,6 +5877,20 @@ malina-models:
           <p>Both operations use the server's inference deadline. Cancellation requests native work to stop but can take time to finish; it is not a guarantee of immediate resource release.</p>
           <h3 id="197-progress-and-administration">19.7 Progress and Administration</h3>
           <p><code>GET /v1/images/events</code> is an SSE stream reporting <code>scope: "global"</code>, <code>step</code>, <code>steps</code>, <code>percent</code>, and <code>seconds_per_step</code>. Progress is process-global and not request-correlated; it must not be treated as the completion signal for an individual request. Use the POST response for that result.</p>
+          <p>SDK callers can set <code>Progress</code> on <code>model.GenerateParams</code>, <code>model.DetailParams</code>, or <code>model.VideoParams</code> for request-specific, context-local events:</p>
+          <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
+params.Prompt = "A lighthouse during a thunderstorm"
+params.Progress = func(event model.GenerationProgress) {
+    if event.Total == 0 {
+        fmt.Printf("%s %s: %d %s (total unknown)\\n",
+            event.Stage, event.Detail, event.Completed, event.Unit)
+        return
+    }
+    fmt.Printf("%s pass %d: %d/%d %s\\n",
+        event.Stage, event.SamplePass, event.Completed, event.Total, event.Unit)
+}
+result, err := mln.Generate(ctx, params)`}</code></pre>
+          <p>Events retain <code>Stage</code>, <code>Detail</code>, <code>Unit</code>, <code>SamplePass</code>, <code>Completed</code>, and <code>Total</code>. Totals reflect the actual native schedule, not necessarily the requested step count. <code>Total == 0</code> means unknown; do not divide by it. Sampling passes count from one per request; preparatory events can have pass zero. Callbacks run synchronously and must not panic or reenter the model. Different model contexts may invoke callbacks concurrently. Handlers are cleared before context reuse, including after cancellation or failure. Legacy <code>malina.WithProgress</code> remains available for process-global model-loading and generation progress. Context-local SDK events do not change the global HTTP/BUI stream.</p>
           <p>Management APIs require administrator access in every authorization mode except <code>open</code>:</p>
           <table className="flags-table">
             <thead>
@@ -5930,6 +5946,7 @@ malina-models:
           <h3 id="198-limitations-and-developer-resources">19.8 Limitations and Developer Resources</h3>
           <p>The server exposes basic text-to-image and image-to-image only. ControlNet, ADetailer, video, upscaling, and AVI encoding remain SDK workflows. A feature in upstream stable-diffusion.cpp does not establish a supported Kronk workflow or a curated, licensed model bundle. The catalog is intentionally bounded.</p>
           <p>SDK video results retain the effective frame rate, generated audio, and generation metadata; AVI encoding remains video-only.</p>
+          <p>RelayVSR and SeedVR2 video upscaling remain unbound upstream and are not exposed by Kronk. The existing upscaler supports ESRGAN-style image upscaling, not those video workflows. New upstream MiniMax-H3-Image and HyperFlow capabilities do not add curated Kronk bundles or establish verified server support.</p>
           <p>Use the generated Malina SDK reference and <code>examples/malina*</code> for application development. Source-checkout targets include <code>make example-malina</code>, <code>make example-malina-img2img</code>, <code>make example-malina-controlnet</code>, <code>make example-malina-adetailer</code>, <code>make example-malina-animatediff</code>, <code>make example-malina-s2v</code>, and <code>make example-malina-upscale</code>. These can download multi-gigabyte model bundles and execute native inference. They are not required steps for operating the HTTP server.</p>
           <h3 id="199-troubleshooting">19.9 Troubleshooting</h3>
           <table className="flags-table">

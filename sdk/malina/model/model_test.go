@@ -3,12 +3,14 @@ package model
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"image"
 	"image/color"
 	"image/png"
 	"math"
 	"reflect"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -120,6 +122,7 @@ func TestGenerateParamsValidate(t *testing.T) {
 		{name: "missing prompt", mutate: func(p *GenerateParams) { p.Prompt = "" }},
 		{name: "NUL prompt", mutate: func(p *GenerateParams) { p.Prompt = "cat\x00dog" }},
 		{name: "NUL image preprocessing rules", mutate: func(p *GenerateParams) { p.ImagePreprocessRules = "target=init\x00" }},
+		{name: "control type without image", mutate: func(p *GenerateParams) { p.ControlType = ControlTypeCanny }},
 		{name: "invalid width", mutate: func(p *GenerateParams) { p.Width = 63 }},
 		{name: "invalid steps", mutate: func(p *GenerateParams) { p.Steps = 0 }},
 		{name: "invalid CFG", mutate: func(p *GenerateParams) { p.CFGScale = float32(math.NaN()) }},
@@ -174,6 +177,57 @@ func TestWorkflowConfigOptions(t *testing.T) {
 	}
 }
 
+func TestControlTypes(t *testing.T) {
+	for _, tt := range []struct {
+		value ControlType
+		want  string
+	}{
+		{ControlType{}, ""},
+		{ControlTypeNone, "none"},
+		{ControlTypeOpenPose, "openpose"},
+		{ControlTypeDepth, "depth"},
+		{ControlTypeScribble, "scribble"},
+		{ControlTypeCanny, "canny"},
+		{ControlTypeNormal, "normal"},
+		{ControlTypeSegment, "segment"},
+		{ControlTypeTile, "tile"},
+		{ControlTypeRepaint, "repaint"},
+	} {
+		t.Run(tt.want, func(t *testing.T) {
+			if tt.value.String() != tt.want || tt.value.IsZero() != (tt.want == "") || !MustParseControlType(tt.want).Equal(tt.value) {
+				t.Fatalf("control type: got %v, want %q", tt.value, tt.want)
+			}
+			data, err := json.Marshal(tt.value)
+			if err != nil || string(data) != strconv.Quote(tt.want) {
+				t.Fatalf("Marshal(): got %s, %v, want %q, nil", data, err, tt.want)
+			}
+			var decoded ControlType
+			if err := json.Unmarshal(data, &decoded); err != nil || !decoded.Equal(tt.value) {
+				t.Fatalf("Unmarshal(): got %v, %v, want %v, nil", decoded, err, tt.value)
+			}
+			if err := decoded.UnmarshalText([]byte("invalid")); err == nil || !decoded.Equal(tt.value) {
+				t.Fatal("invalid text did not fail atomically")
+			}
+		})
+	}
+
+	for alias, want := range map[string]ControlType{
+		"hed": ControlTypeScribble, "softedge": ControlTypeScribble,
+		"pidi": ControlTypeScribble, "ted": ControlTypeScribble,
+		"lineart": ControlTypeCanny, "anime_lineart": ControlTypeCanny, "mlsd": ControlTypeCanny,
+		"seg": ControlTypeSegment, "inpaint": ControlTypeRepaint, "outpaint": ControlTypeRepaint,
+	} {
+		if got, err := ParseControlType(alias); err != nil || !got.Equal(want) {
+			t.Errorf("ParseControlType(%q): got %v, %v, want %v, nil", alias, got, err, want)
+		}
+	}
+	for _, value := range []string{"unknown", "Canny", "canny\x00depth"} {
+		if _, err := ParseControlType(value); err == nil {
+			t.Errorf("ParseControlType(%q): got nil error, want rejection", value)
+		}
+	}
+}
+
 func TestCannyParams(t *testing.T) {
 	got := NewCannyParams()
 	want := CannyParams{HighThreshold: 0.08, LowThreshold: 0.08, Weak: 0.8, Strong: 1}
@@ -187,6 +241,10 @@ func TestCannyParams(t *testing.T) {
 	valid.Canny = &got
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+	valid.ControlType = ControlTypeCanny
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() with Union task error = %v", err)
 	}
 
 	tests := []struct {

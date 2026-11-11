@@ -9,6 +9,7 @@
   - [Internal RAM IMC Storage](#unreleased-internal-ram-imc-storage)
   - [Speculative Rollback Diagnostics](#unreleased-speculative-rollback-diagnostics)
   - [Malina Linux Runtime Minimum](#v1332-malina-linux-runtime-minimum)
+  - [Malina ControlNet Parameter ABI](#v1332-malina-controlnet-parameter-abi)
 - [v1.33.1](#v1331)
   - [Bucky Segment Text Confidence](#v1331-bucky-segment-text-confidence)
   - [Malina Generation Result ABI](#v1331-malina-generation-result-abi)
@@ -157,6 +158,20 @@ their host. Standard Docker images and Linux CI runner images now use Ubuntu
 26.04. CUDA images install CUDA 13.3 user-space libraries from NVIDIA's Ubuntu
 26.04 repository; ROCm images use AMD's Ubuntu 26.04 repository. The optional
 Jetson image retains its JetPack-compatible L4T base.
+
+### v1.33.2: Malina ControlNet Parameter ABI
+
+Malina v1.2.1 requires stable-diffusion.cpp `master-1088-32d516c` with manifest
+SHA-256 `5f91839d47bc65edda35fafb9e6943db249c69c1d91f42f68d007c1eaa96770c`.
+The native image-generation parameter structure grew from 552 to 560 bytes.
+Old bindings with the new runtime can corrupt memory. New bindings with an
+old runtime can load but are not a supported pair.
+
+Upgrade Kronk and run `kronk malina libs --local`, then restart the process;
+replacing files does not replace an already-loaded library. Managed installs
+recorded for the previous pin are replaced. User-managed paths are read-only:
+rebuild or replace them using the pinned revision before restarting. The Linux
+runtime minimum described above still applies.
 
 ## v1.33.1
 

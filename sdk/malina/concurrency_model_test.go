@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,13 +26,11 @@ const (
 )
 
 type progressOverlap struct {
-	mu          sync.Mutex
-	enabled     bool
-	started     map[int]bool
-	finished    map[int]bool
-	overlaps    bool
-	cancelSteps int
-	cancel      context.CancelFunc
+	mu       sync.Mutex
+	enabled  bool
+	started  map[int]bool
+	finished map[int]bool
+	overlaps bool
 }
 
 func (po *progressOverlap) observe(step int, steps int, _ float32) {
@@ -40,10 +39,6 @@ func (po *progressOverlap) observe(step int, steps int, _ float32) {
 
 	if !po.enabled || step <= 0 {
 		return
-	}
-	if steps == po.cancelSteps && po.cancel != nil {
-		po.cancel()
-		po.cancel = nil
 	}
 	if steps != firstSteps && steps != secondSteps {
 		return
@@ -73,14 +68,6 @@ func (po *progressOverlap) overlapped() bool {
 	defer po.mu.Unlock()
 
 	return po.overlaps
-}
-
-func (po *progressOverlap) cancelAt(steps int, cancel context.CancelFunc) {
-	po.mu.Lock()
-	defer po.mu.Unlock()
-
-	po.cancelSteps = steps
-	po.cancel = cancel
 }
 
 func TestMalinaModelInference(t *testing.T) {
@@ -128,8 +115,33 @@ func TestMalinaModelInference(t *testing.T) {
 			request := params
 			request.Steps = test.steps
 			request.Seed += int64(i)
+			var events []model.GenerationProgress
+			var finished atomic.Bool
+			request.Progress = func(event model.GenerationProgress) {
+				if finished.Load() {
+					t.Errorf("request %d received progress after returning", i)
+					return
+				}
+				events = append(events, event)
+			}
 			<-start
 			_, err := handle.Generate(t.Context(), request)
+			finished.Store(true)
+			if err == nil {
+				var completed bool
+				for _, event := range events {
+					if event.Stage != "sampling" {
+						continue
+					}
+					if event.Total != int64(test.steps) || event.SamplePass != 1 || event.Unit != "steps" {
+						t.Errorf("request %d sampling event: got %+v, want total=%d pass=1 unit=steps", i, event, test.steps)
+					}
+					completed = completed || event.Completed == event.Total
+				}
+				if !completed {
+					t.Errorf("request %d: no completed context-local sampling event", i)
+				}
+			}
 			results <- err
 		}()
 	}
@@ -146,12 +158,22 @@ func TestMalinaModelInference(t *testing.T) {
 
 	const cancelSteps = 100
 	cancelCtx, cancel := context.WithCancel(t.Context())
-	progress.cancelAt(cancelSteps, cancel)
+	defer cancel()
 	canceled := params
 	canceled.Steps = cancelSteps
+	var cancelFinished atomic.Bool
+	canceled.Progress = func(event model.GenerationProgress) {
+		if cancelFinished.Load() {
+			t.Error("canceled request received progress after returning")
+		}
+		if event.Stage == "sampling" && event.Completed > 0 {
+			cancel()
+		}
+	}
 	if _, err := handle.Generate(cancelCtx, canceled); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Generate() error = %v, want context.Canceled", err)
 	}
+	cancelFinished.Store(true)
 
 	reuse := params
 	reuse.Steps = 1

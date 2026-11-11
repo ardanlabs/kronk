@@ -17,6 +17,9 @@ var (
 	// BundleControlNetCannySD15 identifies the SD 1.5 Canny ControlNet bundle.
 	BundleControlNetCannySD15 = newBundleName("controlnet-canny-sd1.5")
 
+	// BundleControlNetUnionSDXL identifies the SDXL multi-task ControlNet Union bundle.
+	BundleControlNetUnionSDXL = newBundleName("controlnet-union-sdxl")
+
 	// BundleRealESRGANX4Anime identifies the Real-ESRGAN 4x anime upscaler bundle.
 	BundleRealESRGANX4Anime = newBundleName("realesrgan-x4-anime")
 
@@ -208,6 +211,25 @@ func Catalog() []Bundle {
 					Filename: "control_canny-fp16.safetensors",
 					URL:      "https://huggingface.co/webui/ControlNet-modules-safetensors/resolve/5194dff6fe5e3d26310a12c527eae8bc02d3a482/control_canny-fp16.safetensors",
 					Size:     "723 MB",
+				},
+			},
+		},
+		{
+			Name:        BundleControlNetUnionSDXL,
+			Description: "SDXL base with multi-task ControlNet Union. Set ImgGenParams.ControlType and supply a preprocessed control image. Two files (~9.5 GB total).",
+			License:     "CreativeML Open RAIL++-M / Apache-2.0",
+			Files: []BundleFile{
+				{
+					Role:     RoleModel,
+					Filename: "sd_xl_base_1.0.safetensors",
+					URL:      "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/sd_xl_base_1.0.safetensors",
+					Size:     "6.9 GB",
+				},
+				{
+					Role:     RoleControlNet,
+					Filename: "diffusion_pytorch_model.safetensors",
+					URL:      "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/801a4a3fa3d4c936f4feea95b98607bc6726f80c/diffusion_pytorch_model.safetensors",
+					Size:     "2.5 GB",
 				},
 			},
 		},
