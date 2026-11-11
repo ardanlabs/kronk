@@ -3500,6 +3500,8 @@ func install(ctx context.Context) (models.Manifest, error) {
 `;
 
 const malinaControlnetExample = `// This example generates an image using Canny ControlNet conditioning.
+//
+// Run from the project root with make example-malina-controlnet.
 package main
 
 import (

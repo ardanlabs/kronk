@@ -92,6 +92,13 @@ arbitrary newer build is not accepted by default either. User-managed library
 paths are never upgraded automatically. Rebuild or replace those libraries
 from the pinned revision, especially when an upgrade changes the native ABI.
 
+Malina v1.2.1 requires native release `master-1088-32d516c`, authenticated by
+manifest SHA-256 `5f91839d47bc65edda35fafb9e6943db249c69c1d91f42f68d007c1eaa96770c`.
+Image-generation parameters grew from 552 to 560 bytes; v1.2.0 bindings with
+the new runtime can corrupt memory. Upgrade the bindings and native libraries
+together, then restart before generating. New bindings with the old runtime
+are not supported either.
+
 With default verification enabled, installation or verification failures stop
 server startup. Repair the managed bundle locally, then restart. A later native
 initialization failure can instead leave Malina unavailable while the server
@@ -118,7 +125,7 @@ Complete installations are reused on subsequent runs.
 | `sd-1.5`, `sdxl-base-1.0` | Single-checkpoint image generation |
 | `z-image-turbo`, `llada-image-turbo`, `moss-image-sft` | Component-based image generation |
 | `flux2-klein-4b`, `flux2-klein-9b` | Component-based, license-gated image generation |
-| `controlnet-canny-sd1.5`, `z-image-turbo-controlnet-union` | SDK ControlNet workflows |
+| `controlnet-canny-sd1.5`, `controlnet-union-sdxl`, `z-image-turbo-controlnet-union` | SDK ControlNet workflows |
 | `adetailer-face-yolov8n` | SDK face refinement |
 | `animatediff-sd1.5`, `wan2.2-s2v-14b` | SDK video workflows |
 | `realesrgan-x4-anime` | SDK upscaling |
@@ -138,6 +145,22 @@ recommendations explicitly in HTTP fields or the BUI:
 
 The server maps the required component roles for supported generation bundles;
 operators do not need to configure individual component paths.
+
+For SDK SDXL Union generation, install `controlnet-union-sdxl` with
+`kronk malina model pull controlnet-union-sdxl --local`. Load its `model` and
+`control_net` paths with `model.WithModelPath` and `model.WithControlNetPath`.
+Supply a preprocessed control image in `GenerateParams.ControlImage` and select
+`ControlType` explicitly: `model.ControlTypeOpenPose`, `model.ControlTypeDepth`,
+`model.ControlTypeScribble`, `model.ControlTypeCanny`, `model.ControlTypeNormal`,
+or `model.ControlTypeSegment` for this six-task checkpoint. For example,
+`params.ControlType = model.ControlTypeCanny` selects edge-map guidance.
+`model.ParseControlType` accepts task names and aliases such as `"lineart"` and
+`"hed"`, rejecting unknown names without requiring native libraries to be loaded.
+The zero value leaves task selection unset; both unset and `model.ControlTypeNone`
+are accepted by ordinary ControlNet but rejected by SDXL Union. Task selection
+does not preprocess the input; use `Canny` for built-in edge detection or supply
+your own map. The Canny-only SD 1.5 bundle does not need a task selector.
+The bundle's ~9.5 GB download size is not a VRAM estimate.
 
 ### 19.4 Server Configuration and Resources
 
@@ -256,6 +279,34 @@ immediate resource release.
 request-correlated; it must not be treated as the completion signal for an
 individual request. Use the POST response for that result.
 
+SDK callers can set `Progress` on `model.GenerateParams`, `model.DetailParams`,
+or `model.VideoParams` for request-specific, context-local events:
+
+```go
+params := model.NewGenerateParams()
+params.Prompt = "A lighthouse during a thunderstorm"
+params.Progress = func(event model.GenerationProgress) {
+    if event.Total == 0 {
+        fmt.Printf("%s %s: %d %s (total unknown)\n",
+            event.Stage, event.Detail, event.Completed, event.Unit)
+        return
+    }
+    fmt.Printf("%s pass %d: %d/%d %s\n",
+        event.Stage, event.SamplePass, event.Completed, event.Total, event.Unit)
+}
+result, err := mln.Generate(ctx, params)
+```
+
+Events retain `Stage`, `Detail`, `Unit`, `SamplePass`, `Completed`, and `Total`.
+Totals reflect the actual native schedule, not necessarily the requested step
+count. `Total == 0` means unknown; do not divide by it. Sampling passes count
+from one per request; preparatory events can have pass zero. Callbacks run
+synchronously and must not panic or reenter the model. Different model contexts
+may invoke callbacks concurrently. Handlers are cleared before context reuse,
+including after cancellation or failure. Legacy `malina.WithProgress` remains
+available for process-global model-loading and generation progress. Context-local
+SDK events do not change the global HTTP/BUI stream.
+
 Management APIs require administrator access in every authorization mode except
 `open`:
 
@@ -283,6 +334,11 @@ or a curated, licensed model bundle. The catalog is intentionally bounded.
 
 SDK video results retain the effective frame rate, generated audio, and
 generation metadata; AVI encoding remains video-only.
+
+RelayVSR and SeedVR2 video upscaling remain unbound upstream and are not exposed
+by Kronk. The existing upscaler supports ESRGAN-style image upscaling, not those
+video workflows. New upstream MiniMax-H3-Image and HyperFlow capabilities do not
+add curated Kronk bundles or establish verified server support.
 
 Use the generated Malina SDK reference and `examples/malina*` for application
 development. Source-checkout targets include `make example-malina`,

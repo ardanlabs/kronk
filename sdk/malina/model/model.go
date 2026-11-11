@@ -341,7 +341,20 @@ type GenerateParams struct {
 	Strength             float32
 	ControlImage         image.Image
 	ControlStrength      float32
+	ControlType          ControlType
 	Canny                *CannyParams
+	Progress             func(GenerationProgress)
+}
+
+// GenerationProgress reports context-local work. Total == 0 means unknown.
+// Callbacks must not panic or reenter the model and may run concurrently.
+type GenerationProgress struct {
+	Stage      string
+	Detail     string
+	Unit       string
+	SamplePass int32
+	Completed  int64
+	Total      int64
 }
 
 // CannyParams controls edge detection applied to a ControlNet image.
@@ -397,6 +410,9 @@ func (p GenerateParams) Validate() error {
 			return errors.Join(ErrInvalidRequest, errors.New("img2img strength must be finite and in (0,1]"))
 		}
 	}
+	if !p.ControlType.IsZero() && p.ControlImage == nil {
+		return errors.Join(ErrInvalidRequest, errors.New("control type requires a control image"))
+	}
 	if p.ControlImage != nil {
 		if err := validateInitImage(p.ControlImage); err != nil {
 			return err
@@ -430,6 +446,7 @@ type DetailParams struct {
 	Steps          int
 	CFGScale       float32
 	Seed           int64
+	Progress       func(GenerationProgress)
 }
 
 // NewDetailParams returns ADetailer refinement defaults.
@@ -475,6 +492,7 @@ type VideoParams struct {
 	FPS                  int
 	InitImage            image.Image
 	RefAudios            []Audio
+	Progress             func(GenerationProgress)
 }
 
 // NewVideoParams returns conservative AnimateDiff generation defaults.
@@ -805,6 +823,16 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 		}
 
 		p.ControlStrength = params.ControlStrength
+		if !params.ControlType.IsZero() {
+			controlType, err := sd.ParseControlType(params.ControlType.String())
+			if err != nil {
+				return GeneratedImage{}, fmt.Errorf("parse control type: %w", err)
+			}
+			if controlType == sd.ControlTypeCount {
+				return GeneratedImage{}, errors.Join(ErrInvalidRequest, fmt.Errorf("unknown control type %q", params.ControlType.String()))
+			}
+			p.ControlType = controlType
+		}
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -815,7 +843,7 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 	}
 
 	var raw *sd.SDImage
-	err := m.runGeneration(ctx, func() error {
+	err := m.runGeneration(ctx, params.Progress, func() error {
 		if p.ControlImage != nil && params.Canny != nil {
 			if err := sd.PreprocessCanny(p.ControlImage, sd.CannyParams{
 				HighThreshold: params.Canny.HighThreshold,
@@ -840,8 +868,28 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 	return encodeImage(raw, params.Seed)
 }
 
-func (m *Model) runGeneration(ctx context.Context, generate func() error) error {
-	return withGeneration(ctx, m.stop, func() error {
+func (m *Model) runGeneration(ctx context.Context, progress func(GenerationProgress), generate func() error) error {
+	return withGeneration(ctx, m.stop, func() (retErr error) {
+		if progress != nil {
+			if err := sd.SetGenerationProgressCallback(m.ctx, func(event sd.GenerationProgress) {
+				progress(GenerationProgress{
+					Stage:      event.Stage,
+					Detail:     event.Detail,
+					Unit:       event.Unit,
+					SamplePass: event.SamplePass,
+					Completed:  event.Completed,
+					Total:      event.Total,
+				})
+			}); err != nil {
+				return fmt.Errorf("register generation progress: %w", err)
+			}
+			defer func() {
+				if err := sd.SetGenerationProgressCallback(m.ctx, nil); err != nil {
+					retErr = errors.Join(retErr, ErrNativeGeneration, fmt.Errorf("clear generation progress: %w", err))
+				}
+			}()
+		}
+
 		type cancelResult struct {
 			requested bool
 			err       error
@@ -920,7 +968,7 @@ func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage
 	inpaint.Seed = params.Seed
 
 	var images []*sd.SDImage
-	err = m.runGeneration(ctx, func() error {
+	err = m.runGeneration(ctx, params.Progress, func() error {
 		var err error
 		images, err = sd.ADetailImage(m.detailer, m.ctx, input, sd.ADetailerParams{
 			Prompt:         params.Prompt,
@@ -991,7 +1039,7 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 
 	var raw *sd.VideoGenerationResult
 
-	err = m.runGeneration(ctx, func() error {
+	err = m.runGeneration(ctx, params.Progress, func() error {
 		var err error
 		raw, err = sd.GenerateVideoWithInfo(m.ctx, p)
 		return err
