@@ -11,13 +11,16 @@ func TestSynchronize(t *testing.T) {
 	tests := []struct {
 		name         string
 		sharedKV     bool
+		device       bool
 		nextPosition llama.Pos
 		wantHidden   []float32
 	}{
-		{"own KV mirrors shifted rows", false, 10, []float32{5, 6, 10, 11, 20, 21}},
-		{"shared KV skips mirror", true, 10, nil},
-		{"own KV logical position differs from row count", false, 19, []float32{5, 6, 10, 11, 20, 21}},
-		{"shared KV logical position differs from row count", true, 19, nil},
+		{"own KV mirrors shifted rows", false, false, 10, []float32{5, 6, 10, 11, 20, 21}},
+		{"shared KV skips mirror", true, false, 10, nil},
+		{"own KV logical position differs from row count", false, false, 19, []float32{5, 6, 10, 11, 20, 21}},
+		{"shared KV logical position differs from row count", true, false, 19, nil},
+		{"device rows mirror across chunks", false, true, 10, []float32{5, 6, 10, 11, 20, 21}},
+		{"device rows preserve logical position", false, true, 19, []float32{5, 6, 10, 11, 20, 21}},
 	}
 
 	for _, tt := range tests {
@@ -26,7 +29,7 @@ func TestSynchronize(t *testing.T) {
 			if !tt.sharedKV {
 				mirrored = make([]float32, 6)
 			}
-			result, err := Synchronize(SyncInput{
+			input := SyncInput{
 				RowCount:      3,
 				HiddenRows:    []float32{10, 11, 20, 21, 30, 31},
 				PendingHidden: []float32{5, 6},
@@ -41,7 +44,24 @@ func TestSynchronize(t *testing.T) {
 					copy(mirrored[start*2:end*2], hiddenRows)
 					return nil
 				},
-			})
+			}
+			if tt.device {
+				input.HiddenRows = nil
+				input.Device = &DeviceSync{
+					DecodeChunk: func(start, end int) error {
+						// Represent the native, already-shifted row view without
+						// supplying a bulk host HiddenRows buffer to Synchronize.
+						deviceView := []float32{5, 6, 10, 11, 20, 21}
+						copy(mirrored[start*2:end*2], deviceView[start*2:end*2])
+						return nil
+					},
+					ReadLastRow: func(out []float32) error {
+						copy(out, []float32{30, 31})
+						return nil
+					},
+				}
+			}
+			result, err := Synchronize(input)
 			if err != nil {
 				t.Fatalf("Synchronize() error = %v, want nil", err)
 			}

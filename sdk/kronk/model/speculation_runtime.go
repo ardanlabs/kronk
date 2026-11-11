@@ -155,14 +155,14 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 	nEmbd := draft.mtp.EmbeddingSize()
 	if len(s.mtp.VerifyHidden) >= count*nEmbd {
 		hiddenRows = s.mtp.VerifyHidden[:count*nEmbd]
-	} else {
+	} else if draft.mtpStateSource == 0 {
 		hidden := yzmaspec.GetEmbeddingsNextN(e.model.lctx, totalRows, nEmbd)
 		if hidden == nil {
 			return mtp.SyncInput{}, fmt.Errorf("target pre-norm rows unavailable for range [%d..%d)", start, start+count)
 		}
 		hiddenRows = hidden[start*nEmbd : (start+count)*nEmbd]
 	}
-	return e.mtpSyncInput(s, e.batch.entries[start:start+count], hiddenRows, s.mtp.TargetRange.BasePos+llama.Pos(count))
+	return e.mtpSyncInput(s, e.batch.entries[start:start+count], hiddenRows, s.mtp.TargetRange.BasePos+llama.Pos(count), start)
 }
 
 func (e *batchEngine) CommitMTPSync(slotID int, result mtp.SyncResult) {

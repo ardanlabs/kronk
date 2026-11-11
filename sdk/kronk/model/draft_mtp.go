@@ -287,7 +287,26 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		nDraft: nDraft,
 	}
 
+	dm.enableMTPDeviceRows(ctx, log, targetCtx)
 	return &mtpDrafter{c: dm}, nil
+}
+
+// Only own-KV, single-head loaders call this. Unsupported symbols, allocation,
+// events, buffer placement, or widths leave the established host path intact.
+func (dc *draftCore) enableMTPDeviceRows(ctx context.Context, log applog.Logger, target llama.Context) {
+	if !mtpDeviceBindings.available || mtpNextNLayers(dc.model) != 1 {
+		return
+	}
+	if !setEmbeddingsNextNDevice(target, true) {
+		return
+	}
+	if !setMTPStateSource(dc.lctx, target) {
+		setMTPStateSource(dc.lctx, 0)
+		setEmbeddingsNextNDevice(target, false)
+		return
+	}
+	dc.mtpStateSource = target
+	log(ctx, "draft-model-mtp", "status", "device-state-rows-enabled")
 }
 
 // embeddedMTPContextParams builds the embedded MTP context to match the
@@ -411,6 +430,7 @@ func loadDraftModelMTPSeparate(ctx context.Context, log applog.Logger, cfg Confi
 		nDraft:         nDraft,
 	}
 
+	dm.enableMTPDeviceRows(ctx, log, targetCtx)
 	return &separateMTPDrafter{c: dm}, nil
 }
 

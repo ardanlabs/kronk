@@ -147,9 +147,8 @@ func (s *imcPrefix) logicalPosition() int {
 //     llama_model pointer is SHARED with the target — there is no extra
 //     file. The MTP head takes (token_id, pre_norm_hidden_state) per
 //     position, so every target llama_decode must be mirrored into the
-//     draft context with batch.embd populated from
-//     llama_get_embeddings_pre_norm. See loadDraftModelMTP and the MTP
-//     speculation package.
+//     draft context using NextN host rows or borrowed device-row references.
+//     See loadDraftModelMTP and the MTP speculation package.
 //
 //   - Separate MTP draft (*separateMTPDrafter): the same own-KV MTP runtime
 //     with the prediction head loaded from a companion GGUF.
@@ -169,6 +168,7 @@ type draftCore struct {
 	promptBuf        []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf         []llama.Token // Reusable buffer for generateDraftTokens output
 	mtp              *mtpengine.Resources
+	mtpStateSource   llama.Context // Borrowed target owning device NextN rows; zero selects host state.
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).

@@ -451,8 +451,10 @@ func TestFromBytesIndexedHybridMemory(t *testing.T) {
 				if result.ComputeBufferEst < 4*tt.context*2052 || result.ComputeBufferCPU < 2*tt.context*2052 {
 					t.Errorf("indexed workspaces not reserved: GPU=%d CPU=%d", result.ComputeBufferEst, result.ComputeBufferCPU)
 				}
-				if tt.name == "target f16" && (result.ComputeBufferEst != 2264583296 || result.ComputeBufferCPU != 832960972) {
-					t.Errorf("Flash Next workspace regression: got GPU/CPU %d/%d, want 2264583296/832960972", result.ComputeBufferEst, result.ComputeBufferCPU)
+				// Device NextN rows add 10240 F32 columns × 2053 rows
+				// (84,090,880 bytes) to the target's previous workspace.
+				if tt.name == "target f16" && (result.ComputeBufferEst != 2348674176 || result.ComputeBufferCPU != 832960972) {
+					t.Errorf("Flash Next workspace regression: got GPU/CPU %d/%d, want 2348674176/832960972", result.ComputeBufferEst, result.ComputeBufferCPU)
 				}
 			} else if result.ComputeBufferCPU != 0 {
 				t.Errorf("non-indexed host workspace: got %d, want 0", result.ComputeBufferCPU)
