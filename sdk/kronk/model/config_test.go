@@ -898,7 +898,7 @@ func TestGGMLTypeString(t *testing.T) {
 	}{
 		{GGMLTypeF32, "f32"},
 		{GGMLTypeF16, "f16"},
-		{GGMLTypeF8_E4M3, "f8_e4m3"},
+		{GGMLTypeF8E4M3, "f8_e4m3"},
 		{GGMLTypeQ4_0, "q4_0"},
 		{GGMLTypeQ4_1, "q4_1"},
 		{GGMLTypeQ5_0, "q5_0"},
@@ -930,10 +930,10 @@ func TestParseGGMLType(t *testing.T) {
 		{"f16", GGMLTypeF16, false},
 		{"fp16", GGMLTypeF16, false},
 		{"F16", GGMLTypeF16, false},
-		{"f8_e4m3", GGMLTypeF8_E4M3, false},
-		{"fp8", GGMLTypeF8_E4M3, false},
-		{" FP8 ", GGMLTypeF8_E4M3, false},
-		{"F8_E4M3", GGMLTypeF8_E4M3, false},
+		{"f8_e4m3", GGMLTypeF8E4M3, false},
+		{"fp8", GGMLTypeF8E4M3, false},
+		{" FP8 ", GGMLTypeF8E4M3, false},
+		{"F8_E4M3", GGMLTypeF8E4M3, false},
 		{"q4_0", GGMLTypeQ4_0, false},
 		{"q4", GGMLTypeQ4_0, false},
 		{"Q4_0", GGMLTypeQ4_0, false},
@@ -974,9 +974,9 @@ func TestFP8CacheConfiguration(t *testing.T) {
 		name string
 		k, v GGMLType
 	}{
-		{"both", GGMLTypeF8_E4M3, GGMLTypeF8_E4M3},
-		{"keys only", GGMLTypeF8_E4M3, GGMLTypeF16},
-		{"values only", GGMLTypeF16, GGMLTypeF8_E4M3},
+		{"both", GGMLTypeF8E4M3, GGMLTypeF8E4M3},
+		{"keys only", GGMLTypeF8E4M3, GGMLTypeF16},
+		{"values only", GGMLTypeF16, GGMLTypeF8E4M3},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := NewConfig(WithModelFiles([]string{"dummy.gguf"}), WithCacheTypeK(tt.k), WithCacheTypeV(tt.v),
@@ -987,13 +987,13 @@ func TestFP8CacheConfiguration(t *testing.T) {
 			}
 		})
 	}
-	if got := GGMLTypeF8_E4M3.ToYZMAType(); got != llama.GGMLTypeF8_E4M3 {
+	if got := GGMLTypeF8E4M3.ToYZMAType(); got != llama.GGMLTypeF8_E4M3 {
 		t.Errorf("native FP8 type: got %d, want %d", got, llama.GGMLTypeF8_E4M3)
 	}
-	if got := GGMLTypeFromYZMA(llama.GGMLTypeF8_E4M3); got != GGMLTypeF8_E4M3 {
+	if got := GGMLTypeFromYZMA(llama.GGMLTypeF8_E4M3); got != GGMLTypeF8E4M3 {
 		t.Errorf("FP8 from native: got %s, want f8_e4m3", got)
 	}
-	if got := GGMLTypeF8_E4M3.ToVRAMType(); got != 43 {
+	if got := GGMLTypeF8E4M3.ToVRAMType(); got != 43 {
 		t.Errorf("VRAM FP8 type: got %d, want 43", got)
 	}
 }
