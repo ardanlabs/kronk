@@ -286,7 +286,7 @@ response.
 ## 9.5 Anthropic Messages API
 
 `POST /v1/messages` provides an Anthropic-style interface. `model` and a
-nonzero `max_tokens` are required:
+positive `max_tokens` are required:
 
 ```json
 {
@@ -304,9 +304,36 @@ API supports text, image, `tool_use`, and `tool_result` blocks, subject to the
 selected model's capabilities. Anthropic-style tool definitions use `name`,
 `description`, and `input_schema`.
 
+Message roles must be `user` or `assistant`; `system` accepts only text.
+Tool definitions require an object `input_schema`. The complete schema is
+retained, but describing constraints in a tool schema does not guarantee that
+every model enforces them. Tool-result `content` accepts a string or an array
+of text/image blocks. Place `tool_result` blocks before any follow-up text or
+images in the user message. `is_error: true` marks the result visibly as
+`Tool execution failed: ...` for the model.
+
+`tool_choice` supports `{"type":"auto"}`, `{"type":"any"}` (require a
+tool), `{"type":"tool","name":"lookup"}` (select a declared tool), and
+`{"type":"none"}`. These use Kronk's model-dependent tool selection;
+they do not guarantee schema-valid arguments. Setting
+`disable_parallel_tool_use` to `true`, or supplying `thinking` or
+`output_config`, is not supported and is rejected.
+Hosted tools, document blocks, and thinking blocks are not supported.
+
 With `"stream": true`, Kronk emits Anthropic-style named events including
 `message_start`, `content_block_start`, `content_block_delta`,
 `content_block_stop`, `message_delta`, and `message_stop`.
+Text streams as generated; tool blocks are emitted with complete arguments
+after generation, not as fine-grained argument fragments. Initial
+`message_start.usage.input_tokens` may be zero; final cumulative input/output
+totals are supplied in `message_delta.usage`.
+
+Responses include the standard `request-id` header and its legacy
+`anthropic-request-id` alias. HTTP errors use
+`{"type":"error","error":{"type":"invalid_request_error","message":"..."}}`
+with the error type and HTTP status appropriate to the failure. After a
+stream is committed, inference errors use SSE rather than appending an HTTP
+JSON body; transport failures can terminate the stream without a final event.
 
 Custom `stop_sequences` are not supported and are rejected. A request that
 reaches `max_tokens` returns `stop_reason: "max_tokens"`; natural completion
