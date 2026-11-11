@@ -95,10 +95,18 @@ type draftKVExternalizer interface {
 // It does NOT free the context or the model — unload sequences
 // those per strategy.
 func (dc *draftCore) freeCommon() {
+	if dc.mtpStateSource != 0 {
+		llama.Synchronize(dc.lctx)
+		setMTPStateSource(dc.lctx, 0)
+		setEmbeddingsNextNDevice(dc.mtpStateSource, false)
+		dc.mtpStateSource = 0
+	}
+
 	if dc.registeredSampler != 0 {
 		llama.SetSampler(dc.lctx, dc.registeredSeqID, 0)
 		dc.registeredSampler = 0
 	}
+
 	llama.SamplerFree(dc.sampler)
 	dc.batch.free()
 }

@@ -17,6 +17,7 @@ You will want to look at `Chapter 20: Developer Guide` for detailed information 
 
 ## Documentation Rules
 
+- New features are not breaking changes when existing callers and configurations remain compatible. Document additive features and opt-in options in the manual, not `BREAKING_CHANGES.md`. Reserve `BREAKING_CHANGES.md` for incompatible changes to existing APIs, wire formats, configuration, defaults, behavior, or runtime requirements; describe the incompatibility and required migration.
 - Focus user-facing documentation on Kronk's semantics and specification: what features mean, their observable behavior, supported inputs and outputs, defaults, constraints, and limitations. Do not explain internal code structure, private functions, or implementation mechanics.
 - Be concrete for CLI usage, installation, and configuration. Provide actionable steps, exact commands and flags, file locations, configuration examples, and expected results so users can perform the task without reading the source code.
 - Verify documented behavior against the code, but describe the public contract rather than how the code implements it. Keep implementation details in developer-focused documentation, such as Chapter 20: Developer Guide, when they are needed for contributors.

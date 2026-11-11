@@ -16,6 +16,13 @@ import (
 func Errors(log *logger.Logger) web.MidFunc {
 	m := func(next web.HandlerFunc) web.HandlerFunc {
 		h := func(ctx context.Context, r *http.Request) web.Encoder {
+			if r.URL.Path == "/v1/messages" {
+				if w := web.GetWriter(ctx); w != nil {
+					w.Header().Set("request-id", web.GetTraceID(ctx))
+					w.Header().Set("anthropic-request-id", web.GetTraceID(ctx))
+				}
+			}
+
 			resp := next(ctx, r)
 
 			err := checkIsError(resp)
@@ -50,6 +57,10 @@ func Errors(log *logger.Logger) web.MidFunc {
 
 			// Send the error to the web package so the error can be
 			// used as the response.
+
+			if r.URL.Path == "/v1/messages" {
+				return &errs.MessagesError{Err: appErr}
+			}
 
 			return appErr
 		}

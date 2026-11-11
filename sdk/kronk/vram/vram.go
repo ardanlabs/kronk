@@ -7,6 +7,7 @@ package vram
 import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
 // Context window size constants (in tokens).
@@ -29,14 +30,15 @@ const DefaultNUBatch int64 = 2 * 1024
 // Bytes per element constants for KV cache types. Re-exported from
 // sdk/kronk/gguf so callers don't need a second import.
 const (
-	BytesPerElementF32  = gguf.BytesPerElementF32
-	BytesPerElementF16  = gguf.BytesPerElementF16
-	BytesPerElementBF16 = gguf.BytesPerElementBF16
-	BytesPerElementQ8_0 = gguf.BytesPerElementQ8_0
-	BytesPerElementQ4_0 = gguf.BytesPerElementQ4_0
-	BytesPerElementQ4_1 = gguf.BytesPerElementQ4_1
-	BytesPerElementQ5_0 = gguf.BytesPerElementQ5_0
-	BytesPerElementQ5_1 = gguf.BytesPerElementQ5_1
+	BytesPerElementF32    = gguf.BytesPerElementF32
+	BytesPerElementF16    = gguf.BytesPerElementF16
+	BytesPerElementBF16   = gguf.BytesPerElementBF16
+	BytesPerElementF8E4M3 = gguf.BytesPerElementF8E4M3
+	BytesPerElementQ8_0   = gguf.BytesPerElementQ8_0
+	BytesPerElementQ4_0   = gguf.BytesPerElementQ4_0
+	BytesPerElementQ4_1   = gguf.BytesPerElementQ4_1
+	BytesPerElementQ5_0   = gguf.BytesPerElementQ5_0
+	BytesPerElementQ5_1   = gguf.BytesPerElementQ5_1
 )
 
 // Slot count constants.
@@ -217,6 +219,23 @@ func Calculate(input Input) Result {
 		compute.MarginGPU += memory.MarginGPU
 		compute.MarginCPU += memory.MarginCPU
 	}
+
+	ownKV := input.ComputeKind == modelprofile.ComputeQwen35 || (arch.OwnKVCompanion{}).Claims(input.Architecture)
+	if ownKV && (computeContexts > 1 || input.RecurrentStateCopies > 1) && !input.MTPContext && input.NextNPredictLayers <= 1 && offloadLayers > 0 {
+		// Eligible own-KV MTP keeps target hidden rows on the output device.
+		// MTP uses one physical batch, so NUBatch is also the logical NBatch.
+		// Reserve once for the target, including one scratch row per sequence.
+		// Older/unsupported native backends may fall back to host extraction;
+		// retain the conservative reservation rather than depend on activation.
+		// Companion planning sizes the draft graph separately, leaving only
+		// one compute context here; rollback copies still identify speculation.
+		batch := input.NUBatch
+		if batch <= 0 {
+			batch = DefaultNUBatch
+		}
+		compute.WorkspaceGPU += 4 * max(input.OutputEmbeddingLength, input.EmbeddingLength) * (batch + max(input.Slots, 1))
+	}
+
 	computeBufferEst, computeBufferCPU := compute.GPUBytes(), compute.CPUBytes()
 
 	var moeCacheBytes int64

@@ -110,7 +110,7 @@ export default function ConfigSweepParams({
         <div className="playground-sweep-param">
           <FieldLabel className="playground-sweep-param-toggle" tooltipKey="cacheType">Cache Type</FieldLabel>
           <div className="playground-sweep-option-checks">
-            {['f16', 'q8_0', 'q4_0'].map((val) => (
+            {['f16', 'f8_e4m3', 'q8_0', 'q4_0'].map((val) => (
               <label key={val} className="playground-sweep-option-label">
                 <input
                   type="checkbox"

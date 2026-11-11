@@ -68,6 +68,9 @@ func Test_API(t *testing.T) {
 	test.RunStreaming(t, respStreamContractsQwen3(t, tokens), "resp-stream-contracts-qwen3")
 	test.Run(t, msgsNonStreamQwen3(t, tokens), "msgs-nonstream-qwen3")
 	test.RunStreaming(t, msgsStreamQwen3(t, tokens), "msgs-stream-qwen3")
+	t.Run("msgs-tool-roundtrip-qwen3", func(t *testing.T) {
+		msgsToolRoundTrip(t, test, tokens["messages"])
+	})
 	test.Run(t, tokenize200(tokens), "tokenize-200")
 	t.Run("chat-transport-qwen3", func(t *testing.T) {
 		chatTransport(t, test, tokens["chat-completions"], qwen3ModelID, 1)

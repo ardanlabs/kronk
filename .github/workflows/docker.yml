@@ -20,7 +20,7 @@ name: Docker
 # See MALINA_PROCESSORS; no Linux arm64 Malina bundle is published.
 #
 # Multi-arch images (cpu / cuda / vulkan / all) are built natively on
-# `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64) runners, then
+# `ubuntu-26.04` (amd64) and `ubuntu-26.04-arm` (arm64) runners, then
 # stitched into a single manifest with `docker buildx imagetools create`.
 # This avoids the ~5x slowdown of QEMU emulation for arm64 builds. The
 # single-arch `rocm` variant still goes through `merge`; `imagetools
@@ -117,7 +117,7 @@ jobs:
   # prefix.
   # ---------------------------------------------------------------------------
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     # `pull-requests: read` is needed by `gh api /repos/.../pulls/N/files`
     # in the relevance gate below. Everything else stays at the default.
@@ -399,7 +399,7 @@ jobs:
               PLATS="amd64"
             fi
             for a in $PLATS; do
-              RUNNER=$([[ "$a" == "arm64" ]] && echo "ubuntu-24.04-arm" || echo "ubuntu-24.04")
+              RUNNER=$([[ "$a" == "arm64" ]] && echo "ubuntu-26.04-arm" || echo "ubuntu-26.04")
               PROCESSORS_FOR_ARCH="${PROCESSORS[$v]}"
               if [[ "$v" == "all" && "$a" == "arm64" ]]; then
                 PROCESSORS_FOR_ARCH="cpu cuda vulkan"
@@ -833,7 +833,7 @@ jobs:
   merge:
     needs: [plan, build]
     if: needs.plan.outputs.is_tag == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1215,7 +1215,7 @@ jobs:
   merge_main:
     needs: [plan, build]
     if: needs.plan.outputs.is_main == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false

@@ -61,6 +61,7 @@ func TestNumericSetSerialization(t *testing.T) {
 
 func TestRegisteredSetText(t *testing.T) {
 	for _, value := range []any{
+		GGMLTypeAuto, GGMLTypeF8_E4M3,
 		MediaTypeNone, MediaTypeVision, MediaTypeAudio,
 		ChannelNone, ChannelReasoning, ChannelAnswer, ChannelTool,
 		DecisionQuestionType{}, DecisionQuestionTypeChoice, DecisionQuestionTypeScore, DecisionQuestionTypeNoul,
@@ -105,6 +106,7 @@ func TestRegisteredSetZeros(t *testing.T) {
 
 func TestStringSetSerialization(t *testing.T) {
 	for _, value := range []any{
+		GGMLTypeAuto, GGMLTypeF8_E4M3,
 		DecisionQuestionType{}, DecisionQuestionTypeChoice, DecisionQuestionTypeScore, DecisionQuestionTypeNoul,
 		IMCSessionState{}, IMCSessionStateActive, IMCSessionStateIdle, IMCSessionStateEmpty,
 		NUMADisabled, NUMADistribute, NUMAIsolate, NUMANumactl, NUMAMirror,

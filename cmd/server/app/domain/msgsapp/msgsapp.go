@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
@@ -30,22 +31,19 @@ func newApp(cfg Config) *app {
 
 func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 	var req MessagesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.UseNumber()
+
+	if err := dec.Decode(&req); err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	if req.Model == "" {
-		return errs.Errorf(errs.InvalidArgument, "missing model field")
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return errs.Errorf(errs.InvalidArgument, "request body must contain a single JSON object")
 	}
 
-	if req.MaxTokens == 0 {
-		return errs.Errorf(errs.InvalidArgument, "missing max_tokens field")
-	}
-	if len(req.StopSequences) > 0 {
-		return errs.Errorf(errs.InvalidArgument, "stop_sequences is not supported")
-	}
-	if len(req.Messages) == 0 {
-		return errs.FromSDK(model.ErrMessagesMissing)
+	if err := req.Validate(); err != nil {
+		return errs.New(errs.InvalidArgument, err)
 	}
 
 	krn, err := a.pool.Kronk.AquireModel(ctx, req.Model)
@@ -74,9 +72,10 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.FromSDK(err)
 	}
 
-	// Set anthropic-request-id header for API compatibility
+	// Retain the legacy alias alongside the standard Anthropic header.
 	w := web.GetWriter(ctx)
 	if w != nil {
+		w.Header().Set("request-id", resp.ID)
 		w.Header().Set("anthropic-request-id", resp.ID)
 	}
 
@@ -110,8 +109,9 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D) 
 			return committed, fmt.Errorf("chat-streaming-http: context canceled, do not send response: %w", err)
 		}
 
-		// Set anthropic-request-id header from first response
+		// Set request IDs before committing the first response.
 		if !state.started && resp.ID != "" {
+			w.Header().Set("request-id", resp.ID)
 			w.Header().Set("anthropic-request-id", resp.ID)
 			w.WriteHeader(http.StatusOK)
 			committed = true
@@ -170,8 +170,7 @@ func (s *streamState) processChunk(resp model.ChatResponse) error {
 
 	choice := resp.Choices[0]
 
-	// Skip delta content on final chunk (FinishReason set) - it duplicates previous content
-	if choice.FinishReason() == "" && choice.Delta != nil && choice.Delta.Content != "" {
+	if choice.Delta != nil && choice.Delta.Content != "" {
 		if !s.blockStarted {
 			if err := s.sendContentBlockStart("text", "", ""); err != nil {
 				return err
@@ -184,8 +183,11 @@ func (s *streamState) processChunk(resp model.ChatResponse) error {
 		}
 	}
 
-	if choice.Delta != nil && len(choice.Delta.ToolCalls) > 0 {
-		for _, tc := range choice.Delta.ToolCalls {
+	// SDK tool deltas announce identities and later reconcile complete JSON;
+	// they are not append-only argument fragments. Emit authoritative completed
+	// calls from the terminal message instead, once per call, in model order.
+	if choice.FinishReason() != "" && choice.Message != nil {
+		for _, tc := range choice.Message.ToolCalls {
 			if s.blockStarted {
 				if err := s.sendContentBlockStop(); err != nil {
 					return err
@@ -201,10 +203,12 @@ func (s *streamState) processChunk(resp model.ChatResponse) error {
 
 			s.blockStarted = true
 
-			// Marshal the underlying map directly to avoid double-encoding.
-			// ToolCallArguments.MarshalJSON() wraps as JSON string per OpenAI spec,
-			// but Anthropic expects raw JSON object in partial_json field.
-			args, err := json.Marshal(map[string]any(tc.Function.Arguments))
+			args := []byte("{}")
+			var err error
+			if tc.Function.Arguments != nil {
+				args, err = json.Marshal(map[string]any(tc.Function.Arguments))
+			}
+
 			if err != nil {
 				return err
 			}

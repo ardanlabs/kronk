@@ -1,8 +1,11 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"slices"
 	"sort"
 	"strings"
 
@@ -42,23 +45,18 @@ func isBuiltinRule(rule string) bool {
 // It supports object, array, string, number, integer, boolean, and enum types.
 func fromJSONSchema(schema any) (string, error) {
 	var schemaMap map[string]any
-
-	switch s := schema.(type) {
-	case map[string]any:
-		schemaMap = s
-
-	case D:
-		schemaMap = map[string]any(s)
-
-	default:
-		data, err := json.Marshal(schema)
-		if err != nil {
-			return "", fmt.Errorf("from-json-schema: unable to marshal schema: %w", err)
-		}
-
-		if err := json.Unmarshal(data, &schemaMap); err != nil {
-			return "", fmt.Errorf("from-json-schema: unable to unmarshal schema: %w", err)
-		}
+	// Normalize D, typed slices, and nested maps to the JSON wire shape.
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return "", fmt.Errorf("%w: from-json-schema: marshal schema: %w", ErrInvalidRequest, err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&schemaMap); err != nil {
+		return "", fmt.Errorf("%w: from-json-schema: decode schema: %w", ErrInvalidRequest, err)
+	}
+	if schemaMap == nil {
+		return "", fmt.Errorf("%w: from-json-schema: schema must be an object", ErrInvalidRequest)
 	}
 
 	gb := grammarBuilder{
@@ -105,8 +103,14 @@ func fromResponseFormat(rf any) (string, error) {
 
 	case "json_schema":
 		var wrapper map[string]any
+		value, exists := rfMap["json_schema"]
+		if !exists {
+			if schema, ok := rfMap["schema"]; ok {
+				return fromJSONSchema(schema)
+			}
+		}
 
-		switch s := rfMap["json_schema"].(type) {
+		switch s := value.(type) {
 		case map[string]any:
 			wrapper = s
 
@@ -144,10 +148,22 @@ func (gb *grammarBuilder) nextRuleName() string {
 }
 
 func (gb *grammarBuilder) schemaToRule(schema map[string]any) (string, error) {
+	if err := validateGrammarSchema(schema); err != nil {
+		return "", err
+	}
 	schemaType, _ := schema["type"].(string)
 
 	if enum, ok := schema["enum"].([]any); ok {
-		return gb.enumToRule(enum)
+		var values []any
+		for _, value := range enum {
+			if schemaType == "" || grammarEnumType(value, schemaType) {
+				values = append(values, value)
+			}
+		}
+		if len(values) == 0 {
+			return "", fmt.Errorf("%w: enum has no values matching type", ErrInvalidRequest)
+		}
+		return gb.enumToRule(values)
 	}
 
 	switch schemaType {
@@ -177,31 +193,110 @@ func (gb *grammarBuilder) schemaToRule(schema map[string]any) (string, error) {
 	}
 }
 
+// validateGrammarSchema deliberately allowlists the supported subset. Unknown
+// assertions must not silently produce a grammar that ignores constraints.
+// Annotation values do not affect the accepted language.
+func validateGrammarSchema(schema map[string]any) error {
+	schemaType, _ := schema["type"].(string)
+	for key, value := range schema {
+		switch key {
+		case "$schema", "$id", "$comment", "title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly":
+		case "contentEncoding", "contentMediaType", "contentSchema":
+		case "type":
+			switch value {
+			case "object", "array", "string", "number", "integer", "boolean", "null":
+			default:
+				return fmt.Errorf("%w: unsupported schema type %v", ErrInvalidRequest, value)
+			}
+		case "enum":
+			if values, ok := value.([]any); !ok || len(values) == 0 {
+				return fmt.Errorf("%w: enum must be a nonempty array", ErrInvalidRequest)
+			}
+		case "properties", "required", "additionalProperties":
+			if schemaType != "object" {
+				return fmt.Errorf("%w: %s requires object type", ErrInvalidRequest, key)
+			}
+			if _, ok := schema["enum"]; ok {
+				return fmt.Errorf("%w: enum with object constraints is not supported", ErrInvalidRequest)
+			}
+			if key == "additionalProperties" {
+				if _, ok := value.(bool); !ok {
+					return fmt.Errorf("%w: additionalProperties must be a boolean", ErrInvalidRequest)
+				}
+			}
+		case "items":
+			if schemaType != "array" {
+				return fmt.Errorf("%w: items requires array type", ErrInvalidRequest)
+			}
+			if _, ok := schema["enum"]; ok {
+				return fmt.Errorf("%w: enum with items is not supported", ErrInvalidRequest)
+			}
+		default:
+			return fmt.Errorf("%w: unsupported schema keyword %q", ErrInvalidRequest, key)
+		}
+	}
+	return nil
+}
+
+func grammarEnumType(value any, schemaType string) bool {
+	switch schemaType {
+	case "null":
+		return value == nil
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "number", "integer":
+		n, ok := value.(json.Number)
+		if !ok {
+			return false
+		}
+		if schemaType == "number" {
+			return true
+		}
+		r, ok := new(big.Rat).SetString(n.String())
+		return ok && r.IsInt()
+	case "object":
+		_, ok := value.(map[string]any)
+		return ok
+	case "array":
+		_, ok := value.([]any)
+		return ok
+	}
+	return false
+}
+
 func (gb *grammarBuilder) objectToRule(schema map[string]any) (string, error) {
-	props, _ := schema["properties"].(map[string]any)
-	if props == nil {
-		if propsD, ok := schema["properties"].(D); ok {
-			props = map[string]any(propsD)
+	props, ok := schema["properties"].(map[string]any)
+	if _, exists := schema["properties"]; exists && !ok {
+		return "", fmt.Errorf("%w: properties must be an object", ErrInvalidRequest)
+	}
+
+	required := make(map[string]bool)
+	if value, exists := schema["required"]; exists {
+		reqArr, ok := value.([]any)
+		if !ok {
+			return "", fmt.Errorf("%w: required must be an array", ErrInvalidRequest)
+		}
+		for _, r := range reqArr {
+			s, ok := r.(string)
+			if !ok || required[s] {
+				return "", fmt.Errorf("%w: required must contain unique strings", ErrInvalidRequest)
+			}
+			if _, exists := props[s]; !exists {
+				return "", fmt.Errorf("%w: required property %q has no schema", ErrInvalidRequest, s)
+			}
+			required[s] = true
 		}
 	}
 
 	if len(props) == 0 {
+		if closed, ok := schema["additionalProperties"].(bool); ok && !closed {
+			return `"{" ws "}"`, nil
+		}
 		return "object", nil
-	}
-
-	required := make(map[string]bool)
-	if reqArr, ok := schema["required"].([]any); ok {
-		for _, r := range reqArr {
-			if s, ok := r.(string); ok {
-				required[s] = true
-			}
-		}
-	}
-
-	if reqArr, ok := schema["required"].([]string); ok {
-		for _, r := range reqArr {
-			required[r] = true
-		}
 	}
 
 	var keys []string
@@ -220,7 +315,7 @@ func (gb *grammarBuilder) objectToRule(schema map[string]any) (string, error) {
 		case D:
 			propSchema = map[string]any(v)
 		default:
-			continue
+			return "", fmt.Errorf("%w: property %q must be a schema object", ErrInvalidRequest, key)
 		}
 
 		propRuleName := gb.nextRuleName()
@@ -240,29 +335,39 @@ func (gb *grammarBuilder) objectToRule(schema map[string]any) (string, error) {
 		}
 
 		pair := fmt.Sprintf(`%s ws ":" ws %s`, keyRule, propRule)
-		if !required[key] {
-			pair = fmt.Sprintf("( %s )?", pair)
-		}
 		pairs = append(pairs, pair)
 	}
 
-	if len(pairs) == 0 {
-		return "object", nil
+	if len(required) == len(keys) {
+		return fmt.Sprintf(`"{" ws %s ws "}"`, strings.Join(pairs, ` ws "," ws `)), nil
 	}
 
-	return fmt.Sprintf(`"{" ws %s ws "}"`, strings.Join(pairs, ` ws "," ws `)), nil
+	// Two suffix states track whether a property has already been emitted.
+	// Only the populated state prefixes the next present property with a comma.
+	first, rest := `""`, `""`
+	for i, key := range slices.Backward(keys) {
+		nextFirst, nextRest := gb.nextRuleName(), gb.nextRuleName()
+		firstRule := pairs[i] + " " + rest
+		restRule := `ws "," ws ` + pairs[i] + " " + rest
+		if !required[key] {
+			firstRule = "( " + firstRule + " | " + first + " )"
+			// Omitting this property must still allow later properties.
+			restRule = `( ws "," ws ` + pairs[i] + " )? " + rest
+		}
+		gb.rules[nextFirst], gb.rules[nextRest] = firstRule, restRule
+		first, rest = nextFirst, nextRest
+	}
+	return fmt.Sprintf(`"{" ws %s ws "}"`, first), nil
 }
 
 func (gb *grammarBuilder) arrayToRule(schema map[string]any) (string, error) {
-	items, _ := schema["items"].(map[string]any)
-	if items == nil {
-		if itemsD, ok := schema["items"].(D); ok {
-			items = map[string]any(itemsD)
-		}
-	}
-
-	if items == nil {
+	value, exists := schema["items"]
+	if !exists {
 		return "array", nil
+	}
+	items, ok := value.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("%w: items must be a schema object", ErrInvalidRequest)
 	}
 
 	itemRuleName := gb.nextRuleName()

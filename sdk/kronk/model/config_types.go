@@ -23,6 +23,9 @@ var (
 	GGMLTypeF32 = newGGMLType("f32")
 	// GGMLTypeF16 uses 16-bit floating point.
 	GGMLTypeF16 = newGGMLType("f16")
+	// GGMLTypeF8_E4M3 uses 8-bit floating point with four exponent and three
+	// mantissa bits. Model and backend support is required; this is not Q8_0.
+	GGMLTypeF8_E4M3 = newGGMLType("f8_e4m3")
 	// GGMLTypeQ4_0 uses 4-bit quantization (type 0).
 	GGMLTypeQ4_0 = newGGMLType("q4_0")
 	// GGMLTypeQ4_1 uses 4-bit quantization (type 1).
@@ -107,6 +110,8 @@ func ParseGGMLType(value string) (GGMLType, error) {
 		name = "f32"
 	case "fp16":
 		name = "f16"
+	case "fp8":
+		name = "f8_e4m3"
 	case "q4":
 		name = "q4_0"
 	case "q5":
@@ -139,6 +144,8 @@ func (gt GGMLType) ToYZMAType() llama.GGMLType {
 		return llama.GGMLTypeF32
 	case GGMLTypeF16:
 		return llama.GGMLTypeF16
+	case GGMLTypeF8_E4M3:
+		return llama.GGMLTypeF8_E4M3
 	case GGMLTypeQ4_0:
 		return llama.GGMLTypeQ4_0
 	case GGMLTypeQ4_1:
@@ -176,6 +183,8 @@ func GGMLTypeFromYZMA(t llama.GGMLType) GGMLType {
 		return GGMLTypeF32
 	case llama.GGMLTypeF16:
 		return GGMLTypeF16
+	case llama.GGMLTypeF8_E4M3:
+		return GGMLTypeF8_E4M3
 	case llama.GGMLTypeQ4_0:
 		return GGMLTypeQ4_0
 	case llama.GGMLTypeQ4_1:

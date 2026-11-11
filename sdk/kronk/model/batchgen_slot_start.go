@@ -135,8 +135,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.specRNG = specRNG
 	s.sampler = e.model.toSampler(job.ctx, job.params, seeds)
 
-	// Create grammar sampler if grammar is specified (kept separate from chain).
-	if job.params.Grammar != "" {
+	// Answer grammars do not constrain function-call syntax or arguments.
+	// Required and explicitly selected tools produce calls, not answer text.
+	// Tool choice has already been validated before the job reaches the slot.
+	toolMode, _, _ := parseToolChoice(job.d["tool_choice"])
+	if job.params.Grammar != "" && toolMode != "required" && toolMode != "function" {
 		s.grammarSampler, err = newGrammarSampler(e.model.vocab, job.params.Grammar)
 		if err != nil {
 			e.finishSlot(s, fmt.Errorf("start-slot: %w", err))

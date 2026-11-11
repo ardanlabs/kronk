@@ -662,9 +662,46 @@ func TestCalculateQwen35Workspace(t *testing.T) {
 			wantCPU := tt.wantCPU + tt.wantCPU/10
 			if tt.contexts == 2 {
 				wantGPU--
+				// One F32 target buffer: 2048 columns × (2052 batch
+				// rows + one sequence scratch row), not one per context.
+				wantGPU += 16_818_176
 			}
 			if result.ComputeBufferEst != wantGPU || result.ComputeBufferCPU != wantCPU {
 				t.Fatalf("GPU/CPU compute: got %d/%d, want %d/%d", result.ComputeBufferEst, result.ComputeBufferCPU, wantGPU, wantCPU)
+			}
+		})
+	}
+}
+
+func TestCalculateMTPDeviceRows(t *testing.T) {
+	for _, tt := range []struct {
+		name, architecture string
+		copies, nextN      int64
+		gpuLayers          int64
+		mtpContext         bool
+		want               int64
+	}{
+		{"Qwen companion target", "qwen35", 4, 0, 0, false, 8468},
+		{"Qwen MoE target", "qwen35moe", 4, 1, 0, false, 8468},
+		{"Qwen4 target", "qwen4exp", 4, 1, 0, false, 8468},
+		{"Nemotron target", "nemotron_h_moe", 4, 1, 0, false, 8468},
+		{"no speculation", "qwen35", 1, 1, 0, false, 0},
+		{"CPU fallback", "qwen35", 4, 1, -1, false, 0},
+		{"shared KV", "gemma4", 4, 1, 0, false, 0},
+		{"chained heads", "qwen35", 4, 2, 0, false, 0},
+		{"draft context", "qwen35", 4, 1, 0, true, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			input := Input{
+				Architecture: tt.architecture, RecurrentStateCopies: tt.copies,
+				NextNPredictLayers: tt.nextN, GPULayers: tt.gpuLayers, MTPContext: tt.mtpContext,
+				BlockCount: 4, EmbeddingLength: 17, OutputEmbeddingLength: 29, NUBatch: 70, Slots: 3,
+			}
+			result := Calculate(input)
+			// The target's extra allocation is 29 F32 columns × (70+3)
+			// rows. It is independent of the per-context compute arena.
+			if got := result.ComputeBufferEst - EstimateComputeBuffer(input); got != tt.want {
+				t.Errorf("device reservation: got %d, want %d", got, tt.want)
 			}
 		})
 	}

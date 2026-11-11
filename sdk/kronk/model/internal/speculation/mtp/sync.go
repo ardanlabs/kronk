@@ -19,9 +19,18 @@ type SyncInput struct {
 	EmbeddingSize int
 	ChunkSize     int
 	SharedKV      bool
+	Device        *DeviceSync
 	// DecodeOwnChunk replays the host's rows in [start,end) with shifted
 	// hidden states. Shared-KV handoff never invokes this callback.
 	DecodeOwnChunk func(start, end int, hiddenRows []float32) error
+}
+
+// DeviceSync borrows the target's last-decode rows for own-KV replay. It must
+// be consumed before another target decode. Only the final row is copied to
+// host memory, where pending state survives cache snapshots and target rollback.
+type DeviceSync struct {
+	DecodeChunk func(start, end int) error
+	ReadLastRow func(out []float32) error
 }
 
 // SyncResult contains MTP state after target synchronization.
@@ -37,7 +46,7 @@ func Synchronize(input SyncInput) (SyncResult, error) {
 	if nRows == 0 {
 		return SyncResult{}, nil
 	}
-	if nRows < 0 || input.EmbeddingSize <= 0 || len(input.HiddenRows) != nRows*input.EmbeddingSize {
+	if nRows < 0 || input.EmbeddingSize <= 0 || (input.Device == nil && len(input.HiddenRows) != nRows*input.EmbeddingSize) {
 		return SyncResult{}, fmt.Errorf("synchronizing MTP: got %d hidden values for %d rows with embedding size %d", len(input.HiddenRows), nRows, input.EmbeddingSize)
 	}
 
@@ -47,12 +56,18 @@ func Synchronize(input SyncInput) (SyncResult, error) {
 		}
 		scratch := input.HiddenScratch
 		need := min(input.ChunkSize, nRows) * input.EmbeddingSize
-		if cap(scratch) < need {
+		if input.Device == nil && cap(scratch) < need {
 			scratch = make([]float32, need)
 		}
 
 		for start := 0; start < nRows; start += input.ChunkSize {
 			end := min(start+input.ChunkSize, nRows)
+			if input.Device != nil {
+				if err := input.Device.DecodeChunk(start, end); err != nil {
+					return SyncResult{}, err
+				}
+				continue
+			}
 			hidden := scratch[:(end-start)*input.EmbeddingSize]
 			for i := start; i < end; i++ {
 				dst := hidden[(i-start)*input.EmbeddingSize : (i-start+1)*input.EmbeddingSize]
@@ -77,7 +92,13 @@ func Synchronize(input SyncInput) (SyncResult, error) {
 	} else {
 		pending = pending[:input.EmbeddingSize]
 	}
-	copy(pending, input.HiddenRows[(nRows-1)*input.EmbeddingSize:])
+	if input.Device != nil {
+		if err := input.Device.ReadLastRow(pending); err != nil {
+			return SyncResult{}, err
+		}
+	} else {
+		copy(pending, input.HiddenRows[(nRows-1)*input.EmbeddingSize:])
+	}
 
 	return SyncResult{PendingHidden: pending, Position: input.NextPosition, Active: true}, nil
 }

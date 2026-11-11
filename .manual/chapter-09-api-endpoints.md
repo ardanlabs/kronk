@@ -203,8 +203,43 @@ This is a compatible inference interface, not a stored-response service. Send
 the full conversation and function-call results in `input`;
 `previous_response_id` does not retrieve earlier turns, and `store` does not
 enable response persistence. File and `input_file` content parts are rejected.
-Use Kronk's top-level `response_format` and `reasoning_effort` controls; the
-Responses-native `text.format` and `reasoning.effort` objects are not translated.
+
+Responses-native `text.format` supports `text`, `json_object`, and `json_schema`.
+For `json_schema`, provide a nonempty `name` and a `schema` object; optional
+`description` and `strict` are retained in response metadata. The supported
+schema subset is described in [Chapter 10 §10.6](https://www.kronkai.com/manual#106-structured-output).
+For example:
+
+```json
+{
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
+  "input": "Return a language name.",
+  "text": {"format": {
+    "type": "json_schema",
+    "name": "language",
+    "schema": {"type": "string"}
+  }}
+}
+```
+
+`reasoning.effort` accepts the same string values as Kronk's top-level
+`reasoning_effort`. Model/template support determines its effect. Existing
+top-level controls take precedence: `json_schema`, then a nonempty `grammar`,
+then `response_format`, then `text.format`; `reasoning_effort` overrides
+`reasoning.effort`. Prefer one format control per request.
+
+Response metadata retains instructions, user, metadata, tool definitions,
+reasoning configuration, and the selected text format. Generated reasoning is
+returned in `output` items with `type: "reasoning"` and
+`summary: [{"type":"summary_text","text":"..."}]`, not in the top-level
+`reasoning.summary` configuration field. That configuration accepts `auto`,
+`concise`, or `detailed`; it does not request a separate summarization pass or
+change the model's emitted reasoning. Reasoning items resent in conversation
+history are ignored; resend assistant messages and function calls as well.
+
+The HTTP body must contain exactly one JSON document; trailing whitespace is
+allowed, but additional values or garbage are rejected. Numeric schema values
+retain their JSON precision when decoded by the model server.
 
 Use `max_output_tokens` to set the Responses output limit. `max_tokens` remains
 available as a compatibility alias, but `max_output_tokens` wins when both are
@@ -239,7 +274,11 @@ data: {"type":"response.completed",...}
 ```
 
 Function calls produce corresponding
-`response.function_call_arguments.delta` and `.done` events. A token-limited
+`response.function_call_arguments.delta` and `.done` events. Reasoning has an
+output-item lifecycle and `response.reasoning_summary_part.added`,
+`response.reasoning_summary_text.delta`, `.done`, and
+`response.reasoning_summary_part.done` events, with `item_id`, `output_index`,
+and `summary_index` identifying each summary part. A token-limited
 stream ends with `response.incomplete` instead of `response.completed` and its
 embedded response carries the same incomplete details as a non-streaming
 response.
@@ -247,7 +286,7 @@ response.
 ## 9.5 Anthropic Messages API
 
 `POST /v1/messages` provides an Anthropic-style interface. `model` and a
-nonzero `max_tokens` are required:
+positive `max_tokens` are required:
 
 ```json
 {
@@ -265,9 +304,36 @@ API supports text, image, `tool_use`, and `tool_result` blocks, subject to the
 selected model's capabilities. Anthropic-style tool definitions use `name`,
 `description`, and `input_schema`.
 
+Message roles must be `user` or `assistant`; `system` accepts only text.
+Tool definitions require an object `input_schema`. The complete schema is
+retained, but describing constraints in a tool schema does not guarantee that
+every model enforces them. Tool-result `content` accepts a string or an array
+of text/image blocks. Place `tool_result` blocks before any follow-up text or
+images in the user message. `is_error: true` marks the result visibly as
+`Tool execution failed: ...` for the model.
+
+`tool_choice` supports `{"type":"auto"}`, `{"type":"any"}` (require a
+tool), `{"type":"tool","name":"lookup"}` (select a declared tool), and
+`{"type":"none"}`. These use Kronk's model-dependent tool selection;
+they do not guarantee schema-valid arguments. Setting
+`disable_parallel_tool_use` to `true`, or supplying `thinking` or
+`output_config`, is not supported and is rejected.
+Hosted tools, document blocks, and thinking blocks are not supported.
+
 With `"stream": true`, Kronk emits Anthropic-style named events including
 `message_start`, `content_block_start`, `content_block_delta`,
 `content_block_stop`, `message_delta`, and `message_stop`.
+Text streams as generated; tool blocks are emitted with complete arguments
+after generation, not as fine-grained argument fragments. Initial
+`message_start.usage.input_tokens` may be zero; final cumulative input/output
+totals are supplied in `message_delta.usage`.
+
+Responses include the standard `request-id` header and its legacy
+`anthropic-request-id` alias. HTTP errors use
+`{"type":"error","error":{"type":"invalid_request_error","message":"..."}}`
+with the error type and HTTP status appropriate to the failure. After a
+stream is committed, inference errors use SSE rather than appending an HTTP
+JSON body; transport failures can terminate the stream without a final event.
 
 Custom `stop_sequences` are not supported and are rejected. A request that
 reaches `max_tokens` returns `stop_reason: "max_tokens"`; natural completion

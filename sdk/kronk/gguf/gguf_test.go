@@ -114,6 +114,7 @@ func TestBytesPerElement(t *testing.T) {
 		{name: "f32", id: 50, want: 4},
 		{name: "f16", id: 1, want: 2},
 		{name: "bf16", id: 30, want: 2},
+		{name: "f8_e4m3", id: 43, want: 1},
 		{name: "q8_0", id: 8, want: 1},
 		{name: "q4_0", id: 2, want: 1},
 		{name: "auto-falls-back-to-f16", id: 0, want: 2},
@@ -241,23 +242,30 @@ func TestCalculateKVCacheSharedLayers(t *testing.T) {
 	}
 }
 
-func TestCalculateKVCacheQ8RowSize(t *testing.T) {
-	in := KVCacheInput{
-		ContextWindow:   256,
-		BlockCount:      1,
-		HeadCountKV:     1,
-		KeyLength:       128,
-		ValueLength:     128,
-		BytesPerElement: 1,
-		TypeK:           8,
-		TypeV:           8,
-		Slots:           1,
-	}
-
-	out := CalculateKVCache(in)
-	want := int64(256 * (136 + 136))
-	if out.SlotMemory != want {
-		t.Fatalf("SlotMemory: got %d, want Q8_0 row-sized %d", out.SlotMemory, want)
+func TestCalculateKVCachePrecision(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		k, v       int32
+		rowK, rowV int64
+	}{
+		{"Q8_0 block scales", 8, 8, 136, 68},
+		{"FP8 no block scales", 43, 43, 128, 64},
+		{"FP8 keys F16 values", 43, 1, 128, 128},
+		{"F16 keys FP8 values", 1, 43, 256, 64},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			out := CalculateKVCache(KVCacheInput{
+				ContextWindow: 256, BlockCount: 2, HeadCountKV: 1,
+				KeyLength: 128, ValueLength: 64, BytesPerElement: 2,
+				TypeK: tt.k, TypeV: tt.v, Slots: 2,
+			})
+			// Two layers, two slots and 256 cells per slot. The asymmetric
+			// widths distinguish K/V swaps and FP8 from Q8_0 block overhead.
+			want := int64(2*2*256) * (tt.rowK + tt.rowV)
+			if out.SlotMemory != want || out.KVPerSlot != want/2 {
+				t.Fatalf("total/per-slot: got %d/%d, want %d/%d", out.SlotMemory, out.KVPerSlot, want, want/2)
+			}
+		})
 	}
 }
 

@@ -275,6 +275,7 @@ Common choices are:
 | Value | Meaning |
 | ----- | ------- |
 | `f16` | Higher precision and larger cache |
+| `f8_e4m3` | FP8 floating-point cache; requires model and backend support |
 | `q8_0` | Smaller quantized cache |
 | `q4_0` | More aggressive compression |
 
@@ -282,6 +283,29 @@ The actual memory reduction includes block and alignment overhead, so it is not
 an exact ratio for every model and backend. Start with automatic tuning. If an
 explicit quantized cache changes output quality, compare the same workload with
 `f16` before changing unrelated settings.
+
+`f8_e4m3` (alias `fp8`) uses one byte per cached value, with one sign bit,
+four exponent bits, and three mantissa bits. It is not `q8_0`, which stores
+32 integer values plus a two-byte block scale (34 bytes per block). FP8 cache
+payload is half the size of `f16`; this does not halve total model memory.
+Neither format is guaranteed to produce better answers than the other.
+The legacy aliases `f8` and `q8` still select `q8_0`.
+
+FP8 is opt-in: automatic tuning continues to select `f16` or `q8_0`. Configure
+both caches, or just one, using the same `cache-type-k` and `cache-type-v`
+keys shown above. Reload the model after changing them. In the Go SDK, use
+`model.GGMLTypeF8_E4M3` with `model.WithCacheTypeK` and `model.WithCacheTypeV`.
+FP8 does not itself require Flash Attention; it supports ordinary attention
+when the selected backend supports the required operations.
+
+The current native libraries do not support FP8 cache writes on Metal. To
+experiment on a Mac, keep the cache and attention on the CPU with
+`offload-kqv: false` and `flash-attention: disabled`; expect a performance
+trade-off. GPU support is backend-dependent, not implied by accepting the
+configuration. Upstream rejects FP8 for MLA models and architectures including
+DeepSeek 3.2/4/4.1, GLM DSA/GLM5 Next, Dots3Note, Mistral Large 4, HY V4,
+MiniMax M3, Qwen4 (`qwen4exp`), and DFlash. Do not select FP8 for those models.
+Model-provided cache scales, when present, must be finite and nonzero.
 
 #### KV Cache Layout
 

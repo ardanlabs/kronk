@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"time"
 
 	"uuid"
@@ -58,6 +59,7 @@ type IncompleteDetail struct {
 // ResponseOutputItem represents an item in the output array.
 // For type="message": ID, Status, Role, Content are used.
 // For type="function_call": ID, Status, CallID, Name, Arguments are used.
+// For type="reasoning": ID, Status, Summary are used.
 // Arguments uses *string so function_call items always emit the field (even
 // when empty) while message items omit it entirely.
 type ResponseOutputItem struct {
@@ -69,6 +71,13 @@ type ResponseOutputItem struct {
 	CallID    string                `json:"call_id,omitempty"`
 	Name      string                `json:"name,omitempty"`
 	Arguments *string               `json:"arguments,omitempty"`
+	Summary   []ResponseSummaryPart `json:"summary,omitempty"`
+}
+
+// ResponseSummaryPart contains model-generated reasoning text.
+type ResponseSummaryPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 // ResponseContentItem represents a content item within an output message.
@@ -78,7 +87,7 @@ type ResponseContentItem struct {
 	Annotations []string `json:"annotations"`
 }
 
-// ResponseReasoning contains reasoning configuration/output.
+// ResponseReasoning contains reasoning configuration, not generated text.
 type ResponseReasoning struct {
 	Effort  *string `json:"effort"`
 	Summary *string `json:"summary"`
@@ -91,7 +100,11 @@ type ResponseTextFormat struct {
 
 // ResponseFormatType specifies the format type.
 type ResponseFormatType struct {
-	Type string `json:"type"`
+	Type        string   `json:"type"`
+	Name        string   `json:"name,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Schema      *model.D `json:"schema,omitempty"`
+	Strict      *bool    `json:"strict,omitempty"`
 }
 
 // ResponseUsage contains token usage information.
@@ -126,6 +139,7 @@ type ResponseStreamEvent struct {
 	Response       *ResponseResponse    `json:"response,omitempty"`
 	OutputIndex    *int                 `json:"output_index,omitempty"`
 	ContentIndex   *int                 `json:"content_index,omitempty"`
+	SummaryIndex   *int                 `json:"summary_index,omitempty"`
 	ItemID         string               `json:"item_id,omitempty"`
 	Item           *ResponseOutputItem  `json:"item,omitempty"`
 	Part           *ResponseContentItem `json:"part,omitempty"`
@@ -142,6 +156,7 @@ type ResponseStreamEvent struct {
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, error) {
+	request := d.ShallowClone()
 	d, err := convertInputToMessages(d)
 	if err != nil {
 		return ResponseResponse{}, fmt.Errorf("response: %w", err)
@@ -160,7 +175,7 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 		return ResponseResponse{}, err
 	}
 
-	return toChatResponseToResponses(chatResp, d), nil
+	return toChatResponseToResponses(chatResp, request), nil
 }
 
 // ResponseStreaming provides streaming support for the Responses API.
@@ -168,6 +183,7 @@ func (krn *Kronk) Response(ctx context.Context, d model.D) (ResponseResponse, er
 // model instance. For vision/audio models, NSeqMax creates multiple model
 // instances in a pool for concurrent request handling.
 func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan ResponseStreamEvent, error) {
+	request := d.ShallowClone()
 	d, err := convertInputToMessages(d)
 	if err != nil {
 		return nil, fmt.Errorf("responses-streaming: %w", err)
@@ -185,9 +201,9 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 		responseID: "resp_" + uuid.New().String(),
 		createdAt:  time.Now().Unix(),
 		modelID:    krn.ModelID(),
-		tools:      extractTools(d),
-		params:     extractInputParams(d),
-		d:          d,
+		tools:      extractTools(request),
+		params:     extractInputParams(request),
+		d:          request,
 	}
 
 	p := streamProcessor[model.ChatResponse, ResponseStreamEvent]{
@@ -289,6 +305,8 @@ type streamState struct {
 	msgItemEmitted  bool
 	fullText        string
 	fullReasoning   string
+	reasoningID     string
+	reasoningIndex  int
 	fcItems         []ResponseOutputItem
 	fcIDs           []string
 	fcOutputIndexes []int
@@ -373,6 +391,9 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 	}
 	ss.lastChatResp.Usage = ss.usage
 
+	if ss.reasoningID != "" {
+		events = append(events, ss.finalizeReasoningItem()...)
+	}
 	if ss.msgItemEmitted {
 		events = append(events, ss.finalizeMessageItem()...)
 	}
@@ -385,9 +406,15 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 
 	// Rebuild output items from streaming state so IDs and arguments
 	// match what was already streamed to the client.
-	var output []ResponseOutputItem
+	output := make([]ResponseOutputItem, ss.nextOutputIndex)
+	if ss.reasoningID != "" {
+		output[ss.reasoningIndex] = ResponseOutputItem{
+			Type: "reasoning", ID: ss.reasoningID, Status: finalResp.Status,
+			Summary: []ResponseSummaryPart{{Type: "summary_text", Text: ss.fullReasoning}},
+		}
+	}
 	if ss.msgItemEmitted {
-		output = append(output, ResponseOutputItem{
+		output[ss.msgOutputIndex] = ResponseOutputItem{
 			Type:   "message",
 			ID:     ss.msgID,
 			Status: finalResp.Status,
@@ -395,13 +422,13 @@ func (ss *streamState) complete(lastResp model.ChatResponse) []ResponseStreamEve
 			Content: []ResponseContentItem{
 				{Type: "output_text", Text: ss.fullText, Annotations: []string{}},
 			},
-		})
+		}
 	}
 	for i, fcItem := range ss.fcItems {
 		fcItem.Status = finalResp.Status
 		a := ss.fcArgsAccum[i]
 		fcItem.Arguments = &a
-		output = append(output, fcItem)
+		output[ss.fcOutputIndexes[i]] = fcItem
 	}
 	finalResp.Output = output
 
@@ -422,29 +449,81 @@ func (ss *streamState) buildInProgressResponse() ResponseResponse {
 		Status:           "in_progress",
 		Model:            ss.modelID,
 		Output:           []ResponseOutputItem{},
+		Instructions:     ss.params.Instructions,
+		MaxOutputTokens:  ss.params.MaxOutputTokens,
 		ParallelToolCall: ss.params.ParallelToolCalls,
-		Reasoning:        ResponseReasoning{},
+		Reasoning:        ss.params.Reasoning,
 		Store:            ss.params.Store,
 		Temperature:      ss.params.Temperature,
-		Text:             ResponseTextFormat{Format: ResponseFormatType{Type: "text"}},
+		Text:             ss.params.Text,
 		ToolChoice:       ss.params.ToolChoice,
 		Tools:            ss.tools,
 		TopP:             ss.params.TopP,
 		Truncation:       ss.params.Truncation,
 		Usage:            ResponseUsage{},
-		Metadata:         map[string]any{},
+		User:             ss.params.User,
+		Metadata:         ss.params.Metadata,
 	}
 }
 
 func (ss *streamState) handleReasoningDelta(delta string) []ResponseStreamEvent {
+	var events []ResponseStreamEvent
+	if ss.reasoningID == "" {
+		ss.reasoningID = "rs_" + uuid.New().String()
+		ss.reasoningIndex = ss.nextOutputIndex
+		ss.nextOutputIndex++
+		events = append(events, ResponseStreamEvent{
+			Type: "response.output_item.added", SequenceNumber: ss.seq,
+			OutputIndex: new(ss.reasoningIndex),
+			Item: &ResponseOutputItem{
+				Type: "reasoning", ID: ss.reasoningID, Status: "in_progress",
+				Summary: []ResponseSummaryPart{{Type: "summary_text", Text: ""}},
+			},
+		})
+		ss.seq++
+		events = append(events, ResponseStreamEvent{
+			Type: "response.reasoning_summary_part.added", SequenceNumber: ss.seq,
+			ItemID: ss.reasoningID, OutputIndex: new(ss.reasoningIndex), SummaryIndex: new(0),
+			Part: &ResponseContentItem{Type: "summary_text", Text: ""},
+		})
+		ss.seq++
+	}
 	ss.fullReasoning += delta
-	event := ResponseStreamEvent{
+	events = append(events, ResponseStreamEvent{
 		Type:           "response.reasoning_summary_text.delta",
 		SequenceNumber: ss.seq,
+		ItemID:         ss.reasoningID,
+		OutputIndex:    new(ss.reasoningIndex),
+		SummaryIndex:   new(0),
 		Delta:          delta,
-	}
+	})
 	ss.seq++
-	return []ResponseStreamEvent{event}
+	return events
+}
+
+func (ss *streamState) finalizeReasoningItem() []ResponseStreamEvent {
+	events := []ResponseStreamEvent{
+		{
+			Type: "response.reasoning_summary_text.done", SequenceNumber: ss.seq,
+			ItemID: ss.reasoningID, OutputIndex: new(ss.reasoningIndex), SummaryIndex: new(0),
+			Text: ss.fullReasoning,
+		},
+		{
+			Type: "response.reasoning_summary_part.done", SequenceNumber: ss.seq + 1,
+			ItemID: ss.reasoningID, OutputIndex: new(ss.reasoningIndex), SummaryIndex: new(0),
+			Part: &ResponseContentItem{Type: "summary_text", Text: ss.fullReasoning},
+		},
+		{
+			Type: "response.output_item.done", SequenceNumber: ss.seq + 2,
+			OutputIndex: new(ss.reasoningIndex),
+			Item: &ResponseOutputItem{
+				Type: "reasoning", ID: ss.reasoningID, Status: "completed",
+				Summary: []ResponseSummaryPart{{Type: "summary_text", Text: ss.fullReasoning}},
+			},
+		},
+	}
+	ss.seq += len(events)
+	return events
 }
 
 func (ss *streamState) handleTextDelta(delta string) []ResponseStreamEvent {
@@ -698,9 +777,11 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 
 	outputItems := buildOutputItems(outputText, toolCalls, status)
 
-	var reasoningSummary *string
 	if reasoning != "" {
-		reasoningSummary = &reasoning
+		outputItems = append([]ResponseOutputItem{{
+			Type: "reasoning", ID: "rs_" + uuid.New().String(), Status: status,
+			Summary: []ResponseSummaryPart{{Type: "summary_text", Text: reasoning}},
+		}}, outputItems...)
 	}
 
 	tools := extractTools(d)
@@ -724,21 +805,14 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 		Output:           outputItems,
 		ParallelToolCall: inputParams.ParallelToolCalls,
 		PrevResponseID:   nil,
-		Reasoning: ResponseReasoning{
-			Effort:  nil,
-			Summary: reasoningSummary,
-		},
-		Store:       inputParams.Store,
-		Temperature: inputParams.Temperature,
-		Text: ResponseTextFormat{
-			Format: ResponseFormatType{
-				Type: "text",
-			},
-		},
-		ToolChoice: inputParams.ToolChoice,
-		Tools:      tools,
-		TopP:       inputParams.TopP,
-		Truncation: inputParams.Truncation,
+		Reasoning:        inputParams.Reasoning,
+		Store:            inputParams.Store,
+		Temperature:      inputParams.Temperature,
+		Text:             inputParams.Text,
+		ToolChoice:       inputParams.ToolChoice,
+		Tools:            tools,
+		TopP:             inputParams.TopP,
+		Truncation:       inputParams.Truncation,
 		Usage: ResponseUsage{
 			InputTokens: chatUsage.PromptTokens,
 			InputTokensDetails: InputTokensDetails{
@@ -750,8 +824,8 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 			},
 			TotalTokens: chatUsage.TotalTokens,
 		},
-		User:     nil,
-		Metadata: map[string]any{},
+		User:     inputParams.User,
+		Metadata: inputParams.Metadata,
 	}
 }
 
@@ -809,6 +883,10 @@ type inputParams struct {
 	ParallelToolCalls bool
 	Store             bool
 	Instructions      *string
+	Text              ResponseTextFormat
+	Reasoning         ResponseReasoning
+	User              *string
+	Metadata          map[string]any
 }
 
 func extractInputParams(d model.D) inputParams {
@@ -819,13 +897,15 @@ func extractInputParams(d model.D) inputParams {
 		Truncation:        "disabled",
 		ParallelToolCalls: true,
 		Store:             true,
+		Text:              responseTextFormat(d),
+		Metadata:          map[string]any{},
 	}
 
-	if v, ok := d["temperature"].(float64); ok {
+	if v, ok := responseNumber(d["temperature"]); ok {
 		params.Temperature = v
 	}
 
-	if v, ok := d["top_p"].(float64); ok {
+	if v, ok := responseNumber(d["top_p"]); ok {
 		params.TopP = v
 	}
 
@@ -841,10 +921,7 @@ func extractInputParams(d model.D) inputParams {
 	if maxTokens == nil {
 		maxTokens = d["max_tokens"]
 	}
-	switch v := maxTokens.(type) {
-	case int:
-		params.MaxOutputTokens = new(v)
-	case float64:
+	if v, ok := responseNumber(maxTokens); ok {
 		params.MaxOutputTokens = new(int(v))
 	}
 
@@ -859,16 +936,115 @@ func extractInputParams(d model.D) inputParams {
 	if v, ok := d["instructions"].(string); ok {
 		params.Instructions = &v
 	}
+	if v, ok := d["user"].(string); ok {
+		params.User = &v
+	}
+	if metadata, ok := responseObject(d["metadata"]); ok {
+		params.Metadata = metadata
+	}
+	reasoning, _ := responseObject(d["reasoning"])
+	effort := reasoning["effort"]
+	if legacy, exists := d["reasoning_effort"]; exists {
+		effort = legacy
+	}
+	if v, ok := effort.(string); ok {
+		params.Reasoning.Effort = &v
+	}
+	if v, ok := reasoning["summary"].(string); ok {
+		params.Reasoning.Summary = &v
+	}
 
 	return params
 }
 
+func responseNumber(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case json.Number:
+		n, err := v.Float64()
+		return n, err == nil
+	case string:
+		n, err := strconv.ParseFloat(v, 64)
+		return n, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func responseObject(value any) (model.D, bool) {
+	switch v := value.(type) {
+	case model.D:
+		return v, v != nil
+	case map[string]any:
+		return model.D(v), v != nil
+	default:
+		return nil, false
+	}
+}
+
+func responseTextFormat(d model.D) ResponseTextFormat {
+	format := ResponseFormatType{Type: "text"}
+	grammar, _ := d["grammar"].(string)
+	var schema model.D
+	var config model.D
+	switch {
+	case d["json_schema"] != nil:
+		schema, _ = responseObject(d["json_schema"])
+		config = model.D{"type": "json_schema"}
+	case grammar != "":
+		return ResponseTextFormat{Format: format}
+	case d["response_format"] != nil:
+		config, _ = responseObject(d["response_format"])
+		if config["type"] == "json_schema" {
+			wrapper, exists := config["json_schema"]
+			if !exists {
+				wrapper = model.D{"schema": config["schema"]}
+			}
+			config, _ = responseObject(wrapper)
+			schema, _ = responseObject(config["schema"])
+			if schema == nil {
+				schema = config
+			}
+			config = config.ShallowClone()
+			config["type"] = "json_schema"
+		}
+	default:
+		text, _ := responseObject(d["text"])
+		config, _ = responseObject(text["format"])
+		schema, _ = responseObject(config["schema"])
+	}
+	if typ, ok := config["type"].(string); ok && typ != "" {
+		format.Type = typ
+	}
+	if format.Type == "json_schema" {
+		format.Name, _ = config["name"].(string)
+		if format.Name == "" {
+			format.Name = "response"
+		}
+		format.Description, _ = config["description"].(string)
+		format.Schema = &schema
+		if strict, ok := config["strict"].(bool); ok {
+			format.Strict = &strict
+		}
+	}
+	return ResponseTextFormat{Format: format}
+}
+
 func responsesToolChoice(value any) any {
-	choice, ok := value.(model.D)
+	choice, ok := responseObject(value)
 	if !ok || choice["type"] != "function" {
 		return value
 	}
-	function, ok := choice["function"].(model.D)
+	function, ok := responseObject(choice["function"])
 	if !ok {
 		return value
 	}
@@ -893,6 +1069,11 @@ func extractTools(d model.D) []any {
 	result := make([]any, len(tools))
 	for i, t := range tools {
 		result[i] = t
+		if function, ok := responseObject(t["function"]); ok && t["type"] == "function" {
+			flat := function.ShallowClone()
+			flat["type"] = "function"
+			result[i] = flat
+		}
 	}
 
 	return result
@@ -901,6 +1082,9 @@ func extractTools(d model.D) []any {
 func convertInputToMessages(d model.D) (model.D, error) {
 	if containsUnsupportedFileInput(d["input"]) || containsUnsupportedFileInput(d["messages"]) {
 		return nil, fmt.Errorf("convert-input-to-messages: %w", model.ErrFileInputsUnsupported)
+	}
+	if err := normalizeResponsesControls(d); err != nil {
+		return nil, fmt.Errorf("convert-input-to-messages: %w", err)
 	}
 
 	if maxTokens, exists := d["max_output_tokens"]; exists {
@@ -931,6 +1115,75 @@ func convertInputToMessages(d model.D) (model.D, error) {
 	injectInstructions(d)
 
 	return d, nil
+}
+
+func normalizeResponsesControls(d model.D) error {
+	if value, exists := d["text"]; exists {
+		text, ok := responseObject(value)
+		if !ok {
+			return fmt.Errorf("%w: text must be an object", model.ErrInvalidRequest)
+		}
+		if value, exists := text["format"]; exists {
+			format, ok := responseObject(value)
+			if !ok {
+				return fmt.Errorf("%w: text.format must be an object", model.ErrInvalidRequest)
+			}
+			typ, _ := format["type"].(string)
+			switch typ {
+			case "text", "json_object":
+			case "json_schema":
+				name, _ := format["name"].(string)
+				if name == "" {
+					return fmt.Errorf("%w: text.format.name is required", model.ErrInvalidRequest)
+				}
+				if description, exists := format["description"]; exists {
+					if _, ok := description.(string); !ok {
+						return fmt.Errorf("%w: text.format.description must be a string", model.ErrInvalidRequest)
+					}
+				}
+				if _, ok := responseObject(format["schema"]); !ok {
+					return fmt.Errorf("%w: text.format.schema must be an object", model.ErrInvalidRequest)
+				}
+				if strict, exists := format["strict"]; exists && strict != nil {
+					if _, ok := strict.(bool); !ok {
+						return fmt.Errorf("%w: text.format.strict must be a boolean", model.ErrInvalidRequest)
+					}
+				}
+			default:
+				return fmt.Errorf("%w: unsupported text.format.type %q", model.ErrInvalidRequest, typ)
+			}
+			if _, exists := d["response_format"]; !exists {
+				rf := format.ShallowClone()
+				if typ == "json_schema" {
+					delete(rf, "type")
+					rf = model.D{"type": typ, "json_schema": rf}
+				}
+				d["response_format"] = rf
+			}
+		}
+	}
+	if value, exists := d["reasoning"]; exists && value != nil {
+		reasoning, ok := responseObject(value)
+		if !ok {
+			return fmt.Errorf("%w: reasoning must be an object", model.ErrInvalidRequest)
+		}
+		if effort, exists := reasoning["effort"]; exists && effort != nil {
+			if _, ok := effort.(string); !ok {
+				return fmt.Errorf("%w: reasoning.effort must be a string", model.ErrInvalidRequest)
+			}
+			if _, exists := d["reasoning_effort"]; !exists {
+				d["reasoning_effort"] = effort
+			}
+		}
+		if summary, exists := reasoning["summary"]; exists && summary != nil {
+			switch summary {
+			case "auto", "concise", "detailed":
+			default:
+				return fmt.Errorf("%w: unsupported reasoning.summary", model.ErrInvalidRequest)
+			}
+		}
+	}
+	return nil
 }
 
 func containsUnsupportedFileInput(v any) bool {
@@ -990,6 +1243,11 @@ func normalizeResponsesItems(d model.D) {
 		typ, _ := msg["type"].(string)
 
 		switch typ {
+		case "reasoning":
+			// Generated reasoning is output metadata, not a chat message.
+			modified = true
+			continue
+
 		case "function_call":
 			modified = true
 
@@ -1256,14 +1514,16 @@ func inputToMessages(input any) ([]model.D, error) {
 		}
 	}
 
-	if _, hasRole := firstItem["role"]; hasRole {
+	_, hasRole := firstItem["role"]
+	typ, _ := firstItem["type"].(string)
+	if hasRole || typ == "message" || typ == "reasoning" || typ == "function_call" || typ == "function_call_output" {
 		var messages []model.D
 		for _, item := range inputItems {
 			switch v := item.(type) {
 			case map[string]any:
-				messages = append(messages, model.D(v))
+				messages = append(messages, model.MapToModelD(v))
 			case model.D:
-				messages = append(messages, v)
+				messages = append(messages, model.MapToModelD(v))
 			default:
 				return nil, model.ErrMessagesInvalid
 			}

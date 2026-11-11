@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,5 +89,73 @@ func TestErrorsMasksInternalMessages(t *testing.T) {
 				t.Errorf("message: got %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+func TestMessagesErrorWireProtocol(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		code     errs.ErrCode
+		status   int
+		wantType string
+	}{
+		{"validation", errs.InvalidArgument, 400, "invalid_request_error"},
+		{"authentication", errs.Unauthenticated, 401, "authentication_error"},
+		{"permission", errs.PermissionDenied, 403, "permission_error"},
+		{"model missing", errs.NotFound, 404, "not_found_error"},
+		{"rate limit", errs.TooManyRequests, 429, "rate_limit_error"},
+		{"capacity", errs.Unavailable, 503, "overloaded_error"},
+		{"internal", errs.Internal, 500, "api_error"},
+		{"panic", errs.InternalOnlyLog, 500, "api_error"},
+		{"deadline", errs.DeadlineExceeded, 504, "api_error"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			log := logger.New(io.Discard, logger.LevelError, "TEST", nil)
+			err := errs.Errorf(tt.code, "request failed")
+			handler := Errors(log)(func(context.Context, *http.Request) web.Encoder { return err })
+			resp := handler(t.Context(), httptest.NewRequest("POST", "/v1/messages", nil))
+			if appErr, ok := errors.AsType[*errs.Error](checkIsError(resp)); !ok || !appErr.Code.Equal(tt.code) && !tt.code.Equal(errs.InternalOnlyLog) {
+				t.Fatalf("error identity: got %v, want %s", appErr, tt.code)
+			}
+			rr := httptest.NewRecorder()
+			if err := web.Respond(t.Context(), rr, resp); err != nil {
+				t.Fatal(err)
+			}
+			var body struct {
+				Type  string `json:"type"`
+				Error struct {
+					Type    string `json:"type"`
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if rr.Code != tt.status || body.Type != "error" || body.Error.Type != tt.wantType {
+				t.Errorf("wire response: got %d %s, want %d error/%s", rr.Code, rr.Body, tt.status, tt.wantType)
+			}
+			wantMessage := "request failed"
+			if tt.code.Equal(errs.Internal) || tt.code.Equal(errs.InternalOnlyLog) {
+				wantMessage = "Internal Server Error"
+			}
+			if body.Error.Message != wantMessage {
+				t.Errorf("message: got %q, want %q", body.Error.Message, wantMessage)
+			}
+		})
+	}
+}
+
+func TestMessagesErrorsDoNotRewriteCommittedStreams(t *testing.T) {
+	log := logger.New(io.Discard, logger.LevelError, "TEST", nil)
+	handler := Errors(log)(func(context.Context, *http.Request) web.Encoder {
+		return web.NewNoResponseError(errs.Errorf(errs.Internal, "write failed"))
+	})
+	rr := httptest.NewRecorder()
+	resp := handler(t.Context(), httptest.NewRequest("POST", "/v1/messages", nil))
+	if err := web.Respond(t.Context(), rr, resp); err != nil {
+		t.Fatal(err)
+	}
+	if rr.Body.Len() != 0 || checkIsError(resp) == nil {
+		t.Fatalf("committed stream: got %q, error %v", rr.Body, checkIsError(resp))
 	}
 }

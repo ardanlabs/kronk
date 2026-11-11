@@ -37,7 +37,7 @@ export const PARAM_TOOLTIPS = {
   contextWindow: 'Maximum number of tokens (input + output combined) the model can handle at once. Larger windows support longer conversations but increase VRAM usage proportionally via the KV cache. Models with RoPE can extend beyond native context using YaRN (up to ~4× recommended).',
   nSeqMax: 'Maximum number of concurrent request slots. Each slot handles one user request simultaneously. More slots allow greater concurrency and increase aggregate KV cache capacity; KV Cache Layout determines whether that capacity is partitioned or shared.',
   flashAttention: 'Optimized attention algorithm that reduces VRAM usage and can improve speed. "Enabled" forces it on, "Disabled" forces it off, "Auto" lets the server decide based on model compatibility.',
-  cacheType: 'KV cache precision. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit quantized (most VRAM savings, slight quality trade-off especially at long context).',
+  cacheType: 'KV cache precision. f16 = 16-bit float, f8_e4m3 = 8-bit float (FP8, distinct from q8_0), q8_0 = blockwise 8-bit integer quantization, q4_0 = 4-bit quantization. Lower precision reduces cache memory but can affect quality. FP8 requires model/backend support; see the manual for restrictions. Automatic tuning does not select FP8.',
   kvCacheMode: 'KV cache layout. Partitioned (default) gives each request slot a dedicated partition; Shared uses a common pool across slots. Requests remain isolated in both layouts, and per-request context limits are unchanged. Performance depends on the model and workload; neither layout is universally faster.',
   cacheMode: 'Caching strategy. None = clears KV state after each request. IMC (Incremental Message Cache) = keeps the conversation\'s KV state in a dedicated slot for fast multi-turn follow-ups.',
 
@@ -117,7 +117,7 @@ export const PARAM_TOOLTIPS = {
   // ── Model detail / config tooltips ──────────────────────────────────────────
   nthreads: "Number of CPU threads used for single-token generation. More threads can speed up CPU-bound work but may cause contention on busy systems. 0 or empty = Yzma's hardware-aware default.",
   nthreadsBatch: "Number of CPU threads used for prompt processing and other multi-token batches. 0 or empty = Yzma's hardware-aware default.",
-  cacheTypeK: 'Precision format for the key portion of the KV cache. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit (most savings).',
+  cacheTypeK: 'Precision format for the key portion of the KV cache. f16 = 16-bit float, f8_e4m3 = 8-bit float (FP8), q8_0 = blockwise 8-bit integer quantization, q4_0 = 4-bit quantization. FP8 requires model/backend support; see the manual for restrictions. The legacy f8 alias still means q8_0.',
   cacheTypeV: 'Precision format for the value portion of the KV cache. Same options as Cache Type K. Some models benefit from asymmetric K/V quantization.',
   cacheMinTokens: 'Minimum token count required before cache reuse kicks in. Higher values avoid caching very short prompts; lower values maximize reuse but can consume more memory for small requests.',
   imcSessionCapacity: 'Number of reusable IMC conversation identities retained by the model. Larger values reduce cache rebuilds across interleaved conversations but can retain more snapshot data in RAM or on disk.',

@@ -632,6 +632,10 @@ malina-models:
                 <td>Higher precision and larger cache</td>
               </tr>
               <tr>
+                <td><code>f8_e4m3</code></td>
+                <td>FP8 floating-point cache; requires model and backend support</td>
+              </tr>
+              <tr>
                 <td><code>q8_0</code></td>
                 <td>Smaller quantized cache</td>
               </tr>
@@ -642,6 +646,9 @@ malina-models:
             </tbody>
           </table>
           <p>The actual memory reduction includes block and alignment overhead, so it is not an exact ratio for every model and backend. Start with automatic tuning. If an explicit quantized cache changes output quality, compare the same workload with <code>f16</code> before changing unrelated settings.</p>
+          <p><code>f8_e4m3</code> (alias <code>fp8</code>) uses one byte per cached value, with one sign bit, four exponent bits, and three mantissa bits. It is not <code>q8_0</code>, which stores 32 integer values plus a two-byte block scale (34 bytes per block). FP8 cache payload is half the size of <code>f16</code>; this does not halve total model memory. Neither format is guaranteed to produce better answers than the other. The legacy aliases <code>f8</code> and <code>q8</code> still select <code>q8_0</code>.</p>
+          <p>FP8 is opt-in: automatic tuning continues to select <code>f16</code> or <code>q8_0</code>. Configure both caches, or just one, using the same <code>cache-type-k</code> and <code>cache-type-v</code> keys shown above. Reload the model after changing them. In the Go SDK, use <code>model.GGMLTypeF8_E4M3</code> with <code>model.WithCacheTypeK</code> and <code>model.WithCacheTypeV</code>. FP8 does not itself require Flash Attention; it supports ordinary attention when the selected backend supports the required operations.</p>
+          <p>The current native libraries do not support FP8 cache writes on Metal. To experiment on a Mac, keep the cache and attention on the CPU with <code>offload-kqv: false</code> and <code>flash-attention: disabled</code>; expect a performance trade-off. GPU support is backend-dependent, not implied by accepting the configuration. Upstream rejects FP8 for MLA models and architectures including DeepSeek 3.2/4/4.1, GLM DSA/GLM5 Next, Dots3Note, Mistral Large 4, HY V4, MiniMax M3, Qwen4 (<code>qwen4exp</code>), and DFlash. Do not select FP8 for those models. Model-provided cache scales, when present, must be finite and nonzero.</p>
           <h4 id="kv-cache-layout">KV Cache Layout</h4>
           <p><code>kv-cache-mode</code> selects how concurrent generation slots allocate KV storage:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
@@ -2770,7 +2777,20 @@ data: [DONE]`}</code></pre>
   "input": "Explain quantum computing in simple terms."
 }`}</code></pre>
           <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. <code>tool_choice</code> accepts <code>"none"</code>, <code>"auto"</code>, or <code>"required"</code>. Select a specific function with the Responses form <code>&#123;"type":"function","name":"get_weather"&#125;</code>.</p>
-          <p>This is a compatible inference interface, not a stored-response service. Send the full conversation and function-call results in <code>input</code>; <code>previous_response_id</code> does not retrieve earlier turns, and <code>store</code> does not enable response persistence. File and <code>input_file</code> content parts are rejected. Use Kronk's top-level <code>response_format</code> and <code>reasoning_effort</code> controls; the Responses-native <code>text.format</code> and <code>reasoning.effort</code> objects are not translated.</p>
+          <p>This is a compatible inference interface, not a stored-response service. Send the full conversation and function-call results in <code>input</code>; <code>previous_response_id</code> does not retrieve earlier turns, and <code>store</code> does not enable response persistence. File and <code>input_file</code> content parts are rejected.</p>
+          <p>Responses-native <code>text.format</code> supports <code>text</code>, <code>json_object</code>, and <code>json_schema</code>. For <code>json_schema</code>, provide a nonempty <code>name</code> and a <code>schema</code> object; optional <code>description</code> and <code>strict</code> are retained in response metadata. The supported schema subset is described in <a href="https://www.kronkai.com/manual#106-structured-output">Chapter 10 §10.6</a>. For example:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
+  "input": "Return a language name.",
+  "text": {"format": {
+    "type": "json_schema",
+    "name": "language",
+    "schema": {"type": "string"}
+  }}
+}`}</code></pre>
+          <p><code>reasoning.effort</code> accepts the same string values as Kronk's top-level <code>reasoning_effort</code>. Model/template support determines its effect. Existing top-level controls take precedence: <code>json_schema</code>, then a nonempty <code>grammar</code>, then <code>response_format</code>, then <code>text.format</code>; <code>reasoning_effort</code> overrides <code>reasoning.effort</code>. Prefer one format control per request.</p>
+          <p>Response metadata retains instructions, user, metadata, tool definitions, reasoning configuration, and the selected text format. Generated reasoning is returned in <code>output</code> items with <code>type: "reasoning"</code> and <code>summary: [&#123;"type":"summary_text","text":"..."&#125;]</code>, not in the top-level <code>reasoning.summary</code> configuration field. That configuration accepts <code>auto</code>, <code>concise</code>, or <code>detailed</code>; it does not request a separate summarization pass or change the model's emitted reasoning. Reasoning items resent in conversation history are ignored; resend assistant messages and function calls as well.</p>
+          <p>The HTTP body must contain exactly one JSON document; trailing whitespace is allowed, but additional values or garbage are rejected. Numeric schema values retain their JSON precision when decoded by the model server.</p>
           <p>Use <code>max_output_tokens</code> to set the Responses output limit. <code>max_tokens</code> remains available as a compatibility alias, but <code>max_output_tokens</code> wins when both are present. As a Kronk extension, <code>stop</code> accepts a string or an array of up to four strings and ends generation when one is encountered; the matched sequence is omitted from the output. When the output-token limit is reached, the response has <code>status: "incomplete"</code>, <code>completed_at: null</code>, and:</p>
           <pre className="code-block"><code className="language-json">{`{"incomplete_details": {"reason": "max_output_tokens"}}`}</code></pre>
           <p>Output items have the same <code>incomplete</code> status. Usage reports all generated output tokens in <code>output_tokens</code>, including reasoning and tool-call syntax; <code>output_tokens_details.reasoning_tokens</code> supplies the reasoning subset, and <code>total_tokens</code> includes both input and output.</p>
@@ -2783,9 +2803,9 @@ data: {"type":"response.output_text.delta","delta":"...",...}
 
 event: response.completed
 data: {"type":"response.completed",...}`}</code></pre>
-          <p>Function calls produce corresponding <code>response.function_call_arguments.delta</code> and <code>.done</code> events. A token-limited stream ends with <code>response.incomplete</code> instead of <code>response.completed</code> and its embedded response carries the same incomplete details as a non-streaming response.</p>
+          <p>Function calls produce corresponding <code>response.function_call_arguments.delta</code> and <code>.done</code> events. Reasoning has an output-item lifecycle and <code>response.reasoning_summary_part.added</code>, <code>response.reasoning_summary_text.delta</code>, <code>.done</code>, and <code>response.reasoning_summary_part.done</code> events, with <code>item_id</code>, <code>output_index</code>, and <code>summary_index</code> identifying each summary part. A token-limited stream ends with <code>response.incomplete</code> instead of <code>response.completed</code> and its embedded response carries the same incomplete details as a non-streaming response.</p>
           <h2 id="95-anthropic-messages-api">9.5 Anthropic Messages API</h2>
-          <p><code>POST /v1/messages</code> provides an Anthropic-style interface. <code>model</code> and a nonzero <code>max_tokens</code> are required:</p>
+          <p><code>POST /v1/messages</code> provides an Anthropic-style interface. <code>model</code> and a positive <code>max_tokens</code> are required:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "max_tokens": 256,
@@ -2795,7 +2815,10 @@ data: {"type":"response.completed",...}`}</code></pre>
   ]
 }`}</code></pre>
           <p><code>system</code> and message <code>content</code> may be strings or arrays of content blocks. The API supports text, image, <code>tool_use</code>, and <code>tool_result</code> blocks, subject to the selected model's capabilities. Anthropic-style tool definitions use <code>name</code>, <code>description</code>, and <code>input_schema</code>.</p>
-          <p>With <code>"stream": true</code>, Kronk emits Anthropic-style named events including <code>message_start</code>, <code>content_block_start</code>, <code>content_block_delta</code>, <code>content_block_stop</code>, <code>message_delta</code>, and <code>message_stop</code>.</p>
+          <p>Message roles must be <code>user</code> or <code>assistant</code>; <code>system</code> accepts only text. Tool definitions require an object <code>input_schema</code>. The complete schema is retained, but describing constraints in a tool schema does not guarantee that every model enforces them. Tool-result <code>content</code> accepts a string or an array of text/image blocks. Place <code>tool_result</code> blocks before any follow-up text or images in the user message. <code>is_error: true</code> marks the result visibly as <code>Tool execution failed: ...</code> for the model.</p>
+          <p><code>tool_choice</code> supports <code>&#123;"type":"auto"&#125;</code>, <code>&#123;"type":"any"&#125;</code> (require a tool), <code>&#123;"type":"tool","name":"lookup"&#125;</code> (select a declared tool), and <code>&#123;"type":"none"&#125;</code>. These use Kronk's model-dependent tool selection; they do not guarantee schema-valid arguments. Setting <code>disable_parallel_tool_use</code> to <code>true</code>, or supplying <code>thinking</code> or <code>output_config</code>, is not supported and is rejected. Hosted tools, document blocks, and thinking blocks are not supported.</p>
+          <p>With <code>"stream": true</code>, Kronk emits Anthropic-style named events including <code>message_start</code>, <code>content_block_start</code>, <code>content_block_delta</code>, <code>content_block_stop</code>, <code>message_delta</code>, and <code>message_stop</code>. Text streams as generated; tool blocks are emitted with complete arguments after generation, not as fine-grained argument fragments. Initial <code>message_start.usage.input_tokens</code> may be zero; final cumulative input/output totals are supplied in <code>message_delta.usage</code>.</p>
+          <p>Responses include the standard <code>request-id</code> header and its legacy <code>anthropic-request-id</code> alias. HTTP errors use <code>&#123;"type":"error","error":&#123;"type":"invalid_request_error","message":"..."&#125;&#125;</code> with the error type and HTTP status appropriate to the failure. After a stream is committed, inference errors use SSE rather than appending an HTTP JSON body; transport failures can terminate the stream without a final event.</p>
           <p>Custom <code>stop_sequences</code> are not supported and are rejected. A request that reaches <code>max_tokens</code> returns <code>stop_reason: "max_tokens"</code>; natural completion uses <code>end_turn</code>, and a completed tool call uses <code>tool_use</code>. Streaming and non-streaming responses use the same mapping.</p>
           <h2 id="96-embeddings">9.6 Embeddings</h2>
           <p><code>POST /v1/embeddings</code> accepts one string or an array of strings:</p>
@@ -3728,7 +3751,16 @@ make example-decision-audio`}</code></pre>
     }
   }
 }`}</code></pre>
-          <p>Supported <code>response_format.type</code> values are <code>text</code>, <code>json_object</code>, and <code>json_schema</code>. Kronk also accepts a schema directly in the top-level <code>json_schema</code> field and accepts a custom GBNF string in <code>grammar</code>. Use one structured-output mechanism per request. JSON Schema <code>pattern</code> is not supported; Kronk rejects schemas containing it rather than interpreting its regular expression as GBNF.</p>
+          <p>Supported <code>response_format.type</code> values are <code>text</code>, <code>json_object</code>, and <code>json_schema</code>. Kronk also accepts a schema directly in the top-level <code>json_schema</code> field and accepts a custom GBNF string in <code>grammar</code>. Use one structured-output mechanism per request. For <code>response_format.type: "json_schema"</code>, the sibling <code>response_format.schema</code> is accepted when <code>json_schema</code> is absent; an explicit <code>json_schema</code> wrapper takes precedence, even when empty.</p>
+          <p>The supported schema subset is:</p>
+          <ul>
+            <li>Basic <code>object</code>, <code>array</code>, <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>, and <code>null</code> types, and nonempty <code>enum</code> lists. A declared type filters enum values.</li>
+            <li>Objects with schema-valued <code>properties</code> and unique string <code>required</code> names referring to those properties. Declared properties are generated in sorted key order; optional properties may be omitted without leaving commas.</li>
+            <li>Arrays with a single schema object in <code>items</code> (or unrestricted items when omitted).</li>
+            <li>Boolean <code>additionalProperties</code>. Objects with declared properties emit only those properties, even when additional properties are allowed. An object without declared properties permits arbitrary JSON properties unless <code>additionalProperties</code> is <code>false</code>, in which case only <code>&#123;&#125;</code> is permitted.</li>
+          </ul>
+          <p>Empty schema objects allow any JSON value. Annotation keywords (<code>title</code>, <code>description</code>, <code>default</code>, <code>examples</code>, <code>$schema</code>, <code>$id</code>, <code>$comment</code>, <code>deprecated</code>, <code>readOnly</code>, <code>writeOnly</code>, <code>contentEncoding</code>, <code>contentMediaType</code>, and <code>contentSchema</code>) are accepted but do not constrain generation. <code>strict</code> is retained as format metadata; it does not expand this supported subset.</p>
+          <p>Unsupported or malformed assertions return an invalid-request error instead of being silently ignored. These include <code>allOf</code>/<code>anyOf</code>/<code>oneOf</code>, references, union-type arrays, boolean schemas, numeric bounds, string length/<code>pattern</code>/ <code>format</code>, array length/uniqueness, schema-valued <code>additionalProperties</code>, and unknown keywords. Combining <code>enum</code> with object/array structural constraints is also rejected. Use a supported schema or custom GBNF for these requests.</p>
           <p>When a constraint is present and <code>enable_thinking</code> is omitted, Kronk disables thinking automatically so free-form reasoning does not precede the structured answer. Explicitly enabling thinking overrides that default, but is generally counterproductive for constrained output.</p>
           <p>A grammar restricts which tokens can be emitted; it does not guarantee a complete result. A response cut short by <code>max_tokens</code>, context limits, or cancellation can still contain an incomplete JSON value.</p>
           <h2 id="107-token-log-probabilities">10.7 Token Log Probabilities</h2>

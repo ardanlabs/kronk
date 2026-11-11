@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
@@ -29,8 +30,13 @@ func newApp(cfg Config) *app {
 
 func (a *app) responses(ctx context.Context, r *http.Request) web.Encoder {
 	var req model.D
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.UseNumber()
+	if err := dec.Decode(&req); err != nil {
 		return errs.New(errs.InvalidArgument, err)
+	}
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return errs.Errorf(errs.InvalidArgument, "request body must contain a single JSON object")
 	}
 
 	modelIDReq, exists := req["model"]

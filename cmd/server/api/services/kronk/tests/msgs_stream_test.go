@@ -89,6 +89,14 @@ func validateMsgsStream(events []apitest.SSEEvent, model string, allowError bool
 			args.Reset()
 			switch block.Type {
 			case "text":
+				var raw struct {
+					ContentBlock struct {
+						Text *string `json:"text"`
+					} `json:"content_block"`
+				}
+				if err := json.Unmarshal(event.Data, &raw); err != nil || raw.ContentBlock.Text == nil {
+					return result, "text block start missing required text"
+				}
 				text.WriteString(block.Text)
 			case "tool_use":
 				if block.ID == "" || block.Name == "" || ids[block.ID] {
@@ -190,6 +198,7 @@ func TestMsgsStreamValidation(t *testing.T) {
 		wantErr    bool
 	}{
 		{name: "text", events: good},
+		{name: "text-start-missing-text", events: []apitest.SSEEvent{start, replace(block, `,"text":""`, ""), delta, closeBlock, final, stop}, wantErr: true},
 		{name: "fragmented-text", events: []apitest.SSEEvent{start, block, delta, delta, closeBlock, final, stop}},
 		{name: "tools", events: []apitest.SSEEvent{start, tool, arg1, arg2, closeBlock, toolFinal, stop}},
 		{name: "text-and-tools", events: []apitest.SSEEvent{start, block, delta, closeBlock, atOne(tool), atOne(arg1), atOne(arg2), atOne(closeBlock), toolFinal, stop}},

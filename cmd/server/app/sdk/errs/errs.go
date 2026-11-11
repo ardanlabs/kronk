@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"runtime"
 
 	"github.com/ardanlabs/bucky/pkg/audio"
@@ -288,4 +289,61 @@ func (fe FieldErrors) Error() string {
 		return err.Error()
 	}
 	return string(d)
+}
+
+// =============================================================================
+
+// MessagesError retains the shared status mapping and error identity while
+// encoding the Messages protocol envelope after logging and redaction. Keeping
+// this in Errors also covers authentication and recovered panics, not just
+// errors returned by the Messages handler.
+type MessagesError struct {
+	Err *Error
+}
+
+func (e *MessagesError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *MessagesError) Unwrap() error {
+	return e.Err
+}
+
+func (e *MessagesError) HTTPStatus() int {
+	return e.Err.HTTPStatus()
+}
+
+func (e *MessagesError) Encode() ([]byte, string, error) {
+	errorType := "api_error"
+
+	switch e.HTTPStatus() {
+	case http.StatusBadRequest:
+		errorType = "invalid_request_error"
+	case http.StatusUnauthorized:
+		errorType = "authentication_error"
+	case http.StatusForbidden:
+		errorType = "permission_error"
+	case http.StatusNotFound:
+		errorType = "not_found_error"
+	case http.StatusRequestEntityTooLarge:
+		errorType = "request_too_large"
+	case http.StatusTooManyRequests:
+		errorType = "rate_limit_error"
+	case http.StatusServiceUnavailable:
+		errorType = "overloaded_error"
+	}
+
+	resp := struct {
+		Type  string `json:"type"`
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}{Type: "error"}
+
+	resp.Error.Type = errorType
+	resp.Error.Message = e.Err.Message
+
+	data, err := json.Marshal(resp)
+	return data, "application/json", err
 }
