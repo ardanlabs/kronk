@@ -30,14 +30,15 @@ const DefaultNUBatch int64 = 2 * 1024
 // Bytes per element constants for KV cache types. Re-exported from
 // sdk/kronk/gguf so callers don't need a second import.
 const (
-	BytesPerElementF32  = gguf.BytesPerElementF32
-	BytesPerElementF16  = gguf.BytesPerElementF16
-	BytesPerElementBF16 = gguf.BytesPerElementBF16
-	BytesPerElementQ8_0 = gguf.BytesPerElementQ8_0
-	BytesPerElementQ4_0 = gguf.BytesPerElementQ4_0
-	BytesPerElementQ4_1 = gguf.BytesPerElementQ4_1
-	BytesPerElementQ5_0 = gguf.BytesPerElementQ5_0
-	BytesPerElementQ5_1 = gguf.BytesPerElementQ5_1
+	BytesPerElementF32    = gguf.BytesPerElementF32
+	BytesPerElementF16    = gguf.BytesPerElementF16
+	BytesPerElementBF16   = gguf.BytesPerElementBF16
+	BytesPerElementF8E4M3 = gguf.BytesPerElementF8E4M3
+	BytesPerElementQ8_0   = gguf.BytesPerElementQ8_0
+	BytesPerElementQ4_0   = gguf.BytesPerElementQ4_0
+	BytesPerElementQ4_1   = gguf.BytesPerElementQ4_1
+	BytesPerElementQ5_0   = gguf.BytesPerElementQ5_0
+	BytesPerElementQ5_1   = gguf.BytesPerElementQ5_1
 )
 
 // Slot count constants.

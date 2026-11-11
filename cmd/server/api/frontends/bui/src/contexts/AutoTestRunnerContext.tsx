@@ -631,7 +631,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               const ctxWindow = candidate['context_window'] ?? vramInput.context_window;
               const slots = candidate['nseq_max'] ?? vramInput.slots;
               let bpe = vramInput.bytes_per_element;
-              if (candidate['cache_type'] === 'q8_0') bpe = 1;
+              if (candidate['cache_type'] === 'q8_0' || candidate['cache_type'] === 'f8_e4m3') bpe = 1;
               else if (candidate['cache_type'] === 'q4_0') bpe = 0.5625;
               else if (candidate['cache_type'] !== undefined) bpe = 2; // f16
               const expertLayers = candidate['moe_keep_experts_top_n'] ?? vramInput.expert_layers_on_gpu ?? 0;

@@ -883,6 +883,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
               >
                 <option value="">Default (f16)</option>
                 <option value="f16">f16</option>
+                <option value="f8_e4m3">f8_e4m3 (FP8)</option>
                 <option value="q8_0">q8_0</option>
                 <option value="q4_0">q4_0</option>
               </select>

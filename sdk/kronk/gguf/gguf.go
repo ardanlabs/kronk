@@ -14,14 +14,15 @@ package gguf
 // Bytes per element constants for KV cache types. Mirrors the byte width of
 // the corresponding ggml_type values used by llama.cpp.
 const (
-	BytesPerElementF32  int64 = 4 // 32-bit float
-	BytesPerElementF16  int64 = 2 // 16-bit float
-	BytesPerElementBF16 int64 = 2 // Brain float 16
-	BytesPerElementQ8_0 int64 = 1 // 8-bit quantization
-	BytesPerElementQ4_0 int64 = 1 // 4-bit quantization
-	BytesPerElementQ4_1 int64 = 1 // 4-bit quantization
-	BytesPerElementQ5_0 int64 = 1 // 5-bit quantization
-	BytesPerElementQ5_1 int64 = 1 // 5-bit quantization
+	BytesPerElementF32    int64 = 4 // 32-bit float
+	BytesPerElementF16    int64 = 2 // 16-bit float
+	BytesPerElementBF16   int64 = 2 // Brain float 16
+	BytesPerElementF8E4M3 int64 = 1 // 8-bit float
+	BytesPerElementQ8_0   int64 = 1 // 8-bit quantization
+	BytesPerElementQ4_0   int64 = 1 // 4-bit quantization
+	BytesPerElementQ4_1   int64 = 1 // 4-bit quantization
+	BytesPerElementQ5_0   int64 = 1 // 5-bit quantization
+	BytesPerElementQ5_1   int64 = 1 // 5-bit quantization
 )
 
 // GGML type IDs (a subset of the ggml_type enum from llama.cpp). These
@@ -29,14 +30,15 @@ const (
 // and sdk/kronk/model.GGMLType so callers can pass either through int32
 // without any further translation table.
 const (
-	ggmlTypeF16  int32 = 1
-	ggmlTypeQ4_0 int32 = 2
-	ggmlTypeQ4_1 int32 = 3
-	ggmlTypeQ5_0 int32 = 6
-	ggmlTypeQ5_1 int32 = 7
-	ggmlTypeQ8_0 int32 = 8
-	ggmlTypeBF16 int32 = 30
-	ggmlTypeF32  int32 = 50
+	ggmlTypeF16    int32 = 1
+	ggmlTypeQ4_0   int32 = 2
+	ggmlTypeQ4_1   int32 = 3
+	ggmlTypeQ5_0   int32 = 6
+	ggmlTypeQ5_1   int32 = 7
+	ggmlTypeQ8_0   int32 = 8
+	ggmlTypeBF16   int32 = 30
+	ggmlTypeF8E4M3 int32 = 43
+	ggmlTypeF32    int32 = 50
 )
 
 // BytesPerElement returns the byte width of the supplied ggml_type ID.
@@ -49,6 +51,8 @@ func BytesPerElement(typeID int32) int64 {
 		return BytesPerElementF16
 	case ggmlTypeBF16:
 		return BytesPerElementBF16
+	case ggmlTypeF8E4M3:
+		return BytesPerElementF8E4M3
 	case ggmlTypeQ8_0:
 		return BytesPerElementQ8_0
 	case ggmlTypeQ4_0:

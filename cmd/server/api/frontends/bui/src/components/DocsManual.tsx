@@ -632,6 +632,10 @@ malina-models:
                 <td>Higher precision and larger cache</td>
               </tr>
               <tr>
+                <td><code>f8_e4m3</code></td>
+                <td>FP8 floating-point cache; requires model and backend support</td>
+              </tr>
+              <tr>
                 <td><code>q8_0</code></td>
                 <td>Smaller quantized cache</td>
               </tr>
@@ -642,6 +646,9 @@ malina-models:
             </tbody>
           </table>
           <p>The actual memory reduction includes block and alignment overhead, so it is not an exact ratio for every model and backend. Start with automatic tuning. If an explicit quantized cache changes output quality, compare the same workload with <code>f16</code> before changing unrelated settings.</p>
+          <p><code>f8_e4m3</code> (alias <code>fp8</code>) uses one byte per cached value, with one sign bit, four exponent bits, and three mantissa bits. It is not <code>q8_0</code>, which stores 32 integer values plus a two-byte block scale (34 bytes per block). FP8 cache payload is half the size of <code>f16</code>; this does not halve total model memory. Neither format is guaranteed to produce better answers than the other. The legacy aliases <code>f8</code> and <code>q8</code> still select <code>q8_0</code>.</p>
+          <p>FP8 is opt-in: automatic tuning continues to select <code>f16</code> or <code>q8_0</code>. Configure both caches, or just one, using the same <code>cache-type-k</code> and <code>cache-type-v</code> keys shown above. Reload the model after changing them. In the Go SDK, use <code>model.GGMLTypeF8_E4M3</code> with <code>model.WithCacheTypeK</code> and <code>model.WithCacheTypeV</code>. FP8 does not itself require Flash Attention; it supports ordinary attention when the selected backend supports the required operations.</p>
+          <p>The current native libraries do not support FP8 cache writes on Metal. To experiment on a Mac, keep the cache and attention on the CPU with <code>offload-kqv: false</code> and <code>flash-attention: disabled</code>; expect a performance trade-off. GPU support is backend-dependent, not implied by accepting the configuration. Upstream rejects FP8 for MLA models and architectures including DeepSeek 3.2/4/4.1, GLM DSA/GLM5 Next, Dots3Note, Mistral Large 4, HY V4, MiniMax M3, Qwen4 (<code>qwen4exp</code>), and DFlash. Do not select FP8 for those models. Model-provided cache scales, when present, must be finite and nonzero.</p>
           <h4 id="kv-cache-layout">KV Cache Layout</h4>
           <p><code>kv-cache-mode</code> selects how concurrent generation slots allocate KV storage:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
