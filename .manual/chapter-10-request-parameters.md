@@ -184,9 +184,36 @@ For OpenAI-compatible clients, prefer `response_format`:
 Supported `response_format.type` values are `text`, `json_object`, and
 `json_schema`. Kronk also accepts a schema directly in the top-level
 `json_schema` field and accepts a custom GBNF string in `grammar`. Use one
-structured-output mechanism per request. JSON Schema `pattern` is not supported;
-Kronk rejects schemas containing it rather than interpreting its regular
-expression as GBNF.
+structured-output mechanism per request. For `response_format.type: "json_schema"`,
+the sibling `response_format.schema` is accepted when `json_schema` is absent;
+an explicit `json_schema` wrapper takes precedence, even when empty.
+
+The supported schema subset is:
+
+- Basic `object`, `array`, `string`, `number`, `integer`, `boolean`, and `null`
+  types, and nonempty `enum` lists. A declared type filters enum values.
+- Objects with schema-valued `properties` and unique string `required` names
+  referring to those properties. Declared properties are generated in sorted
+  key order; optional properties may be omitted without leaving commas.
+- Arrays with a single schema object in `items` (or unrestricted items when
+  omitted).
+- Boolean `additionalProperties`. Objects with declared properties emit only
+  those properties, even when additional properties are allowed. An object
+  without declared properties permits arbitrary JSON properties unless
+  `additionalProperties` is `false`, in which case only `{}` is permitted.
+
+Empty schema objects allow any JSON value. Annotation keywords (`title`,
+`description`, `default`, `examples`, `$schema`, `$id`, `$comment`, `deprecated`,
+`readOnly`, `writeOnly`, `contentEncoding`, `contentMediaType`, and `contentSchema`)
+are accepted but do not constrain generation. `strict` is retained as format
+metadata; it does not expand this supported subset.
+
+Unsupported or malformed assertions return an invalid-request error instead
+of being silently ignored. These include `allOf`/`anyOf`/`oneOf`, references,
+union-type arrays, boolean schemas, numeric bounds, string length/`pattern`/
+`format`, array length/uniqueness, schema-valued `additionalProperties`, and
+unknown keywords. Combining `enum` with object/array structural constraints is
+also rejected. Use a supported schema or custom GBNF for these requests.
 
 When a constraint is present and `enable_thinking` is omitted, Kronk disables
 thinking automatically so free-form reasoning does not precede the structured

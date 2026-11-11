@@ -192,7 +192,11 @@ export default function DocsSDKKronk() {
               <h4>ResponseFormatType</h4>
               <pre className="code-block">
                 <code>{`type ResponseFormatType struct {
-	Type string \`json:"type"\`
+	Type        string   \`json:"type"\`
+	Name        string   \`json:"name,omitempty"\`
+	Description string   \`json:"description,omitempty"\`
+	Schema      *model.D \`json:"schema,omitempty"\`
+	Strict      *bool    \`json:"strict,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">ResponseFormatType specifies the format type.</p>
@@ -210,9 +214,10 @@ export default function DocsSDKKronk() {
 	CallID    string                \`json:"call_id,omitempty"\`
 	Name      string                \`json:"name,omitempty"\`
 	Arguments *string               \`json:"arguments,omitempty"\`
+	Summary   []ResponseSummaryPart \`json:"summary,omitempty"\`
 }`}</code>
               </pre>
-              <p className="doc-description">ResponseOutputItem represents an item in the output array. For type="message": ID, Status, Role, Content are used. For type="function_call": ID, Status, CallID, Name, Arguments are used. Arguments uses *string so function_call items always emit the field (even when empty) while message items omit it entirely.</p>
+              <p className="doc-description">ResponseOutputItem represents an item in the output array. For type="message": ID, Status, Role, Content are used. For type="function_call": ID, Status, CallID, Name, Arguments are used. For type="reasoning": ID, Status, Summary are used. Arguments uses *string so function_call items always emit the field (even when empty) while message items omit it entirely.</p>
             </div>
 
             <div className="doc-section" id="type-responsereasoning">
@@ -223,7 +228,7 @@ export default function DocsSDKKronk() {
 	Summary *string \`json:"summary"\`
 }`}</code>
               </pre>
-              <p className="doc-description">ResponseReasoning contains reasoning configuration/output.</p>
+              <p className="doc-description">ResponseReasoning contains reasoning configuration, not generated text.</p>
             </div>
 
             <div className="doc-section" id="type-responseresponse">
@@ -271,6 +276,7 @@ export default function DocsSDKKronk() {
 	Response       *ResponseResponse    \`json:"response,omitempty"\`
 	OutputIndex    *int                 \`json:"output_index,omitempty"\`
 	ContentIndex   *int                 \`json:"content_index,omitempty"\`
+	SummaryIndex   *int                 \`json:"summary_index,omitempty"\`
 	ItemID         string               \`json:"item_id,omitempty"\`
 	Item           *ResponseOutputItem  \`json:"item,omitempty"\`
 	Part           *ResponseContentItem \`json:"part,omitempty"\`
@@ -281,6 +287,17 @@ export default function DocsSDKKronk() {
 }`}</code>
               </pre>
               <p className="doc-description">ResponseStreamEvent represents a streaming event for the Responses API.</p>
+            </div>
+
+            <div className="doc-section" id="type-responsesummarypart">
+              <h4>ResponseSummaryPart</h4>
+              <pre className="code-block">
+                <code>{`type ResponseSummaryPart struct {
+	Type string \`json:"type"\`
+	Text string \`json:"text"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">ResponseSummaryPart contains model-generated reasoning text.</p>
             </div>
 
             <div className="doc-section" id="type-responsetextformat">
@@ -606,6 +623,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#type-responsereasoning">ResponseReasoning</a></li>
                 <li><a href="#type-responseresponse">ResponseResponse</a></li>
                 <li><a href="#type-responsestreamevent">ResponseStreamEvent</a></li>
+                <li><a href="#type-responsesummarypart">ResponseSummaryPart</a></li>
                 <li><a href="#type-responsetextformat">ResponseTextFormat</a></li>
                 <li><a href="#type-responseusage">ResponseUsage</a></li>
               </ul>

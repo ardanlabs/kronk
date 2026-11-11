@@ -22,6 +22,8 @@ export default function DocsAPIResponses() {
             <h3>Responses</h3>
             <p>Create responses with language models using the Responses API format.</p>
 
+            <p>Native <code>text.format</code> supports text, JSON objects, and the supported JSON Schema subset. Native <code>reasoning.effort</code> is also accepted; existing top-level Kronk controls take precedence. Generated reasoning appears in reasoning output items with indexed summary events, not in the top-level reasoning configuration. See the <a href="/admin/docs/manual#94-responses-api">Responses manual</a> for input shapes, precedence, and limitations.</p>
+
             <div className="doc-section" id="responses-post--responses">
               <h4><span className="method-post">POST</span> /responses</h4>
               <p className="doc-description">Create a response. Supports streaming responses with Server-Sent Events.</p>

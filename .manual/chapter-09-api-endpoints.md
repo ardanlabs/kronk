@@ -203,8 +203,43 @@ This is a compatible inference interface, not a stored-response service. Send
 the full conversation and function-call results in `input`;
 `previous_response_id` does not retrieve earlier turns, and `store` does not
 enable response persistence. File and `input_file` content parts are rejected.
-Use Kronk's top-level `response_format` and `reasoning_effort` controls; the
-Responses-native `text.format` and `reasoning.effort` objects are not translated.
+
+Responses-native `text.format` supports `text`, `json_object`, and `json_schema`.
+For `json_schema`, provide a nonempty `name` and a `schema` object; optional
+`description` and `strict` are retained in response metadata. The supported
+schema subset is described in [Chapter 10 §10.6](https://www.kronkai.com/manual#106-structured-output).
+For example:
+
+```json
+{
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
+  "input": "Return a language name.",
+  "text": {"format": {
+    "type": "json_schema",
+    "name": "language",
+    "schema": {"type": "string"}
+  }}
+}
+```
+
+`reasoning.effort` accepts the same string values as Kronk's top-level
+`reasoning_effort`. Model/template support determines its effect. Existing
+top-level controls take precedence: `json_schema`, then a nonempty `grammar`,
+then `response_format`, then `text.format`; `reasoning_effort` overrides
+`reasoning.effort`. Prefer one format control per request.
+
+Response metadata retains instructions, user, metadata, tool definitions,
+reasoning configuration, and the selected text format. Generated reasoning is
+returned in `output` items with `type: "reasoning"` and
+`summary: [{"type":"summary_text","text":"..."}]`, not in the top-level
+`reasoning.summary` configuration field. That configuration accepts `auto`,
+`concise`, or `detailed`; it does not request a separate summarization pass or
+change the model's emitted reasoning. Reasoning items resent in conversation
+history are ignored; resend assistant messages and function calls as well.
+
+The HTTP body must contain exactly one JSON document; trailing whitespace is
+allowed, but additional values or garbage are rejected. Numeric schema values
+retain their JSON precision when decoded by the model server.
 
 Use `max_output_tokens` to set the Responses output limit. `max_tokens` remains
 available as a compatibility alias, but `max_output_tokens` wins when both are
@@ -239,7 +274,11 @@ data: {"type":"response.completed",...}
 ```
 
 Function calls produce corresponding
-`response.function_call_arguments.delta` and `.done` events. A token-limited
+`response.function_call_arguments.delta` and `.done` events. Reasoning has an
+output-item lifecycle and `response.reasoning_summary_part.added`,
+`response.reasoning_summary_text.delta`, `.done`, and
+`response.reasoning_summary_part.done` events, with `item_id`, `output_index`,
+and `summary_index` identifying each summary part. A token-limited
 stream ends with `response.incomplete` instead of `response.completed` and its
 embedded response carries the same incomplete details as a non-streaming
 response.

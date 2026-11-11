@@ -3,6 +3,8 @@
 ## Index
 
 - [v1.33.2](#v1332)
+  - [Responses Reasoning Output](#v1332-responses-reasoning-output)
+  - [Structured-Output Schema Validation](#v1332-structured-output-schema-validation)
   - [Browser Admin Session Lifetime](#v1332-browser-admin-session-lifetime)
   - [Internal RAM IMC Storage](#unreleased-internal-ram-imc-storage)
   - [Speculative Rollback Diagnostics](#unreleased-speculative-rollback-diagnostics)
@@ -51,6 +53,32 @@
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
 ## v1.33.2
+
+### v1.33.2: Responses Reasoning Output
+
+Generated reasoning is now returned in `/v1/responses` output items with
+`type: "reasoning"` and `summary` text parts. The top-level `reasoning.summary`
+field holds the requested configuration mode, or null, rather than generated
+text. Clients reading generated text from that field must read reasoning output
+items instead. Clients must select message items by type rather than assuming
+the first output item is a message.
+
+Streaming reasoning deltas now have item/index identity and a complete
+output-item and summary-part lifecycle. Consumers that exhaustively handle
+event names must accept the corresponding added/done events. The existing
+`response.reasoning_summary_text.delta` event remains available.
+
+### v1.33.2: Structured-Output Schema Validation
+
+Unsupported JSON Schema assertions now fail with an invalid-request error
+instead of silently producing a less-constrained grammar. This affects all
+JSON Schema inputs, including chat completions and Responses. Examples include
+composition (`allOf`, `anyOf`, `oneOf`), references, numeric bounds, string length,
+array length/uniqueness, and unknown keywords. Malformed schemas are also rejected.
+
+Clients relying on ignored constraints must remove them, use the supported
+subset documented in Chapter 10 §10.6, or provide custom GBNF through `grammar`.
+No migration is required for valid schemas within the supported subset.
 
 ### v1.33.2: Browser Admin Session Lifetime
 

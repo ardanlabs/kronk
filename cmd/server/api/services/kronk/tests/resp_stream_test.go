@@ -14,8 +14,7 @@ import (
 )
 
 // validateRespStream checks the wire contract, not the model's choice of words.
-// Reasoning deltas currently have no item/content indexes. Tool argument deltas
-// are complete snapshots, rather than arbitrary fragments (response.go).
+// Tool argument deltas are complete snapshots, rather than arbitrary fragments.
 func validateRespStream(events []apitest.SSEEvent) string {
 	type itemState struct {
 		item     kronk.ResponseOutputItem
@@ -100,9 +99,6 @@ func validateRespStream(events []apitest.SSEEvent) string {
 			terminal = true
 			continue
 		}
-		if e.Type == "response.reasoning_summary_text.delta" {
-			continue
-		}
 		if e.OutputIndex == nil || *e.OutputIndex < 0 {
 			return "missing output index"
 		}
@@ -119,6 +115,10 @@ func validateRespStream(events []apitest.SSEEvent) string {
 			case "function_call":
 				if !strings.HasPrefix(e.Item.ID, "call_") || e.Item.CallID == "" || e.Item.Name == "" || e.Item.Arguments == nil || *e.Item.Arguments != "" {
 					return "invalid function item"
+				}
+			case "reasoning":
+				if !strings.HasPrefix(e.Item.ID, "rs_") || len(e.Item.Summary) != 1 || e.Item.Summary[0].Type != "summary_text" || e.Item.Summary[0].Text != "" {
+					return "invalid reasoning item"
 				}
 			default:
 				return "unsupported item type"
@@ -137,12 +137,18 @@ func validateRespStream(events []apitest.SSEEvent) string {
 			}
 			want := s.item
 			want.Status = "completed"
-			if want.Type == "message" {
+			switch want.Type {
+			case "message":
 				if !s.partDone {
 					return "message done before content done"
 				}
 				want.Content = []kronk.ResponseContentItem{{Type: "output_text", Text: s.text, Annotations: []string{}}}
-			} else {
+			case "reasoning":
+				if !s.partDone {
+					return "reasoning done before summary done"
+				}
+				want.Summary = []kronk.ResponseSummaryPart{{Type: "summary_text", Text: s.text}}
+			case "function_call":
 				if !s.argsDone {
 					return "tool done before arguments done"
 				}
@@ -157,6 +163,36 @@ func validateRespStream(events []apitest.SSEEvent) string {
 		}
 		if e.ItemID != s.item.ID {
 			return "item ID changed"
+		}
+		if strings.HasPrefix(e.Type, "response.reasoning_summary_") {
+			if s.item.Type != "reasoning" || e.SummaryIndex == nil || *e.SummaryIndex != 0 {
+				return "invalid summary index/type"
+			}
+			switch e.Type {
+			case "response.reasoning_summary_part.added":
+				if s.part || e.Part == nil || e.Part.Type != "summary_text" || e.Part.Text != "" {
+					return "invalid summary part added"
+				}
+				s.part = true
+			case "response.reasoning_summary_text.delta":
+				if !s.part || s.textDone {
+					return "summary delta out of order"
+				}
+				s.text += e.Delta
+			case "response.reasoning_summary_text.done":
+				if !s.part || s.textDone || e.Text != s.text {
+					return "summary not reconstructed"
+				}
+				s.textDone = true
+			case "response.reasoning_summary_part.done":
+				if !s.textDone || s.partDone || e.Part == nil || e.Part.Type != "summary_text" || e.Part.Text != s.text {
+					return "invalid summary part done"
+				}
+				s.partDone = true
+			default:
+				return "unknown summary event"
+			}
+			continue
 		}
 		if strings.HasPrefix(e.Type, "response.function_call_arguments.") {
 			if s.item.Type != "function_call" || s.argsDone {
@@ -253,7 +289,7 @@ func TestResponsesStreamValidation(t *testing.T) {
 			}
 		})
 	}
-	for _, kind := range []string{"text", "tool", "length", "failed", "error"} {
+	for _, kind := range []string{"text", "tool", "reasoning", "length", "failed", "error"} {
 		t.Run(kind, func(t *testing.T) {
 			events := respStreamFixture(t, kind)
 			if diff := validateRespStream(events); diff != "" {
@@ -278,6 +314,8 @@ func TestResponsesStreamValidation(t *testing.T) {
 		{"text-reconstruction", "text", 5, "text", "wrong"},
 		{"arguments-reconstruction", "tool", 4, "arguments", "{}"},
 		{"tool-name", "tool", 4, "name", "wrong"},
+		{"summary-index", "reasoning", 4, "summary_index", nil},
+		{"summary-reconstruction", "reasoning", 5, "text", "wrong"},
 		{"empty-error", "error", 2, "message", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -382,7 +420,8 @@ func respStreamFixture(t *testing.T, kind string) []apitest.SSEEvent {
 		events = append(events, kronk.ResponseStreamEvent{Type: "error", Message: "inference failed"})
 	} else {
 		var done kronk.ResponseOutputItem
-		if kind == "tool" {
+		switch kind {
+		case "tool":
 			added := kronk.ResponseOutputItem{Type: "function_call", ID: "call_test", CallID: "tool_test", Name: "weather", Status: "in_progress", Arguments: new("")}
 			done = added
 			done.Status = "completed"
@@ -392,7 +431,21 @@ func respStreamFixture(t *testing.T, kind string) []apitest.SSEEvent {
 				kronk.ResponseStreamEvent{Type: "response.function_call_arguments.delta", OutputIndex: new(0), ItemID: added.ID, Delta: *done.Arguments},
 				kronk.ResponseStreamEvent{Type: "response.function_call_arguments.done", OutputIndex: new(0), ItemID: added.ID, Name: added.Name, Arguments: *done.Arguments},
 			)
-		} else {
+		case "reasoning":
+			empty := kronk.ResponseContentItem{Type: "summary_text"}
+			part := kronk.ResponseContentItem{Type: "summary_text", Text: "Think"}
+			added := kronk.ResponseOutputItem{Type: "reasoning", ID: "rs_test", Status: "in_progress", Summary: []kronk.ResponseSummaryPart{{Type: "summary_text", Text: ""}}}
+			done = added
+			done.Status = "completed"
+			done.Summary = []kronk.ResponseSummaryPart{{Type: "summary_text", Text: "Think"}}
+			events = append(events,
+				kronk.ResponseStreamEvent{Type: "response.output_item.added", OutputIndex: new(0), Item: &added},
+				kronk.ResponseStreamEvent{Type: "response.reasoning_summary_part.added", OutputIndex: new(0), SummaryIndex: new(0), ItemID: added.ID, Part: &empty},
+				kronk.ResponseStreamEvent{Type: "response.reasoning_summary_text.delta", OutputIndex: new(0), SummaryIndex: new(0), ItemID: added.ID, Delta: "Think"},
+				kronk.ResponseStreamEvent{Type: "response.reasoning_summary_text.done", OutputIndex: new(0), SummaryIndex: new(0), ItemID: added.ID, Text: "Think"},
+				kronk.ResponseStreamEvent{Type: "response.reasoning_summary_part.done", OutputIndex: new(0), SummaryIndex: new(0), ItemID: added.ID, Part: &part},
+			)
+		default:
 			empty := kronk.ResponseContentItem{Type: "output_text", Annotations: []string{}}
 			part := empty
 			part.Text = "Hi"
@@ -436,29 +489,88 @@ func respStreamFixture(t *testing.T, kind string) []apitest.SSEEvent {
 	return wire
 }
 
-// respStreamContractsQwen3 adds deterministic length and forced-tool contracts.
+// respStreamContractsQwen3 checks length, tools, structured output, and metadata.
 // Runtime failures are exercised synthetically: provoking native inference
 // errors via an otherwise valid HTTP request is not a stable API contract.
 func respStreamContractsQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	t.Helper()
 	var table []apitest.Table
-	for _, kind := range []string{"length", "tool"} {
+	for _, kind := range []string{"length", "tool", "tool-schema", "required-tool-schema", "schema-metadata"} {
 		input := model.D{
 			"model": qwen3ModelID, "input": "Count from one to one hundred.",
 			"stream": true, "max_output_tokens": 1, "temperature": 0,
 			"chat_template_kwargs": model.D{"enable_thinking": false},
 			"stream_options":       model.D{"include_usage": true},
 		}
-		if kind == "tool" {
+		if kind == "tool" || kind == "tool-schema" || kind == "required-tool-schema" {
 			input["input"] = "Call weather for Boston."
 			input["max_output_tokens"] = 512
 			input["tools"] = []model.D{{"type": "function", "name": "weather", "description": "Get weather for a city", "parameters": model.D{"type": "object", "properties": model.D{"city": model.D{"type": "string"}}, "required": []string{"city"}}}}
 			input["tool_choice"] = model.D{"type": "function", "name": "weather"}
 		}
+		if kind == "tool-schema" || kind == "required-tool-schema" {
+			// The answer grammar must not constrain the tool-call syntax/arguments.
+			input["text"] = model.D{"format": model.D{"type": "json_schema", "name": "answer", "schema": model.D{"type": "boolean"}}}
+		}
+		if kind == "required-tool-schema" {
+			input["tool_choice"] = "required"
+		}
+		if kind == "schema-metadata" {
+			input["input"] = "Return the required answer, without calling tools."
+			input["instructions"] = "Follow the requested schema."
+			input["user"] = "responses-regression"
+			input["metadata"] = model.D{"tag": "streamed"}
+			input["temperature"], input["top_p"] = 0.25, 0.75
+			input["max_output_tokens"], input["max_tokens"] = 64, 1
+			input["reasoning"] = model.D{"effort": "low", "summary": "auto"}
+			input["tools"] = []model.D{{"type": "function", "name": "weather", "parameters": model.D{"type": "object"}, "strict": false}}
+			input["tool_choice"] = "none"
+			input["text"] = model.D{"format": model.D{"type": "json_schema", "name": "exact", "description": "exact answer", "strict": false,
+				"schema": model.D{"type": "object", "properties": model.D{"answer": model.D{"type": "integer", "enum": []any{json.Number("9007199254740993")}}}, "required": []string{"answer"}, "additionalProperties": false}}}
+		}
 		table = append(table, apitest.Table{
 			Name: "stream-" + kind, URL: "/v1/responses", Token: tokens["responses"], Method: http.MethodPost, StatusCode: http.StatusOK,
 			Input: input, GotResp: &kronk.ResponseStreamEvent{},
-			SSECmpFunc: validateRespStream,
+			SSECmpFunc: func(events []apitest.SSEEvent) string {
+				if diff := validateRespStream(events); diff != "" {
+					return diff
+				}
+				if kind != "schema-metadata" {
+					return ""
+				}
+				data, err := json.Marshal(input)
+				if err != nil {
+					return err.Error()
+				}
+				var expected map[string]any
+				dec := json.NewDecoder(strings.NewReader(string(data)))
+				dec.UseNumber()
+				if err := dec.Decode(&expected); err != nil {
+					return err.Error()
+				}
+				snapshots := 0
+				for _, event := range events {
+					if event.Event != "response.created" && event.Event != "response.in_progress" && event.Event != "response.completed" {
+						continue
+					}
+					var payload struct{ Response map[string]any }
+					dec := json.NewDecoder(strings.NewReader(string(event.Data)))
+					dec.UseNumber()
+					if err := dec.Decode(&payload); err != nil {
+						return err.Error()
+					}
+					for _, key := range []string{"instructions", "user", "metadata", "temperature", "top_p", "max_output_tokens", "reasoning", "text", "tools", "tool_choice"} {
+						if diff := cmp.Diff(expected[key], payload.Response[key]); diff != "" {
+							return event.Event + " " + key + " (-want +got): " + diff
+						}
+					}
+					snapshots++
+				}
+				if snapshots != 3 {
+					return fmt.Sprintf("metadata snapshots: got %d, want 3", snapshots)
+				}
+				return ""
+			},
 			CmpFunc: func(got any, _ any) string {
 				e := got.(*kronk.ResponseStreamEvent)
 				if e.Response == nil {
@@ -475,7 +587,20 @@ func respStreamContractsQwen3(t *testing.T, tokens map[string]string) []apitest.
 					return ""
 				}
 				if e.Type != "response.completed" {
-					return "expected completed tool response"
+					return "expected completed response"
+				}
+				if kind == "schema-metadata" {
+					if len(r.Output) != 1 || r.Output[0].Type != "message" || len(r.Output[0].Content) != 1 {
+						return "expected one schema-constrained message, not a tool call"
+					}
+					var answer map[string]json.RawMessage
+					if err := json.Unmarshal([]byte(r.Output[0].Content[0].Text), &answer); err != nil {
+						return "invalid JSON answer: " + err.Error()
+					}
+					if len(answer) != 1 || string(answer["answer"]) != "9007199254740993" {
+						return "schema answer did not preserve the exact integer"
+					}
+					return ""
 				}
 				for _, item := range r.Output {
 					if item.Type != "function_call" {

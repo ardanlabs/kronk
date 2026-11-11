@@ -1,7 +1,10 @@
 package model
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -199,6 +202,18 @@ func TestFromJSONSchema_EnumGrammarInitializes(t *testing.T) {
 		t.Fatalf("fromJSONSchema: unexpected error: %v", err)
 	}
 
+	vocab := grammarTestVocab(t)
+	sampler := llama.SamplerInitGrammar(vocab, grammar, "root")
+	if sampler == 0 {
+		t.Fatal("SamplerInitGrammar: got zero sampler, want initialized sampler")
+	}
+	t.Cleanup(func() {
+		llama.SamplerFree(sampler)
+	})
+}
+
+func grammarTestVocab(t *testing.T) llama.Vocab {
+	t.Helper()
 	pattern := filepath.Join(defaults.BaseDir(""), "models", "*", "*", grammarTestModelFile)
 	modelFiles, err := filepath.Glob(pattern)
 	if err != nil {
@@ -229,13 +244,7 @@ func TestFromJSONSchema_EnumGrammarInitializes(t *testing.T) {
 		}
 	})
 
-	sampler := llama.SamplerInitGrammar(llama.ModelGetVocab(mdl), grammar, "root")
-	if sampler == 0 {
-		t.Fatal("SamplerInitGrammar: got zero sampler, want initialized sampler")
-	}
-	t.Cleanup(func() {
-		llama.SamplerFree(sampler)
-	})
+	return llama.ModelGetVocab(mdl)
 }
 
 func TestFromJSONSchema_Array(t *testing.T) {
@@ -451,5 +460,209 @@ func TestFromResponseFormat_MapStringAny(t *testing.T) {
 	}
 	if !strings.Contains(grammar, `"\"flag\""`) {
 		t.Error("grammar should contain flag property")
+	}
+}
+
+func TestFromResponseFormat_SiblingSchemaPrecedence(t *testing.T) {
+	tests := []struct {
+		name string
+		rf   D
+		want D
+	}{
+		{"sibling", D{"type": "json_schema", "schema": D{"type": "integer"}}, D{"type": "integer"}},
+		{"wrapper wins", D{"type": "json_schema", "schema": D{"type": "integer"}, "json_schema": D{"schema": D{"type": "boolean"}}}, D{"type": "boolean"}},
+		{"empty wrapper wins", D{"type": "json_schema", "schema": D{"type": "integer"}, "json_schema": D{}}, D{}},
+		{"empty wrapped schema wins", D{"type": "json_schema", "schema": D{"type": "integer"}, "json_schema": D{"schema": D{}}}, D{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := fromResponseFormat(tt.rf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := fromJSONSchema(tt.want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Errorf("grammar: got %s, want %s", got, want)
+			}
+		})
+	}
+	for _, wrapper := range []any{nil, false, "bad", []any{}} {
+		_, err := fromResponseFormat(D{"type": "json_schema", "json_schema": wrapper, "schema": D{}})
+		if !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("wrapper %v: got %v, want ErrInvalidRequest", wrapper, err)
+		}
+	}
+}
+
+func TestFromJSONSchema_UnsupportedKeywords(t *testing.T) {
+	for _, keyword := range []string{
+		"allOf", "anyOf", "oneOf", "not", "$ref", "$dynamicRef", "$defs", "definitions",
+		"if", "then", "else", "const", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+		"minLength", "maxLength", "pattern", "format",
+		"minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains", "prefixItems", "additionalItems",
+		"minProperties", "maxProperties", "patternProperties", "propertyNames", "dependencies", "dependentRequired", "dependentSchemas",
+		"unevaluatedProperties", "unevaluatedItems", "nullable", "unknownAssertion",
+	} {
+		t.Run(keyword, func(t *testing.T) {
+			schema := D{"type": "string", keyword: nil}
+			for _, input := range []D{schema, {"type": "string", "enum": []string{"yes"}, keyword: nil}, {"type": "object", "properties": D{"child": schema}}, {"type": "array", "items": schema}} {
+				if _, err := fromJSONSchema(input); !errors.Is(err, ErrInvalidRequest) {
+					t.Errorf("schema %v: got %v, want ErrInvalidRequest", input, err)
+				}
+			}
+		})
+	}
+	for _, schema := range []D{
+		{"allOf": []D{{"type": "string"}, {"minLength": 2}}},
+		{"anyOf": []D{{"type": "string"}, {"type": "null"}}},
+		{"oneOf": []D{{"type": "string"}, {"type": "integer"}}},
+		{"not": D{"type": "null"}}, {"$ref": "#/$defs/entry"},
+		{"type": "string", "minLength": 2}, {"type": "number", "minimum": 1},
+		{"type": "array", "minItems": 1}, {"type": "object", "minProperties": 1},
+	} {
+		if _, err := fromJSONSchema(schema); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("schema %v: got %v, want ErrInvalidRequest", schema, err)
+		}
+	}
+}
+
+func TestFromJSONSchema_Malformed(t *testing.T) {
+	for _, schema := range []any{
+		nil, true, "string", []any{}, D{"type": "unknown"}, D{"type": nil}, D{"type": []string{"string", "null"}},
+		D{"enum": "yes"}, D{"enum": []any{}}, D{"type": "string", "enum": []any{1}},
+		D{"type": "object", "properties": nil}, D{"type": "object", "properties": []any{}},
+		D{"type": "object", "properties": D{"x": true}}, D{"type": "object", "properties": D{"x": nil}},
+		D{"type": "object", "required": "x"}, D{"type": "object", "required": []any{1}},
+		D{"type": "object", "required": []string{"x"}},
+		D{"type": "object", "properties": D{"x": D{}}, "required": []string{"x", "x"}},
+		D{"type": "object", "additionalProperties": D{}}, D{"type": "object", "additionalProperties": nil},
+		D{"type": "array", "items": []any{}}, D{"type": "array", "items": true}, D{"type": "array", "items": nil},
+		D{"properties": D{"x": D{}}}, D{"items": D{}},
+		D{"type": "object", "enum": []any{D{}}, "properties": D{}},
+		D{"type": "array", "enum": []any{[]any{}}, "items": D{}},
+	} {
+		t.Run(fmt.Sprint(schema), func(t *testing.T) {
+			if _, err := fromJSONSchema(schema); !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("got %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
+func TestFromJSONSchema_AnnotationsAndTypedEnum(t *testing.T) {
+	schema := D{"type": "string", "enum": []string{"yes", "no"}}
+	for _, key := range []string{"$schema", "$id", "$comment", "title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly"} {
+		schema[key] = "annotation"
+	}
+	schema["contentEncoding"] = "base64"
+	schema["contentMediaType"] = "application/json"
+	schema["contentSchema"] = D{"allOf": []D{{"type": "object"}}}
+	grammar, err := fromJSONSchema(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(grammar, `root ::= ( "\"yes\"" | "\"no\"" )`) {
+		t.Errorf("got %s, want string enum root", grammar)
+	}
+	grammar, err = fromJSONSchema(D{"type": "integer", "enum": []any{json.Number("9007199254740993"), json.Number("1.00000000000000001"), "no"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(grammar, `root ::= "9007199254740993"`+"\n") {
+		t.Errorf("got %s, want exact integer enum root", grammar)
+	}
+}
+
+// grammarAccepts checks every token's mask, including EOS. Accept alone does
+// not validate a string, and a valid prefix is not necessarily a complete JSON value.
+func grammarAccepts(t *testing.T, vocab llama.Vocab, grammar, input string) bool {
+	t.Helper()
+	gs, err := newGrammarSampler(vocab, grammar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gs.Free()
+	tokens := append(llama.Tokenize(vocab, input, false, false), llama.VocabEOS(vocab))
+	for _, token := range tokens {
+		candidate := llama.TokenData{Id: token}
+		data := llama.TokenDataArray{Data: &candidate, Size: 1, Selected: -1}
+		llama.SamplerApply(gs.sampler, &data)
+		if math.IsInf(float64(candidate.Logit), -1) {
+			return false
+		}
+		llama.SamplerAccept(gs.sampler, token)
+	}
+	return true
+}
+
+func TestFromJSONSchema_PropertyPresenceNative(t *testing.T) {
+	vocab := grammarTestVocab(t)
+	// Exhaust all required/present combinations: optional properties before,
+	// between, and after required ones, including the all-optional empty object.
+	for required := range 8 {
+		schema := D{"type": "object", "properties": D{"a": D{"type": "integer"}, "b": D{"type": "integer"}, "c": D{"type": "integer"}}}
+		var keys []string
+		for i, key := range []string{"a", "b", "c"} {
+			if required&(1<<i) != 0 {
+				keys = append(keys, key)
+			}
+		}
+		if len(keys) > 0 {
+			schema["required"] = keys
+		}
+		grammar, err := fromJSONSchema(schema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for present := range 8 {
+			var pairs []string
+			for i, key := range []string{"a", "b", "c"} {
+				if present&(1<<i) != 0 {
+					pairs = append(pairs, fmt.Sprintf(`%q:1`, key))
+				}
+			}
+			input := "{" + strings.Join(pairs, ",") + "}"
+			want := present&required == required
+			if got := grammarAccepts(t, vocab, grammar, input); got != want {
+				t.Errorf("required %v input %s: got %t, want %t", keys, input, got, want)
+			}
+		}
+		for _, input := range []string{`{,}`, `{"a":1,}`, `{,"c":1}`, `{"a":1,,"c":1}`, `{"c":1,"b":1,"a":1}`, `{"a":1,"a":1}`, `{"a":1`, `{"a":"bad"}`} {
+			if grammarAccepts(t, vocab, grammar, input) {
+				t.Errorf("required %v: accepted %s", keys, input)
+			}
+		}
+	}
+	for _, tt := range []struct {
+		name   string
+		schema D
+		allow  []string
+		deny   []string
+	}{
+		{"closed empty", D{"type": "object", "additionalProperties": false}, []string{`{}`, `{ }`}, []string{`{"x":1}`, `[]`}},
+		{"closed empty properties", D{"type": "object", "properties": D{}, "additionalProperties": false}, []string{`{}`}, []string{`{"x":1}`}},
+		{"open object", D{"type": "object", "additionalProperties": true}, []string{`{}`, `{"x":1}`}, []string{`[]`}},
+		{"array of optional objects", D{"type": "array", "items": D{"type": "object", "properties": D{"a": D{"type": "boolean"}, "b": D{"type": "null"}}}}, []string{`[]`, `[{}, {"b":null}, {"a":true,"b":null}]`}, []string{`[{,"b":null}]`, `[{"a":true,}]`, `[{"b":false}]`}},
+		{"typed enum", D{"type": "string", "enum": []any{"yes", "no", 1}}, []string{`"yes"`, `"no"`}, []string{`1`, `"maybe"`, `"ye"`}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			grammar, err := fromJSONSchema(tt.schema)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, input := range tt.allow {
+				if !json.Valid([]byte(input)) || !grammarAccepts(t, vocab, grammar, input) {
+					t.Errorf("rejected allowed JSON %s", input)
+				}
+			}
+			for _, input := range tt.deny {
+				if grammarAccepts(t, vocab, grammar, input) {
+					t.Errorf("accepted rejected input %s", input)
+				}
+			}
+		})
 	}
 }
