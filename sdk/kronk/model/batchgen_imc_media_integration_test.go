@@ -175,6 +175,95 @@ func TestIMCSystemCacheAcrossMediaRequests(t *testing.T) {
 	}
 }
 
+func TestIMCMediaAppendAfterTextGrowth(t *testing.T) {
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := mdls.FullPath("unsloth/Qwen3.5-0.8B-Q8_0")
+	if err != nil || len(path.ModelFiles) == 0 || path.ProjFile == "" {
+		t.Skip("Qwen3.5-0.8B vision model not downloaded")
+	}
+	imageA, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "examples/samples/giraffe.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageB, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "examples/samples/adetailer-face.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	// Keep the rendered history prefix-compatible so every text turn advances
+	// the media snapshot rather than rebuilding it after a template change.
+	const template = `{% for message in messages %}{{ '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n<think>\n\n</think>\n\n' }}{% endif %}`
+	coldPromptTokens := make([]int, 5)
+	for _, caching := range []bool{false, true} {
+		name := "uncached"
+		if caching {
+			name = "cached"
+		}
+		t.Run(name, func(t *testing.T) {
+			krn, err := kronk.New(model.WithModelFiles(path.ModelFiles), model.WithProjFile(path.ProjFile),
+				model.WithContextWindow(8192), model.WithNSeqMax(1), model.WithQueueDepth(1), model.WithIMCSessionCapacity(1),
+				model.WithPrefillBatchSize(256), model.WithIncrementalCache(caching), model.WithCacheMinTokens(1),
+				model.WithJinjaScript(template),
+				model.WithSpeculationMode(model.MustParseSpeculationMode("disabled")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := krn.Unload(context.Background()); err != nil {
+					t.Errorf("unload: %v", err)
+				}
+			})
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+			defer cancel()
+			steps := []struct {
+				name     string
+				messages []model.D
+				wantText string
+			}{
+				{name: "initial image", messages: model.ImageMessage("Name the animal.", imageA, "jpg"), wantText: "giraffe"},
+				{name: "first text growth", messages: model.Messages(model.TextMessage(model.RoleAssistant, "A giraffe."),
+					model.TextMessage(model.RoleUser, strings.Repeat("The animal has a long neck. ", 40)+"Say OK."))},
+				{name: "second text growth", messages: model.Messages(model.TextMessage(model.RoleAssistant, "OK."),
+					model.TextMessage(model.RoleUser, strings.Repeat("The animal has spotted fur. ", 30)+"Say OK."))},
+				{name: "appended image", messages: model.Messages(model.TextMessage(model.RoleAssistant, "OK."),
+					model.ImageMessage("Describe only the subject in this new image.", imageB, "png")), wantText: "suit"},
+				{name: "image replay", wantText: "suit"},
+			}
+			var messages []model.D
+			for i, step := range steps {
+				messages = append(messages, step.messages...)
+				response, err := krn.Chat(ctx, model.D{"messages": messages,
+					"max_tokens": 24, "temperature": 0.0, "top_k": 1, "enable_thinking": false})
+				if err != nil {
+					t.Fatalf("%s: %v", step.name, err)
+				}
+				if response.Usage == nil || response.Usage.CompletionTokens == 0 || len(response.Choices) == 0 || response.Choices[0].Message == nil {
+					t.Fatalf("%s: got %+v, want generated output and usage", step.name, response)
+				}
+				if got := response.Choices[0].Message.Content; !strings.Contains(strings.ToLower(got), step.wantText) {
+					t.Errorf("%s content: got %q, want mention of %q", step.name, got, step.wantText)
+				}
+				if !caching {
+					coldPromptTokens[i] = response.Usage.PromptTokens
+					continue
+				}
+				if got, want := response.Usage.PromptTokens, coldPromptTokens[i]; got != want {
+					t.Errorf("%s prompt tokens: got %d, want uncached %d", step.name, got, want)
+				}
+				if i > 0 && response.Usage.PromptTokensDetails.CachedTokens == 0 {
+					t.Errorf("%s: no cached prefix reused", step.name)
+				}
+				t.Logf("%s: prompt=%d cached=%d", step.name, response.Usage.PromptTokens, response.Usage.PromptTokensDetails.CachedTokens)
+			}
+		})
+	}
+}
+
 func TestIMCMediaPreparationAllowsGenerationProgress(t *testing.T) {
 	mdls, err := models.New()
 	if err != nil {
