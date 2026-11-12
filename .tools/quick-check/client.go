@@ -180,7 +180,7 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 	body := map[string]any{
 		"model": c.model, "messages": messages, "stream": true,
 		"stream_options": map[string]bool{"include_usage": true},
-		"temperature":    0, "seed": 42, "enable_thinking": false, "max_tokens": limit,
+		"temperature":    0, "seed": 3989002717, "enable_thinking": false, "max_tokens": limit,
 	}
 	if c.events != nil {
 		if err := c.encodeEvent(map[string]any{"source": "request", "cell_id": c.cell, "repetition": c.repetition, "phase": phase, "body": body}); err != nil {
