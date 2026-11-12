@@ -40,6 +40,8 @@ const (
 // builds that Kronk will load from but never modify.
 var ErrReadOnly = errors.New("libs: install path is read-only (no version.json)")
 
+var downloadLibraries = download.GetWithContext
+
 // Logger represents a logger for capturing events.
 type Logger = applog.Logger
 
@@ -582,7 +584,7 @@ func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch
 
 	pr := downloader.NewProgressReader(progress, downloader.SizeIntervalMB10)
 
-	if err := download.GetWithContext(ctx, arch, opSys, processor, version, stagePath, getter.ProgressTracker(pr)); err != nil {
+	if err := downloadLibraries(ctx, arch, opSys, processor, version, stagePath, getter.ProgressTracker(pr)); err != nil {
 		return VersionTag{}, fmt.Errorf("download-into: unable to install whisper.cpp: %w", err)
 	}
 

@@ -1,19 +1,16 @@
 package libs
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/ardanlabs/bucky/pkg/download"
@@ -94,22 +91,7 @@ func TestDownloadCUDA13(t *testing.T) {
 	for _, arch := range []string{"amd64", "arm64"} {
 		t.Run(arch, func(t *testing.T) {
 			scrubRuntimeEnv(t)
-			var archive bytes.Buffer
-			gz := gzip.NewWriter(&archive)
-			tw := tar.NewWriter(gz)
 			body := []byte("CUDA 13 fixture for " + arch)
-			if err := tw.WriteHeader(&tar.Header{Name: "whisper-v1.9.5/libwhisper.so", Mode: 0o755, Size: int64(len(body))}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := tw.Write(body); err != nil {
-				t.Fatal(err)
-			}
-			if err := tw.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if err := gz.Close(); err != nil {
-				t.Fatal(err)
-			}
 			suffix := "arm64"
 			if arch == "amd64" {
 				suffix = "x64"
@@ -117,7 +99,7 @@ func TestDownloadCUDA13(t *testing.T) {
 			filename := "whisper-v1.9.5-bin-ubuntu-cuda-13-" + suffix + ".tar.gz"
 			assetURL := "https://github.com/ardanlabs/bucky-builder/releases/download/v1.9.5/" + filename
 			asset := download.InstallAsset{
-				SHA256: fmt.Sprintf("%x", sha256.Sum256(archive.Bytes())),
+				SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("fixture archive"))),
 				Files:  map[string]string{"libwhisper.so": fmt.Sprintf("%x", sha256.Sum256(body))},
 			}
 			manifest, err := json.Marshal(map[string]any{
@@ -129,28 +111,37 @@ func TestDownloadCUDA13(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pin := fmt.Sprintf("v1.9.5@sha256:%x", sha256.Sum256(manifest))
-			corrupt := false
-			transport := bundleTransport(func(r *http.Request) (*http.Response, error) {
-				var data []byte
-				switch strings.Split(r.URL.String(), "?")[0] {
-				case "https://ardanlabs.github.io/bucky-builder/digests/v1.9.5.json":
-					data = manifest
-				case assetURL:
-					data = archive.Bytes()
-					if corrupt {
-						data = []byte("corrupt archive")
-					}
-				default:
+			manifestSHA := fmt.Sprintf("%x", sha256.Sum256(manifest))
+			pin := "v1.9.5@sha256:" + manifestSHA
+			oldTransport, oldDownload := http.DefaultTransport, downloadLibraries
+			t.Cleanup(func() { http.DefaultTransport, downloadLibraries = oldTransport, oldDownload })
+			http.DefaultTransport = bundleTransport(func(r *http.Request) (*http.Response, error) {
+				if r.URL.String() != "https://ardanlabs.github.io/bucky-builder/digests/v1.9.5.json" {
 					return nil, fmt.Errorf("unexpected download URL: %s", r.URL)
 				}
-				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data)), ContentLength: int64(len(data)), Request: r}, nil
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(manifest)), ContentLength: int64(len(manifest)), Request: r}, nil
 			})
-			oldTransport, oldGetters := http.DefaultTransport, getter.Getters
-			http.DefaultTransport = transport
-			getter.Getters = maps.Clone(oldGetters)
-			getter.Getters["https"] = &getter.HttpGetter{Client: &http.Client{Transport: transport}}
-			t.Cleanup(func() { http.DefaultTransport, getter.Getters = oldTransport, oldGetters })
+			corrupt := false
+			downloadLibraries = func(ctx context.Context, architecture, osName, processor, version, dest string, progress getter.ProgressTracker) error {
+				if architecture != arch || osName != "linux" || processor != "cuda13" || version != pin {
+					return fmt.Errorf("unexpected download: arch=%s os=%s processor=%s version=%s", architecture, osName, processor, version)
+				}
+				data := body
+				if corrupt {
+					data = []byte("partial download")
+				}
+				if err := os.WriteFile(filepath.Join(dest, "libwhisper.so"), data, 0o755); err != nil {
+					return err
+				}
+				if corrupt {
+					return download.ErrDigestMismatch
+				}
+				return download.WriteInstallRecord(dest, download.InstallRecord{
+					Tag: "v1.9.5", Arch: architecture, OS: osName, Processor: processor,
+					ManifestSHA256: manifestSHA,
+					Asset:          download.InstallAsset{URL: assetURL, SHA256: asset.SHA256, Files: asset.Files},
+				})
+			}
 			lib, err := New(WithBasePath(t.TempDir()), WithOS("linux"), WithArch(arch), WithProcessor("cuda13"))
 			if err != nil {
 				t.Fatal(err)
@@ -162,7 +153,7 @@ func TestDownloadCUDA13(t *testing.T) {
 				t.Fatal(err)
 			}
 			tag, err := lib.DownloadFor(context.Background(), nil, arch, "linux", "cuda13", pin)
-			if err != nil || tag.Version != pin || tag.Processor != "cuda13" {
+			if err != nil || tag.Version != pin || tag.Arch != arch || tag.OS != "linux" || tag.Processor != "cuda13" {
 				t.Fatalf("download: tag=%+v error=%v", tag, err)
 			}
 			record, err := download.ReadInstallRecord(lib.LibsPath())
@@ -174,12 +165,16 @@ func TestDownloadCUDA13(t *testing.T) {
 				t.Fatalf("verification: %+v error=%v", report, err)
 			}
 			corrupt = true
-			if _, err := lib.DownloadFor(context.Background(), nil, arch, "linux", "cuda13", pin); err == nil {
-				t.Fatal("corrupt archive accepted")
+			if _, err := lib.DownloadFor(context.Background(), nil, arch, "linux", "cuda13", pin); !errors.Is(err, download.ErrDigestMismatch) {
+				t.Fatalf("download: got %v, want digest mismatch", err)
 			}
 			got, err := os.ReadFile(filepath.Join(lib.LibsPath(), "libwhisper.so"))
 			if err != nil || !bytes.Equal(got, body) {
 				t.Fatalf("failed download changed active library: %q error=%v", got, err)
+			}
+			tag, err = lib.InstalledVersion()
+			if err != nil || tag.Version != pin {
+				t.Fatalf("failed download changed active version: tag=%+v error=%v", tag, err)
 			}
 		})
 	}
