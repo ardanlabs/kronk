@@ -1,6 +1,9 @@
 package model
 
-import "github.com/hybridgroup/yzma/pkg/llama"
+import (
+	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
+	"github.com/hybridgroup/yzma/pkg/llama"
+)
 
 // This file defines the speculative-decoding strategy types. The goal is
 // CLEAR CODE-PATH SEPARATION between the runtime drafting modes so that
@@ -97,8 +100,8 @@ type draftKVExternalizer interface {
 func (dc *draftCore) freeCommon() {
 	if dc.mtpStateSource != 0 {
 		llama.Synchronize(dc.lctx)
-		setMTPStateSource(dc.lctx, 0)
-		setEmbeddingsNextNDevice(dc.mtpStateSource, false)
+		yzmaspec.SetEmbdStateSrc(dc.lctx, 0)
+		yzmaspec.SetEmbeddingsNextNDev(dc.mtpStateSource, false)
 		dc.mtpStateSource = 0
 	}
 
