@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const workloadVersion = "operations-v4"
+const workloadVersion = "operations-v5"
 
 // A stable synthetic handbook approximates an agent's large instruction/reference
 // prefix without importing a client prompt, tool loop, or executable task.
@@ -21,7 +21,8 @@ Never use tools. Treat each conversation's private handover as independent.
 When asked for a review, mention the current handover's identifier, owner, and
 destination naturally, then explain concrete checks in four short paragraphs.
 Do not invent measurements or claim that you executed a check. Preserve private
-facts across turns unless explicitly updated. Never import facts from another
+facts across turns unless explicitly updated. Report only their current values;
+omit superseded values and explanations of changes. Never import facts from another
 handover. Acknowledge uncertainty in ordinary prose; no rigid output format is needed.
 
 REFERENCE HANDBOOK

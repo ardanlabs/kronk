@@ -67,8 +67,8 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 	if err := save(fresh); err != nil {
 		return err
 	}
-	aQuestion := message{Role: "user", Content: "Change the destination to Orange; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."}
-	bQuestion := message{Role: "user", Content: "Change the destination to Cherry; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."}
+	aQuestion := message{Role: "user", Content: "Change the destination to Orange; keep the identifier and owner unchanged. Review only the current handover facts using between 60 and 80 words in total. Do not mention any previous destination, describe the change, or compare old and new values."}
+	bQuestion := message{Role: "user", Content: "Change the destination to Cherry; keep the identifier and owner unchanged. Review only the current handover facts using between 60 and 80 words in total. Do not mention any previous destination, describe the change, or compare old and new values."}
 	aChecks := answerFacts{required: []string{"River", "Alice", "Orange"}, foreign: []string{"Mountain", "Bob", "Cherry"}, excluded: []string{"Apple"}}
 	bChecks := answerFacts{required: []string{"Mountain", "Bob", "Cherry"}, foreign: []string{"River", "Alice", "Orange"}, excluded: []string{"Lemon"}}
 	if r.Images {
@@ -122,7 +122,7 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 			return ctx.Err()
 		}
 	}
-	a = continueChat(a, appended, message{Role: "user", Content: "Review this updated handover in about 180 words. Preserve its current identifier, owner and destination, and any pictured animal. Explain queue checks, safe interruption, cache reuse and recovery."})
+	a = continueChat(a, appended, message{Role: "user", Content: "Review only the current handover facts in about 180 words. Include its current identifier, owner and destination, and any pictured animal. Do not mention any previous destination, describe changes, or compare old and new values. Explain queue checks, safe interruption, cache reuse and recovery."})
 	b = continueChat(b, peer, message{Role: "user", Content: "For interrupted handover Forest, write a long recovery checklist, repeating its identifier in every paragraph."})
 	go func() {
 		res := perform(&survivorClient, "survivor", a, aChecks, false)

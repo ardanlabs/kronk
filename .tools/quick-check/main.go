@@ -603,7 +603,7 @@ func run(o options) (runErr error) {
 			cr.ReferenceTokens = denseReferenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)
 		}
 		if cr.TwoSlots {
-			cr.Workload = "operations-concurrent-v3"
+			cr.Workload = "operations-concurrent-v4"
 		}
 		var err error
 		if group == nil {
@@ -829,7 +829,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		_, err = perform("replay", a, answerFacts{required: []string{"River", "Alice", "Apple"}}, false)
 	}
 	if err == nil {
-		question := "Change the destination to Orange; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."
+		question := "Change the destination to Orange; keep the identifier and owner unchanged. Review only the current handover facts using between 60 and 80 words in total. Do not mention any previous destination, describe the change, or compare old and new values."
 		if o.images {
 			question += " Include the animal from the picture already in this conversation."
 		}
