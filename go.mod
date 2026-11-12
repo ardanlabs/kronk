@@ -3,19 +3,18 @@ module github.com/ardanlabs/kronk
 go 1.27.0
 
 require (
-	github.com/ardanlabs/bucky v1.1.5
+	github.com/ardanlabs/bucky v1.1.6
 	github.com/ardanlabs/conf/v3 v3.13.0
 	github.com/ardanlabs/jinja v1.12.0
-	github.com/ardanlabs/malina v1.2.1
+	github.com/ardanlabs/malina v1.2.2
 	github.com/arl/statsviz v0.8.2
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-getter v1.8.10
 	github.com/hashicorp/go-version v1.9.0
-	github.com/hybridgroup/yzma v1.32.1-0.20261112112842-73b56d42aa32
+	github.com/hybridgroup/yzma v1.32.1-0.20261112142555-540b07212c2b
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
-	github.com/jupiterrider/ffi v0.8.0
 	github.com/maypok86/otter/v2 v2.4.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/open-policy-agent/opa v1.22.4
@@ -100,6 +99,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jupiterrider/ffi v0.8.0 // indirect
 	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.4.0 // indirect

@@ -294,15 +294,15 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 // Only own-KV, single-head loaders call this. Unsupported symbols, allocation,
 // events, buffer placement, or widths leave the established host path intact.
 func (dc *draftCore) enableMTPDeviceRows(ctx context.Context, log applog.Logger, target llama.Context) {
-	if !mtpDeviceBindings.available || mtpNextNLayers(dc.model) != 1 {
+	if !yzmaspec.DeviceRowsAvailable() || mtpNextNLayers(dc.model) != 1 {
 		return
 	}
-	if !setEmbeddingsNextNDevice(target, true) {
+	if !yzmaspec.SetEmbeddingsNextNDev(target, true) {
 		return
 	}
-	if !setMTPStateSource(dc.lctx, target) {
-		setMTPStateSource(dc.lctx, 0)
-		setEmbeddingsNextNDevice(target, false)
+	if !yzmaspec.SetEmbdStateSrc(dc.lctx, target) {
+		yzmaspec.SetEmbdStateSrc(dc.lctx, 0)
+		yzmaspec.SetEmbeddingsNextNDev(target, false)
 		return
 	}
 	dc.mtpStateSource = target

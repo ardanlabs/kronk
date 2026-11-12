@@ -32,12 +32,12 @@ github.com/apache/arrow-go/v18 v18.8.0 h1:BLOzbPv7bxMPgXPacAg6HQjnxupYsZzC4tf+Fk
 github.com/apache/arrow-go/v18 v18.8.0/go.mod h1:uJCFfCwq0KsxCmsCfQg4ft+LsW+iHYzAXiSDh5ug/8U=
 github.com/apache/thrift v0.24.0 h1:zy31L1a49QTNB2bG1BBfMXol3yJrTH975G3pPubQVLQ=
 github.com/apache/thrift v0.24.0/go.mod h1:zPt6WxgvTOM6hF92y8C+MkEM5LMxZuk4JcQOiU4Esvs=
-github.com/ardanlabs/bucky v1.1.5 h1:ztRxgeUeva07jMIYV9LgUBGAxMBH+vWQfTrz8kdI804=
-github.com/ardanlabs/bucky v1.1.5/go.mod h1:ZlikC6Yw4BdMJSpVr7nFKi0yebapzdkPdpn/bsRc8fw=
+github.com/ardanlabs/bucky v1.1.6 h1:r+XN0EcbY95h/VdjtbO0uvy88ouud0xNeUGc0NTkhGE=
+github.com/ardanlabs/bucky v1.1.6/go.mod h1:ZlikC6Yw4BdMJSpVr7nFKi0yebapzdkPdpn/bsRc8fw=
 github.com/ardanlabs/jinja v1.12.0 h1:aGwGJDbrH+7yvp4iP7yMaqXpPUwQG6lbYReui6fJjzc=
 github.com/ardanlabs/jinja v1.12.0/go.mod h1:VMzH0tsq4PgTbN64PqBqqqBKZvKlhkrxHVagcB5Tj8g=
-github.com/ardanlabs/malina v1.2.1 h1:WuOJ+XFBfcyFSV321ZFhzqn9pceH9TCln5aSktYYilI=
-github.com/ardanlabs/malina v1.2.1/go.mod h1:14natoqs9Yn4WAaNL0N6BozekVbFpmq2WV3HF9chPy8=
+github.com/ardanlabs/malina v1.2.2 h1:nEECuDdqW2kcm6acHTTaaosve0r09S/D9aOqQFj34SE=
+github.com/ardanlabs/malina v1.2.2/go.mod h1:14natoqs9Yn4WAaNL0N6BozekVbFpmq2WV3HF9chPy8=
 github.com/aws/aws-sdk-go-v2 v1.48.0 h1:tFU7EJVm7MfyaXLsXdYTZ0Vd6vwt9OljCyqq0gqk0Mc=
 github.com/aws/aws-sdk-go-v2 v1.48.0/go.mod h1:oeKU5p+TQBnpeLmU42WZLWvzv+ORLn+74n4QVLnm/Z0=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.27 h1:3dMP9eEmHVosFN1QiD24IJBKVY8m6iUfVYXqRCT118Q=
@@ -142,8 +142,8 @@ github.com/hashicorp/go-getter v1.8.10 h1:uufJp+uacA0fSDRxclsHkiE6yUQTKgwv5b25Qe
 github.com/hashicorp/go-getter v1.8.10/go.mod h1:5HyKGCQmT+I3MGAM76vk/fWpktjwxn7xruCUr9CrVuo=
 github.com/hashicorp/go-version v1.9.0 h1:CeOIz6k+LoN3qX9Z0tyQrPtiB1DFYRPfCIBtaXPSCnA=
 github.com/hashicorp/go-version v1.9.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
-github.com/hybridgroup/yzma v1.32.1-0.20261112112842-73b56d42aa32 h1:UR+pMMeV8eKXgOPBHCAr1oPjsXvShF4sWu6niCxuVa4=
-github.com/hybridgroup/yzma v1.32.1-0.20261112112842-73b56d42aa32/go.mod h1:ovV3WQ5v3X53vqo9Izg/28QHEXaVasW9b4Kgkhk05T0=
+github.com/hybridgroup/yzma v1.32.1-0.20261112142555-540b07212c2b h1:hkJM4ZYTr1Ep/w6i/RpvrSi/Z2C5ETslz2GfS+CyLSo=
+github.com/hybridgroup/yzma v1.32.1-0.20261112142555-540b07212c2b/go.mod h1:ovV3WQ5v3X53vqo9Izg/28QHEXaVasW9b4Kgkhk05T0=
 github.com/icza/bitio v1.1.0 h1:ysX4vtldjdi3Ygai5m1cWy4oLkhWTAi+SyO6HC8L9T0=
 github.com/icza/bitio v1.1.0/go.mod h1:0jGnlLAx8MKMr9VGnn/4YrvZiprkvBelsVIbA9Jjr9A=
 github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6 h1:8UsGZ2rr2ksmEru6lToqnXgA8Mz1DP11X4zSJ159C3k=

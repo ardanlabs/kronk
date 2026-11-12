@@ -72,7 +72,7 @@ func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRow
 		if len(s.mtp.PendingHidden) == nEmbd {
 			copy(pending, s.mtp.PendingHidden)
 		}
-		if !setEmbeddingsNextNRows(e.model.lctx, int64(pendingRow), 1, pending, nEmbd) {
+		if !yzmaspec.SetEmbeddingsNextNRows(e.model.lctx, int64(pendingRow), nEmbd, pending) {
 			return input, errors.New("MTP device replay: writing pending hidden row")
 		}
 	}
@@ -103,7 +103,7 @@ func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRow
 				if start+i == 0 {
 					stateRow = pendingRow
 				}
-				if !setMTPStateRow(mirror.native, idx, stateRow) {
+				if !yzmaspec.BatchExtSetEmbdStateRow(mirror.native, idx, stateRow) {
 					return fmt.Errorf("setting MTP mirror device row %d", stateRow)
 				}
 			} else {
@@ -128,7 +128,7 @@ func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRow
 				return input.DecodeOwnChunk(start, end, nil)
 			},
 			ReadLastRow: func(out []float32) error {
-				if !getEmbeddingsNextNRows(e.model.lctx, int64(deviceRowStart+len(rows)-1), 1, out, nEmbd) {
+				if !yzmaspec.GetEmbeddingsNextNRows(e.model.lctx, int64(deviceRowStart+len(rows)-1), nEmbd, out) {
 					return errors.New("MTP device replay: reading final hidden row")
 				}
 				return nil
@@ -374,7 +374,7 @@ func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {
 		s.mtp.VerifyHidden = s.mtp.VerifyHidden[:need]
 	}
 	if draft.mtpStateSource != 0 {
-		if !getEmbeddingsNextNRows(e.model.lctx, int64(start), int64(count), s.mtp.VerifyHidden, nEmbd) {
+		if !yzmaspec.GetEmbeddingsNextNRows(e.model.lctx, int64(start), nEmbd, s.mtp.VerifyHidden) {
 			return errors.New("verify-prenorm-capture: reading target device rows")
 		}
 		return nil

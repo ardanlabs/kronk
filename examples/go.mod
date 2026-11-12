@@ -5,11 +5,11 @@ go 1.27.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
-	github.com/ardanlabs/bucky v1.1.5
+	github.com/ardanlabs/bucky v1.1.6
 	github.com/ardanlabs/kronk v1.33.1
 	github.com/duckdb/duckdb-go/v2 v2.20000.0
 	github.com/gen2brain/malgo v0.11.27
-	github.com/hybridgroup/yzma v1.32.1-0.20261112112842-73b56d42aa32
+	github.com/hybridgroup/yzma v1.32.1-0.20261112142555-540b07212c2b
 	golang.org/x/image v0.48.0
 )
 
@@ -26,7 +26,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
 	github.com/ardanlabs/jinja v1.12.0 // indirect
-	github.com/ardanlabs/malina v1.2.1 // indirect
+	github.com/ardanlabs/malina v1.2.2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.48.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.27 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.33.18 // indirect
