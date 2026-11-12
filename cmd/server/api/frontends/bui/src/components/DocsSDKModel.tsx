@@ -57,78 +57,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code. Call it during native initialization, before using these bindings.</p>
             </div>
 
-            <div className="doc-section" id="func-mtmdgenaudiogetvoice">
-              <h4>MTMDGenAudioGetVoice</h4>
-              <pre className="code-block">
-                <code>func MTMDGenAudioGetVoice(ctx mtmd.Context, name string) (mtmd.Bitmap, error)</code>
-              </pre>
-              <p className="doc-description">MTMDGenAudioGetVoice creates a preset voice bitmap. The caller must free it with mtmd.BitmapFree after the helper has finished using it.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdgenaudiovoicename">
-              <h4>MTMDGenAudioVoiceName</h4>
-              <pre className="code-block">
-                <code>func MTMDGenAudioVoiceName(ctx mtmd.Context, index int32) (string, error)</code>
-              </pre>
-              <p className="doc-description">MTMDGenAudioVoiceName returns the indexed preset voice name, or an empty string when the index is out of range or the model has no preset voices.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudioflush">
-              <h4>MTMDHelperGenAudioFlush</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioFlush(ctx MTMDHelperGenAudio) error</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioFlush decodes buffered frames before the final streaming output call. It must not be used to publish successfully truncated speech.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudiofree">
-              <h4>MTMDHelperGenAudioFree</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioFree(ctx MTMDHelperGenAudio)</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioFree releases a pipeline, not its borrowed contexts.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudiogetoutput">
-              <h4>MTMDHelperGenAudioGetOutput</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioGetOutput(ctx MTMDHelperGenAudio) ([]byte, int32, int64, error)</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioGetOutput copies native audio into Go-owned bytes and returns the sample rate and sample count. Streaming returns only newly produced audio.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudioreset">
-              <h4>MTMDHelperGenAudioReset</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioReset(ctx MTMDHelperGenAudio)</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioReset discards pending output and pipeline state, not KV.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudiosetinput">
-              <h4>MTMDHelperGenAudioSetInput</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioSetInput(ctx MTMDHelperGenAudio, input MTMDHelperGenAudioInput) error</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioSetInput prepares an utterance and its sequence.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudiostepgen">
-              <h4>MTMDHelperGenAudioStepGen</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioStepGen(ctx MTMDHelperGenAudio, token llama.Token, hidden *float32) (*float32, bool, error)</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioStepGen advances one frame. Returned hidden state is borrowed until the next step or reset. stop marks end-of-speech.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudiostepprompt">
-              <h4>MTMDHelperGenAudioStepPrompt</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioStepPrompt(ctx MTMDHelperGenAudio, nBatch int32) int32</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioStepPrompt decodes at most nBatch prompt rows. It returns the remaining count, zero when done, or a negative error code.</p>
-            </div>
-
             <div className="doc-section" id="func-recurrentstatecopies">
               <h4>RecurrentStateCopies</h4>
               <pre className="code-block">
@@ -271,22 +199,6 @@ export default function DocsSDKModel() {
                 <code>func ParseLoadMode(value string) (LoadMode, error)</code>
               </pre>
               <p className="doc-description">ParseLoadMode parses a load mode name or direct-I/O alias.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudioinit">
-              <h4>MTMDHelperGenAudioInit</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioInit(lctx llama.Context, mctx mtmd.Context) (MTMDHelperGenAudio, error)</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioInit creates a pipeline borrowing the supplied contexts.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergenaudioinputdefault">
-              <h4>MTMDHelperGenAudioInputDefault</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGenAudioInputDefault() (MTMDHelperGenAudioInput, error)</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioInputDefault returns the native audio-generation defaults.</p>
             </div>
 
             <div className="doc-section" id="func-parsemediatype">
@@ -950,36 +862,6 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">Logprobs contains log probability information for the response.</p>
-            </div>
-
-            <div className="doc-section" id="type-mtmdhelpergenaudio">
-              <h4>MTMDHelperGenAudio</h4>
-              <pre className="code-block">
-                <code>{`type MTMDHelperGenAudio uintptr`}</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudio is an opaque native audio pipeline. Calls sharing either context must be serialized. Free the helper before freeing its contexts.</p>
-            </div>
-
-            <div className="doc-section" id="type-mtmdhelpergenaudioinput">
-              <h4>MTMDHelperGenAudioInput</h4>
-              <pre className="code-block">
-                <code>{`type MTMDHelperGenAudioInput struct {
-	Stream     bool
-	SeqID      llama.SeqId
-	Prompt     *byte
-	PromptLen  uintptr
-	NPast      int32
-	OutMode    int32
-	SpeakerRef mtmd.Bitmap
-	Lang       *byte
-	TopK       int32
-	TopP       float32
-	Temp       float32
-	Seed       uint32
-	OutType    int32
-}`}</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGenAudioInput mirrors mtmd_helper_gen_audio_inp in llama.cpp b12223. Prompt, Lang and SpeakerRef must remain valid until SetInput returns.</p>
             </div>
 
             <div className="doc-section" id="type-mediatype">
@@ -3181,14 +3063,6 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">ExpertsAllOnGPU is the sentinel value used for vram.Config.ExpertLayersOnGPU to request that every routed-expert layer be charged against GPU VRAM. The vram package treats any value greater than or equal to the model's block count as "all layers on GPU", so a large constant works regardless of model depth and avoids a metadata round-trip just to discover it.</p>
             </div>
-
-            <div className="doc-section" id="const-mtmdgenaudiooutputwav">
-              <h4>MTMDGenAudioOutputWAV</h4>
-              <pre className="code-block">
-                <code>{`const MTMDGenAudioOutputWAV int32 = 1`}</code>
-              </pre>
-              <p className="doc-description">MTMDGenAudioOutputWAV selects PCM16 little-endian mono WAV output.</p>
-            </div>
           </div>
 
           <div className="card" id="variables">
@@ -3414,15 +3288,6 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
-                <li><a href="#func-mtmdgenaudiogetvoice">MTMDGenAudioGetVoice</a></li>
-                <li><a href="#func-mtmdgenaudiovoicename">MTMDGenAudioVoiceName</a></li>
-                <li><a href="#func-mtmdhelpergenaudioflush">MTMDHelperGenAudioFlush</a></li>
-                <li><a href="#func-mtmdhelpergenaudiofree">MTMDHelperGenAudioFree</a></li>
-                <li><a href="#func-mtmdhelpergenaudiogetoutput">MTMDHelperGenAudioGetOutput</a></li>
-                <li><a href="#func-mtmdhelpergenaudioreset">MTMDHelperGenAudioReset</a></li>
-                <li><a href="#func-mtmdhelpergenaudiosetinput">MTMDHelperGenAudioSetInput</a></li>
-                <li><a href="#func-mtmdhelpergenaudiostepgen">MTMDHelperGenAudioStepGen</a></li>
-                <li><a href="#func-mtmdhelpergenaudiostepprompt">MTMDHelperGenAudioStepPrompt</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-speculativecontextcount">SpeculativeContextCount</a></li>
@@ -3441,8 +3306,6 @@ export default function DocsSDKModel() {
                 <li><a href="#func-parsekvcachemode">ParseKVCacheMode</a></li>
                 <li><a href="#func-parselazymode">ParseLazyMode</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
-                <li><a href="#func-mtmdhelpergenaudioinit">MTMDHelperGenAudioInit</a></li>
-                <li><a href="#func-mtmdhelpergenaudioinputdefault">MTMDHelperGenAudioInputDefault</a></li>
                 <li><a href="#func-parsemediatype">ParseMediaType</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-parsenumastrategy">ParseNUMAStrategy</a></li>
@@ -3496,8 +3359,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
-                <li><a href="#type-mtmdhelpergenaudio">MTMDHelperGenAudio</a></li>
-                <li><a href="#type-mtmdhelpergenaudioinput">MTMDHelperGenAudioInput</a></li>
                 <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-moeconfig">MoEConfig</a></li>
                 <li><a href="#type-moemode">MoEMode</a></li>
@@ -3730,7 +3591,6 @@ export default function DocsSDKModel() {
                 <li><a href="#const-defaultprefillbatchsize">DefaultPrefillBatchSize</a></li>
                 <li><a href="#const-defaultqueuedepth">DefaultQueueDepth</a></li>
                 <li><a href="#const-expertsallongpu">ExpertsAllOnGPU</a></li>
-                <li><a href="#const-mtmdgenaudiooutputwav">MTMDGenAudioOutputWAV</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

@@ -10,6 +10,7 @@
   - [Speculative Rollback Diagnostics](#unreleased-speculative-rollback-diagnostics)
   - [Malina Linux Runtime Minimum](#v1332-malina-linux-runtime-minimum)
   - [Malina ControlNet Parameter ABI](#v1332-malina-controlnet-parameter-abi)
+  - [Temporary Speech Bindings](#v1332-temporary-speech-bindings)
 - [v1.33.1](#v1331)
   - [Bucky Segment Text Confidence](#v1331-bucky-segment-text-confidence)
   - [Malina Generation Result ABI](#v1331-malina-generation-result-abi)
@@ -172,6 +173,21 @@ replacing files does not replace an already-loaded library. Managed installs
 recorded for the previous pin are replaced. User-managed paths are read-only:
 rebuild or replace them using the pinned revision before restarting. The Linux
 runtime minimum described above still applies.
+
+### v1.33.2: Temporary Speech Bindings
+
+The temporary `model.MTMDHelperGenAudio*` and `model.MTMDGenAudio*` bindings
+have been removed in favor of `github.com/hybridgroup/yzma/pkg/mtmd`.
+Kronk's `Speech`, `SpeechRequest`, and `SpeechResponse` APIs are unchanged.
+
+Low-level callers must use yzma's `mtmd.HelperGenAudio*` and
+`mtmd.GenAudio*` APIs, including `mtmd.HelperGenAudioOutTypeWAV` for WAV
+output. `HelperGenAudioSetInput` takes a pointer to the input; use its
+`SetPrompt` method to populate text. `HelperGenAudioStepPrompt` returns
+`(remaining, error)`, `HelperGenAudioStepGen` takes and returns hidden-state
+slices, and `HelperGenAudioGetOutput` returns a struct with `Data`,
+`SampleRate`, and `NSamples`. `GenAudioGetVoice` returns a zero handle
+without an error for an unknown voice; callers must check both.
 
 ## v1.33.1
 

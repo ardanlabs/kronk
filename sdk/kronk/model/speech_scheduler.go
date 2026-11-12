@@ -5,14 +5,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"runtime"
 	"slices"
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
-	"github.com/hybridgroup/yzma/pkg/utils"
 )
 
 var errSpeechEngineStopped = errors.New("speech engine stopped")
@@ -190,21 +187,18 @@ func (e *speechEngine) prepare(slot *speechSlot) error {
 	}
 	input := slot.input
 	if req.Voice != "" && req.Voice != "default" {
-		voice, err := MTMDGenAudioGetVoice(e.model.mtmdMetaCtx, req.Voice)
+		voice, err := mtmd.GenAudioGetVoice(e.model.mtmdMetaCtx, req.Voice)
 		if err != nil {
 			return fmt.Errorf("%w: speech voice: %w", ErrInvalidRequest, err)
+		}
+		if voice == 0 {
+			return fmt.Errorf("%w: unknown speech voice %q", ErrInvalidRequest, req.Voice)
 		}
 		slot.voice = voice
 		input.SpeakerRef = voice
 	}
-	prompt, err := utils.BytePtrFromString(req.Input)
-	if err != nil {
-		return fmt.Errorf("%w: speech text: %w", ErrInvalidRequest, err)
-	}
-	input.Prompt, input.PromptLen = prompt, uintptr(len(req.Input))
-	err = MTMDHelperGenAudioSetInput(slot.helper, input)
-	runtime.KeepAlive(prompt)
-	if err != nil {
+	input.SetPrompt(req.Input)
+	if err := mtmd.HelperGenAudioSetInput(slot.helper, &input); err != nil {
 		return fmt.Errorf("prepare speech input: %w", err)
 	}
 	llama.SamplerReset(slot.sampler)
@@ -222,9 +216,9 @@ func (e *speechEngine) step(slot *speechSlot) (SpeechResponse, bool, bool, error
 		return SpeechResponse{}, false, false, err
 	}
 	if slot.prefilling {
-		remaining := MTMDHelperGenAudioStepPrompt(slot.helper, speechBatchSize)
-		if remaining < 0 {
-			return SpeechResponse{}, false, true, errors.New("speech prompt decoding failed")
+		remaining, err := mtmd.HelperGenAudioStepPrompt(slot.helper, speechBatchSize)
+		if err != nil {
+			return SpeechResponse{}, false, true, fmt.Errorf("speech prompt decoding: %w", err)
 		}
 		pos, err := llama.MemorySeqPosMax(e.model.mem, slot.input.SeqID)
 		if err != nil {
@@ -243,8 +237,7 @@ func (e *speechEngine) step(slot *speechSlot) (SpeechResponse, bool, bool, error
 			return SpeechResponse{}, false, true, err
 		}
 		// The shared context's output is overwritten by the next slot.
-		slot.prefillHidden = slices.Clone(hidden)
-		slot.hidden = unsafe.SliceData(slot.prefillHidden)
+		slot.hidden = slices.Clone(hidden)
 		slot.prefilling = false
 		e.sample(slot)
 		e.model.log(slot.job.ctx, "speech", "status", "prefill-complete", "sequence", slot.input.SeqID, "prompt_tokens", slot.job.promptTokens)
@@ -255,8 +248,7 @@ func (e *speechEngine) step(slot *speechSlot) (SpeechResponse, bool, bool, error
 	if slot.frames >= e.maxFrames && !llama.VocabIsEOG(e.model.vocab, slot.token) {
 		return SpeechResponse{}, false, false, ErrSpeechLimit
 	}
-	next, stop, err := MTMDHelperGenAudioStepGen(slot.helper, slot.token, slot.hidden)
-	runtime.KeepAlive(slot.prefillHidden)
+	next, stop, err := mtmd.HelperGenAudioStepGen(slot.helper, slot.token, slot.hidden)
 	if err != nil {
 		return SpeechResponse{}, false, true, err
 	}
@@ -264,10 +256,11 @@ func (e *speechEngine) step(slot *speechSlot) (SpeechResponse, bool, bool, error
 		if err := slot.job.ctx.Err(); err != nil {
 			return SpeechResponse{}, false, false, err
 		}
-		data, rate, samples, err := MTMDHelperGenAudioGetOutput(slot.helper)
+		output, err := mtmd.HelperGenAudioGetOutput(slot.helper)
 		if err != nil {
 			return SpeechResponse{}, false, true, err
 		}
+		data, rate, samples := output.Data, output.SampleRate, output.NSamples
 		if len(data) < 44 || samples <= 0 || rate <= 0 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" ||
 			binary.LittleEndian.Uint16(data[20:22]) != 1 || binary.LittleEndian.Uint16(data[22:24]) != 1 ||
 			binary.LittleEndian.Uint32(data[24:28]) != uint32(rate) || binary.LittleEndian.Uint16(data[34:36]) != 16 ||
@@ -293,7 +286,7 @@ func (e *speechEngine) sample(slot *speechSlot) {
 
 func (e *speechEngine) finish(slot *speechSlot, response SpeechResponse, err error) {
 	job := slot.job
-	MTMDHelperGenAudioReset(slot.helper)
+	mtmd.HelperGenAudioReset(slot.helper)
 	_, cleanupErr := llama.MemorySeqRm(e.model.mem, slot.input.SeqID, 0, -1)
 	if cleanupErr != nil {
 		e.shutdown(cleanupErr)
