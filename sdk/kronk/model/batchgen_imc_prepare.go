@@ -31,6 +31,16 @@ func (e *batchEngine) queueIMCMediaPreparation(s *slot, cacheIdx llama.Pos, sess
 	s.imcPrep = &prep
 	if !job.imcMediaBuild && !job.imcMediaAppend {
 		job.imcMediaNativeChunks = job.imcSession.cache.mediaNativeChunks
+		if len(job.imcMediaNativeChunks) > 0 {
+			// Stage the text extension with the snapshot without changing the
+			// published prefix. Separate text chunks also match a coalesced
+			// native text chunk on the next media append. Leave missing native
+			// metadata absent so that append still takes the rebuild path.
+			job.imcMediaNativeChunks = append(slices.Clone(job.imcMediaNativeChunks), imcMediaChunk{
+				kind:   imcMediaChunkText,
+				tokens: slices.Clone(job.imcNewCacheTokens),
+			})
+		}
 		return nil
 	}
 
