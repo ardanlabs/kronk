@@ -18,7 +18,7 @@ die() { echo "$*" >&2; exit 1; }
 
 # Restrict discovery to the nightly workflow, not similarly named artifacts from
 # other workflows. Artifact IDs order reruns correctly; workflow head_sha does not
-# identify the main revision actually checked out by a rerun.
+# identify the branch revision actually checked out by a rerun.
 artifacts() {
   local workflows workflow_id runs run pattern="$artifact_prefix"
   local include_legacy=true
@@ -133,7 +133,7 @@ case "${1:-}" in
       rm -f "$output/$report" "$output/compare-release/$report"
     done
     status=0
-    # No -release: the tracked main history is strictly a read-only baseline.
+    # No -release: the tracked branch history is strictly a read-only baseline.
     go run ./.tools/quick-check compare-history -out "$output" -history "$history" > "$output/compare-release/terminal.log" 2>&1 || status=$?
     for report in comparison.json comparison.log comparison.md; do
       [[ ! -f "$output/$report" ]] || mv "$output/$report" "$output/compare-release/$report"
