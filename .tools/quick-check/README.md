@@ -91,7 +91,13 @@ Every finalized attempt replaces `new`; only Promote replaces `release`, even
 when the same commit is tested again. Local archives under `output/saved_local_runs/`
 remain outside retention. Older `old-*` directories are no longer managed.
 
-Actions saves full evidence and comparison reports as `quick-check-macos-metal-run-<run-id>-<attempt>`
+Actions saves full evidence, comparison reports, and available complete server logs
+(`server.log`, `server-start.log`, `server-stop-before.log`, and `server-stop.log`)
+together in `quick-check-run.tgz`. Server logs are included when collected, even
+for failed/interrupted checks; failures before a candidate is finalized may have
+only Actions job logs. Download important evidence before it rotates out.
+
+The artifacts are named `quick-check-macos-metal-run-<run-id>-<attempt>`
 (macOS) or `quick-check-linux-vulkan-run-<run-id>-<attempt>` (Linux). After a
 successful upload, each workflow keeps only its latest two full run artifacts,
 including failed/interrupted attempts. Other workflows' artifacts are untouched.

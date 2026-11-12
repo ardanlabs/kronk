@@ -101,6 +101,10 @@ case "${1:-}" in
     for report in compare-release comparison.json comparison.log comparison.md; do
       [[ ! -e "$output/$report" ]] || files+=("$report")
     done
+    # Include only server logs, not downloaded evidence from previous runs.
+    for log in "$diagnostics"/*.log; do
+      [[ ! -f "$log" ]] || files+=(-C "$diagnostics" "${log##*/}")
+    done
     COPYFILE_DISABLE=1 tar -czf "$RUNNER_TEMP/quick-check-run.tgz" -C "$output" "${files[@]}"
     ;;
   start)
