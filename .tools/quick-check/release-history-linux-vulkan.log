@@ -1,0 +1,101 @@
+Release comparison: v1.33.1 (uninitialized baseline; no Linux Vulkan measurements recorded)
+machine: linux-vulkan-runner; os: linux; RAM: 0GiB; VRAM: 0GiB; unified memory: false
+References updated: unknown; reference ID: unknown
+
+Cell                     Metric          Baseline median [SD]  Candidate median [SD]  Change
+
+Dense/1s/IMC+/MTP+/img+    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/1s/IMC+/MTP+/img-    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/1s/IMC+/MTP-/img+    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/1s/IMC+/MTP-/img-    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/1s/IMC-/MTP+/img+    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/1s/IMC-/MTP+/img-    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/1s/IMC-/MTP-/img+    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/1s/IMC-/MTP-/img-    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/2s/IMC+/MTP+/img+    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/2s/IMC+/MTP+/img-    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/2s/IMC+/MTP-/img+    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/2s/IMC+/MTP-/img-    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/2s/IMC-/MTP+/img+    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/2s/IMC-/MTP+/img-    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/2s/IMC-/MTP-/img+    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+Dense/2s/IMC-/MTP-/img-    Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/1s/IMC+/MTP+/img+      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/1s/IMC+/MTP+/img-      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/1s/IMC+/MTP-/img+      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/1s/IMC+/MTP-/img-      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/1s/IMC-/MTP+/img+      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/1s/IMC-/MTP+/img-      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/1s/IMC-/MTP-/img+      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/1s/IMC-/MTP-/img-      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/2s/IMC+/MTP+/img+      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/2s/IMC+/MTP+/img-      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/2s/IMC+/MTP-/img+      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/2s/IMC+/MTP-/img-      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/2s/IMC-/MTP+/img+      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/2s/IMC-/MTP+/img-      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/2s/IMC-/MTP-/img+      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a
+
+MoE/2s/IMC-/MTP-/img-      Workload (s)    0.00 [0.00]          0.00 [0.00]            n/a
+                         Normalized (s)  0.00 [0.00]          0.00 [0.00]            n/a

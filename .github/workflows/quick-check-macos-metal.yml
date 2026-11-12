@@ -7,7 +7,7 @@ on:
     - cron: '0 2 * * *'
       timezone: America/New_York
 
-# Serializes macOS measurements only; Linux and promotion have separate locks.
+# Serializes macOS measurements only; Linux has a separate lock.
 # Do not cancel an existing measurement when another invocation is queued.
 concurrency:
   group: quick-check-macos-metal
@@ -15,7 +15,7 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 env:
   GOTOOLCHAIN: local
@@ -42,10 +42,6 @@ jobs:
       - name: Set up Kronk
         if: steps.prepare.outputs.skip == 'false'
         uses: ./.github/actions/setup-kronk
-
-      - name: Restore and validate release baseline
-        if: steps.prepare.outputs.skip == 'false'
-        run: bash .github/scripts/quick-check.sh restore
 
       - name: Download quick-check models
         if: steps.prepare.outputs.skip == 'false'
@@ -86,10 +82,18 @@ jobs:
         run: bash .github/scripts/quick-check.sh package
 
       - name: Save nightly evidence
+        id: upload
         if: ${{ always() && steps.snapshot.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: quick-check-macos-metal-run-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/quick-check-run.tgz
-          retention-days: 10
+          retention-days: 90
           if-no-files-found: error
+
+      - name: Keep latest two platform artifacts
+        if: ${{ always() && steps.upload.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPLOADED_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: bash .github/scripts/quick-check.sh prune

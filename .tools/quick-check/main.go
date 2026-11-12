@@ -370,6 +370,13 @@ type engine struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "compare-history" {
+		if err := historyCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "snapshot" {
 		if err := snapshotCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)

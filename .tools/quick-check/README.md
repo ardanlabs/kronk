@@ -92,73 +92,117 @@ when the same commit is tested again. Local archives under `output/saved_local_r
 remain outside retention. Older `old-*` directories are no longer managed.
 
 Actions saves full evidence and comparison reports as `quick-check-macos-metal-run-<run-id>-<attempt>`
-(macOS) or `quick-check-linux-vulkan-run-<run-id>-<attempt>` (Linux), requesting
-10-day retention; repository limits may shorten availability. Each platform has
-its own latest run and promoted release baseline:
+(macOS) or `quick-check-linux-vulkan-run-<run-id>-<attempt>` (Linux). After a
+successful upload, each workflow keeps only its latest two full run artifacts,
+including failed/interrupted attempts. Other workflows' artifacts are untouched.
+Uploads request 90-day retention; repository limits and expiration still apply.
+Each platform reads its tracked timing history from the checked-out `main`:
 
-| Platform | Results branch | History document under `.tools/quick-check/` |
-| --- | --- | --- |
-| macOS Metal | `quick-check-results-macos-metal` | `release-history-macos-metal.log` |
-| Linux Vulkan | `quick-check-results-linux-vulkan` | `release-history-linux-vulkan.log` |
+| Platform | History document under `.tools/quick-check/` |
+| --- | --- |
+| macOS Metal | `release-history-macos-metal.log` |
+| Linux Vulkan | `release-history-linux-vulkan.log` |
 
-Results branches hold only compact release snapshots, promotion metadata, and
-history/recovery documents. Nightlies never write them. Actions uses separate queues:
+Nightlies never change checked-out history logs or write Git branches. No remote
+baseline restoration, results branch, or snapshot cache is needed. Actions uses separate queues:
 `output/linux-vulkan/` and `output/macos-metal/`. The manual commands above retain
 their default `output/`; use `-out` to select a platform queue. Existing local
-evidence is not automatically moved. Without a baseline, testing still
-runs and comparison is skipped. 
+evidence is not automatically moved. Comparisons use the latest history entry.
+Missing or zero baseline timings are reported as unavailable, not as zero-percent
+changes, and do not block otherwise valid nightly evidence. Invalid or failed
+candidate evidence fails comparison. Reports still appear in the summary, logs,
+and saved artifact when comparison fails.
 
 
-## Promote to Release
+## Prepare release history locally
 
-In GitHub Actions, select **Promote to Release → Run workflow** and enter the
-release label (`vX.Y.Z`) and full tested commit SHA available from **both** workflows.
-Do this before publishing the release. Promotion prepares both saved runs against
-their respective outgoing baselines before writing either branch. Missing or
-expired evidence blocks a new promotion; an already-promoted matching baseline
-can be reused on retry.
-
-For each platform, the baseline is pushed first, then history in a separate,
-document-only commit. The summary identifies **both history commits**. Manually
-cherry-pick them into the code branch before publishing the release; Promotion
-does not update `main`. No tests are
-rerun and no release/tag is created; the measured commit remains unchanged.
-
-The two branches are not updated atomically. If a baseline/history push or the
-second platform fails, rerun with the same inputs to finish the remaining writes
-without duplicate entries. No force-push is used. Promotions serialize with each
-other, not with the independent nightly workflows.
-
-**Not needed for Actions.** Optional local promotion only; does not change the remote queue:
+After both Actions quick-check jobs have measured the release-candidate commit,
+run this from the repository root before finishing your release commit:
 
 ```sh
-go run ./.tools/quick-check promote -release v1.33.1 -commit FULL_TESTED_SHA
+make quick-check-release-history QUICK_CHECK_RELEASE=v1.34.0 QUICK_CHECK_COMMIT=FULL_TESTED_SHA
+```
+
+Requires Go, authenticated GitHub CLI (`gh auth login`), `jq`, and `unzip`.
+`QUICK_CHECK_COMMIT` defaults
+to `HEAD`; it must identify the **measured server commit**, not just the workflow
+run's head commit. Both current Actions jobs test `main`, even when manually
+launched from a different branch. A release-branch SHA must actually have saved
+quick-check evidence on both platforms; this command does not run tests.
+
+The baseline is each platform's latest tracked history entry, not a Git tag or
+cached run. Optionally require that its label matches an expected release:
+
+```sh
+make quick-check-release-history QUICK_CHECK_RELEASE=v1.34.0 \
+  QUICK_CHECK_COMMIT=FULL_TESTED_SHA QUICK_CHECK_BASELINE=v1.33.1
+```
+
+The command downloads the newest saved candidate evidence whose actual
+`server_revision` matches the requested commit on each platform. It stages copies
+of both tracked history logs and invokes `compare-history -release` against them.
+No baseline artifacts, snapshots, cache, release tags, or code-diff checks are needed.
+An uninitialized placeholder permits recording the first measured release without
+inventing percentage changes.
+
+Both comparisons are prepared before either project history file is replaced:
+
+- `.tools/quick-check/release-history-macos-metal.log`
+- `.tools/quick-check/release-history-linux-vulkan.log`
+
+Review these files and include them directly in your release commit. Rerunning
+upserts the measured release entry instead of duplicating it. No branches,
+commits, tags, releases, or remote writes are created. Missing artifacts, failed
+or invalid candidate evidence, or a baseline-label mismatch stops preparation
+without copying either staged history back. Candidate artifacts must still be
+available in the platform's two-artifact queue. Tracked history is sufficient
+for baseline timings, but cannot reconstruct full request evidence.
+
+For manually collected evidence already in a local run queue:
+
+```sh
+go run ./.tools/quick-check compare-history -out .tools/quick-check/output \
+  -history .tools/quick-check/release-history-macos-metal.log -release v1.34.0
 ```
 
 ## Compare
 
-Compare saved results to catch wall clock differences between them:
+Compare a saved run against the latest release entry in the tracked history log:
 
 ```sh
-make quick-compare-against-release  # fresh versus release baseline
+make quick-compare-against-release  # local output/ versus the macOS history log
 
-# An explicit pair may use full evidence or compact release snapshots:
+make quick-compare-against-release \
+  QUICK_CHECK_HISTORY=.tools/quick-check/release-history-linux-vulkan.log \
+  QUICK_CHECK_COMPARE_ARGS='-out .tools/quick-check/output/linux-vulkan'
+```
+
+Comparison alone never changes history. Only the explicit local
+`compare-history -release vX.Y.Z` operation records a release. The latest entry's
+**Candidate median [SD]** supplies the next baseline, not its older Baseline column.
+Deltas use 0.01-second median precision to match the log. Positive percentages
+mean slower. A report marked PASS validates the recorded checks; it is not an
+automated performance-regression approval or threshold gate.
+
+Machine metadata must match before timing deltas are shown. Normalized deltas
+also require the same normalization reference ID (token references and cell set).
+Missing cells or timings are explicit, and zero-filled placeholders never produce
+percentages. Logs retain rounded summaries, not full environment metadata or raw
+samples; detailed request/environment validation still needs the saved evidence.
+
+For diagnostic comparisons between two complete saved runs or snapshots, supply
+both paths. This retains the richer evidence comparison independently of the
+nightly log-based report:
+
+```sh
 make quick-compare-against-release \
   QUICK_COMPARE_BASELINE=/path/to/baseline \
   QUICK_COMPARE_CANDIDATE=/path/to/candidate
 ```
 
-Release labels come only from explicit promotion, not Git tag discovery.
-Same-environment release comparisons update history. 
-For the default local `output/` queue, history defaults to
-`.tools/quick-check/release-history-macos-metal.log`; `compare` and `promote`
-accept `-history PATH` to select another document. When selecting a platform queue
-with `-out`, also select its history explicitly, as Actions does:
-
-```sh
-go run ./.tools/quick-check compare -out .tools/quick-check/output/linux-vulkan \
-  -history .tools/quick-check/release-history-linux-vulkan.log
-```
+The lower-level `compare` and `promote` commands remain available for these
+explicit local snapshot workflows; comparing two promoted releases can record
+history. They are not used to choose nightly timing baselines.
 
 The initial v1.33.1 entry is included once in the code branch. Machine descriptions
 include the operating system recorded by the test server.

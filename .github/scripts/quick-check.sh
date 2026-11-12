@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Transfers and Git persistence stay outside the measured make target.
+# Artifact transfers stay outside the measured make target.
 set -euo pipefail
 
 platform=${QUICK_CHECK_PLATFORM:-macos-metal}
@@ -7,13 +7,11 @@ case "$platform" in
   macos-metal|linux-vulkan) ;;
   *) echo "Unknown quick-check platform: $platform" >&2; exit 2 ;;
 esac
-output=.tools/quick-check/output/$platform
+output=${QUICK_CHECK_OUTPUT:-.tools/quick-check/output/$platform}
 history=.tools/quick-check/release-history-$platform.log
 workflow=quick-check-$platform.yml
-results_branch=quick-check-results-$platform
 artifact_prefix=quick-check-$platform-run
 diagnostics="${RUNNER_TEMP:?}/quick-check/$platform"
-results="$diagnostics/results"
 mkdir -p "$diagnostics" "$output"
 
 die() { echo "$*" >&2; exit 1; }
@@ -23,18 +21,21 @@ die() { echo "$*" >&2; exit 1; }
 # identify the main revision actually checked out by a rerun.
 artifacts() {
   local workflows workflow_id runs run pattern="$artifact_prefix"
+  local include_legacy=true
+  [[ "${1:-}" != current ]] || include_legacy=false
   # A renamed workflow can retain its ID, or leave the former workflow behind.
-  # Discover both without treating API failures as an empty artifact list.
+  # Read both for discovery, but pruning is restricted to the current workflow.
+  # Never treat API failures as an empty artifact list.
   workflows=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows?per_page=100" \
-    --jq ".workflows[] | select(.path == \".github/workflows/$workflow\" or (\"$platform\" == \"macos-metal\" and .path == \".github/workflows/quick-check.yml\")) | .id") || return
-  if [[ "$platform" == macos-metal ]]; then pattern="($artifact_prefix|quick-check-run)"; fi
+    --jq ".workflows[] | select(.path == \".github/workflows/$workflow\" or ($include_legacy and \"$platform\" == \"macos-metal\" and .path == \".github/workflows/quick-check.yml\")) | .id") || return
+  if [[ "$platform" == macos-metal && "$include_legacy" == true ]]; then pattern="($artifact_prefix|quick-check-run)"; fi
   for workflow_id in $workflows; do
     runs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/runs?per_page=100" --jq '.workflow_runs[].id') || return
     for run in $runs; do
       gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
         --jq ".artifacts[] | select(.expired == false and (.name | test(\"^$pattern-[0-9]+-[0-9]+$\"))) | .id" || return
     done
-  done | sort -rn
+  done | sort -rnu
 }
 
 download() {
@@ -61,101 +62,21 @@ validate_platform() {
     '(.machine.os == null or .machine.os == $os) and (.benchmark_identity // "") == $identity' "$1" >/dev/null || die "Evidence does not belong to $platform"
 }
 
-# A detached, disposable worktree never checks out or resets a developer's local
-# quick-check-results branch. Only exit 2 from ls-remote means genuinely absent.
-open_results() {
-  local status=0
-  local read_branch=$results_branch
-  legacy_results=false
-  git ls-remote --exit-code --heads origin "refs/heads/$results_branch" > "$diagnostics/results-ref" || status=$?
-  # Until the operator migrates the macOS branch, nightlies may read the old one.
-  # Promotion must not silently initialize a replacement without its history.
-  if (( status == 2 )) && [[ "$platform" == macos-metal ]]; then
-    status=0
-    read_branch=quick-check-results
-    git ls-remote --exit-code --heads origin "refs/heads/$read_branch" > "$diagnostics/results-ref" || status=$?
-    if (( status == 0 )); then legacy_results=true; fi
-  fi
-  if (( status == 2 )); then
-    return 2
-  elif (( status != 0 )); then
-    die "Cannot read $results_branch (Git exit $status)"
-  fi
-  git fetch --no-tags origin "refs/heads/$read_branch" || die "Cannot fetch $read_branch"
-  git worktree add --detach "$results" FETCH_HEAD || die 'Cannot open results checkout'
-}
-
-close_results() {
-  if [[ -d "$results" ]]; then git worktree remove --force "$results"; fi
-  if [[ -n "${orphan:-}" ]]; then git branch -D "$orphan"; fi
-}
-
-restore_release() {
-  local label
-  [[ -f "$results/release/comparison-snapshot.json" ]] || die 'Results branch has no release snapshot'
-  label=$(jq -er '.release | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.-]+)?$"))' "$results/release/promotion.json")
-  jq -e --slurpfile promotion "$results/release/promotion.json" \
-    '.version == 1 and (.summary.server_revision == $promotion[0].server_revision) and (.cells | length > 0)' \
-    "$results/release/comparison-snapshot.json" >/dev/null
-  jq '.summary' "$results/release/comparison-snapshot.json" > "$diagnostics/release-summary.json"
-  validate_platform "$diagnostics/release-summary.json"
-  mkdir -p "$output/release-$label"
-  cp -R "$results/release/." "$output/release-$label/"
-  rm -f "$output/release-$label/pending-history.log" "$history"
-  # Let Go verify snapshot checksums and cross-field evidence before any server
-  # measurement (and before retrying a pending history write during promotion).
-  go run ./.tools/quick-check snapshot -out "$output" -dest "$diagnostics/validated-release"
-  # A baseline push may have succeeded before its separate history push failed.
-  if [[ -f "$results/release/pending-history.log" ]]; then
-    cp "$results/release/pending-history.log" "$history"
-  elif [[ -f "$results/$history" ]]; then
-    cp "$results/$history" "$history"
-  elif [[ "$platform" == macos-metal && -f "$results/.tools/quick-check/release-history.log" ]]; then
-    cp "$results/.tools/quick-check/release-history.log" "$history"
-  fi
-}
-
-push_results() {
-  git -C "$results" push origin "HEAD:refs/heads/$results_branch"
-}
-
-commit_results() {
-  git -C "$results" -c user.name='github-actions[bot]' \
-    -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "$1"
-}
-
-# Baseline commits carry recovery history until the next baseline replaces it.
-# Copy, rather than move, so the later commit changes only the canonical document
-# at the same path as main and can be cherry-picked without baseline files.
-save_history() {
-  if [[ -f "$results/release/pending-history.log" ]]; then
-    mkdir -p "$results/$(dirname "$history")"
-    cp "$results/release/pending-history.log" "$results/$history"
-    git -C "$results" add "$history"
-    if ! git -C "$results" diff --cached --quiet; then
-      commit_results 'Save quick-check release history'
-      push_results
-    fi
-  fi
-}
-
-promotion_args() {
-  : "${RELEASE:?}" "${COMMIT:?}"
-  [[ "$COMMIT" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] || die 'COMMIT must be a full tested SHA'
-  [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] || die 'Invalid release label'
-}
-
 case "${1:-}" in
-  restore)
-    trap close_results EXIT
-    status=0
-    open_results || status=$?
-    if (( status == 2 )); then
-      rm -f "$history"
-      echo 'No results branch; the first nightly has no release baseline.'
-    else
-      restore_release
-    fi
+  prune)
+    # Called only after a successful upload. Discovery is scoped to this
+    # platform's workflows and full run artifacts; never delete other evidence.
+    ids=$(artifacts current)
+    [[ "${UPLOADED_ARTIFACT_ID:-}" =~ ^[0-9]+$ ]] || die 'Pruning requires the successfully uploaded artifact ID'
+    # Include the confirmed upload even if Actions artifact listing is delayed.
+    ids=$(printf '%s\n%s\n' "$ids" "$UPLOADED_ARTIFACT_ID" | sort -rnu)
+    kept=0
+    for id in $ids; do
+      kept=$((kept + 1))
+      if (( kept > 2 )); then
+        gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+      fi
+    done
     ;;
   prepare)
     ids=$(artifacts)
@@ -202,15 +123,14 @@ case "${1:-}" in
     die 'Server did not become ready'
     ;;
   compare)
-    baselines=("$output"/release-*)
-    if [[ ! -d "${baselines[0]}" ]]; then
-      echo 'Skipping release comparison: no release baseline.'
-      printf '\n### Release comparison\n\nSkipped: no release baseline is available.\n' >> "${GITHUB_STEP_SUMMARY:?}"
-      exit 0
-    fi
     mkdir -p "$output/compare-release"
+    # A failed comparison must never publish a previous invocation's report.
+    for report in comparison.json comparison.log comparison.md; do
+      rm -f "$output/$report" "$output/compare-release/$report"
+    done
     status=0
-    go run ./.tools/quick-check compare -out "$output" -history "$history" > "$output/compare-release/terminal.log" 2>&1 || status=$?
+    # No -release: the tracked main history is strictly a read-only baseline.
+    go run ./.tools/quick-check compare-history -out "$output" -history "$history" > "$output/compare-release/terminal.log" 2>&1 || status=$?
     for report in comparison.json comparison.log comparison.md; do
       [[ ! -f "$output/$report" ]] || mv "$output/$report" "$output/compare-release/$report"
     done
@@ -223,70 +143,9 @@ case "${1:-}" in
     fi
     exit "$status"
     ;;
-  stage-promotion)
-    promotion_args
-    trap close_results EXIT
-    status=0
-    open_results || status=$?
-    [[ "$legacy_results" == false ]] || die 'Migrate quick-check-results to quick-check-results-macos-metal and rename its history document before promotion'
-    if (( status == 2 )); then
-      rm -f "$history"
-      echo absent > "$diagnostics/staged-ref"
-    else
-      git -C "$results" rev-parse HEAD > "$diagnostics/staged-ref"
-      restore_release
-    fi
-    found=false
-    # Already-published baselines remain retryable after Actions evidence expires.
-    if [[ -f "$output/release-$RELEASE/promotion.json" ]] && \
-      jq -e --arg commit "$COMMIT" '.server_revision == $commit' "$output/release-$RELEASE/promotion.json" >/dev/null; then
-      found=true
-    else
-      ids=$(artifacts)
-      for id in $ids; do
-        download "$id"
-        if [[ "$revision" == "$COMMIT" ]]; then
-          cp -R "$candidate" "$output/"
-          found=true
-          break
-        fi
-      done
-    fi
-    [[ "$found" == true ]] || die "No available $platform nightly artifact for tested SHA $COMMIT"
-    go run ./.tools/quick-check promote -out "$output" -release "$RELEASE" -commit "$COMMIT" -history "$history"
-    # Export just the promoted run; never put full nightly evidence in Git.
-    mkdir -p "$diagnostics/export-input"
-    cp -R "$output/release-$RELEASE" "$diagnostics/export-input/"
-    go run ./.tools/quick-check snapshot -out "$diagnostics/export-input" -dest "$diagnostics/compact"
-    printf '%s %s\n' "$RELEASE" "$COMMIT" > "$diagnostics/staged-promotion"
-    ;;
-  publish-promotion)
-    promotion_args
-    [[ -f "$diagnostics/staged-promotion" && "$(cat "$diagnostics/staged-promotion")" == "$RELEASE $COMMIT" ]] || die 'Promotion must be staged before publishing'
-    trap close_results EXIT
-    status=0
-    open_results || status=$?
-    current=absent
-    if (( status != 2 )); then current=$(git -C "$results" rev-parse HEAD); fi
-    [[ "$current" == "$(cat "$diagnostics/staged-ref")" ]] || die "$results_branch changed after preparation; rerun promotion"
-    if (( status == 2 )); then
-      git worktree add --detach "$results" HEAD
-      orphan="quick-check-init-$platform-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
-      git -C "$results" switch --orphan "$orphan"
-    fi
-    rm -rf "$results/release"
-    cp -R "$diagnostics/compact/release-$RELEASE" "$results/release"
-    if [[ -f "$history" ]]; then
-      cp "$history" "$results/release/pending-history.log"
-    fi
-    git -C "$results" add release
-    if ! git -C "$results" diff --cached --quiet; then
-      commit_results "Promote quick-check $COMMIT to $RELEASE"
-      push_results
-    fi
-    save_history
-    history_commit=$(git -C "$results" log -1 --format=%H -- "$history")
-    printf '## Promote to Release — %s\n\nTested SHA: `%s`\n\nRelease baseline: `%s`\n\nSaved compact baseline on `%s`. History commit to cherry-pick manually: `%s` (`%s`). No tag or release published.\n' "$platform" "$COMMIT" "$RELEASE" "$results_branch" "${history_commit:-none (no history entry)}" "$history" >> "${GITHUB_STEP_SUMMARY:?}"
+  library)
+    # Share read-only artifact discovery with the local release-history command.
+    return 0
     ;;
   finish)
     if [[ -f "$diagnostics/server-owned" ]]; then
@@ -309,5 +168,5 @@ case "${1:-}" in
       printf '\nRunner: `%s`; check step: **%s**\n' "$RUNNER_IDENTITY" "${CHECK_OUTCOME:-not run}"
     } >> "$GITHUB_STEP_SUMMARY"
     ;;
-  *) echo "Usage: $0 restore|prepare|package|start|compare|stage-promotion|publish-promotion|finish" >&2; exit 2 ;;
+  *) echo "Usage: $0 prepare|package|start|compare|finish|prune" >&2; exit 2 ;;
 esac
