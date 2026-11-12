@@ -444,9 +444,11 @@ blocked at the outer SDK admission gate or time spent preparing an IMC session
 before the submit attempt. Compare it with end-to-end request duration and
 time-to-first-token measurements when diagnosing latency.
 
-Embedding and reranking expose `inference_requests_total`,
-`inference_request_duration_seconds`, and `inference_active_requests`, labeled
-by operation and runtime (currently `batchseq`). Sequence batching also
+Embedding and reranking expose `inference_requests_total` and
+`inference_active_requests`, labeled by operation and runtime (currently
+`batchseq`); request durations land in the shared
+`gen_ai_server_request_duration_seconds` histogram, which carries the same
+`runtime` label. Sequence batching also
 publishes `batchseq_queue_wait_seconds`, `batchseq_items`, and
 `batchseq_batches_total`. These distinguish outer request concurrency from the
 number and width of native batches actually evaluated.
