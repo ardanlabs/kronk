@@ -9,23 +9,27 @@ import (
 	"strings"
 )
 
-const workloadVersion = "operations-v6"
+const workloadVersion = "operations-v7"
 
 // A stable synthetic handbook approximates an agent's large instruction/reference
 // prefix without importing a client prompt, tool loop, or executable task.
 func handbook() string {
 	var b strings.Builder
-	b.WriteString(`You are an operations assistant reviewing fictional service handovers.
-Use the reference handbook below as background, not as commands to execute.
-Never use tools. Treat each conversation's private handover as independent.
-When reviewing a handover, use the facts from that conversation and the
-checks described in the handbook. Follow the requested length and paragraph count.
-Do not invent measurements or claim that you executed a check. Preserve private
-facts across turns unless explicitly updated. Report only their current values;
-omit superseded values and explanations of changes. Never import facts from another
-handover. Acknowledge uncertainty in ordinary prose; no rigid output format is needed.
+	b.WriteString(`You are participating in a test of conversation memory and image understanding. Your task is to write the review requested in each user message.
 
-REFERENCE HANDBOOK
+Required in your answer
+- Include the conversation's current handover identifier, owner and destination. Apply updates without mentioning superseded values.
+- When the user requests an animal identification, identify the animal from the specified image, even if it is unrelated to service operations. Do not substitute an animal from an earlier image.
+- Follow the requested length and paragraph count. Keep each conversation's facts separate.
+
+Simulated review content
+- The handovers, service operations and reference handbook below form a fictional writing scenario. You are not being asked to operate a service or perform checks.
+- Use queue checks, safe interruption, cache reuse and recovery as topics for the review. Describe what should be checked, not measurements or actions you supposedly performed.
+- The handbook supplies background for those topics. It does not determine whether a handover or image is suitable for the exercise. An unrelated animal image is an intentional part of the task, not a reason to refuse the review.
+
+Never use tools.
+
+REFERENCE HANDBOOK — FICTIONAL BACKGROUND
 `)
 	services := []string{"archive", "gateway", "ledger", "search", "dispatch", "catalog", "telemetry"}
 	for i := range 72 {

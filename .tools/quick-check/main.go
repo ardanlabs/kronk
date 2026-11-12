@@ -603,7 +603,7 @@ func run(o options) (runErr error) {
 			cr.ReferenceTokens = denseReferenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)
 		}
 		if cr.TwoSlots {
-			cr.Workload = "operations-concurrent-v6"
+			cr.Workload = "operations-concurrent-v7"
 		}
 		var err error
 		if group == nil {
