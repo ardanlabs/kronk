@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -67,17 +68,17 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 	if err := save(fresh); err != nil {
 		return err
 	}
-	aQuestion := message{Role: "user", Content: "Change the destination to Orange; keep the identifier and owner unchanged. Review only the current handover facts using between 60 and 80 words in total. Do not mention any previous destination, describe the change, or compare old and new values."}
-	bQuestion := message{Role: "user", Content: "Change the destination to Cherry; keep the identifier and owner unchanged. Review only the current handover facts using between 60 and 80 words in total. Do not mention any previous destination, describe the change, or compare old and new values."}
+	aQuestion := message{Role: "user", Content: "The destination is now Orange; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."}
+	bQuestion := message{Role: "user", Content: "The destination is now Cherry; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."}
 	aChecks := answerFacts{required: []string{"River", "Alice", "Orange"}, foreign: []string{"Mountain", "Bob", "Cherry"}, excluded: []string{"Apple"}}
 	bChecks := answerFacts{required: []string{"Mountain", "Bob", "Cherry"}, foreign: []string{"River", "Alice", "Orange"}, excluded: []string{"Lemon"}}
 	if r.Images {
 		var err error
-		aQuestion, err = picturedMessage(aQuestion.Content.(string)+" Also identify the animal in this first attached picture.", "giraffe.jpg")
+		aQuestion, err = picturedMessage(strings.Replace(aQuestion.Content.(string), "Begin with the current identifier, owner and destination.", "In the opening paragraph, include the current identifier, owner and destination, and name the animal shown in the image attached to this message.", 1), "giraffe.jpg")
 		if err != nil {
 			return err
 		}
-		bQuestion, err = picturedMessage(bQuestion.Content.(string)+" Identify only the animal in the newest attached picture; do not name the earlier picture's animal.", "deer/image10.jpg")
+		bQuestion, err = picturedMessage(strings.Replace(bQuestion.Content.(string), "Begin with the current identifier, owner and destination.", "In the opening paragraph, include the current identifier, owner and destination, and name only the animal shown in the image attached to this message. Omit the animal from earlier images.", 1), "deer/image10.jpg")
 		if err != nil {
 			return err
 		}
@@ -122,7 +123,11 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 			return ctx.Err()
 		}
 	}
-	a = continueChat(a, appended, message{Role: "user", Content: "Review only the current handover facts in about 180 words. Include its current identifier, owner and destination, and any pictured animal. Do not mention any previous destination, describe changes, or compare old and new values. Explain queue checks, safe interruption, cache reuse and recovery."})
+	survivorQuestion := "Write a review of the current handover in four paragraphs totaling about 180 words. Begin with its current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."
+	if r.Images {
+		survivorQuestion = strings.Replace(survivorQuestion, "Begin with its current identifier, owner and destination.", "In the opening paragraph, include its current identifier, owner and destination, and name the animal shown in the most recently supplied image in this conversation. Omit animals from earlier images.", 1)
+	}
+	a = continueChat(a, appended, message{Role: "user", Content: survivorQuestion})
 	b = continueChat(b, peer, message{Role: "user", Content: "For interrupted handover Forest, write a long recovery checklist, repeating its identifier in every paragraph."})
 	go func() {
 		res := perform(&survivorClient, "survivor", a, aChecks, false)
