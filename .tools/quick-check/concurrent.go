@@ -123,7 +123,7 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 			return ctx.Err()
 		}
 	}
-	survivorQuestion := "Write a review of the current handover in four paragraphs totaling about 180 words. Begin with its current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."
+	survivorQuestion := "Write a review of the current handover in four paragraphs totaling about 180 words. Begin with its current identifier, owner and destination. Use only current values. Do not mention earlier destinations or explain how the handover changed. Explain queue checks, safe interruption, cache reuse and recovery."
 	if r.Images {
 		survivorQuestion = strings.Replace(survivorQuestion, "Begin with its current identifier, owner and destination.", "In the opening paragraph, include its current identifier, owner and destination, and name the animal shown in the most recently supplied image in this conversation. Omit animals from earlier images.", 1)
 	}
