@@ -56,11 +56,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
-	"github.com/hybridgroup/yzma/pkg/utils"
 )
 
 const (
@@ -72,12 +70,12 @@ var errFrameLimit = errors.New("speech frame limit reached")
 
 type speechSlot struct {
 	lctx    llama.Context
-	gen     model.MTMDHelperGenAudio
-	input   model.MTMDHelperGenAudioInput
+	gen     mtmd.HelperGenAudio
+	input   mtmd.HelperGenAudioInput
 	sampler llama.Sampler
 	nEmbd   int32
 	token   llama.Token
-	hidden  *float32
+	hidden  []float32
 	tokens  []llama.Token
 	frames  int
 	done    bool
@@ -173,9 +171,12 @@ func runCase(mdl llama.Model, projFile string, nSlots int, memory *memoryMonitor
 	// =========================================================================
 	// Share model and decoder weights, but keep each sequence's request state.
 
-	voice, err := model.MTMDGenAudioGetVoice(mctx, "default")
+	voice, err := mtmd.GenAudioGetVoice(mctx, "default")
 	if err != nil {
 		return err
+	}
+	if voice == 0 {
+		return errors.New("default speech voice not found")
 	}
 	defer mtmd.BitmapFree(voice)
 
@@ -325,7 +326,7 @@ func runCase(mdl llama.Model, projFile string, nSlots int, memory *memoryMonitor
 			return fmt.Errorf("frame limit: got %v, want %w", err, errFrameLimit)
 		}
 		memory.mark(fmt.Sprintf("seq-%d-before-ceiling-flush", slot.input.SeqID))
-		if err := model.MTMDHelperGenAudioFlush(slot.gen); err != nil {
+		if err := mtmd.HelperGenAudioFlush(slot.gen); err != nil {
 			return err
 		}
 		memory.mark(fmt.Sprintf("seq-%d-after-ceiling-flush", slot.input.SeqID))
@@ -367,15 +368,15 @@ func runCase(mdl llama.Model, projFile string, nSlots int, memory *memoryMonitor
 }
 
 func newSpeechSlot(mdl llama.Model, lctx llama.Context, mctx mtmd.Context, voice mtmd.Bitmap, seqID llama.SeqId) (*speechSlot, error) {
-	input, err := model.MTMDHelperGenAudioInputDefault()
+	input, err := mtmd.HelperGenAudioInputDefault()
 	if err != nil {
 		return nil, err
 	}
 	input.SeqID = seqID
 	input.SpeakerRef = voice
-	input.OutType = model.MTMDGenAudioOutputWAV
+	input.OutType = mtmd.HelperGenAudioOutTypeWAV
 	input.Seed, input.Temp = 42, 0.8
-	gen, err := model.MTMDHelperGenAudioInit(lctx, mctx)
+	gen, err := mtmd.HelperGenAudioInit(lctx, mctx)
 	if err != nil {
 		return nil, err
 	}
@@ -407,19 +408,14 @@ func newSpeechSlot(mdl llama.Model, lctx llama.Context, mctx mtmd.Context, voice
 
 func (s *speechSlot) close() {
 	llama.SamplerFree(s.sampler)
-	model.MTMDHelperGenAudioFree(s.gen)
+	mtmd.HelperGenAudioFree(s.gen)
 }
 
 func (s *speechSlot) start(prompt string) error {
 	input := s.input
-	var err error
-	input.Prompt, err = utils.BytePtrFromString(prompt)
-	if err != nil {
-		return err
-	}
-	input.PromptLen = uintptr(len(prompt))
+	input.SetPrompt(prompt)
 	// SetInput resets this helper and removes only input.SeqID's KV entries.
-	if err := model.MTMDHelperGenAudioSetInput(s.gen, input); err != nil {
+	if err := mtmd.HelperGenAudioSetInput(s.gen, &input); err != nil {
 		return err
 	}
 	llama.SamplerReset(s.sampler)
@@ -427,9 +423,9 @@ func (s *speechSlot) start(prompt string) error {
 	s.output = speechResult{}
 	batches := 0
 	for {
-		remaining := model.MTMDHelperGenAudioStepPrompt(s.gen, 512)
-		if remaining < 0 {
-			return fmt.Errorf("sequence %d prompt processing failed: %d", input.SeqID, remaining)
+		remaining, err := mtmd.HelperGenAudioStepPrompt(s.gen, 512)
+		if err != nil {
+			return fmt.Errorf("sequence %d prompt processing: %w", input.SeqID, err)
 		}
 		batches++
 		if remaining == 0 {
@@ -444,7 +440,7 @@ func (s *speechSlot) start(prompt string) error {
 		return err
 	}
 	// Prefill embeddings are borrowed from the shared context, so keep a copy.
-	s.hidden = unsafe.SliceData(slices.Clone(hidden))
+	s.hidden = slices.Clone(hidden)
 	s.sample()
 	return nil
 }
@@ -460,14 +456,14 @@ func (s *speechSlot) step() error {
 		return fmt.Errorf("sequence %d reached %d frames: %w", s.input.SeqID, maxFrames, errFrameLimit)
 	}
 	s.tokens = append(s.tokens, s.token)
-	next, stop, err := model.MTMDHelperGenAudioStepGen(s.gen, s.token, s.hidden)
+	next, stop, err := mtmd.HelperGenAudioStepGen(s.gen, s.token, s.hidden)
 	if err != nil {
 		return err
 	}
 	s.done = stop
 	if next != nil {
 		s.frames++
-		// This pointer belongs to this helper, not the shared context.
+		// This state belongs to this helper, not the shared context.
 		s.hidden = next
 	}
 	if stop {
@@ -510,10 +506,11 @@ func generateSpeech(slots ...*speechSlot) (int, error) {
 
 func (s *speechSlot) collect() error {
 	s.memory.mark(fmt.Sprintf("seq-%d-before-vocode-frames-%d", s.input.SeqID, s.frames))
-	data, rate, samples, err := model.MTMDHelperGenAudioGetOutput(s.gen)
+	output, err := mtmd.HelperGenAudioGetOutput(s.gen)
 	if err != nil {
 		return err
 	}
+	data, rate, samples := output.Data, output.SampleRate, output.NSamples
 	if rate <= 0 || samples <= 0 || len(data) < 44 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
 		return errors.New("speech generation returned invalid WAV audio")
 	}
@@ -637,9 +634,6 @@ func initYzma() error {
 	}
 	if err := mtmd.Load(libPath); err != nil {
 		return fmt.Errorf("unable to load MTMD library: %w", err)
-	}
-	if err := model.InitYzmaWorkarounds(libPath); err != nil {
-		return fmt.Errorf("unable to load MTMD speech bindings: %w", err)
 	}
 	llama.LogSet(llama.LogSilent())
 	mtmd.LogSet(llama.LogSilent())

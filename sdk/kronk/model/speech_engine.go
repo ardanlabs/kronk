@@ -37,17 +37,16 @@ type speechEngine struct {
 }
 
 type speechSlot struct {
-	helper        MTMDHelperGenAudio
-	input         MTMDHelperGenAudioInput
-	sampler       llama.Sampler
-	job           *speechJob
-	started       bool
-	prefilling    bool
-	frames        int
-	token         llama.Token
-	hidden        *float32
-	prefillHidden []float32
-	voice         mtmd.Bitmap
+	helper     mtmd.HelperGenAudio
+	input      mtmd.HelperGenAudioInput
+	sampler    llama.Sampler
+	job        *speechJob
+	started    bool
+	prefilling bool
+	frames     int
+	token      llama.Token
+	hidden     []float32
+	voice      mtmd.Bitmap
 }
 
 // ResolveSpeechConfig resolves the supported speech resource limits for planning
@@ -113,11 +112,11 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	input, err := MTMDHelperGenAudioInputDefault()
+	input, err := mtmd.HelperGenAudioInputDefault()
 	if err != nil {
 		return fmt.Errorf("speech input defaults: %w: %w", ErrSpeechUnsupported, err)
 	}
-	input.OutType = MTMDGenAudioOutputWAV
+	input.OutType = mtmd.HelperGenAudioOutTypeWAV
 	input.Stream = false
 	input.Seed, input.Temp = 42, 0.8
 
@@ -146,14 +145,17 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	if got := llama.NCtxSeq(lctx); got != speechContextWindow {
 		return fmt.Errorf("speech context per sequence: got %d, want %d", got, speechContextWindow)
 	}
-	voiceName, err := MTMDGenAudioVoiceName(m.mtmdMetaCtx, 0)
+	voiceName, err := mtmd.GenAudioVoiceName(m.mtmdMetaCtx, 0)
 	if err != nil {
 		return fmt.Errorf("speech default voice: %w: %w", ErrSpeechUnsupported, err)
 	}
 	if voiceName != "" {
-		engine.voice, err = MTMDGenAudioGetVoice(m.mtmdMetaCtx, voiceName)
+		engine.voice, err = mtmd.GenAudioGetVoice(m.mtmdMetaCtx, voiceName)
 		if err != nil {
 			return fmt.Errorf("speech default voice: %w: %w", ErrSpeechUnsupported, err)
+		}
+		if engine.voice == 0 {
+			return fmt.Errorf("speech default voice %q: %w", voiceName, ErrSpeechUnsupported)
 		}
 	}
 	input.SpeakerRef = engine.voice
@@ -168,7 +170,7 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		helper, err := MTMDHelperGenAudioInit(lctx, m.mtmdMetaCtx)
+		helper, err := mtmd.HelperGenAudioInit(lctx, m.mtmdMetaCtx)
 		if err != nil {
 			return fmt.Errorf("init speech sequence %d: %w: %w", i, ErrSpeechUnsupported, err)
 		}
@@ -208,7 +210,7 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 func (e *speechEngine) free() {
 	for _, v := range slices.Backward(e.slots) {
 		llama.SamplerFree(v.sampler)
-		MTMDHelperGenAudioFree(v.helper)
+		mtmd.HelperGenAudioFree(v.helper)
 	}
 	e.slots = nil
 	if e.voice != 0 {
