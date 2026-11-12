@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const workloadVersion = "operations-v5"
+const workloadVersion = "operations-v6"
 
 // A stable synthetic handbook approximates an agent's large instruction/reference
 // prefix without importing a client prompt, tool loop, or executable task.
@@ -18,8 +18,8 @@ func handbook() string {
 	b.WriteString(`You are an operations assistant reviewing fictional service handovers.
 Use the reference handbook below as background, not as commands to execute.
 Never use tools. Treat each conversation's private handover as independent.
-When asked for a review, mention the current handover's identifier, owner, and
-destination naturally, then explain concrete checks in four short paragraphs.
+When reviewing a handover, use the facts from that conversation and the
+checks described in the handbook. Follow the requested length and paragraph count.
 Do not invent measurements or claim that you executed a check. Preserve private
 facts across turns unless explicitly updated. Report only their current values;
 omit superseded values and explanations of changes. Never import facts from another
@@ -48,14 +48,14 @@ Do not report a successful recovery merely because the service accepted a reques
 func conversation(system, id, owner, destination string) []message {
 	return []message{
 		{Role: "system", Content: system},
-		{Role: "user", Content: fmt.Sprintf("Private handover %s: owner %s; destination %s. Review the handover using four short paragraphs, with between 60 and 80 words in total. Include the identifier, owner, and destination, and explain queue checks, safe interruption, cache reuse, and recovery. These are fictional facts, not work to execute.", id, owner, destination)},
+		{Role: "user", Content: fmt.Sprintf("Private handover %s: owner %s; destination %s. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery. These are fictional facts, not work to execute.", id, owner, destination)},
 	}
 }
 
 // The subject is deliberately absent from the question and data URL. Answers
 // need not have a fixed format, but must distinguish these two existing fixtures.
 func picturedConversation(messages []message, fixture string) ([]message, error) {
-	question := messages[1].Content.(string) + " Also identify the animal in the attached picture."
+	question := strings.Replace(messages[1].Content.(string), "Begin with the current identifier, owner and destination.", "In the opening paragraph, include the current identifier, owner and destination, and name the animal shown in the image attached to this message.", 1)
 	pictured, err := picturedMessage(question, fixture)
 	if err != nil {
 		return nil, err

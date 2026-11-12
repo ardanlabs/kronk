@@ -603,7 +603,7 @@ func run(o options) (runErr error) {
 			cr.ReferenceTokens = denseReferenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)
 		}
 		if cr.TwoSlots {
-			cr.Workload = "operations-concurrent-v4"
+			cr.Workload = "operations-concurrent-v6"
 		}
 		var err error
 		if group == nil {
@@ -829,9 +829,9 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		_, err = perform("replay", a, answerFacts{required: []string{"River", "Alice", "Apple"}}, false)
 	}
 	if err == nil {
-		question := "Change the destination to Orange; keep the identifier and owner unchanged. Review only the current handover facts using between 60 and 80 words in total. Do not mention any previous destination, describe the change, or compare old and new values."
+		question := "The destination is now Orange; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."
 		if o.images {
-			question += " Include the animal from the picture already in this conversation."
+			question = strings.Replace(question, "Begin with the current identifier, owner and destination.", "In the opening paragraph, include the current identifier, owner and destination, and name the animal shown in the image previously supplied in this conversation.", 1)
 		}
 		continued := append(append([]message{}, a...), message{Role: "assistant", Content: cold.Content}, message{Role: "user", Content: question})
 		_, err = perform("append", continued, answerFacts{required: []string{"River", "Alice", "Orange"}, excluded: []string{"Apple"}}, false)
