@@ -52,11 +52,24 @@ quick-check-this-code: ## Run quick checks on the current code
 QUICK_COMPARE_BASELINE ?=
 QUICK_COMPARE_CANDIDATE ?=
 QUICK_CHECK_COMPARE_ARGS ?=
+QUICK_CHECK_HISTORY ?= .tools/quick-check/release-history-macos-metal.log
 
-quick-compare-against-release: ## Compare quick checks against a release
-	@go run ./.tools/quick-check compare \
-		-baseline "$(QUICK_COMPARE_BASELINE)" -candidate "$(QUICK_COMPARE_CANDIDATE)" \
-		$(QUICK_CHECK_COMPARE_ARGS)
+quick-compare-against-release: ## Compare quick checks against the tracked release timing log
+	@if [ -n "$(QUICK_COMPARE_BASELINE)$(QUICK_COMPARE_CANDIDATE)" ]; then \
+		go run ./.tools/quick-check compare \
+			-baseline "$(QUICK_COMPARE_BASELINE)" -candidate "$(QUICK_COMPARE_CANDIDATE)" \
+			$(QUICK_CHECK_COMPARE_ARGS); \
+	else \
+		go run ./.tools/quick-check compare-history -history "$(QUICK_CHECK_HISTORY)" \
+			$(QUICK_CHECK_COMPARE_ARGS); \
+	fi
+
+QUICK_CHECK_RELEASE ?=
+QUICK_CHECK_COMMIT ?= HEAD
+QUICK_CHECK_BASELINE ?=
+
+quick-check-release-history: ## Download saved results and update both local release histories
+	@bash .tools/quick-check/release-history.sh "$(QUICK_CHECK_RELEASE)" "$(QUICK_CHECK_COMMIT)" $(if $(QUICK_CHECK_BASELINE),"$(QUICK_CHECK_BASELINE)")
 
 RELIABILITY_HOST ?= http://localhost:11435
 RELIABILITY_OUT ?= .tools/reliability/output

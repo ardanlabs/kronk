@@ -220,7 +220,11 @@ func (c matrixComparison) writeDetails(out io.Writer) string {
 	fmt.Fprintf(out, "Comparison status: %s\nSaved-run checks: baseline %s / candidate %s\nBaseline: %s\nBaseline commit: %s\nCandidate: %s\nCandidate commit: %s\n",
 		c.Status, c.Baseline.Status, c.Candidate.Status, c.Baseline.Directory, c.Baseline.Version, c.Candidate.Directory, c.Candidate.Version)
 	if c.Baseline.Release != "" {
-		fmt.Fprintf(out, "Release labels: %s → %s\n", c.Baseline.Release, c.Candidate.Release)
+		candidate := c.Candidate.Release
+		if candidate == "" {
+			candidate = c.Candidate.Version
+		}
+		fmt.Fprintf(out, "Release labels: %s → %s\n", c.Baseline.Release, candidate)
 	}
 	for _, run := range []comparisonRun{c.Baseline, c.Candidate} {
 		for _, problem := range run.Problems {

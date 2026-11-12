@@ -117,25 +117,55 @@ func releaseHistoryPath(parent, history string) string {
 	return filepath.Join(filepath.Dir(parent), "release-history-macos-metal.log")
 }
 
+func releaseHistoryMachine(s matrixSummary) string {
+	host, _ := s.Machine["host"].(string)
+	if s.BenchmarkIdentity != "" {
+		host = s.BenchmarkIdentity
+	}
+	systemOS, _ := s.Machine["os"].(string)
+	ram, vram := eventInt(s.Machine, "system_ram_bytes"), eventInt(s.Machine, "gpu_total_bytes")
+	unified, knownUnified := s.Machine["unified_memory"].(bool)
+	if host == "" || systemOS == "" || ram <= 0 || vram <= 0 || !knownUnified {
+		return ""
+	}
+	text := strings.NewReplacer("\r", " ", "\n", " ").Replace
+	gib := func(bytes int) string {
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", float64(bytes)/(1<<30)), "0"), ".") + "GiB"
+	}
+	return fmt.Sprintf("machine: %s; os: %s; RAM: %s; VRAM: %s; unified memory: %t", text(host), text(systemOS), gib(ram), gib(vram), unified)
+}
+
+func releaseReferenceID(input matrixInput) (string, error) {
+	references := make(map[string]normalizationReference)
+	for id, cell := range input.cells {
+		if cell.summary.Status != "NOT_RUN" {
+			references[id] = cell.summary.ReferenceTokens
+		}
+	}
+	// JSON sorts map keys; arrival order and repetitions cannot change this ID.
+	data, err := json.Marshal(references)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])[:16], nil
+}
+
 func recordReleaseComparison(path, baselineTag, candidateTag string, a, b matrixInput, c matrixComparison) error {
 	// The compact history has no diagnostics or room for two machine descriptions.
 	// Keep mismatched/unknown machines in comparison.log only. Failed runs retain
 	// their recorded verdicts and unavailable metrics rather than being certified.
-	host, _ := b.summary.Machine["host"].(string)
 	aMachine, bMachine := a.summary.Machine, b.summary.Machine
 	if a.summary.BenchmarkIdentity != "" || b.summary.BenchmarkIdentity != "" {
 		if a.summary.BenchmarkIdentity == "" || a.summary.BenchmarkIdentity != b.summary.BenchmarkIdentity {
 			return nil
 		}
-		host = b.summary.BenchmarkIdentity
 		aMachine, bMachine = maps.Clone(aMachine), maps.Clone(bMachine)
 		delete(aMachine, "host")
 		delete(bMachine, "host")
 	}
-	systemOS, _ := b.summary.Machine["os"].(string)
-	ram, vram := eventInt(b.summary.Machine, "system_ram_bytes"), eventInt(b.summary.Machine, "gpu_total_bytes")
-	unified, knownUnified := b.summary.Machine["unified_memory"].(bool)
-	if !reflect.DeepEqual(aMachine, bMachine) || host == "" || ram <= 0 || vram <= 0 || !knownUnified {
+	machine := releaseHistoryMachine(b.summary)
+	if !reflect.DeepEqual(aMachine, bMachine) || machine == "" {
 		return nil
 	}
 	const title = "Release comparison: "
@@ -157,23 +187,10 @@ func recordReleaseComparison(path, baselineTag, candidateTag string, a, b matrix
 		return err
 	}
 	text := strings.NewReplacer("\r", " ", "\n", " ").Replace
-	gib := func(bytes int) string {
-		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", float64(bytes)/(1<<30)), "0"), ".") + "GiB"
-	}
-	machine := fmt.Sprintf("machine: %s; os: %s; RAM: %s; VRAM: %s; unified memory: %t", text(host), text(systemOS), gib(ram), gib(vram), unified)
-	references := make(map[string]normalizationReference)
-	for _, cell := range c.Cells {
-		if cell.Status != "NOT_RUN" {
-			references[cell.Cell] = b.cells[cell.Cell].summary.ReferenceTokens
-		}
-	}
-	// JSON sorts map keys; arrival order and repetitions cannot change this ID.
-	data, err = json.Marshal(references)
+	referenceID, err := releaseReferenceID(b)
 	if err != nil {
 		return err
 	}
-	digest := sha256.Sum256(data)
-	referenceID := hex.EncodeToString(digest[:])[:16]
 	previousID := "unknown"
 	for _, section := range sections {
 		lines := strings.Split(section, "\n")
