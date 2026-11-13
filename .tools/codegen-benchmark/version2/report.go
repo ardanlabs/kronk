@@ -20,6 +20,7 @@ type runRecord struct {
 	Started  time.Time `json:"started"`
 	Finished time.Time `json:"finished,omitzero"`
 	Status   string    `json:"status"`
+	Machine  string    `json:"machine,omitempty"`
 	Error    string    `json:"error,omitempty"`
 }
 
@@ -214,6 +215,9 @@ func appendHistory(path, runDir string, record runRecord, selected []benchmarkMo
 	var entry strings.Builder
 	fmt.Fprintf(&entry, "\n## %s — %s\n\n", record.Started.Format(time.RFC3339), filepath.Base(runDir))
 	fmt.Fprintf(&entry, "- Workload: %s\n- Workflow: %s\n- Elapsed: %s\n", workloadVersion, record.Status, record.Finished.Sub(record.Started).Round(time.Second))
+	if record.Machine != "" {
+		fmt.Fprintf(&entry, "- Runner machine: %s\n", record.Machine)
+	}
 	if record.Error != "" {
 		fmt.Fprintf(&entry, "- Error: %s\n", strings.Join(strings.Fields(record.Error), " "))
 	}

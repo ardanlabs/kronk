@@ -35,7 +35,7 @@ func TestHistoryRecordsModelOutcomesAndCumulativeTime(t *testing.T) {
 		}
 	}
 	started := time.Date(2026, 11, 13, 14, 15, 0, 0, time.FixedZone("BRT", -3*60*60))
-	record := runRecord{Started: started, Finished: started.Add(25 * time.Second), Status: "completed"}
+	record := runRecord{Started: started, Finished: started.Add(25 * time.Second), Status: "completed", Machine: "test-host (linux/amd64)"}
 	path := filepath.Join(t.TempDir(), "history.md")
 	if err := appendHistory(path, runDir, record, []benchmarkModel{passed, failed}); err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestHistoryRecordsModelOutcomesAndCumulativeTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"2026-11-13T14:15:00-03:00", "Workload: v1", "Workflow: completed", "Elapsed: 25s",
+	for _, want := range []string{"2026-11-13T14:15:00-03:00", "Workload: v1", "Workflow: completed", "Elapsed: 25s", "Runner machine: test-host (linux/amd64)",
 		"`org/pass/BENCHMARK`: Passed on submission 2; agent time: 9s",
 		"`org/fail/BENCHMARK`: Not passed (19/37 checks); agent time: 4s"} {
 		if !strings.Contains(string(data), want) {
@@ -137,7 +137,7 @@ fi
 			t.Fatalf("report: %s %v", report, err)
 		}
 		record, err := loadRunRecord(runDir)
-		if err != nil || record.Status != "completed" || record.Started.IsZero() || record.Finished.IsZero() {
+		if err != nil || record.Status != "completed" || record.Started.IsZero() || record.Finished.IsZero() || record.Machine == "" {
 			t.Fatalf("run record: %+v %v", record, err)
 		}
 		history, err := os.ReadFile(historyPath)
