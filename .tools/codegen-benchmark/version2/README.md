@@ -128,6 +128,12 @@ these files; it does not back them up. They survive ordinary branch updates and
 switches in the same checkout, but removing the worktree, deleting the folder, or
 using `git clean -fdx` can remove them. Back up important runs yourself.
 
+Each new run appends a basic summary to `version2/history.md`, outside the ignored
+output directories: date/run ID, workflow status, elapsed time, and each model's
+outcome and cumulative agent time. The workload uses a manually maintained `v1`
+label, not a hash. Report regeneration does not append history. Commit the history
+updates to preserve them in Git. Runs stopped abruptly may not reach the append.
+
 Each model uses one temporary `workspace/` shared across its submissions so repairs
 retain the code and agent session. It is removed after that model finishes, including
 on error return. Each `attempt-XX` directory preserves its prompt (including repair

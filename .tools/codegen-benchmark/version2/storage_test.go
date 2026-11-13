@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,46 @@ import (
 	"testing"
 	"time"
 )
+
+func TestHistoryRecordsModelOutcomesAndCumulativeTime(t *testing.T) {
+	runDir := t.TempDir()
+	passed := benchmarkModel{ID: "org/pass/AGENT"}
+	failed := benchmarkModel{ID: "org/fail/AGENT"}
+	for _, item := range []result{
+		{Model: passed, Attempt: 1, Grade: gradeResult{Passed: 10, Total: 37}, OpenCode: agentResult{WallTime: 2 * time.Second}},
+		{Model: passed, Attempt: 2, Grade: gradeResult{Passed: 37, Total: 37}, OpenCode: agentResult{WallTime: 7 * time.Second}},
+		{Model: failed, Attempt: 1, Grade: gradeResult{Passed: 19, Total: 37}, OpenCode: agentResult{WallTime: 4 * time.Second}},
+	} {
+		dir := filepath.Join(runDir, modelDirName(item.Model.ID), fmt.Sprintf("attempt-%02d", item.Attempt))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "result.json"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	started := time.Date(2026, 11, 13, 14, 15, 0, 0, time.FixedZone("BRT", -3*60*60))
+	record := runRecord{Started: started, Finished: started.Add(25 * time.Second), Status: "completed"}
+	path := filepath.Join(t.TempDir(), "history.md")
+	if err := appendHistory(path, runDir, record, []benchmarkModel{passed, failed}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"2026-11-13T14:15:00-03:00", "Workload: v1", "Workflow: completed", "Elapsed: 25s",
+		"`org/pass/AGENT`: Passed on submission 2; agent time: 9s",
+		"`org/fail/AGENT`: Not passed (19/37 checks); agent time: 4s"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("history missing %q: %s", want, data)
+		}
+	}
+}
 
 // Exercise the complete workflow without inference, then play the saved
 // submission independently of the temporary agent workspace.
@@ -54,6 +95,8 @@ fi
 		outputDir:  filepath.Join(dir, "runs"), attempts: 3, feedback: true, steps: 5, timeout: time.Minute}
 	var previous string
 	var previousReport []byte
+	var previousHistory string
+	historyPath := filepath.Join(dir, "history.md")
 	for range 2 {
 		if err := run(opts); err != nil {
 			t.Fatal(err)
@@ -97,8 +140,17 @@ fi
 		if err != nil || record.Status != "completed" || record.Started.IsZero() || record.Finished.IsZero() {
 			t.Fatalf("run record: %+v %v", record, err)
 		}
+		history, err := os.ReadFile(historyPath)
+		if err != nil || !strings.HasPrefix(string(history), previousHistory) || strings.Count(string(history), filepath.Base(runDir)) != 1 || !strings.Contains(string(history), "Workload: v1") || !strings.Contains(string(history), "Passed on submission 1") {
+			t.Fatalf("appended history: %s %v", history, err)
+		}
+		previousHistory = string(history)
 		if err := run(options{report: true, reportDir: runDir}); err != nil {
 			t.Fatal(err)
+		}
+		history, err = os.ReadFile(historyPath)
+		if err != nil || string(history) != previousHistory {
+			t.Fatalf("report regeneration changed history: %v", err)
 		}
 		regenerated, err := loadRunRecord(runDir)
 		if err != nil || regenerated != record {
@@ -152,5 +204,9 @@ fi
 	record, err := loadRunRecord(runDir)
 	if err != nil || record.Status != "failed" || !strings.Contains(record.Error, "parsing OpenCode events") || record.Finished.IsZero() {
 		t.Fatalf("regeneration lost failure metadata: %+v %v", record, err)
+	}
+	history, err := os.ReadFile(historyPath)
+	if err != nil || !strings.HasPrefix(string(history), previousHistory) || strings.Count(string(history), "\n## ") != 3 || !strings.Contains(string(history), "Workflow: failed") || !strings.Contains(string(history), "No completed submission") {
+		t.Fatalf("failed run history: %s %v", history, err)
 	}
 }
