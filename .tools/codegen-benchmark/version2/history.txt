@@ -1,0 +1,4 @@
+Code-generation benchmark history
+=================================
+
+Paste completed report.txt entries below. Detailed artifacts under runs/ are gitignored.

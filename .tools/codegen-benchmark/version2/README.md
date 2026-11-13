@@ -43,8 +43,9 @@ replays preserving all three scores, and exit answers. Each scenario is bounded
 to three seconds and 64 KiB of output. A complete pass means these acceptance
 cases passed, not a proof against every possible program defect or terminal.
 Check percentages are diagnostic, not a percentage of playability. No Amp grader
-or screenshot review is involved. Only the initial task before the separator in
-`tic-tac-toe.md` is evaluated; the later undo task is not included.
+or screenshot review is involved. The benchmark loads `tic-tac-toe-v1.md` (base game).
+`tic-tac-toe-v2.md` preserves the complete base-game and undo task for future work;
+it is not loaded, and undo is not graded.
 
 Before a model's attempts begin, the harness warms it with a one-token response
 to `hello model`. After all attempts for that model, it unloads the model before
@@ -118,8 +119,7 @@ Outputs are retained beneath the gitignored
 
 ```text
 runs/YYYY-MM-DD/run-HHMMSS.<unique>/
-  prompt.md                # frozen task sent to the agent
-  report.md                # run metadata, model/attempt results and play commands
+  report.txt               # compact plain-text entry to paste into history.txt
   <model>/attempt-01/
     result.json            # grade, metrics, evidence, repair_message for attempts 2–3
     program/main.go        # submitted source, unchanged and runnable
@@ -132,26 +132,30 @@ these files; it does not back them up. They survive ordinary branch updates and
 switches in the same checkout, but removing the worktree, deleting the folder, or
 using `git clean -fdx` can remove them. Back up important runs yourself.
 
-Each new run appends a basic summary to `version2/history.md`, outside the ignored
-output directories: date/run ID, workflow status, elapsed time, runner machine
-(hostname and OS/architecture), and each model's outcome and cumulative agent time.
-The machine identifies the OpenCode/grader host, not a remote inference server;
-it is saved in run metadata and preserved when regenerating reports. The workload uses a manually maintained `v1`
-label, not a hash. Report regeneration does not append history. Commit the history
-updates to preserve them in Git. Runs stopped abruptly may not reach the append.
+The plain-text `report.txt` contains only the entry to copy into `version2/history.txt`:
+run ID, workload label, timestamps, workflow status, elapsed time, runner machine,
+and a table of model outcomes, submissions, final checks and cumulative agent time.
+History is maintained manually; the benchmark never updates it. The runner machine
+is the OpenCode/grader host, not a remote inference server.
+
+The prompt and acceptance checks together define workload `v1`. The canonical
+prompt is `tic-tac-toe-v1.md`; it is not copied into runs. The report's workload
+label also selects the prompt file. Supporting workload v2 will require an undo-aware
+grader before changing that label.
 
 Each model uses one temporary `workspace/` shared across its submissions so repairs
 retain the code and agent session. It is removed after that model finishes, including
 on error return. Each `attempt-XX` directory preserves its prompt (including repair
 feedback) only as `repair_message` in `result.json` for repair submissions; the initial
-task is saved once in the run-level `prompt.md`. Attempts also preserve the JSON event
+task is referenced by the workload label. Attempts also preserve the JSON event
 stream, stderr, grader result, and one runnable source snapshot.
 Scenario inputs and expected/actual ANSI transcripts are stored only in
 `result.json`, under `grade.evidence`; failure diagnostics are also included there.
 No duplicate source/transcript files or `.tar.gz` archives are generated.
-No grader source copy or separate `run.json` is generated. Timestamps, workflow
-status, and errors are stored in the report's `Run metadata` JSON section, preserved
-when the report is regenerated. Old runs with `run.json` can still be read.
+No grader source copy or separate `run.json` is generated. Run information is
+preserved in the plain-text report when it is regenerated. Old Markdown reports
+and `run.json` metadata can still be read; regeneration writes `report.txt` without
+changing the old files.
 The original benchmark's output is never cleared or used by this version.
 
 The report is refreshed after each completed submission and on normal or error
@@ -162,18 +166,14 @@ incomplete attempt and a temporary workspace; its events/stderr are streamed to 
 
 To inspect an attempt locally or after an interactive SSH login, enter its saved
 `program/` directory and run `GOTOOLCHAIN=local go run .`. For SSH, use `ssh -t`
-to allocate a terminal. Each report includes the exact relative command. A failed
-submission can be unbuildable; it is preserved as submitted, not silently fixed.
+to allocate a terminal. A failed submission can be unbuildable; it is preserved
+as submitted, not silently fixed.
 
-The report shows final checks passed, the first passing submission (or `Not passed`),
-and cumulative agent wall time, turns, tool calls, and tokens across all submissions,
-including failed work. Grader success is separate from agent exit status. Wall time
-excludes setup, warm-up, and grading. A run can take up to three 30-minute agent
-invocations plus setup, grading, warm-up and unload.
-
-Agent token statistics sum the final usage event from every OpenCode turn. Kronk
-reports reused prompt tokens as `Cache read`; the report omits provider cache-write
-usage because Kronk's OpenAI-compatible API does not expose that metric.
+Agent time includes all submissions but excludes setup, warm-up, and grading.
+Workflow completion is separate from passing acceptance checks. Detailed per-attempt
+metrics and diagnostics remain in `result.json`, not the summary report.
+A run can take up to three 30-minute agent invocations plus setup, grading,
+warm-up and unload.
 
 Regenerate the latest run's report without invoking a model:
 

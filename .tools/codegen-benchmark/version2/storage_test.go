@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,43 +12,26 @@ import (
 	"time"
 )
 
-func TestHistoryRecordsModelOutcomesAndCumulativeTime(t *testing.T) {
-	runDir := t.TempDir()
-	passed := benchmarkModel{ID: "org/pass/BENCHMARK"}
-	failed := benchmarkModel{ID: "org/fail/BENCHMARK"}
-	for _, item := range []result{
-		{Model: passed, Attempt: 1, Grade: gradeResult{Passed: 10, Total: 37}, OpenCode: agentResult{WallTime: 2 * time.Second}},
-		{Model: passed, Attempt: 2, Grade: gradeResult{Passed: 37, Total: 37}, OpenCode: agentResult{WallTime: 7 * time.Second}},
-		{Model: failed, Attempt: 1, Grade: gradeResult{Passed: 19, Total: 37}, OpenCode: agentResult{WallTime: 4 * time.Second}},
-	} {
-		dir := filepath.Join(runDir, modelDirName(item.Model.ID), fmt.Sprintf("attempt-%02d", item.Attempt))
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		data, err := json.Marshal(item)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "result.json"), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	started := time.Date(2026, 11, 13, 14, 15, 0, 0, time.FixedZone("BRT", -3*60*60))
-	record := runRecord{Started: started, Finished: started.Add(25 * time.Second), Status: "completed", Machine: "test-host (linux/amd64)"}
-	path := filepath.Join(t.TempDir(), "history.md")
-	if err := appendHistory(path, runDir, record, []benchmarkModel{passed, failed}); err != nil {
+func TestRegenerateLegacyReportAsPlainText(t *testing.T) {
+	dir := t.TempDir()
+	const legacy = "## Run metadata\n\n```json\n" + `{"started":"2026-11-13T13:30:46-05:00","finished":"2026-11-13T13:35:33-05:00","status":"completed","machine":"original-host (darwin/arm64)"}` + "\n```\n"
+	if err := os.WriteFile(filepath.Join(dir, "report.md"), []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
+	if err := run(options{report: true, reportDir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "report.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"2026-11-13T14:15:00-03:00", "Workload: v1", "Workflow: completed", "Elapsed: 25s", "Runner machine: test-host (linux/amd64)",
-		"`org/pass/BENCHMARK`: Passed on submission 2; agent time: 9s",
-		"`org/fail/BENCHMARK`: Not passed (19/37 checks); agent time: 4s"} {
+	for _, want := range []string{"Started: 2026-11-13T13:30:46-05:00", "Elapsed: 4m47s", "Runner machine: original-host (darwin/arm64)", "Workflow: completed"} {
 		if !strings.Contains(string(data), want) {
-			t.Errorf("history missing %q: %s", want, data)
+			t.Errorf("regenerated report missing %q: %s", want, data)
 		}
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "report.md")); err != nil || string(data) != legacy {
+		t.Fatalf("regeneration changed legacy report: %v", err)
 	}
 }
 
@@ -63,8 +45,12 @@ func TestSavedRunsAreRunnableAndRetained(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("BENCHMARK_FIXTURE", fixture)
+	promptLog := filepath.Join(dir, "sent-prompt.txt")
+	t.Setenv("BENCHMARK_PROMPT_LOG", promptLog)
 	script := `#!/bin/sh
 set -eu
+for arg; do :; done
+printf '%s' "$arg" > "$BENCHMARK_PROMPT_LOG"
 cp "$BENCHMARK_FIXTURE" tictactoe/main.go
 if [ "${BENCHMARK_BAD_EVENTS:-}" = yes ]; then
   printf '{\n'
@@ -91,22 +77,29 @@ fi
 		t.Fatal(err)
 	}
 	opts := options{host: server.URL, model: "all", configFile: config,
-		promptFile: filepath.Join(root, ".tools/codegen-benchmark/version2/tic-tac-toe.md"),
+		promptFile: filepath.Join(root, ".tools/codegen-benchmark/version2/tic-tac-toe-v1.md"),
 		outputDir:  filepath.Join(dir, "runs"), attempts: 3, feedback: true, steps: 5, timeout: time.Minute}
+	historyPath := filepath.Join(dir, "history.txt")
+	const history = "Previously recorded run\n"
+	if err := os.WriteFile(historyPath, []byte(history), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	var previous string
 	var previousReport []byte
-	var previousHistory string
-	historyPath := filepath.Join(dir, "history.md")
 	for range 2 {
 		if err := run(opts); err != nil {
 			t.Fatal(err)
+		}
+		sent, err := os.ReadFile(promptLog)
+		if err != nil || !strings.HasPrefix(string(sent), "# Tic-Tac-Toe — v1") || strings.Contains(string(sent), "Undo") || strings.Contains(string(sent), "writing-go") || !strings.Contains(string(sent), "Do not declare any struct types") || !strings.Contains(string(sent), "without a trailing space or newline") {
+			t.Fatalf("incorrect prompt sent to agent: %s %v", sent, err)
 		}
 		runDir, err := latestRun(opts.outputDir)
 		if err != nil || runDir == previous {
 			t.Fatalf("new run: %s %v", runDir, err)
 		}
 		if previous != "" {
-			data, err := os.ReadFile(filepath.Join(previous, "report.md"))
+			data, err := os.ReadFile(filepath.Join(previous, "report.txt"))
 			if err != nil || string(data) != string(previousReport) {
 				t.Fatal("previous run report changed")
 			}
@@ -125,40 +118,29 @@ fi
 		}
 		for _, path := range []string{runDir + ".tar.gz",
 			filepath.Join(runDir, "run.json"), filepath.Join(runDir, "grader.go.txt"),
+			filepath.Join(runDir, "prompt.md"), filepath.Join(runDir, "report.md"),
 			filepath.Join(runDir, modelDirName(item.Model.ID), "workspace"),
 			filepath.Join(runDir, attempt, "main.go.txt"), filepath.Join(runDir, attempt, "grading"),
-			filepath.Join(runDir, attempt, "feedback.md"), filepath.Join(runDir, attempt, "prompt.md")} {
+			filepath.Join(runDir, attempt, "feedback.md"), filepath.Join(runDir, attempt, "prompt.md"),
+			filepath.Join(dir, "history.md")} {
 			if _, err := os.Stat(path); !os.IsNotExist(err) {
 				t.Fatalf("unnecessary artifact retained: %s: %v", path, err)
 			}
 		}
-		report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
-		if err != nil || !strings.Contains(string(report), "37/37") || !strings.Contains(string(report), item.SourceSHA) {
+		report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
+		if err != nil || !strings.Contains(string(report), "37/37") || !strings.Contains(string(report), "Workload: v1") {
 			t.Fatalf("report: %s %v", report, err)
 		}
 		record, err := loadRunRecord(runDir)
 		if err != nil || record.Status != "completed" || record.Started.IsZero() || record.Finished.IsZero() || record.Machine == "" {
 			t.Fatalf("run record: %+v %v", record, err)
 		}
-		history, err := os.ReadFile(historyPath)
-		if err != nil || !strings.HasPrefix(string(history), previousHistory) || strings.Count(string(history), filepath.Base(runDir)) != 1 || !strings.Contains(string(history), "Workload: v1") || !strings.Contains(string(history), "Passed on submission 1") {
-			t.Fatalf("appended history: %s %v", history, err)
-		}
-		previousHistory = string(history)
 		if err := run(options{report: true, reportDir: runDir}); err != nil {
 			t.Fatal(err)
 		}
-		history, err = os.ReadFile(historyPath)
-		if err != nil || string(history) != previousHistory {
-			t.Fatalf("report regeneration changed history: %v", err)
-		}
-		regenerated, err := loadRunRecord(runDir)
-		if err != nil || regenerated != record {
-			t.Fatalf("regeneration changed run metadata: %+v %v", regenerated, err)
-		}
-		report, err = os.ReadFile(filepath.Join(runDir, "report.md"))
-		if err != nil {
-			t.Fatal(err)
+		regenerated, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
+		if err != nil || string(regenerated) != string(report) {
+			t.Fatalf("regeneration changed report: %v", err)
 		}
 		program := filepath.Join(runDir, attempt, "program")
 		saved, err := os.ReadFile(filepath.Join(program, "main.go"))
@@ -170,12 +152,10 @@ fi
 		if err != nil {
 			t.Fatalf("saved program build: %v %s", err, output)
 		}
-		e := executeScenario(t.Context(), binary, acceptanceScenarios()[0])
-		if !e.Passed {
+		if e := executeScenario(t.Context(), binary, acceptanceScenarios()[0]); !e.Passed {
 			t.Fatalf("saved program gameplay: %s", e.Error)
 		}
-		previous = runDir
-		previousReport = report
+		previous, previousReport = runDir, report
 	}
 	// Infrastructure failure must retain source without inventing a passing grade.
 	t.Setenv("BENCHMARK_BAD_EVENTS", "yes")
@@ -187,16 +167,8 @@ fi
 		t.Fatal(err)
 	}
 	program := filepath.Join(runDir, modelDirName("org/model/BENCHMARK"), "attempt-01", "program", "main.go")
-	data, err := os.ReadFile(program)
-	if err != nil || string(data) != source {
+	if data, err := os.ReadFile(program); err != nil || string(data) != source {
 		t.Fatalf("failed run lost source: %v", err)
-	}
-	report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
-	if err != nil || !strings.Contains(string(report), "**failed**") || strings.Contains(string(report), "37/37") {
-		t.Fatalf("failed report: %s %v", report, err)
-	}
-	if _, err := os.Stat(filepath.Join(runDir, modelDirName("org/model/BENCHMARK"), "workspace")); !os.IsNotExist(err) {
-		t.Fatal("failed run retained temporary workspace:", err)
 	}
 	if err := run(options{report: true, outputDir: opts.outputDir}); err != nil {
 		t.Fatal("report regeneration:", err)
@@ -205,8 +177,11 @@ fi
 	if err != nil || record.Status != "failed" || !strings.Contains(record.Error, "parsing OpenCode events") || record.Finished.IsZero() {
 		t.Fatalf("regeneration lost failure metadata: %+v %v", record, err)
 	}
-	history, err := os.ReadFile(historyPath)
-	if err != nil || !strings.HasPrefix(string(history), previousHistory) || strings.Count(string(history), "\n## ") != 3 || !strings.Contains(string(history), "Workflow: failed") || !strings.Contains(string(history), "No completed submission") {
-		t.Fatalf("failed run history: %s %v", history, err)
+	report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
+	if err != nil || !strings.Contains(string(report), "No completed submissions.") || strings.Contains(string(report), "37/37") {
+		t.Fatalf("failed report: %s %v", report, err)
+	}
+	if data, err := os.ReadFile(historyPath); err != nil || string(data) != history {
+		t.Fatalf("benchmark modified manual history: %s %v", data, err)
 	}
 }

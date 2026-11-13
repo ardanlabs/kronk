@@ -1,6 +1,6 @@
-# Tic-Tac-Toe
+# Tic-Tac-Toe — v2
 
-Use the `writing-go` skill. Implement a two-player terminal game in `tictactoe/main.go` using only the Go standard library. Follow the implementation recipe below directly. Keep the code short and add no unrequested features.
+Use the `use-modern-go` skill. Implement a two-player terminal game in `tictactoe/main.go` using only the Go standard library. Follow the implementation recipe below directly. Keep the code short and add no unrequested features.
 
 ## Required program structure
 
@@ -8,7 +8,7 @@ Use the `writing-go` skill. Implement a two-player terminal game in `tictactoe/m
 - Cell index `0` is displayed as position `1`, through index `8`, which is displayed as position `9`.
 - Declare `var stdin = bufio.NewReader(os.Stdin)`. Use this same reader for every move and replay prompt so buffered read-ahead is never lost.
 - Keep three integer session scores for X wins, O wins, and draws. Create them once before the outer game loop so they survive replay.
-- Use these helpers in addition to the two required player functions described below. Do not introduce structs other than `Board`:
+- Use these helpers in addition to the two required player functions described below. Do not declare any struct types:
 
 ```go
 func renderBoard(b *Board, xWins, oWins, draws int)
@@ -61,10 +61,12 @@ func playerO(b *Board) int
 
 Each player function must print its own exact prompt:
 
-```text
-Player X's turn. Enter a number (1-9):
-Player O's turn. Enter a number (1-9):
+```go
+fmt.Print("Player X's turn. Enter a number (1-9):")
+fmt.Print("Player O's turn. Enter a number (1-9):")
 ```
+
+Move prompts end immediately after the colon, without a trailing space or newline. Invalid-move and game-result messages end with exactly one newline. The replay prompt ends with one space and no newline.
 
 Print the prompt with `fmt.Print`, then read one complete line and apply `strings.TrimSpace`. A valid trimmed input is exactly one byte whose value is between `'1'` and `'9'`, and whose corresponding board cell is empty. Convert it to a zero-based index by subtracting `'1'`.
 
@@ -148,9 +150,9 @@ func playerO(b *Board) int
 
 Change their prompts to exactly:
 
-```text
-Player X's turn. Enter a number (1-9), or 0 to undo the last move:
-Player O's turn. Enter a number (1-9), or 0 to undo the last move:
+```go
+fmt.Print("Player X's turn. Enter a number (1-9), or 0 to undo the last move:")
+fmt.Print("Player O's turn. Enter a number (1-9), or 0 to undo the last move:")
 ```
 
 Keep using `fmt.Print`, the shared `stdin` reader, one complete input line, and `strings.TrimSpace`.
