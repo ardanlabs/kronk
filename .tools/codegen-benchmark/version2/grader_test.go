@@ -117,9 +117,9 @@ func TestAcceptanceFormattingFeedback(t *testing.T) {
 	// An initial rendering defect must not hide a separate end-of-game defect.
 	source = strings.Replace(source, `Draws: %d\n\n`, `Draws: %d\n`, 1)
 	source = strings.Replace(source, `fmt.Printf("Player %c wins!\n", player)`, `fmt.Printf("\nPlayer %c wins!\n", player)`, 1)
-	binary := fixtureBinary(t, source)
+	grade := gradeProgram(t.Context(), source)
 	s := acceptanceScenarios()[0]
-	e := executeScenario(t.Context(), binary, s)
+	e := grade.Evidence[0]
 	if e.Passed || !strings.Contains(e.Actual, "Player X wins!\nPlay again? (y/n): ") {
 		t.Fatalf("formatting defects must fail without preventing gameplay: %s\n%q", e.Error, e.Actual)
 	}
@@ -128,9 +128,17 @@ func TestAcceptanceFormattingFeedback(t *testing.T) {
 			t.Errorf("missing formatting failure at step %d: %s", step, e.Error)
 		}
 	}
-	feedback := graderFeedback(gradeResult{Total: 1, Checks: []gradeCheck{{Name: s.name, Detail: e.Error}}})
-	if !strings.Contains(feedback, e.Error) {
-		t.Fatalf("feedback omitted collected failures: %s", feedback)
+	feedback := graderFeedback(grade)
+	for _, want := range []string{`Expected "\n", actual ""`, `Expected "", actual "\n"`, "Fix every occurrence"} {
+		if !strings.Contains(feedback, want) {
+			t.Errorf("feedback omitted %q: %s", want, feedback)
+		}
+	}
+	if strings.Count(feedback, "Example:") != 2 || len(feedback) > 2000 {
+		t.Fatalf("repeated formatting errors were not consolidated: %s", feedback)
+	}
+	if len(e.Differences) != len(s.steps) { // Each rendered board, plus the extra result newline.
+		t.Fatalf("detailed evidence lost independent edits: %+v", e.Differences)
 	}
 }
 
