@@ -14,33 +14,62 @@ import (
 	"time"
 )
 
+func TestLoadModelsSelectsOnlyBenchmarkProfiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tools_model_config.yaml")
+	config := `version: 2
+models:
+  org/model/AGENT:
+    context-window: 4096
+  org/model/TOOLS:
+    context-window: 2048
+  org/model/BENCHMARK:
+    nseq-max: 1
+    context-window: 32768
+    sampling-parameters:
+      max_tokens: 8192
+`
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	models, err := loadModels(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].ID != "org/model/BENCHMARK" || models[0].ContextWindow != 32768 || models[0].OutputLimit != 8192 {
+		t.Fatalf("benchmark profiles: %+v", models)
+	}
+	if _, err := selectModels(models, "org/model/AGENT"); err == nil {
+		t.Fatal("version2 accepted an /AGENT profile")
+	}
+}
+
 func TestSelectModels(t *testing.T) {
 	configured := []benchmarkModel{
-		{ID: "org/one/AGENT"},
-		{ID: "org/two/AGENT"},
+		{ID: "org/one/BENCHMARK"},
+		{ID: "org/two/BENCHMARK"},
 	}
 
-	selected, err := selectModels(configured, "org/two/AGENT,org/one/AGENT,org/two/AGENT")
+	selected, err := selectModels(configured, "org/two/BENCHMARK,org/one/BENCHMARK,org/two/BENCHMARK")
 	if err != nil {
 		t.Fatalf("selectModels: %v", err)
 	}
 	if got, want := len(selected), 2; got != want {
 		t.Fatalf("selected models: got %d, want %d", got, want)
 	}
-	if got, want := selected[0].ID, "org/two/AGENT"; got != want {
+	if got, want := selected[0].ID, "org/two/BENCHMARK"; got != want {
 		t.Errorf("first model: got %q, want %q", got, want)
 	}
 
 	if _, err := selectModels(configured, "org/one"); err == nil {
-		t.Fatal("model without /AGENT: got nil error, want error")
+		t.Fatal("model without /BENCHMARK: got nil error, want error")
 	}
-	if _, err := selectModels(configured, "org/missing/AGENT"); err == nil {
+	if _, err := selectModels(configured, "org/missing/BENCHMARK"); err == nil {
 		t.Fatal("unconfigured model: got nil error, want error")
 	}
 }
 
 func TestOpenCodeConfig(t *testing.T) {
-	model := benchmarkModel{ID: "org/model/AGENT", ContextWindow: 65536, OutputLimit: 8192}
+	model := benchmarkModel{ID: "org/model/BENCHMARK", ContextWindow: 65536, OutputLimit: 8192}
 	data, err := openCodeConfig("http://localhost:11435", model, 12)
 	if err != nil {
 		t.Fatalf("openCodeConfig: %v", err)
@@ -50,7 +79,7 @@ func TestOpenCodeConfig(t *testing.T) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
-	if got, want := config["model"], "kronk/org/model/AGENT"; got != want {
+	if got, want := config["model"], "kronk/org/model/BENCHMARK"; got != want {
 		t.Errorf("model: got %v, want %v", got, want)
 	}
 	if got, want := config["snapshot"], false; got != want {
@@ -72,7 +101,7 @@ func TestOpenCodeAcceptsConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repositoryRoot: %v", err)
 	}
-	model := benchmarkModel{ID: "org/model/AGENT", ContextWindow: 65536, OutputLimit: 8192}
+	model := benchmarkModel{ID: "org/model/BENCHMARK", ContextWindow: 65536, OutputLimit: 8192}
 	config, err := openCodeConfig("http://localhost:11435", model, 12)
 	if err != nil {
 		t.Fatalf("openCodeConfig: %v", err)
@@ -92,7 +121,7 @@ func TestOpenCodeAcceptsConfig(t *testing.T) {
 	if err := json.Unmarshal(output, &resolved); err != nil {
 		t.Fatalf("decode resolved config: %v\n%s", err, output)
 	}
-	if got, want := resolved["model"], "kronk/org/model/AGENT"; got != want {
+	if got, want := resolved["model"], "kronk/org/model/BENCHMARK"; got != want {
 		t.Errorf("resolved model: got %v, want %v", got, want)
 	}
 	if got, want := resolved["snapshot"], false; got != want {
@@ -166,7 +195,7 @@ func TestPrepareRunDirPreservesPreviousRuns(t *testing.T) {
 }
 
 func TestWarmAndUnloadModel(t *testing.T) {
-	const modelID = "org/model/AGENT"
+	const modelID = "org/model/BENCHMARK"
 	t.Setenv("KRONK_TOKEN", "benchmark-token")
 
 	var requests []string
@@ -271,20 +300,20 @@ func TestGradeProgramMissingSource(t *testing.T) {
 
 func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 	report := renderReport("run", []modelResults{{
-		Model: benchmarkModel{ID: "org/model/AGENT"},
+		Model: benchmarkModel{ID: "org/model/BENCHMARK"},
 		Attempts: []result{
 			{Attempt: 1, Grade: gradeResult{Passed: 12, Total: 20}, OpenCode: agentResult{WallTime: 3 * time.Second, Turns: 2, ToolCalls: 4, Usage: tokenUsage{Input: 100, Output: 30}}},
 			{Attempt: 2, Grade: gradeResult{Passed: 20, Total: 20, Checks: []gradeCheck{{Name: "go-build", Passed: true}}}, OpenCode: agentResult{WallTime: 7 * time.Second, Turns: 5, ToolCalls: 6, Usage: tokenUsage{Input: 200, Output: 50}}},
 		},
 	}, {
-		Model:    benchmarkModel{ID: "org/failed/AGENT"},
+		Model:    benchmarkModel{ID: "org/failed/BENCHMARK"},
 		Attempts: []result{{Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}}},
 	}}, runRecord{})
 
 	for _, want := range []string{
-		"| `org/model/AGENT` | 2 | 2 | 20/20 (100.00%) | true | 0 |",
-		"| `org/model/AGENT` | 10.00 s | 7 | 10 | 300 | 80 | 0 | 0 |",
-		"| `org/failed/AGENT` | 1 | Not passed | 19/20 (95.00%) | false | 0 |",
+		"| `org/model/BENCHMARK` | 2 | 2 | 20/20 (100.00%) | true | 0 |",
+		"| `org/model/BENCHMARK` | 10.00 s | 7 | 10 | 300 | 80 | 0 | 0 |",
+		"| `org/failed/BENCHMARK` | 1 | Not passed | 19/20 (95.00%) | false | 0 |",
 		"each agent turn's final OpenCode usage event",
 	} {
 		if !strings.Contains(report, want) {
@@ -387,7 +416,7 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 		t.Fatal(err)
 	}
 	runDir := t.TempDir()
-	model := benchmarkModel{ID: "org/model/AGENT", ContextWindow: 8192, OutputLimit: 1024}
+	model := benchmarkModel{ID: "org/model/BENCHMARK", ContextWindow: 8192, OutputLimit: 1024}
 	for attempt := 1; attempt <= 2; attempt++ {
 		item, err := runAttempt(root, runDir, "http://unused.invalid", "feedback", model, attempt, options{steps: 5, timeout: time.Minute})
 		if err != nil {
@@ -429,7 +458,7 @@ func TestRunAttemptTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	model := benchmarkModel{ID: "org/model/AGENT", ContextWindow: 8192, OutputLimit: 1024}
+	model := benchmarkModel{ID: "org/model/BENCHMARK", ContextWindow: 8192, OutputLimit: 1024}
 	item, err := runAttempt(root, t.TempDir(), "http://unused.invalid", "prompt", model, 1, options{steps: 5, timeout: 100 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)

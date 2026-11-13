@@ -8,6 +8,47 @@ kms:
   insecure-logging: true
 
 models:
+  # Code-generation benchmark: version1 passers, Swift, and a Flash-Next retry.
+  # One slot, 128K context; preserve existing sampling settings.
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+      reasoning_effort: low
+
+  unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+
+  ukisai/Swift-Qwen3.8-27B-Q8_0/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 16384
+
   # Quick-check fixtures: one/two-slot text/image workloads, IMC and MTP modes.
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK: &quick
     nseq-max: 1

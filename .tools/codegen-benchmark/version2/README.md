@@ -1,7 +1,7 @@
 # OpenCode code-generation benchmark — version 2
 
-This harness measures how the `/AGENT` models configured in
-`zarf/kms/model_config.yaml` complete the tic-tac-toe task through OpenCode's
+This harness measures how the `/BENCHMARK` models configured in
+`zarf/kms/tools_model_config.yaml` complete the tic-tac-toe task through OpenCode's
 headless agent loop. OpenCode can write the program, run the requested Go
 toolchain, observe compiler failures, and repair its work before the harness
 grades `tictactoe/main.go`. The original benchmark is preserved in the parent
@@ -22,7 +22,7 @@ the grader from reaching. This is a repair evaluation, not independent sampling.
 The harness creates a fresh nested Git repository and isolated OpenCode home for
 each model, shared across submissions. The repository boundary prevents OpenCode
 from treating the surrounding Kronk checkout as its workspace. It installs only the repository's
-`writing-go` skill, disables project configuration, plugins, MCP, web access, and
+`use-modern-go` skill, disables project configuration, plugins, MCP, web access, and
 subagents, disables OpenCode's Git-backed workspace snapshots, and denies
 filesystem access outside the attempt directory through OpenCode's file tools.
 The structural tests and scripted game inputs live outside the agent workspace.
@@ -57,17 +57,21 @@ Use Go 1.27 or newer and a Unix terminal environment (macOS, Linux, or WSL)
 with `sh`, `stty`, and Git available. Generated code is executed on this machine
 without an OS sandbox. Do not run untrusted submissions on a sensitive host.
 
-Install OpenCode and start the repository's Kronk server from another terminal:
+Install OpenCode and start the dedicated tools server (detached):
 
 ```shell
 opencode --version
-make kronk-server
+make server-for-tools
 ```
 
-The server must use `zarf/kms/model_config.yaml`. A selected model must:
+Restart the server after changing the tools configuration. Benchmark profiles use
+one slot each; the original benchmark still uses `/AGENT` profiles in the normal
+configuration.
+
+The server must use `zarf/kms/tools_model_config.yaml`. A selected model must:
 
 - be a key in that file;
-- end in `/AGENT`; and
+- end in `/BENCHMARK`; and
 - be returned by the server's `GET /v1/models` endpoint.
 
 If authentication is enabled, `KRONK_TOKEN` must authorize chat requests and
@@ -85,7 +89,7 @@ Select one model or reduce the submission budget (only 1–3 are accepted):
 
 ```shell
 make benchmark-codegen-v2 \
-    CODEGEN_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/AGENT \
+    CODEGEN_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK \
     CODEGEN_V2_SUBMISSIONS=2
 
 # Evaluate without grader-assisted repairs:
@@ -103,7 +107,7 @@ The primary knobs are:
 | Make variable | Default | Purpose |
 | --- | --- | --- |
 | `CODEGEN_HOST` | `http://localhost:11435` | Running Kronk server |
-| `CODEGEN_MODEL` | `all` | One ID, comma-separated IDs, or every `/AGENT` model |
+| `CODEGEN_MODEL` | `all` | One ID, comma-separated IDs, or every `/BENCHMARK` model |
 | `CODEGEN_V2_SUBMISSIONS` | `3` | Maximum total submissions per model, including the initial one |
 | `CODEGEN_V2_FEEDBACK` | `true` | Resume failures with grader feedback; false stops after one submission |
 | `CODEGEN_STEPS` | `40` | Maximum OpenCode agent steps per submission |
