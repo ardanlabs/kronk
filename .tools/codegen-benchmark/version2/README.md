@@ -16,8 +16,17 @@ after the submission budget. Finishing the OpenCode response constitutes submiss
 
 Feedback is enabled by default. Disabling feedback runs only the initial submission.
 Feedback can include test expectations and output excerpts, but not the grader's
-source. Later grades may expose additional failures that earlier errors prevented
-the grader from reaching. This is a repair evaluation, not independent sampling.
+source. Repeated formatting edits are grouped across steps and scenarios, with an
+occurrence count and one example per distinct edit; every occurrence must be fixed.
+Detailed diagnostics remain in `result.json`. Later grades may expose additional
+failures that earlier errors prevented the grader from reaching. This is a repair
+evaluation, not independent sampling.
+
+An OpenCode error event, nonzero exit, or timeout stops the workflow. Its events,
+error and available source snapshot are retained, but that attempt is not graded.
+The report shows `Workflow: failed`, `Agent error`, and `Not graded`, rather than
+regrading the previous source as another submission. Recoverable tool-call errors
+are not treated as OpenCode execution failures.
 
 The harness creates a fresh nested Git repository and isolated OpenCode home for
 each model, shared across submissions. The repository boundary prevents OpenCode

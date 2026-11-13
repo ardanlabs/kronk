@@ -52,7 +52,9 @@ set -eu
 for arg; do :; done
 printf '%s' "$arg" > "$BENCHMARK_PROMPT_LOG"
 cp "$BENCHMARK_FIXTURE" tictactoe/main.go
-if [ "${BENCHMARK_BAD_EVENTS:-}" = yes ]; then
+if [ "${BENCHMARK_API_ERROR:-}" = yes ]; then
+  printf '%s\n' '{"type":"error","error":{"name":"APIError","data":{"message":"input tokens [143702] exceed context window [131072]"}}}'
+elif [ "${BENCHMARK_BAD_EVENTS:-}" = yes ]; then
   printf '{\n'
 else
   printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
@@ -180,6 +182,41 @@ fi
 	report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
 	if err != nil || !strings.Contains(string(report), "No completed submissions.") || strings.Contains(string(report), "37/37") {
 		t.Fatalf("failed report: %s %v", report, err)
+	}
+	// OpenCode can report an API failure while its process still exits zero.
+	// Even a correct source snapshot must not turn that failure into a pass.
+	t.Setenv("BENCHMARK_BAD_EVENTS", "")
+	t.Setenv("BENCHMARK_API_ERROR", "yes")
+	if err := run(opts); err == nil || !strings.Contains(err.Error(), "exceed context window") {
+		t.Fatalf("API failure did not stop the workflow: %v", err)
+	}
+	runDir, err = latestRun(opts.outputDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	models, err := loadResults(runDir)
+	if err != nil || len(models) != 1 || len(models[0].Attempts) != 1 {
+		t.Fatalf("API error should stop further submissions: %+v %v", models, err)
+	}
+	failed := models[0].Attempts[0]
+	if failed.OpenCode.ExitCode != 0 || !strings.Contains(failed.OpenCode.Error, "exceed context window") || failed.Grade.Total != 0 {
+		t.Fatalf("API failure was lost or graded: %+v", failed)
+	}
+	program = filepath.Join(runDir, modelDirName(failed.Model.ID), "attempt-01", "program", "main.go")
+	if data, err := os.ReadFile(program); err != nil || string(data) != source {
+		t.Fatalf("API failure lost source snapshot: %v", err)
+	}
+	if err := run(options{report: true, reportDir: runDir}); err != nil {
+		t.Fatal(err)
+	}
+	report, err = os.ReadFile(filepath.Join(runDir, "report.txt"))
+	for _, want := range []string{"Workflow: failed", "Agent error", "Not graded", "exceed context window"} {
+		if err != nil || !strings.Contains(string(report), want) {
+			t.Errorf("API failure report missing %q: %s %v", want, report, err)
+		}
+	}
+	if strings.Contains(string(report), "37/37") {
+		t.Fatal("API failure received a passing grade")
 	}
 	if data, err := os.ReadFile(historyPath); err != nil || string(data) != history {
 		t.Fatalf("benchmark modified manual history: %s %v", data, err)

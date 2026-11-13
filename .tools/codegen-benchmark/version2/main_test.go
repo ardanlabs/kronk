@@ -269,13 +269,16 @@ func TestWarmAndUnloadModel(t *testing.T) {
 
 func TestParseAgentResult(t *testing.T) {
 	events := strings.Join([]string{
-		`{"type":"tool_use","part":{"type":"tool","tool":"bash"}}`,
+		`{"type":"tool_use","part":{"type":"tool","tool":"bash","state":{"status":"error","error":"permission denied"}}}`,
 		`{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":40}}}}`,
 	}, "\n")
 
 	result, err := parseAgentResult([]byte(events))
 	if err != nil {
 		t.Fatalf("parseAgentResult: %v", err)
+	}
+	if result.Error != "" {
+		t.Fatalf("recoverable tool failure treated as an agent error: %s", result.Error)
 	}
 	if got, want := result.Turns, 1; got != want {
 		t.Errorf("turns: got %d, want %d", got, want)
@@ -465,8 +468,8 @@ func TestRunAttemptTimeout(t *testing.T) {
 	}
 	model := benchmarkModel{ID: "org/model/BENCHMARK", ContextWindow: 8192, OutputLimit: 1024}
 	item, err := runAttempt(root, t.TempDir(), "http://unused.invalid", "prompt", model, 1, options{steps: 5, timeout: 100 * time.Millisecond})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+		t.Fatalf("timeout must fail the workflow: %v", err)
 	}
 	if item.OpenCode.Error != context.DeadlineExceeded.Error() || item.OpenCode.ExitCode == 0 {
 		t.Fatalf("timeout not recorded: %+v", item.OpenCode)
@@ -474,7 +477,7 @@ func TestRunAttemptTimeout(t *testing.T) {
 	if item.OpenCode.WallTime > 2*time.Second {
 		t.Fatalf("agent exceeded timeout: %s", item.OpenCode.WallTime)
 	}
-	if item.Grade.Passed == item.Grade.Total {
-		t.Fatal("missing program passed grading")
+	if item.Grade.Total != 0 {
+		t.Fatal("timed out submission was graded")
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -34,13 +35,21 @@ type gradeResult struct {
 	Evidence []executionEvidence `json:"evidence,omitempty"`
 }
 
+type outputDifference struct {
+	Expected string `json:"expected"`
+	Actual   string `json:"actual"`
+	Example  string `json:"example"`
+}
+
 type executionEvidence struct {
-	Scenario string `json:"scenario"`
-	Input    string `json:"input"`
-	Expected string `json:"expected_raw_output"`
-	Actual   string `json:"actual_raw_output"`
-	Error    string `json:"error,omitempty"`
-	Passed   bool   `json:"passed"`
+	Scenario    string             `json:"scenario"`
+	Input       string             `json:"input"`
+	Expected    string             `json:"expected_raw_output"`
+	Actual      string             `json:"actual_raw_output"`
+	Error       string             `json:"error,omitempty"`
+	Stopped     string             `json:"stopped,omitempty"`
+	Differences []outputDifference `json:"formatting_differences,omitempty"`
+	Passed      bool               `json:"passed"`
 }
 
 type scenario struct {
@@ -466,14 +475,54 @@ func acceptanceScenarios() []scenario {
 // The trailing escape alternative handles a CSI sequence split across PTY reads.
 var terminalPresentation = regexp.MustCompile(`\x1b\[(?:[0-9;]*m|2J|H)|\x1b(?:\[[0-9;]*)?$|[ \t\r\n]`)
 
-func transcriptDifference(expected, actual string) string {
+func transcriptDifference(expected, actual string) outputDifference {
 	index := 0
 	for index < len(actual) && index < len(expected) && actual[index] == expected[index] {
 		index++
 	}
 	start := max(0, index-30)
-	return fmt.Sprintf("first difference at byte %d: expected %q, actual %q (ANSI escapes shown literally)", index,
+	example := fmt.Sprintf("first difference at byte %d: expected %q, actual %q (ANSI escapes shown literally)", index,
 		expected[start:min(len(expected), index+100)], actual[start:min(len(actual), index+100)])
+	// Remove shared context so the same edit groups together across boards,
+	// scores, scenarios and interaction steps. Keep one contextual example.
+	expected, actual = expected[index:], actual[index:]
+	for len(expected) > 0 && len(actual) > 0 && expected[len(expected)-1] == actual[len(actual)-1] {
+		expected = expected[:len(expected)-1]
+		actual = actual[:len(actual)-1]
+	}
+	return outputDifference{Expected: expected, Actual: actual, Example: example}
+}
+
+// The recognizable text is identical, so presentation gaps can be compared at
+// their positions in that text. This separates independent edits within a screen.
+func formattingDifferences(expected, actual string) []outputDifference {
+	gaps := make(map[int][2]string)
+	for side, text := range []string{expected, actual} {
+		removed := 0
+		for _, span := range terminalPresentation.FindAllStringIndex(text, -1) {
+			position := span[0] - removed
+			pair := gaps[position]
+			pair[side] += text[span[0]:span[1]]
+			gaps[position] = pair
+			removed += span[1] - span[0]
+		}
+	}
+	var positions []int
+	for position, pair := range gaps {
+		if pair[0] != pair[1] {
+			positions = append(positions, position)
+		}
+	}
+	slices.Sort(positions)
+	state := terminalPresentation.ReplaceAllString(expected, "")
+	var differences []outputDifference
+	for _, position := range positions {
+		pair := gaps[position]
+		difference := transcriptDifference(pair[0], pair[1])
+		difference.Example = fmt.Sprintf("between text %q and %q", state[max(0, position-30):position], state[position:min(len(state), position+30)])
+		differences = append(differences, difference)
+	}
+	return differences
 }
 
 // A real terminal preserves the exact bytes specified by the task. Formatting
@@ -556,19 +605,21 @@ func executeScenario(parent context.Context, binary string, s scenario) executio
 	}
 	var differences []string
 	var consumed int
+	var recognizedExpected, recognizedActual string
 	var want strings.Builder
 	inputs := strings.Split(strings.TrimSuffix(s.input, "\n"), "\n")
 	for i, step := range s.steps {
 		want.WriteString(step)
 		if err = readUntil(want.String()); err != nil {
 			err = fmt.Errorf("step %d: %w", i+1, err)
-			differences = append(differences, fmt.Sprintf("step %d output mismatch: %s", i+1, transcriptDifference(step, string(actual[consumed:]))))
+			differences = append(differences, fmt.Sprintf("step %d output mismatch: %s", i+1, transcriptDifference(step, string(actual[consumed:])).Example))
 			consumed = len(actual)
 			break
 		}
 		if output := string(actual[consumed:]); output != step {
-			differences = append(differences, fmt.Sprintf("step %d formatting mismatch: %s", i+1, transcriptDifference(step, output)))
+			differences = append(differences, fmt.Sprintf("step %d formatting mismatch: %s", i+1, transcriptDifference(step, output).Example))
 		}
+		recognizedExpected, recognizedActual = want.String(), string(actual)
 		consumed = len(actual)
 		if i < len(inputs) {
 			_, err = f.Write([]byte(inputs[i] + "\n"))
@@ -596,14 +647,27 @@ func executeScenario(parent context.Context, binary string, s scenario) executio
 	if err == nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
+	e.Stopped = errorDetail(err)
+	for _, difference := range formattingDifferences(recognizedExpected, recognizedActual) {
+		difference.Example = s.name + ": " + difference.Example
+		e.Differences = append(e.Differences, difference)
+	}
 	if err == nil && string(actual) != e.Expected {
+		if consumed < len(actual) {
+			difference := transcriptDifference("", string(actual[consumed:]))
+			difference.Example = s.name + " after final step: " + difference.Example
+			e.Differences = append(e.Differences, difference)
+		}
 		err = fmt.Errorf("raw terminal transcript mismatch")
+	}
+	if err == nil {
+		e.Differences = nil // PTY chunk boundaries alone are not formatting failures.
 	}
 	e.Actual = truncate(string(actual), 65536)
 	e.Error = errorDetail(err)
 	if err != nil && e.Actual != e.Expected {
 		if len(differences) == 0 || consumed < len(actual) {
-			differences = append(differences, transcriptDifference(e.Expected, e.Actual))
+			differences = append(differences, transcriptDifference(e.Expected, e.Actual).Example)
 		}
 		e.Error += "; " + strings.Join(differences, "; ")
 	}

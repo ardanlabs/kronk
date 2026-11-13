@@ -231,7 +231,7 @@ func runModel(root, runDir, host, prompt string, model benchmarkModel, opts opti
 }
 
 // runSubmissions owns the feedback loop; each callback resumes the same workspace
-// and session. A passing submission ends the loop, even if the agent exited badly.
+// and session. Execution failures stop the workflow; failed grades allow repairs.
 func runSubmissions(prompt string, limit int, feedback bool, submit func(int, string) (result, error)) error {
 	for attempt := 1; attempt <= limit; attempt++ {
 		item, err := submit(attempt, prompt)
@@ -249,9 +249,47 @@ func runSubmissions(prompt string, limit int, feedback bool, submit func(int, st
 func graderFeedback(grade gradeResult) string {
 	var message strings.Builder
 	fmt.Fprintf(&message, "Your submission passed %d/%d checks and did not pass the benchmark. Repair the existing tictactoe/main.go in this workspace; do not start a new project. Preserve all original requirements and working behavior.\n\nFix these failures:\n", grade.Passed, grade.Total)
+	type repeatedDifference struct {
+		outputDifference
+		count int
+	}
+	var groups []repeatedDifference
+	byEdit := make(map[[2]string]int)
+	scenarioFailures := make(map[string]string)
+	for _, evidence := range grade.Evidence {
+		if evidence.Passed || len(evidence.Differences) == 0 {
+			continue
+		}
+		scenarioFailures["scenario-"+evidence.Scenario] = evidence.Stopped
+		for _, difference := range evidence.Differences {
+			key := [2]string{difference.Expected, difference.Actual}
+			index, exists := byEdit[key]
+			if !exists {
+				index = len(groups)
+				byEdit[key] = index
+				groups = append(groups, repeatedDifference{outputDifference: difference})
+			}
+			groups[index].count++
+		}
+	}
 	for _, check := range grade.Checks {
-		if !check.Passed {
-			fmt.Fprintf(&message, "\n- %s: %s\n", check.Name, check.Detail)
+		if check.Passed {
+			continue
+		}
+		detail := check.Detail
+		if stopped, summarized := scenarioFailures[check.Name]; summarized {
+			if stopped == "" {
+				continue
+			}
+			detail = stopped
+		}
+		fmt.Fprintf(&message, "\n- %s: %s\n", check.Name, detail)
+	}
+	if len(groups) > 0 {
+		message.WriteString("\nDistinct formatting differences (escaped bytes; one example per edit). Fix every occurrence, not only the example:\n")
+		for _, group := range groups {
+			fmt.Fprintf(&message, "\n- Expected %q, actual %q (%d occurrences). Example: %s\n",
+				truncate(group.Expected, 120), truncate(group.Actual, 120), group.count, group.Example)
 		}
 	}
 	message.WriteString("\nChecks not reached because of an earlier failure will be evaluated after it is fixed. Fix the cause, not just the displayed examples. Format and build the code, then submit by finishing your response. The grader will evaluate it again. Do not add features or change the original requirements.\n")
@@ -448,7 +486,7 @@ func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt
 	cmd.Stderr = stderr
 	err = cmd.Run()
 	wallTime := time.Since(started)
-	fmt.Printf("[%s] agent finished; grading submission %d\n", model.ID, attempt)
+	fmt.Printf("[%s] agent finished; processing submission %d\n", model.ID, attempt)
 	agentErr := err
 
 	source, readErr := os.ReadFile(filepath.Join(programDir, "main.go"))
@@ -476,7 +514,9 @@ func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt
 	agent.WallTime = wallTime
 	if agentErr != nil {
 		agent.ExitCode = 1
-		agent.Error = agentErr.Error()
+		if agent.Error == "" {
+			agent.Error = agentErr.Error()
+		}
 		if exitErr, ok := errors.AsType[*exec.ExitError](agentErr); ok {
 			agent.ExitCode = exitErr.ExitCode()
 		}
@@ -484,7 +524,10 @@ func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt
 			agent.Error = ctx.Err().Error()
 		}
 	}
-	grade := gradeProgram(context.Background(), string(source))
+	var grade gradeResult
+	if agent.Error == "" {
+		grade = gradeProgram(context.Background(), string(source))
+	}
 	item := result{
 		Model:    model,
 		Attempt:  attempt,
@@ -505,6 +548,9 @@ func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt
 		return result{}, fmt.Errorf("codegen benchmark: writing result: %w", err)
 	}
 
+	if agent.Error != "" {
+		return item, fmt.Errorf("codegen benchmark: OpenCode submission %d for %s: %s", attempt, model.ID, agent.Error)
+	}
 	fmt.Printf("score=%d/%d build=%t turns=%d tools=%d wall=%s\n",
 		grade.Passed, grade.Total, grade.PassedCheck("go-build"), agent.Turns, agent.ToolCalls, wallTime.Round(time.Second))
 	return item, nil
@@ -661,7 +707,13 @@ func parseAgentResult(data []byte) (agentResult, error) {
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
 		var event struct {
-			Type string `json:"type"`
+			Type  string `json:"type"`
+			Error struct {
+				Name string `json:"name"`
+				Data struct {
+					Message string `json:"message"`
+				} `json:"data"`
+			} `json:"error"`
 			Part struct {
 				Type   string `json:"type"`
 				Tool   string `json:"tool"`
@@ -677,6 +729,18 @@ func parseAgentResult(data []byte) (agentResult, error) {
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			return agentResult{}, fmt.Errorf("decoding event: %w", err)
+		}
+		if event.Type == "error" {
+			detail := event.Error.Data.Message
+			if detail == "" {
+				detail = event.Error.Name
+			}
+			if detail == "" {
+				detail = "OpenCode error event (see events.jsonl)"
+			}
+			if result.Error == "" {
+				result.Error = detail
+			}
 		}
 		if event.Type == "step_finish" || event.Part.Type == "step-finish" || event.Part.Type == "step_finish" {
 			result.Turns++

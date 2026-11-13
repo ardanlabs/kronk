@@ -166,7 +166,11 @@ func renderReport(runDir string, models []modelResults, record runRecord) string
 				status = fmt.Sprintf("Passed on submission %d", attempt.Attempt)
 			}
 		}
-		fmt.Fprintf(table, "%s\t%d\t%s\t%d/%d\t%s\n", model.Model.ID, len(model.Attempts), status, final.Grade.Passed, final.Grade.Total, wall.Round(time.Second))
+		checks := "Not graded"
+		if final.Grade.Total > 0 {
+			checks = fmt.Sprintf("%d/%d", final.Grade.Passed, final.Grade.Total)
+		}
+		fmt.Fprintf(table, "%s\t%d\t%s\t%s\t%s\n", model.Model.ID, len(model.Attempts), status, checks, wall.Round(time.Second))
 	}
 	_ = table.Flush()
 	return report.String()
