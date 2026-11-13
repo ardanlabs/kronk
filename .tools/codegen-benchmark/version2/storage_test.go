@@ -15,8 +15,8 @@ import (
 
 func TestHistoryRecordsModelOutcomesAndCumulativeTime(t *testing.T) {
 	runDir := t.TempDir()
-	passed := benchmarkModel{ID: "org/pass/AGENT"}
-	failed := benchmarkModel{ID: "org/fail/AGENT"}
+	passed := benchmarkModel{ID: "org/pass/BENCHMARK"}
+	failed := benchmarkModel{ID: "org/fail/BENCHMARK"}
 	for _, item := range []result{
 		{Model: passed, Attempt: 1, Grade: gradeResult{Passed: 10, Total: 37}, OpenCode: agentResult{WallTime: 2 * time.Second}},
 		{Model: passed, Attempt: 2, Grade: gradeResult{Passed: 37, Total: 37}, OpenCode: agentResult{WallTime: 7 * time.Second}},
@@ -45,8 +45,8 @@ func TestHistoryRecordsModelOutcomesAndCumulativeTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"2026-11-13T14:15:00-03:00", "Workload: v1", "Workflow: completed", "Elapsed: 25s",
-		"`org/pass/AGENT`: Passed on submission 2; agent time: 9s",
-		"`org/fail/AGENT`: Not passed (19/37 checks); agent time: 4s"} {
+		"`org/pass/BENCHMARK`: Passed on submission 2; agent time: 9s",
+		"`org/fail/BENCHMARK`: Not passed (19/37 checks); agent time: 4s"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("history missing %q: %s", want, data)
 		}
@@ -77,12 +77,12 @@ fi
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	config := filepath.Join(dir, "models.yaml")
-	if err := os.WriteFile(config, []byte("version: 2\nmodels:\n  org/model/AGENT:\n    context-window: 8192\n    sampling-parameters:\n      max_tokens: 1024\n"), 0o644); err != nil {
+	if err := os.WriteFile(config, []byte("version: 2\nmodels:\n  org/model/BENCHMARK:\n    context-window: 8192\n    sampling-parameters:\n      max_tokens: 1024\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
-			fmt.Fprint(w, `{"data":[{"id":"org/model/AGENT"}]}`)
+			fmt.Fprint(w, `{"data":[{"id":"org/model/BENCHMARK"}]}`)
 		}
 	}))
 	defer server.Close()
@@ -186,7 +186,7 @@ fi
 	if err != nil {
 		t.Fatal(err)
 	}
-	program := filepath.Join(runDir, modelDirName("org/model/AGENT"), "attempt-01", "program", "main.go")
+	program := filepath.Join(runDir, modelDirName("org/model/BENCHMARK"), "attempt-01", "program", "main.go")
 	data, err := os.ReadFile(program)
 	if err != nil || string(data) != source {
 		t.Fatalf("failed run lost source: %v", err)
@@ -195,7 +195,7 @@ fi
 	if err != nil || !strings.Contains(string(report), "**failed**") || strings.Contains(string(report), "37/37") {
 		t.Fatalf("failed report: %s %v", report, err)
 	}
-	if _, err := os.Stat(filepath.Join(runDir, modelDirName("org/model/AGENT"), "workspace")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(runDir, modelDirName("org/model/BENCHMARK"), "workspace")); !os.IsNotExist(err) {
 		t.Fatal("failed run retained temporary workspace:", err)
 	}
 	if err := run(options{report: true, outputDir: opts.outputDir}); err != nil {

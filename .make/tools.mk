@@ -299,7 +299,8 @@ benchmark-codegen-list: ## List coding benchmark models
 benchmark-codegen-report: ## Show the coding benchmark report
 	go run ./.tools/codegen-benchmark -report
 
-# Version 2 keeps the original benchmark intact and resumes failed submissions.
+# Version 2 uses /BENCHMARK entries in zarf/kms/tools_model_config.yaml.
+# Start its server with make server-for-tools; the original benchmark stays unchanged.
 CODEGEN_V2_SUBMISSIONS ?= 3
 CODEGEN_V2_FEEDBACK ?= true
 CODEGEN_V2_RUN ?=

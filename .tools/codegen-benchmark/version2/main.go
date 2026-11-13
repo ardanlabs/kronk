@@ -27,12 +27,12 @@ import (
 )
 
 const (
-	defaultHost      = "http://localhost:11435"
-	defaultAttempts  = 3
-	defaultSteps     = 40
-	defaultTimeout   = 30 * time.Minute
-	promptSeparator  = "\n================================================================================\n"
-	modelAgentSuffix = "/AGENT"
+	defaultHost          = "http://localhost:11435"
+	defaultAttempts      = 3
+	defaultSteps         = 40
+	defaultTimeout       = 30 * time.Minute
+	promptSeparator      = "\n================================================================================\n"
+	modelBenchmarkSuffix = "/BENCHMARK"
 )
 
 type options struct {
@@ -100,7 +100,7 @@ func parseFlags() (options, error) {
 	}
 	var opts options
 	flag.StringVar(&opts.host, "host", defaultHost, "running Kronk server URL")
-	flag.StringVar(&opts.model, "model", "all", "configured /AGENT model ID, comma-separated IDs, or all")
+	flag.StringVar(&opts.model, "model", "all", "configured /BENCHMARK model ID, comma-separated IDs, or all")
 	flag.IntVar(&opts.attempts, "attempts", defaultAttempts, "maximum submissions per model (1-3, including the initial submission)")
 	flag.BoolVar(&opts.feedback, "feedback", true, "return grader failures to the same agent for repair")
 	flag.IntVar(&opts.steps, "steps", defaultSteps, "maximum OpenCode agent steps per attempt")
@@ -109,7 +109,7 @@ func parseFlags() (options, error) {
 	flag.BoolVar(&opts.report, "report", false, "regenerate the report for the latest saved run")
 	flag.StringVar(&opts.reportDir, "run", "", "saved run directory to use with -report (defaults to latest)")
 	flag.Parse()
-	opts.configFile = filepath.Join(root, "zarf", "kms", "model_config.yaml")
+	opts.configFile = filepath.Join(root, "zarf", "kms", "tools_model_config.yaml")
 	opts.promptFile = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "tic-tac-toe.md")
 	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "runs")
 	return opts, nil
@@ -330,7 +330,7 @@ func loadModels(path string) ([]benchmarkModel, error) {
 
 	eligible := make([]benchmarkModel, 0, len(configs))
 	for id, cfg := range configs {
-		if !strings.HasSuffix(id, modelAgentSuffix) {
+		if !strings.HasSuffix(id, modelBenchmarkSuffix) {
 			continue
 		}
 		resolved := cfg.ToKronkConfig()
@@ -345,7 +345,7 @@ func loadModels(path string) ([]benchmarkModel, error) {
 	}
 	slices.SortFunc(eligible, func(a, b benchmarkModel) int { return strings.Compare(a.ID, b.ID) })
 	if len(eligible) == 0 {
-		return nil, fmt.Errorf("codegen benchmark: %s contains no models ending in %s", path, modelAgentSuffix)
+		return nil, fmt.Errorf("codegen benchmark: %s contains no models ending in %s", path, modelBenchmarkSuffix)
 	}
 	return eligible, nil
 }
@@ -365,8 +365,8 @@ func selectModels(configured []benchmarkModel, requested string) ([]benchmarkMod
 	seen := make(map[string]bool)
 	for id := range strings.SplitSeq(requested, ",") {
 		id = strings.TrimSpace(id)
-		if !strings.HasSuffix(id, modelAgentSuffix) {
-			return nil, fmt.Errorf("codegen benchmark: model %q must end in %s", id, modelAgentSuffix)
+		if !strings.HasSuffix(id, modelBenchmarkSuffix) {
+			return nil, fmt.Errorf("codegen benchmark: model %q must end in %s", id, modelBenchmarkSuffix)
 		}
 		model, exists := byID[id]
 		if !exists {
@@ -617,10 +617,10 @@ func prepareOpenCodeEnvironment(root, attemptDir string, config []byte) ([]strin
 		}
 	}
 
-	skillSource := filepath.Join(root, ".agents", "default", "skills", "writing-go")
-	skillDestination := filepath.Join(openCodeRoot, "config", "opencode", "skills", "writing-go")
+	skillSource := filepath.Join(root, ".agents", "default", "skills", "use-modern-go")
+	skillDestination := filepath.Join(openCodeRoot, "config", "opencode", "skills", "use-modern-go")
 	if err := os.CopyFS(skillDestination, os.DirFS(skillSource)); err != nil {
-		return nil, fmt.Errorf("codegen benchmark: installing writing-go skill: %w", err)
+		return nil, fmt.Errorf("codegen benchmark: installing use-modern-go skill: %w", err)
 	}
 
 	return openCodeEnvironment(attemptDir, config), nil
