@@ -198,6 +198,63 @@ func renderReport(runDir string, models []modelResults, record runRecord) string
 	return report.String()
 }
 
+// Bump this label when the task or acceptance rules intentionally change.
+const workloadVersion = "v1"
+
+func appendHistory(path, runDir string, record runRecord, selected []benchmarkModel) error {
+	models, err := loadResults(runDir)
+	if err != nil {
+		return err
+	}
+	byModel := make(map[string][]result, len(models))
+	for _, model := range models {
+		byModel[model.Model.ID] = model.Attempts
+	}
+
+	var entry strings.Builder
+	fmt.Fprintf(&entry, "\n## %s — %s\n\n", record.Started.Format(time.RFC3339), filepath.Base(runDir))
+	fmt.Fprintf(&entry, "- Workload: %s\n- Workflow: %s\n- Elapsed: %s\n", workloadVersion, record.Status, record.Finished.Sub(record.Started).Round(time.Second))
+	if record.Error != "" {
+		fmt.Fprintf(&entry, "- Error: %s\n", strings.Join(strings.Fields(record.Error), " "))
+	}
+	for _, model := range selected {
+		attempts := byModel[model.ID]
+		status := "No completed submission"
+		var wall time.Duration
+		if len(attempts) > 0 {
+			final := attempts[len(attempts)-1]
+			status = fmt.Sprintf("Not passed (%d/%d checks)", final.Grade.Passed, final.Grade.Total)
+			if final.OpenCode.Error != "" {
+				status = "Agent error; " + status
+			}
+			for _, attempt := range attempts {
+				wall += attempt.OpenCode.WallTime
+				if attempt.Grade.Total > 0 && attempt.Grade.Passed == attempt.Grade.Total {
+					status = fmt.Sprintf("Passed on submission %d", attempt.Attempt)
+				}
+			}
+		}
+		fmt.Fprintf(&entry, "- `%s`: %s; agent time: %s\n", model.ID, status, wall.Round(time.Second))
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("codegen benchmark: opening history: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() == 0 {
+		if _, err := file.WriteString("# Code-generation benchmark history\n\nBasic results from version2 runs. Detailed artifacts under runs/ are gitignored.\n"); err != nil {
+			return err
+		}
+	}
+	_, err = file.WriteString(entry.String())
+	return err
+}
+
 func writeFailures(report *strings.Builder, grade gradeResult) {
 	for _, check := range grade.Checks {
 		if check.Passed {

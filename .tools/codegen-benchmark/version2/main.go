@@ -186,7 +186,9 @@ func run(opts options) (runErr error) {
 			record.Status = "failed"
 			record.Error = runErr.Error()
 		}
-		runErr = errors.Join(runErr, generateReport(runDir, &record))
+		reportErr := generateReport(runDir, &record)
+		historyErr := appendHistory(filepath.Join(filepath.Dir(opts.outputDir), "history.md"), runDir, record, selected)
+		runErr = errors.Join(runErr, reportErr, historyErr)
 	}()
 	if err := os.WriteFile(filepath.Join(runDir, "prompt.md"), []byte(prompt+"\n"), 0o644); err != nil {
 		return fmt.Errorf("codegen benchmark: writing prompt: %w", err)
