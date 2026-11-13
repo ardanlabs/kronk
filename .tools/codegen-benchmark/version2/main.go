@@ -175,7 +175,11 @@ func run(opts options) (runErr error) {
 	if err != nil {
 		return err
 	}
-	record := runRecord{Started: time.Now(), Status: "running"}
+	machine, err := os.Hostname()
+	if err != nil {
+		machine = "unknown"
+	}
+	record := runRecord{Started: time.Now(), Status: "running", Machine: fmt.Sprintf("%s (%s/%s)", machine, runtime.GOOS, runtime.GOARCH)}
 	if err := generateReport(runDir, &record); err != nil {
 		return err
 	}
