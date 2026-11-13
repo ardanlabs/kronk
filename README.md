@@ -117,18 +117,25 @@ Here are some of the known compatible versions:
 
 | kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
+| 1.33.3 | v1.33.0 | b12359    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
 | 1.33.2 | 7600f25 | b12283    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
 | 1.33.1 | 18f0b31 | b11960    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
 | 1.33.0 | 4e61a12 | b11797    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
 | 1.32.9 | 1a800a2 | b11513    | v1.1.4 | v1.9.5      | v1.1.5 | master-929-3f8527a   |
 | 1.32.8 | c25d400 | b11331    | v1.1.3 | v1.9.4      | v1.1.5 | master-929-3f8527a   |
-| 1.32.6 | ece4890 | b10896    | v1.1.2 | v1.9.3      | v1.1.0 | master-849-d04e895   |
 
 Windows x64 CUDA downloads with yzma `7600f25` are affected by a known
 [asset-name mismatch](https://github.com/hybridgroup/yzma/issues/486) for both
 llama.cpp b12223 and b12283. The downloader requests CUDA 13.4 archives, but
 these releases publish CUDA 13.5 archives. This does not affect the CPU,
 Vulkan, ROCm, or OpenVINO download paths.
+
+Kronk 1.33.3 pins llama.cpp to
+`b12359@sha256:a4c67e66c1646b290cb59d51027a9bd3839124e1ad4b662fda713fb56dbd59c4`.
+After upgrading Kronk, run `kronk libs --local` and restart to load the matching
+native libraries. User-managed native builds must be rebuilt or replaced with
+b12359; updating Yzma alone does not update those libraries. Yzma v1.33.0 resolves
+the Windows CUDA asset names to the published CUDA 13.5 archives.
 
 The exact authenticated Malina native pin is
 `master-1088-32d516c@sha256:5f91839d47bc65edda35fafb9e6943db249c69c1d91f42f68d007c1eaa96770c`.

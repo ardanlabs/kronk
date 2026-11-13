@@ -100,7 +100,7 @@ type draftKVExternalizer interface {
 func (dc *draftCore) freeCommon() {
 	if dc.mtpStateSource != 0 {
 		llama.Synchronize(dc.lctx)
-		yzmaspec.SetEmbdStateSrc(dc.lctx, 0)
+		yzmaspec.SetCtxStateSrc(dc.lctx, 0)
 		yzmaspec.SetEmbeddingsNextNDev(dc.mtpStateSource, false)
 		dc.mtpStateSource = 0
 	}

@@ -300,8 +300,8 @@ func (dc *draftCore) enableMTPDeviceRows(ctx context.Context, log applog.Logger,
 	if !yzmaspec.SetEmbeddingsNextNDev(target, true) {
 		return
 	}
-	if !yzmaspec.SetEmbdStateSrc(dc.lctx, target) {
-		yzmaspec.SetEmbdStateSrc(dc.lctx, 0)
+	if !yzmaspec.SetCtxStateSrc(dc.lctx, target) {
+		yzmaspec.SetCtxStateSrc(dc.lctx, 0)
 		yzmaspec.SetEmbeddingsNextNDev(target, false)
 		return
 	}

@@ -11,18 +11,22 @@
 package bucky
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
+	"unsafe"
 
+	"github.com/ardanlabs/bucky/pkg/loader"
 	"github.com/ardanlabs/bucky/pkg/whisper"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/jupiterrider/ffi"
 )
 
 var (
@@ -127,18 +131,30 @@ func Init(opts ...InitOption) error {
 
 	backend.NativeInit.WhisperLoaded = true
 
-	// Skip ggml backend registration when the llama side already populated
-	// the shared registry from its own lib directory. Without this guard,
-	// libggml-*.{so,dylib,dll} files in the bucky lib dir get dlopen'd a
-	// second time (different absolute paths => the dynamic linker treats
-	// them as new images) and each backend's static ggml_backend_register
-	// constructor publishes a duplicate Vulkan0 / Vulkan1 / CPU entry. The
-	// resman snapshot then rejects the load with "duplicate device name".
-	//
-	// Ready is false when llama.Load has not succeeded, so the
-	// GGMLBackendDeviceCount FFI binding is unresolved. The short-circuit
-	// prevents calling that binding while running in degraded mode.
-	if !devices.Ready() || llama.GGMLBackendDeviceCount() == 0 {
+	// Avoid duplicate registrations when the runtimes share GGML. On Linux,
+	// different GGML SONAMEs can give whisper a separate, empty registry even
+	// when llama has devices. Query whisper's own dependency in that case.
+	initBackends := !devices.Ready() || llama.GGMLBackendDeviceCount() == 0
+	if runtime.GOOS == "linux" {
+		lib, err := loader.LoadLibrary(libPath, "whisper")
+		if err != nil {
+			return fmt.Errorf("init: open whisper backend registry: %w", err)
+		}
+
+		count, err := lib.Prep("ggml_backend_dev_count", &ffi.TypeUint64)
+		if err != nil {
+			return fmt.Errorf("init: resolve whisper backend device count: %w", errors.Join(err, lib.Close()))
+		}
+
+		var n uint64
+		count.Call(unsafe.Pointer(&n))
+		if err := lib.Close(); err != nil {
+			return fmt.Errorf("init: close whisper backend registry handle: %w", err)
+		}
+		initBackends = n == 0
+	}
+
+	if initBackends {
 		if err := whisper.Init(libPath); err != nil {
 			return fmt.Errorf("init: unable to init whisper library: %w", err)
 		}

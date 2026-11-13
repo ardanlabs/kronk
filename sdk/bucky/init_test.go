@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/bucky"
+	"github.com/ardanlabs/kronk/sdk/bucky/model"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
@@ -17,7 +18,7 @@ import (
 
 func TestInitOrder(t *testing.T) {
 	// Each order needs a fresh process: native libraries cannot be reset
-	// between test cases. No models or downloads are needed.
+	// between test cases. Model loading is also checked when tiny is installed.
 	if order := os.Getenv("KRONK_TEST_INIT_ORDER"); order != "" {
 		if strings.HasPrefix(order, "kronk-first") {
 			if err := kronk.Init(); err != nil {
@@ -43,12 +44,41 @@ func TestInitOrder(t *testing.T) {
 		} else if err != nil {
 			t.Fatalf("repeated Init after bucky.Init(): %v", err)
 		}
+
+		t.Run("model-load", func(t *testing.T) {
+			if testing.Short() {
+				t.Skip("model loading disabled in short mode")
+			}
+
+			m, err := models.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			mp, err := m.FullPath("tiny")
+			if err != nil {
+				t.Skipf("tiny model unavailable: %v", err)
+			}
+
+			b, err := bucky.NewWithContext(t.Context(), model.WithConfig(model.Config{
+				ModelPath: mp.ModelFiles[0],
+			}))
+			if err != nil {
+				t.Fatalf("load whisper model after %s: %v", order, err)
+			}
+			if err := b.Unload(t.Context()); err != nil {
+				t.Fatalf("unload whisper model: %v", err)
+			}
+		})
 		return
 	}
 
 	for _, order := range []string{"bucky-first", "kronk-first"} {
 		t.Run(order, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=^TestInitOrder$", "-test.v")
+			args := []string{"-test.run=^TestInitOrder$", "-test.v"}
+			if testing.Short() {
+				args = append(args, "-test.short")
+			}
+			cmd := exec.Command(os.Args[0], args...)
 			cmd.Env = append(os.Environ(), "KRONK_TEST_INIT_ORDER="+order)
 			out, err := cmd.CombinedOutput()
 			t.Logf("%s", out)

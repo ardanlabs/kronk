@@ -2,6 +2,8 @@
 
 ## Index
 
+- [v1.33.3](#v1333)
+  - [llama.cpp Native Compatibility](#v1333-llamacpp-native-compatibility)
 - [v1.33.2](#v1332)
   - [Responses Reasoning Output](#v1332-responses-reasoning-output)
   - [Structured-Output Schema Validation](#v1332-structured-output-schema-validation)
@@ -53,6 +55,26 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.33.3
+
+### v1.33.3: llama.cpp Native Compatibility
+
+Kronk now pairs Yzma v1.33.0 with llama.cpp b12359, replacing the b12283
+native pin. The native context-parameter contract changed, deprecated APIs
+were removed, and the MTP state-source API was renamed. Do not mix older
+llama.cpp or backend libraries with the new bindings.
+
+After upgrading the Kronk executable, run `kronk libs --local` to refresh the
+managed bundle, then restart processes using it. If an explicit library
+version override is configured, update it to b12359. User-managed library
+directories are never replaced automatically; rebuild or replace the entire
+bundle with b12359. Custom GGML RPC deployments must also upgrade their peers
+together because the RPC protocol major changed from 9 to 10.
+
+Applications importing Yzma directly must replace `SetEmbdStateSrc` with
+`SetCtxStateSrc` and remove uses of `ContextParams.DefragThold` and
+`SetWarmup`. Kronk's public configuration does not expose these removed APIs.
 
 ## v1.33.2
 
