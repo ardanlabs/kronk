@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -460,9 +461,24 @@ func acceptanceScenarios() []scenario {
 	return out
 }
 
-// A real terminal with echo and output newline translation disabled preserves
-// the exact bytes specified by the task. Input is sent only after each expected
-// state has been observed, so programs which wait for all input cannot pass.
+// Only presentation is ignored when recognizing an interaction state. Keep all
+// board cells, scores, separators, messages and prompts, including their order.
+// The trailing escape alternative handles a CSI sequence split across PTY reads.
+var terminalPresentation = regexp.MustCompile(`\x1b\[(?:[0-9;]*m|2J|H)|\x1b(?:\[[0-9;]*)?$|[ \t\r\n]`)
+
+func transcriptDifference(expected, actual string) string {
+	index := 0
+	for index < len(actual) && index < len(expected) && actual[index] == expected[index] {
+		index++
+	}
+	start := max(0, index-30)
+	return fmt.Sprintf("first difference at byte %d: expected %q, actual %q (ANSI escapes shown literally)", index,
+		expected[start:min(len(expected), index+100)], actual[start:min(len(actual), index+100)])
+}
+
+// A real terminal preserves the exact bytes specified by the task. Formatting
+// mismatches remain failures, but do not block later inputs when the complete
+// expected interaction state is recognizable. Semantic mismatches stop the run.
 func executeScenario(parent context.Context, binary string, s scenario) executionEvidence {
 	e := executionEvidence{Scenario: s.name, Input: s.input, Expected: strings.Join(s.steps, "")}
 	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
@@ -515,7 +531,15 @@ func executeScenario(parent context.Context, binary string, s scenario) executio
 	}()
 	var actual []byte
 	readUntil := func(want string) error {
-		for len(actual) < len(want) {
+		state := terminalPresentation.ReplaceAllString(want, "")
+		for {
+			observed := terminalPresentation.ReplaceAllString(string(actual), "")
+			if !strings.HasPrefix(state, observed) {
+				return fmt.Errorf("unexpected game state or prompt; scenario stopped before sending further input")
+			}
+			if observed == state {
+				return nil
+			}
 			select {
 			case chunk, ok := <-chunks:
 				if !ok {
@@ -528,22 +552,24 @@ func executeScenario(parent context.Context, binary string, s scenario) executio
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-			if !strings.HasPrefix(want, string(actual)) {
-				return fmt.Errorf("raw terminal transcript mismatch")
-			}
 		}
-		if string(actual) != want {
-			return fmt.Errorf("raw terminal transcript mismatch")
-		}
-		return nil
 	}
+	var differences []string
+	var consumed int
 	var want strings.Builder
 	inputs := strings.Split(strings.TrimSuffix(s.input, "\n"), "\n")
 	for i, step := range s.steps {
 		want.WriteString(step)
 		if err = readUntil(want.String()); err != nil {
+			err = fmt.Errorf("step %d: %w", i+1, err)
+			differences = append(differences, fmt.Sprintf("step %d output mismatch: %s", i+1, transcriptDifference(step, string(actual[consumed:]))))
+			consumed = len(actual)
 			break
 		}
+		if output := string(actual[consumed:]); output != step {
+			differences = append(differences, fmt.Sprintf("step %d formatting mismatch: %s", i+1, transcriptDifference(step, output)))
+		}
+		consumed = len(actual)
 		if i < len(inputs) {
 			_, err = f.Write([]byte(inputs[i] + "\n"))
 			if err != nil {
@@ -576,13 +602,10 @@ func executeScenario(parent context.Context, binary string, s scenario) executio
 	e.Actual = truncate(string(actual), 65536)
 	e.Error = errorDetail(err)
 	if err != nil && e.Actual != e.Expected {
-		index := 0
-		for index < len(e.Actual) && index < len(e.Expected) && e.Actual[index] == e.Expected[index] {
-			index++
+		if len(differences) == 0 || consumed < len(actual) {
+			differences = append(differences, transcriptDifference(e.Expected, e.Actual))
 		}
-		start := max(0, index-30)
-		e.Error += fmt.Sprintf("; first difference at byte %d: expected %q, actual %q (ANSI escapes shown literally)", index,
-			e.Expected[start:min(len(e.Expected), index+100)], e.Actual[start:min(len(e.Actual), index+100)])
+		e.Error += "; " + strings.Join(differences, "; ")
 	}
 	e.Passed = err == nil
 	return e

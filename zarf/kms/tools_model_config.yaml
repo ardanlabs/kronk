@@ -43,9 +43,17 @@ models:
     sampling-parameters:
       max_tokens: 16384
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/BENCHMARK:
+  unsloth/Qwen3.8-27B-UD-Q6_K/BENCHMARK:
     nseq-max: 1
     context-window: 131072
+    sampling-parameters:
+      max_tokens: 16384
+
+  ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
 

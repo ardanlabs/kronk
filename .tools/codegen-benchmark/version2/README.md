@@ -33,9 +33,14 @@ execution is allowed.
 
 The grader checks the submitted formatting, structure, build, vet, and helper
 behavior, then runs **22 interactive scenarios in a real pseudo-terminal**.
-Input is delivered one line at a time only after the expected screen and prompt
-appear. Exact output bytes are compared, including ANSI colors, resets, screen
-clearing, spacing, and newlines; ANSI is not stripped for grading.
+Input is delivered one line at a time only after the expected board, scores,
+messages, and prompt are recognizable. Whitespace and supported ANSI color/clear
+sequences are ignored only for deciding when to send the next input, allowing
+formatting defects at later steps to be reported in the same submission. An
+unexpected game state or prompt stops that scenario; other scenarios still run.
+Exact output bytes remain required for a pass, including ANSI colors, resets,
+screen clearing, spacing, and newlines. Feedback includes the observed formatting
+mismatches by interaction step.
 
 Scenarios cover all eight winning lines for both players, a draw, a ninth-move
 win taking precedence over a draw, invalid and occupied inputs, whitespace,

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/format"
 	"os"
 	"path/filepath"
@@ -97,10 +98,59 @@ func TestAcceptanceRegressions(t *testing.T) {
 					if e.Passed {
 						t.Fatal("broken fixture passed")
 					}
+					switch c.name {
+					case "colors", "reset", "clear", "newline", "prompt":
+						if !strings.Contains(e.Actual, "Player X wins!\nPlay again? (y/n): ") {
+							t.Fatalf("presentation defect blocked later gameplay: %s", e.Error)
+						}
+					}
 					return
 				}
 			}
 			t.Fatal("unknown scenario")
+		})
+	}
+}
+
+func TestAcceptanceFormattingFeedback(t *testing.T) {
+	source := fixtureSource(t)
+	// An initial rendering defect must not hide a separate end-of-game defect.
+	source = strings.Replace(source, `Draws: %d\n\n`, `Draws: %d\n`, 1)
+	source = strings.Replace(source, `fmt.Printf("Player %c wins!\n", player)`, `fmt.Printf("\nPlayer %c wins!\n", player)`, 1)
+	binary := fixtureBinary(t, source)
+	s := acceptanceScenarios()[0]
+	e := executeScenario(t.Context(), binary, s)
+	if e.Passed || !strings.Contains(e.Actual, "Player X wins!\nPlay again? (y/n): ") {
+		t.Fatalf("formatting defects must fail without preventing gameplay: %s\n%q", e.Error, e.Actual)
+	}
+	for _, step := range []int{1, len(s.steps) - 1} {
+		if !strings.Contains(e.Error, fmt.Sprintf("step %d formatting mismatch", step)) {
+			t.Errorf("missing formatting failure at step %d: %s", step, e.Error)
+		}
+	}
+	feedback := graderFeedback(gradeResult{Total: 1, Checks: []gradeCheck{{Name: s.name, Detail: e.Error}}})
+	if !strings.Contains(feedback, e.Error) {
+		t.Fatalf("feedback omitted collected failures: %s", feedback)
+	}
+}
+
+func TestAcceptanceStopsOnUnexpectedState(t *testing.T) {
+	for _, tc := range []struct{ name, old, replacement string }{
+		{"player", `player = 'O'`, `player = 'X'`},
+		{"board", `b[index] = player`, `b[index] = 'O'`},
+		{"score", `xWins, oWins, draws := 0, 0, 0`, `xWins, oWins, draws := 2, 0, 0`},
+		{"prompt", `Player %c's turn. Enter a number (1-9):`, `Play again? (y/n): Player %c`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := strings.Replace(fixtureSource(t), tc.old, tc.replacement, 1)
+			source = strings.Replace(source, `Draws: %d\n\n`, `Draws: %d\n`, 1)
+			e := executeScenario(t.Context(), fixtureBinary(t, source), acceptanceScenarios()[0])
+			if e.Passed || !strings.Contains(e.Error, "unexpected game state or prompt") {
+				t.Fatalf("unexpected state must stop progression: %s", e.Error)
+			}
+			if strings.Contains(e.Actual, "wins!") {
+				t.Fatalf("continued gameplay after unexpected state: %q", e.Actual)
+			}
 		})
 	}
 }
