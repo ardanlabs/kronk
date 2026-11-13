@@ -417,6 +417,7 @@ func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt
 	started := time.Now()
 	args := []string{"run",
 		"--format", "json",
+		"--thinking",
 		"--pure",
 		"--agent", "benchmark",
 		"--model", "kronk/" + model.ID,

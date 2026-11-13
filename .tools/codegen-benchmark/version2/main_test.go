@@ -395,9 +395,12 @@ func TestRunAttemptResumesWorkspace(t *testing.T) {
 	script := `#!/bin/sh
 set -eu
 continued=false
+thinking=false
 for arg do
   if [ "$arg" = '--continue' ]; then continued=true; fi
+  if [ "$arg" = '--thinking' ]; then thinking=true; fi
 done
+[ "$thinking" = true ]
 if [ -f "$HOME/submitted" ]; then
   [ "$continued" = true ]
   grep -q 'first-version' tictactoe/main.go
