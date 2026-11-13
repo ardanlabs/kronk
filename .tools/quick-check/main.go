@@ -806,34 +806,22 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		}
 	}
 	start := time.Now()
-	perform := func(phase string, messages []message, facts answerFacts, cancelled bool) (result, error) {
-		if o.images {
-			animal, foreign := "giraffe", "deer"
-			if phase == "fresh-session" || phase == "cancel" {
-				animal, foreign = foreign, animal
-			}
-			facts.required = append(facts.required, animal)
-			facts.excluded = append(facts.excluded, foreign)
-		}
+	perform := func(phase string, messages []message, cancelled bool) (result, error) {
 		res, err := c.chat(phase, messages, 384, cancelled)
 		if err == nil && !cancelled {
-			err = checkAnswer(res, facts, r.TargetOnly)
+			err = checkResponse(res, r.TargetOnly)
 		}
 		if err != nil {
 			res.Error = err.Error()
 			err = fmt.Errorf("%s: %w", phase, err)
-			if findingCategory(res.Error) == "CONTENT" {
-				r.Findings = append(r.Findings, err.Error())
-				err = nil // A completed content mismatch must not hide later probes.
-			}
 		}
 		r.Results = append(r.Results, res)
 		log("phase=%s elapsed=%.3fs first_content=%.3fs prompt=%d cached=%d output=%d drafts=%d error=%s", phase, res.Elapsed, res.FirstContent, res.Usage.PromptTokens, res.Usage.PromptTokensDetails.CachedTokens, res.Usage.CompletionTokens, res.Usage.DraftTokens, res.Error)
 		return res, err
 	}
-	cold, err := perform("cold", a, answerFacts{required: []string{"River", "Alice", "Apple"}}, false)
+	cold, err := perform("cold", a, false)
 	if err == nil {
-		_, err = perform("replay", a, answerFacts{required: []string{"River", "Alice", "Apple"}}, false)
+		_, err = perform("replay", a, false)
 	}
 	if err == nil {
 		question := "The destination is now Orange; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."
@@ -841,16 +829,16 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 			question = strings.Replace(question, "Begin with the current identifier, owner and destination.", "In the opening paragraph, include the current identifier, owner and destination, and name the animal shown in the image previously supplied in this conversation.", 1)
 		}
 		continued := append(append([]message{}, a...), message{Role: "assistant", Content: cold.Content}, message{Role: "user", Content: question})
-		_, err = perform("append", continued, answerFacts{required: []string{"River", "Alice", "Orange"}, excluded: []string{"Apple"}}, false)
+		_, err = perform("append", continued, false)
 	}
 	var fresh result
 	if err == nil {
-		fresh, err = perform("fresh-session", b, answerFacts{required: []string{"Mountain", "Bob", "Lemon"}, foreign: []string{"River", "Alice", "Orange", "Apple"}}, false)
+		fresh, err = perform("fresh-session", b, false)
 	}
 	if err == nil {
 		cancelMessages := append(append([]message{}, b...), message{Role: "assistant", Content: fresh.Content}, message{Role: "user", Content: "For interrupted handover Forest, write a long recovery checklist, repeating its identifier in every paragraph."})
 		var cancelled result
-		cancelled, err = perform("cancel", cancelMessages, answerFacts{}, true)
+		cancelled, err = perform("cancel", cancelMessages, true)
 		if err == nil && !cancelled.Cancelled {
 			err = fmt.Errorf("active cancellation was not observed")
 		}
@@ -860,7 +848,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 			r.CancelReleaseSeconds = time.Since(released).Seconds()
 		}
 		if err == nil {
-			_, err = perform("recovery", a, answerFacts{required: []string{"River", "Alice", "Apple"}, foreign: []string{"Mountain", "Bob", "Lemon", "Forest"}}, false)
+			_, err = perform("recovery", a, false)
 		}
 	}
 	if err == nil {

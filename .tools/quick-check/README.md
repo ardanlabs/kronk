@@ -11,7 +11,8 @@ no separate Dense MTP file is needed.
 
 In GitHub Actions, **Quick-check macOS Metal** and **Quick-check Linux Vulkan**
 run independently daily at 02:00 Miami time (including DST), or manually through
-**Run workflow**. Each tests latest `main`, skipping if its SHA matches that
+**Run workflow**. Manual runs test the selected branch; scheduled runs test the
+default branch (`main`). A run skips if its checked-out SHA matches that
 workflow's latest saved run, including a failed or interrupted attempt. Review
 the release comparison in the run summary or job logs; download the run's artifact
 to investigate.
@@ -82,6 +83,25 @@ All selected cells share these three files and one retention queue, directly und
 
 Those files can be useful to feed a harness and investigate reasons for slowdowns or regressions, alongside the bigger reliability tools.
 
+Quick-check validates **engine execution, not answer semantics**. Prompts provide a
+repeatable generation workload; required words, stale or foreign words, animal
+identification, paragraph counts, and answer length are not graded. A completed,
+nonempty response with sufficient token usage is required, along with the requested
+MTP activity (or its absence when MTP is off).
+
+Structured server evidence must attest the requested IMC reuse/rebuild behavior,
+MTP activation and cleanup, slot/sequence ownership and cleanup, concurrent
+progress, cancellation, and recovery. Unexpected server errors, missing evidence,
+and incomplete execution still fail the job. `PASS` means those execution checks
+passed; it does not certify answer quality or semantic conversation isolation.
+
+Response wording cannot stop repetitions or suppress completed workload and
+normalized timings, comparison deltas, or local release-history updates. Raw
+responses remain in `events.ndjson` for investigation. Existing saved evidence
+retains its recorded findings; older failed/incomplete attempts are not rewritten
+as successful runs, and no timings are invented for work that did not complete.
+Prompts and token budgets are unchanged to preserve the timing workload.
+
 All of `output/` is Git-ignored. Up to two run directories are retained:
 
 - `new-<commit>`: fresh run, including `FAIL` or `INTERRUPTED`.
@@ -91,12 +111,18 @@ Every finalized attempt replaces `new`; only Promote replaces `release`, even
 when the same commit is tested again. Local archives under `output/saved_local_runs/`
 remain outside retention. Older `old-*` directories are no longer managed.
 
-Actions saves full evidence and comparison reports as `quick-check-macos-metal-run-<run-id>-<attempt>`
+Actions saves full evidence, comparison reports, and available complete server logs
+(`server.log`, `server-start.log`, `server-stop-before.log`, and `server-stop.log`)
+together in `quick-check-run.tgz`. Server logs are included when collected, even
+for failed/interrupted checks; failures before a candidate is finalized may have
+only Actions job logs. Download important evidence before it rotates out.
+
+The artifacts are named `quick-check-macos-metal-run-<run-id>-<attempt>`
 (macOS) or `quick-check-linux-vulkan-run-<run-id>-<attempt>` (Linux). After a
 successful upload, each workflow keeps only its latest two full run artifacts,
 including failed/interrupted attempts. Other workflows' artifacts are untouched.
 Uploads request 90-day retention; repository limits and expiration still apply.
-Each platform reads its tracked timing history from the checked-out `main`:
+Each platform reads its tracked timing history from the checked-out branch:
 
 | Platform | History document under `.tools/quick-check/` |
 | --- | --- |
@@ -126,8 +152,8 @@ make quick-check-release-history QUICK_CHECK_RELEASE=v1.34.0 QUICK_CHECK_COMMIT=
 Requires Go, authenticated GitHub CLI (`gh auth login`), `jq`, and `unzip`.
 `QUICK_CHECK_COMMIT` defaults
 to `HEAD`; it must identify the **measured server commit**, not just the workflow
-run's head commit. Both current Actions jobs test `main`, even when manually
-launched from a different branch. A release-branch SHA must actually have saved
+run's head commit. Both Actions jobs test the selected branch on manual runs and
+the default branch on scheduled runs. A release-branch SHA must actually have saved
 quick-check evidence on both platforms; this command does not run tests.
 
 The baseline is each platform's latest tracked history entry, not a Git tag or

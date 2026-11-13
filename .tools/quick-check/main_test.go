@@ -17,43 +17,12 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func TestAnswerFacts(t *testing.T) {
-	for _, tc := range []struct {
-		content  string
-		facts    answerFacts
-		category string
-	}{
-		{"RIVER: Alice's destination is (ORANGES). Three giraffes.", answerFacts{required: []string{"River", "Alice", "Orange", "giraffe"}}, ""},
-		{"Cherries and deer.", answerFacts{required: []string{"Cherry", "deer"}}, ""},
-		{"COBALT\u201183", answerFacts{required: []string{"COBALT-83"}}, ""},
-		{"COBALT84", answerFacts{required: []string{"COBALT-83"}}, "CONTENT"},
-		{"Riverbank", answerFacts{required: []string{"River"}}, "CONTENT"},
-		{"égiraffes", answerFacts{required: []string{"giraffe"}}, "CONTENT"},
-		{"A bobcat passed nearby.", answerFacts{foreign: []string{"Bob"}}, ""},
-		{"River Alice Orange, not Apples.", answerFacts{required: []string{"River", "Alice", "Orange"}, excluded: []string{"Apple"}}, "CONTENT"},
-		{"Mountain Bob Cherries", answerFacts{required: []string{"River"}, foreign: []string{"Cherry"}}, "ISOLATION"},
-		{"ORCHID\u201047", answerFacts{foreign: []string{"ORCHID-47"}}, "ISOLATION"},
-	} {
-		t.Run(tc.content, func(t *testing.T) {
-			r := result{Content: tc.content, FinishReason: "stop", Usage: usage{PromptTokens: 10000, CompletionTokens: 20}}
-			err := checkAnswer(r, tc.facts, true)
-			if tc.category == "" {
-				if err != nil {
-					t.Fatal(err)
-				}
-			} else if err == nil || findingCategory(err.Error()) != tc.category {
-				t.Fatalf("want %s, got %v", tc.category, err)
-			}
-		})
-	}
-}
-
 // Controlled SSE and execution evidence exercise the command, not inference.
 // Serial workloads cover continuation, image reuse, cancellation, and partial reports;
 // configuration permutations are checked without replaying this fixture.
 func TestQuickCheckCommand(t *testing.T) {
 	releaseTestRepo(t)
-	for _, defect := range []string{"", "benchmark-identity", "content-append", "foreign-session", "interrupt", "images", "images-no-publication", "images-rebuild"} {
+	for _, defect := range []string{"", "benchmark-identity", "arbitrary-output", "foreign-session", "empty-output", "incomplete-response", "inactive-mtp", "server-error", "missing-draft-cleanup", "interrupt", "images", "images-no-publication", "images-rebuild"} {
 		t.Run(defect, func(t *testing.T) {
 			identity := ""
 			if defect == "benchmark-identity" {
@@ -61,7 +30,12 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			t.Setenv("QUICK_CHECK_BENCHMARK_ID", identity)
 			images := strings.HasPrefix(defect, "images")
-			wantPass := defect == "" || defect == "images" || defect == "benchmark-identity"
+			wantPass := defect == "" || defect == "images" || defect == "benchmark-identity" || defect == "arbitrary-output" || defect == "foreign-session"
+			responseFailure := defect == "empty-output" || defect == "incomplete-response" || defect == "inactive-mtp"
+			repetitions := 1
+			if defect == "arbitrary-output" {
+				repetitions = 2
+			}
 			root := t.TempDir()
 			logPath := filepath.Join(root, "server.log")
 			log, err := os.Create(logPath)
@@ -88,8 +62,10 @@ func TestQuickCheckCommand(t *testing.T) {
 					switch req.URL.Path {
 					case "/v1/liveness":
 						fmt.Fprint(w, `{"host":"actual-container","os":"linux","vcs_revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","vcs_time":"2026-10-26T00:00:00Z"}`)
-					case "/v1/kronk/libs", "/v1/devices":
+					case "/v1/kronk/libs":
 						fmt.Fprint(w, `{}`)
+					case "/v1/devices":
+						fmt.Fprint(w, `{"system_ram_bytes":34359738368,"gpu_total_bytes":17179869184,"unified_memory":false}`)
 					case "/v1/tokenize":
 						fmt.Fprint(w, `{"tokens":10000}`)
 					case "/v1/kronk/models/ps":
@@ -122,7 +98,10 @@ func TestQuickCheckCommand(t *testing.T) {
 				if body.Messages[0].Content == "Reply OK." {
 					cellCalls = 0
 				} else {
-					phase = []string{"cold", "replay", "append", "fresh-session", "cancel", "recovery"}[cellCalls]
+					phase = []string{"cold", "replay", "append", "fresh-session", "cancel", "recovery"}[cellCalls%6]
+					if phase == "cold" {
+						cancelled = make(chan struct{})
+					}
 					cellCalls++
 				}
 				calls++
@@ -214,9 +193,6 @@ func TestQuickCheckCommand(t *testing.T) {
 				answer := "River Alice Apple"
 				if phase == "append" {
 					answer = "River Alice Orange"
-					if defect == "content-append" {
-						answer += " Not Apple."
-					}
 				}
 				if phase == "fresh-session" {
 					answer = "Mountain Bob Lemon"
@@ -230,6 +206,12 @@ func TestQuickCheckCommand(t *testing.T) {
 						animal = "deer"
 					}
 					answer += " " + animal
+				}
+				if defect == "arbitrary-output" && phase != "warmup" {
+					answer = "This response deliberately omits the requested facts and describes a tiger."
+				}
+				if defect == "empty-output" && phase == "append" {
+					answer = ""
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
 				fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", answer)
@@ -246,13 +228,25 @@ func TestQuickCheckCommand(t *testing.T) {
 				}
 				emit("batch-engine", "slot-finished", map[string]any{"total_prompt": stable + 7, "imc_actual_reused_tokens": reused, "output_tokens": output, "draft_tokens": 40, "draft_resume_source": resume, "elapsed": "2.345s"})
 				emit("finish-slot", "seq-cleared", nil)
-				emit("speculative", "draft-kv-cleared", nil)
+				if defect != "missing-draft-cleanup" || phase != "append" {
+					emit("speculative", "draft-kv-cleared", nil)
+				}
+				if defect == "server-error" && phase == "append" {
+					emit("unexpected engine error", "", map[string]any{"level": "ERROR", "err": "test engine failure"})
+				}
 				emit("request-lifecycle", terminal, map[string]any{"stage": 4, "slot": 0, "elapsed": "2.5s"})
 				if phase == "cancel" {
 					close(cancelled)
 					return
 				}
-				fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":%d,\"completion_tokens\":90,\"draft_tokens\":40,\"draft_coverage\":0.5,\"prompt_tokens_details\":{\"cached_tokens\":%d}}}\n\ndata: [DONE]\n\n", stable+7, reused)
+				finish, drafts := "stop", 40
+				if defect == "incomplete-response" && phase == "append" {
+					finish = "length"
+				}
+				if defect == "inactive-mtp" && phase == "append" {
+					drafts = 0
+				}
+				fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":%q}],\"usage\":{\"prompt_tokens\":%d,\"completion_tokens\":90,\"draft_tokens\":%d,\"draft_coverage\":0.5,\"prompt_tokens_details\":{\"cached_tokens\":%d}}}\n\ndata: [DONE]\n\n", finish, stable+7, drafts, reused)
 			}))
 			defer server.Close()
 			selection := []string{matrixCells[0].id}
@@ -265,7 +259,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				selection = append(selection, matrixCells[2].id)
 			}
 			out := filepath.Join(root, "output")
-			err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: 1, cells: selection})
+			err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: repetitions, cells: selection})
 			if (err == nil) != wantPass {
 				t.Fatalf("unexpected command result: %v", err)
 			}
@@ -290,29 +284,65 @@ func TestQuickCheckCommand(t *testing.T) {
 					t.Fatalf("lost completed/partial cells: %s", data)
 				}
 			} else {
-				if (cell.Status == "PASS") != wantPass || len(cell.Repetitions) != 1 {
+				if (cell.Status == "PASS") != wantPass || len(cell.Repetitions) != repetitions {
 					t.Fatalf("unexpected verdict: %s", data)
 				}
 				results := cell.Repetitions[0].Results
-				if defect == "foreign-session" {
-					if len(results) >= 6 || len(cell.Repetitions[0].FindingsByCategory["ISOLATION"]) != 1 {
-						t.Fatalf("isolation failure did not stop probes: %s", data)
+				if responseFailure {
+					if len(results) != 3 || cell.Measurements != nil || len(cell.Repetitions[0].FindingsByCategory["INFRASTRUCTURE"]) == 0 {
+						t.Fatalf("invalid response accepted as a completed workload: %s", data)
 					}
 				} else if len(results) != 6 || ((!images || wantPass) && (results[4]["status"] != "PASS" || results[5]["status"] != "PASS")) {
 					t.Fatalf("cancel/recovery probes lost: %s", data)
 				}
-				if defect == "content-append" && (cell.Measurements != nil || len(cell.Repetitions[0].FindingsByCategory["CONTENT"]) != 1) {
-					t.Fatalf("content finding misclassified: %s", data)
+				if defect == "arbitrary-output" && (cell.Measurements["workload"]["elapsed_seconds"].Samples != 2 || cell.Measurements["workload"]["reference_seconds"].Samples != 2 || len(cell.Findings) != 0 || results[2]["status"] != "PASS") {
+					t.Fatalf("answer wording affected engine verdict or timing samples: %s", data)
 				}
-				if images && !wantPass && (cell.Measurements != nil || len(cell.Repetitions[0].FindingsByCategory["INFRASTRUCTURE"]) == 0) {
-					t.Fatalf("missing image System-cache evidence accepted: %s", data)
+				if !wantPass && (cell.Measurements != nil || len(cell.Repetitions[0].FindingsByCategory["INFRASTRUCTURE"]) == 0) {
+					t.Fatalf("invalid engine execution accepted: %s", data)
+				}
+				wantFinding := map[string]string{"server-error": "unexpected server ERROR", "missing-draft-cleanup": "draft cleanup not attested"}[defect]
+				if wantFinding != "" && !strings.Contains(strings.Join(cell.Findings, "\n"), wantFinding) {
+					t.Fatalf("missing execution finding %q: %s", wantFinding, data)
 				}
 				if defect == "images-no-publication" && !strings.Contains(strings.Join(cell.Findings, "\n"), "cold: uncached image build and large System-prefix publication not attested") {
 					t.Fatalf("cold image System publication not checked: %s", data)
 				}
 			}
-			if _, err := readComparison(filepath.Dir(paths[0])); err != nil {
+			input, err := readComparison(filepath.Dir(paths[0]))
+			if err != nil {
 				t.Fatal("unreadable artifacts", err)
+			}
+			if defect == "arbitrary-output" {
+				history := filepath.Join(root, "history.log")
+				if err := recordReleaseStart(history, "v0.1.0", input); err != nil {
+					t.Fatal(err)
+				}
+				var text bytes.Buffer
+				if err := historyCommand([]string{"-out", out, "-history", history, "-release", "v0.2.0"}, &text); err != nil {
+					t.Fatal("response wording blocked release timings", err)
+				}
+				if strings.Contains(text.String(), "Content warning:") {
+					t.Fatal("comparison evaluated answer wording", text.String())
+				}
+				data, err := os.ReadFile(filepath.Join(out, "comparison.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var comparison matrixComparison
+				if err := json.Unmarshal(data, &comparison); err != nil {
+					t.Fatal(err)
+				}
+				for _, compared := range comparison.Cells {
+					if compared.Cell != selection[0] {
+						continue
+					}
+					for _, metric := range compared.Metrics {
+						if metric.Candidate == nil || metric.Candidate.Samples != 2 || metric.Candidate.Median <= 0 {
+							t.Fatalf("comparison discarded completed timings: %s", data)
+						}
+					}
+				}
 			}
 			mu.Lock()
 			defer mu.Unlock()

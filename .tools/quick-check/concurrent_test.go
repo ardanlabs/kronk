@@ -18,7 +18,7 @@ import (
 // evidence. This validates the harness, not model quality or Kronk inference.
 func TestQuickCheckTwoSlots(t *testing.T) {
 	releaseTestRepo(t)
-	for _, defect := range []string{"", "serialized", "wrong-recovery-slot", "no-survivor-progress", "missing-cancel-ack", "foreign-session", "content-append", "content-and-evidence"} {
+	for _, defect := range []string{"", "serialized", "wrong-recovery-slot", "no-survivor-progress", "missing-cancel-ack", "foreign-session", "arbitrary-output", "arbitrary-output-bad-evidence"} {
 		t.Run(defect, func(t *testing.T) { checkTwoSlotFixture(t, defect) })
 	}
 }
@@ -26,7 +26,7 @@ func TestQuickCheckTwoSlots(t *testing.T) {
 func checkTwoSlotFixture(t *testing.T, defect string) {
 	t.Helper()
 	const selector = "MoE/2s/IMC+/MTP+/img+"
-	passing := defect == ""
+	passing := defect == "" || defect == "arbitrary-output" || defect == "foreign-session"
 	root := t.TempDir()
 	logPath := filepath.Join(root, "server.log")
 	serverLog, err := os.Create(logPath)
@@ -88,7 +88,8 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 			t.Error(err)
 			return
 		}
-		text, _ := json.Marshal(body.Messages)
+		// Route by the initial conversation, never by arbitrary assistant output.
+		text, _ := json.Marshal(body.Messages[:min(2, len(body.Messages))])
 		isA := bytes.Contains(text, []byte("River"))
 		phase, slot := "warmup", 7
 		mu.Lock()
@@ -158,7 +159,7 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 				kind, reason = "anchor", "media-prefix-text-replay"
 			}
 		}
-		if defect == "content-and-evidence" && phase == "append" {
+		if defect == "arbitrary-output-bad-evidence" && phase == "append" {
 			kind, reason, reused = "append", "system-cache-prefix", 10000
 		}
 		if phase == "warmup" {
@@ -217,8 +218,8 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 			}
 			answer += " " + animal
 		}
-		if (defect == "content-append" || defect == "content-and-evidence") && phase == "append" {
-			answer += " Not Apple."
+		if (defect == "arbitrary-output" || defect == "arbitrary-output-bad-evidence") && phase == "append" {
+			answer = "This arbitrary answer omits the requested facts and describes a tiger."
 		}
 		if defect == "foreign-session" && phase == "peer-append" {
 			answer += " River"
@@ -286,7 +287,6 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 		"wrong-recovery-slot":  "must start on cancelled slot",
 		"no-survivor-progress": "continued content after peer cancellation",
 		"missing-cancel-ack":   "server terminal status must be cancel",
-		"foreign-session":      "[ISOLATION]",
 	}[defect]
 	executed := 0
 	for _, cell := range summary.Cells {
@@ -303,12 +303,12 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 		if passing && cell.Measurements["workload"]["reference_seconds"].Median <= 0 {
 			t.Fatal("calibrated two-slot cell must publish Normalized", string(data))
 		}
-		if strings.HasPrefix(defect, "content-") {
-			if len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || cell.Measurements != nil {
-				t.Fatalf("content finding must finish all probes without publishing a passing aggregate: %s", data)
+		if strings.HasPrefix(defect, "arbitrary-output") {
+			if len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || (cell.Measurements != nil) != passing {
+				t.Fatalf("answer wording must not suppress timings; invalid execution evidence must: %s", data)
 			}
 			findings := cell.Repetitions[0].FindingsByCategory
-			if len(findings["CONTENT"]) != 1 || len(findings["ISOLATION"]) != 0 || (len(findings["INFRASTRUCTURE"]) > 0) != (defect == "content-and-evidence") {
+			if len(findings["CONTENT"]) != 0 || len(findings["ISOLATION"]) != 0 || (len(findings["INFRASTRUCTURE"]) > 0) != (defect == "arbitrary-output-bad-evidence") {
 				t.Fatalf("content and infrastructure findings must remain distinct: %+v", findings)
 			}
 			for _, phase := range cell.Repetitions[0].Results {
