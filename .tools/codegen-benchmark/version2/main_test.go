@@ -310,18 +310,20 @@ func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 		Attempts: []result{{Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}}},
 	}}, runRecord{})
 
+	plain := strings.Join(strings.Fields(report), " ")
 	for _, want := range []string{
-		"| `org/model/BENCHMARK` | 2 | 2 | 20/20 (100.00%) | true | 0 |",
-		"| `org/model/BENCHMARK` | 10.00 s | 7 | 10 | 300 | 80 | 0 | 0 |",
-		"| `org/failed/BENCHMARK` | 1 | Not passed | 19/20 (95.00%) | false | 0 |",
-		"each agent turn's final OpenCode usage event",
+		"Workload: v1",
+		"org/model/BENCHMARK 2 Passed on submission 2 20/20 10s",
+		"org/failed/BENCHMARK 1 Not passed 19/20 0s",
 	} {
-		if !strings.Contains(report, want) {
-			t.Errorf("report: missing %q", want)
+		if !strings.Contains(plain, want) {
+			t.Errorf("report: missing %q in %s", want, report)
 		}
 	}
-	if strings.Contains(report, "Cache write") {
-		t.Error("report: contains unsupported cache-write metric")
+	for _, unwanted := range []string{"```", "|", "#", "Input tokens", "Failure", "SHA-256"} {
+		if strings.Contains(report, unwanted) {
+			t.Errorf("report contains unwanted detail %q", unwanted)
+		}
 	}
 }
 

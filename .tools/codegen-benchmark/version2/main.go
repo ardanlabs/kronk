@@ -31,7 +31,6 @@ const (
 	defaultAttempts      = 3
 	defaultSteps         = 40
 	defaultTimeout       = 30 * time.Minute
-	promptSeparator      = "\n================================================================================\n"
 	modelBenchmarkSuffix = "/BENCHMARK"
 )
 
@@ -110,7 +109,7 @@ func parseFlags() (options, error) {
 	flag.StringVar(&opts.reportDir, "run", "", "saved run directory to use with -report (defaults to latest)")
 	flag.Parse()
 	opts.configFile = filepath.Join(root, "zarf", "kms", "tools_model_config.yaml")
-	opts.promptFile = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "tic-tac-toe.md")
+	opts.promptFile = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "tic-tac-toe-"+workloadVersion+".md")
 	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "runs")
 	return opts, nil
 }
@@ -190,13 +189,8 @@ func run(opts options) (runErr error) {
 			record.Status = "failed"
 			record.Error = runErr.Error()
 		}
-		reportErr := generateReport(runDir, &record)
-		historyErr := appendHistory(filepath.Join(filepath.Dir(opts.outputDir), "history.md"), runDir, record, selected)
-		runErr = errors.Join(runErr, reportErr, historyErr)
+		runErr = errors.Join(runErr, generateReport(runDir, &record))
 	}()
-	if err := os.WriteFile(filepath.Join(runDir, "prompt.md"), []byte(prompt+"\n"), 0o644); err != nil {
-		return fmt.Errorf("codegen benchmark: writing prompt: %w", err)
-	}
 	fmt.Printf("Code-generation benchmark v2\n- server: %s\n- models: %d\n- maximum submissions/model: %d\n- grader feedback: %t\n- output: %s\n", host, len(selected), opts.attempts, opts.feedback, runDir)
 	for _, model := range selected {
 		if err := runModel(root, runDir, host, prompt, model, opts); err != nil {
@@ -751,11 +745,7 @@ func loadPrompt(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("codegen benchmark: reading prompt %s: %w", path, err)
 	}
-	base, _, ok := strings.Cut(string(data), promptSeparator)
-	if !ok {
-		return "", fmt.Errorf("codegen benchmark: prompt separator is missing from %s", path)
-	}
-	return strings.TrimSpace(base), nil
+	return strings.TrimSpace(string(data)), nil
 }
 
 func normalizeHost(host string) (string, error) {
