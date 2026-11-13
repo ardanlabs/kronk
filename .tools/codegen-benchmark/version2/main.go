@@ -272,6 +272,12 @@ func graderFeedback(grade gradeResult) string {
 			groups[index].count++
 		}
 	}
+	type repeatedFailure struct {
+		gradeCheck
+		count int
+	}
+	var failures []repeatedFailure
+	byScenarioFailure := make(map[string]int)
 	for _, check := range grade.Checks {
 		if check.Passed {
 			continue
@@ -283,7 +289,22 @@ func graderFeedback(grade gradeResult) string {
 			}
 			detail = stopped
 		}
-		fmt.Fprintf(&message, "\n- %s: %s\n", check.Name, detail)
+		check.Detail = detail
+		if strings.HasPrefix(check.Name, "scenario-") {
+			if index, exists := byScenarioFailure[detail]; exists {
+				failures[index].count++
+				continue
+			}
+			byScenarioFailure[detail] = len(failures)
+		}
+		failures = append(failures, repeatedFailure{gradeCheck: check, count: 1})
+	}
+	for _, failure := range failures {
+		label := failure.Name
+		if failure.count > 1 {
+			label = fmt.Sprintf("%s (%d scenarios; one example)", label, failure.count)
+		}
+		fmt.Fprintf(&message, "\n- %s: %s\n", label, failure.Detail)
 	}
 	if len(groups) > 0 {
 		message.WriteString("\nDistinct formatting differences (escaped bytes; one example per edit). Fix every occurrence, not only the example:\n")

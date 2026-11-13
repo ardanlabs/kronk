@@ -330,6 +330,40 @@ func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 	}
 }
 
+func TestGraderFeedbackRepeatedScenarioFailures(t *testing.T) {
+	grade := gradeResult{
+		Passed: 1, Total: 7,
+		Checks: []gradeCheck{
+			{Name: "scenario-X-line-1", Detail: "step 1: expected digit 1, actual control byte"},
+			{Name: "scenario-O-line-1", Detail: "step 1: expected digit 1, actual control byte"},
+			{Name: "scenario-draw", Detail: "step 1: expected digit 1, actual control byte"},
+			{Name: "scenario-replay-score", Detail: "step 1: expected score 1, actual score 0"},
+			{Name: "go-build", Detail: "build failed"},
+			{Name: "go-vet", Detail: "build failed"},
+			{Name: "scenario-passed", Passed: true},
+		},
+	}
+	feedback := graderFeedback(grade)
+	if strings.Count(feedback, "expected digit 1, actual control byte") != 1 ||
+		!strings.Contains(feedback, "scenario-X-line-1 (3 scenarios; one example)") {
+		t.Fatalf("identical scenario failures were not consolidated: %s", feedback)
+	}
+	for _, want := range []string{
+		"1/7 checks", "scenario-replay-score: step 1: expected score 1, actual score 0",
+		"go-build: build failed", "go-vet: build failed",
+	} {
+		if !strings.Contains(feedback, want) {
+			t.Errorf("feedback omitted %q: %s", want, feedback)
+		}
+	}
+	if strings.Contains(feedback, "scenario-passed") {
+		t.Fatalf("feedback included a passing check: %s", feedback)
+	}
+	if len(grade.Checks) != 7 || grade.Checks[2].Detail != grade.Checks[0].Detail || grade.Passed != 1 {
+		t.Fatal("feedback changed the recorded grade")
+	}
+}
+
 func TestRunSubmissions(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
