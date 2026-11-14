@@ -288,7 +288,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		metrics.AddChatRequest(e.model.modelInfo.ID, status)
 		metrics.AddChatError(e.model.modelInfo.ID, class)
 		if !s.job.requestStart.IsZero() {
-			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, class, time.Since(s.job.requestStart))
 		}
 
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, err, usage)
@@ -319,7 +319,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 				metrics.AddChatRequest(e.model.modelInfo.ID, status)
 				metrics.AddChatError(e.model.modelInfo.ID, class)
 				if !s.job.requestStart.IsZero() {
-					metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+					metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, class, time.Since(s.job.requestStart))
 				}
 				e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, outcome.err, usage)
 				return
@@ -461,7 +461,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		metrics.AddChatRequest(e.model.modelInfo.ID, "error")
 		metrics.AddChatError(e.model.modelInfo.ID, "tool-call-parse")
 		if !s.job.requestStart.IsZero() {
-			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, "tool-call-parse", time.Since(s.job.requestStart))
 		}
 		e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, err, usage)
 		return
@@ -519,7 +519,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		metrics.AddChatRequest(e.model.modelInfo.ID, status)
 		metrics.AddChatError(e.model.modelInfo.ID, class)
 		if !s.job.requestStart.IsZero() {
-			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, class, time.Since(s.job.requestStart))
 		}
 		return
 	}
@@ -530,7 +530,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
 	metrics.AddChatRequest(e.model.modelInfo.ID, "ok")
 	if !s.job.requestStart.IsZero() {
-		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, "", time.Since(s.job.requestStart))
 	}
 }
 
@@ -677,7 +677,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	metrics.AddChatRequest(e.model.modelInfo.ID, status)
 	metrics.AddChatError(e.model.modelInfo.ID, class)
 	if !job.requestStart.IsZero() {
-		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(job.requestStart))
+		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, class, time.Since(job.requestStart))
 	}
 
 	// Release the IMC reservation if this job reserved a session.

@@ -1082,7 +1082,7 @@ func (m *Model) recordChatFailure(ctx context.Context, requestStart time.Time, e
 	metrics.AddChatRequest(m.modelInfo.ID, status)
 	metrics.AddChatError(m.modelInfo.ID, class)
 	if !requestStart.IsZero() {
-		metrics.ObserveChatRequestDuration(m.modelInfo.ID, time.Since(requestStart))
+		metrics.ObserveChatRequestDuration(m.modelInfo.ID, class, time.Since(requestStart))
 	}
 }
 
