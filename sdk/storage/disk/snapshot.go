@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/imc"
 )
@@ -126,7 +127,12 @@ var _ imc.Session = (*session)(nil)
 
 // Open pins exactly the requested latest revision. Replaced or missing revisions
 // return fs.ErrNotExist. Metadata is verified without decompressing payloads.
-func (s *Store) Open(ctx context.Context, ref imc.Ref) (imc.Session, error) {
+func (s *Store) Open(ctx context.Context, ref imc.Ref) (_ imc.Session, retErr error) {
+	start := time.Now()
+	defer func() {
+		s.log(ctx, "disk-open", start, retErr, "model_id", ref.Key.Model,
+			"session_id", ref.Key.ID, "revision", ref.Revision)
+	}()
 	if ref.Key.Model == "" || ref.Key.ID == "" || ref.Revision == 0 {
 		return nil, errors.New("disk: invalid session reference")
 	}
@@ -207,6 +213,20 @@ func (s *session) Sizes() (int64, int64, []int64) {
 }
 
 func (s *session) Read(ctx context.Context, target, draft []byte, media [][]byte) (retErr error) {
+	start := time.Now()
+	defer func() {
+		if s.store.logFunc == nil {
+			return
+		}
+		mediaBytes := int64(0)
+		for _, size := range s.meta.Media {
+			mediaBytes += size
+		}
+		ref := s.meta.Record.Summary.Ref
+		s.store.log(ctx, "disk-read", start, retErr, "model_id", ref.Key.Model,
+			"session_id", ref.Key.ID, "revision", ref.Revision,
+			"target_bytes", s.meta.Target, "draft_bytes", s.meta.Draft, "media_bytes", mediaBytes)
+	}()
 	if s.closed {
 		return fs.ErrClosed
 	}
@@ -256,7 +276,13 @@ func (s *session) Read(ctx context.Context, target, draft []byte, media [][]byte
 	return ctx.Err()
 }
 
-func (s *session) Close() error {
+func (s *session) Close() (retErr error) {
+	start := time.Now()
+	defer func() {
+		ref := s.meta.Record.Summary.Ref
+		s.store.log(context.Background(), "disk-session-close", start, retErr,
+			"model_id", ref.Key.Model, "session_id", ref.Key.ID, "revision", ref.Revision)
+	}()
 	if s.closed {
 		return nil
 	}

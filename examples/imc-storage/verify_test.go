@@ -1,3 +1,5 @@
+// These fixtures and native diagnostic assertions are test-only. The runnable
+// example uses only the public storage contract and response usage.
 package main
 
 import (

@@ -38,9 +38,9 @@ func snapshot(id string) imc.Snapshot {
 	}
 }
 
-func newStore(t *testing.T, directory string) *disk.Store {
+func newStore(t *testing.T, directory string, opts ...disk.Option) *disk.Store {
 	t.Helper()
-	s, err := disk.New(directory)
+	s, err := disk.New(directory, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,21 @@ func TestMissingSnapshotPreservesHistory(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s = newStore(t, directory)
+	if err := os.WriteFile(filepath.Join(directory, ".tmp-interrupted"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var startup map[string]any
+	s = newStore(t, directory, disk.WithLog(func(_ context.Context, operation string, args ...any) {
+		if operation == "disk-new" {
+			startup = make(map[string]any)
+			for i := 0; i+1 < len(args); i += 2 {
+				startup[args[i].(string)] = args[i+1]
+			}
+		}
+	}))
+	if startup["sessions"] != 2 || startup["missing_snapshots"] != 1 || startup["reclaimed_files"] != 1 || startup["err"] != nil {
+		t.Fatalf("startup logging: %v", startup)
+	}
 	page, err := s.List(t.Context(), imc.ListQuery{Limit: 10})
 	if err != nil || len(page.Sessions) != 2 || !slices.ContainsFunc(page.Sessions, func(summary imc.Summary) bool {
 		return summary.Ref == missing.Record.Summary.Ref && summary.Prefix == missing.Record.Summary.Prefix
@@ -447,4 +461,145 @@ func TestReopenReclaimsInterruptedWrites(t *testing.T) {
 			t.Errorf("interrupted file was not reclaimed: %s/%v", name, err)
 		}
 	}
+}
+
+func TestLogging(t *testing.T) {
+	ctx := t.Context()
+	events := make(map[string][]map[string]any)
+	var s *disk.Store
+	log := func(gotCtx context.Context, operation string, args ...any) {
+		fields := make(map[string]any)
+		for i := 0; i+1 < len(args); i += 2 {
+			fields[args[i].(string)] = args[i+1]
+		}
+		events[operation] = append(events[operation], fields)
+		if strings.Contains(fmt.Sprint(args...), "final answer") || strings.Contains(fmt.Sprint(args...), "hello") {
+			t.Error("conversation content was logged")
+		}
+		if operation == "disk-save" {
+			if gotCtx != ctx {
+				t.Error("Save did not propagate its context")
+			}
+			// A synchronous callback can query storage without waiting for the
+			// operation's lock. A bounded context turns a lock leak into failure.
+			queryCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			if _, err := s.List(queryCtx, imc.ListQuery{Limit: 1}); err != nil {
+				t.Errorf("callback query: %v", err)
+			}
+		}
+	}
+	var err error
+	s, err = disk.New(t.TempDir(), disk.WithLog(log))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	v := snapshot("logged")
+	if err := s.Save(ctx, v); err != nil {
+		t.Fatal(err)
+	}
+	first := events["disk-save"][0]
+	if first["published"] != true || first["replaced"] != false || first["revision"] != uint64(1) || first["media_bytes"] != int64(6) {
+		t.Fatalf("initial save fields: %v", first)
+	}
+	if err := s.Save(ctx, v); !errors.Is(err, imc.ErrConflict) {
+		t.Fatalf("duplicate save: got %v, want conflict", err)
+	}
+	failed := events["disk-save"][1]
+	if loggedErr, ok := failed["err"].(error); !ok || !errors.Is(loggedErr, imc.ErrConflict) || failed["published"] != false {
+		t.Fatalf("failed save fields: %v", failed)
+	}
+	v.Record.Summary.Ref.Revision++
+	if err := s.Save(ctx, v); err != nil {
+		t.Fatal(err)
+	}
+	if fields := events["disk-save"][2]; fields["replaced"] != true || fields["published"] != true {
+		t.Fatalf("replacement fields: %v", fields)
+	}
+	if err := s.Save(ctx, snapshot("other")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Find(ctx, imc.FindQuery{Model: "model/a", Compatibility: [32]byte{3}, Limit: 1, MaxPrefixLength: 17}); err != nil {
+		t.Fatal(err)
+	}
+	if fields := events["disk-find"][0]; fields["eligible"] != 2 || fields["returned"] != 1 {
+		t.Fatalf("find fields: %v", fields)
+	}
+	if _, err := s.List(ctx, imc.ListQuery{Limit: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if fields := events["disk-list"][len(events["disk-list"])-1]; fields["returned"] != 1 || fields["has_more"] != true {
+		t.Fatalf("list fields: %v", fields)
+	}
+	h := open(t, s, v.Record.Summary.Ref)
+	if err := s.Close(); err == nil {
+		t.Fatal("Close succeeded with pinned session")
+	}
+	checkSession(t, h, v)
+	if err := s.Delete(ctx, v.Record.Summary.Ref.Key); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range []string{"disk-new", "disk-save", "disk-find", "disk-open", "disk-read", "disk-list", "disk-delete", "disk-session-close", "disk-close"} {
+		if len(events[operation]) == 0 {
+			t.Errorf("no callback for %s", operation)
+		}
+		for _, fields := range events[operation] {
+			if elapsed, ok := fields["elapsed"].(time.Duration); !ok || elapsed < 0 {
+				t.Errorf("invalid elapsed for %s: %v", operation, fields)
+			}
+		}
+	}
+}
+
+func TestLoggingSaveAfterPublication(t *testing.T) {
+	directory := t.TempDir()
+	var published bool
+	var loggedErr error
+	s := newStore(t, directory, disk.WithLog(func(_ context.Context, operation string, args ...any) {
+		if operation == "disk-save" {
+			for i := 0; i+1 < len(args); i += 2 {
+				switch args[i] {
+				case "published":
+					published = args[i+1].(bool)
+				case "err":
+					loggedErr, _ = args[i+1].(error)
+				}
+			}
+		}
+	}))
+	v := snapshot("retirement-error")
+	if err := s.Save(t.Context(), v); err != nil {
+		t.Fatal(err)
+	}
+	files, err := filepath.Glob(filepath.Join(directory, "snapshot-*.bin"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("snapshot files: %v/%v", files, err)
+	}
+	// Prevent retirement of the old file, after the replacement is published.
+	if err := os.Remove(files[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(files[0], 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(files[0], "blocked"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	v.Record.Summary.Ref.Revision++
+	err = s.Save(t.Context(), v)
+	if err == nil || loggedErr != err || !published {
+		t.Fatalf("post-publication error: returned=%v logged=%v published=%t", err, loggedErr, published)
+	}
+	checkSession(t, open(t, s, v.Record.Summary.Ref), v)
 }

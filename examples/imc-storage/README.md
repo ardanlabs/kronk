@@ -1,106 +1,64 @@
-# Disk-backed IMC example
+# Pluggable IMC storage example
 
-This example saves a conversation and its input checkpoint, exits, and continues the conversation in a fresh process. It reads the stored messages and final assistant text through the public `imc.Store` contract. Passing that conversation back to `Chat` lets IMC discover and restore a compatible checkpoint automatically. There is no manual native-state restore API here.
+This is one small example for trying an `imc.Store` implementation. It uses `sdk/storage/disk` by default, saves a conversation, exits, and continues that conversation in a fresh process. The model saves and restores checkpoints automatically; the application supplies the store and replays saved messages plus the final assistant text.
 
-Run commands from the repository root. Install matching native libraries first with `kronk libs --local`. Use the same model, projector, MTP drafter, configuration, and library version in every phase. A save requires an empty directory. Use a private directory: messages, assistant text, and checkpoints are sensitive and are not encrypted.
+## Run it
 
-## Text
+From the repository root, install matching native libraries and a text model:
 
-Install the model with `kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`, or use an already installed text model.
+```sh
+kronk libs --local
+kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
+```
+
+Run each phase as a separate process, using the same model, directory, configuration, and native libraries:
 
 ```sh
 MODEL="$HOME/.kronk/models/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"
 DIRECTORY=$(mktemp -d)
-for phase in save cold restore; do
-    make example-imc-storage ARGS="-phase $phase -model \"$MODEL\" -directory \"$DIRECTORY\"" || break
-done
+make example-imc-storage ARGS="-phase save -model \"$MODEL\" -directory \"$DIRECTORY\""
+make example-imc-storage ARGS="-phase restore -model \"$MODEL\" -directory \"$DIRECTORY\""
 ```
 
-- `save` asks for project code `713`, then checks that the latest snapshot contains native target state and the delivered assistant text.
-- `cold` reads the saved conversation but does **not** configure model storage. It runs the same continuation as `restore`, requiring the correct answer, zero cached tokens, no native restore, and unchanged saved history.
-- `restore` requires the correct answer, positive cached tokens, a native target restore event, and a newer revision under the same conversation ID. A cold fallback cannot pass.
+The `save` phase requires empty history. It asks for project code `713` and prints the assistant's answer, cached prompt-token count, and latest saved session ID/revision. The `restore` phase reads the latest saved conversation and appends its assistant response and a follow-up question. With a compatible checkpoint, expect positive cached tokens and a newer revision under the same session ID. Repeat `restore` to continue further.
 
-Successful phases print `PASS` and exit zero. A failed assertion exits nonzero. You can repeat `cold` and `restore` to extend the conversation further. The backend retains only the latest snapshot for each conversation, not every revision.
+This example does not assert an exact model answer or parse engine logs. A correct answer alone does not establish checkpoint reuse: inspect cached-token usage and session revisions. Storage is best effort; a missing or incompatible checkpoint can cause ordinary cold processing. An inference success is not a guarantee that saving succeeded. Check storage errors and the latest saved revision.
 
-## Vision and changed-image control
+Use `-lib-path /path/to/libraries` if needed. The example disables speculation and uses a 2048-token context. Use a dedicated, private directory: messages and checkpoints are sensitive, and the disk implementation does not encrypt them. Remove the directory when finished; the example never deletes history automatically.
 
-Use a compatible vision model and its matching projector. The example generates solid red and blue PNGs in memory; no external image fixtures are needed. For example, with these installed files:
+## Try your own implementation
 
-```sh
-MODEL="$HOME/.kronk/models/unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf"
-PROJ="$HOME/.kronk/models/unsloth/Qwen3.5-0.8B-GGUF/mmproj-Qwen3.5-0.8B-Q8_0.gguf"
-DIRECTORY=$(mktemp -d)
-for phase in save cold restore; do
-    make example-imc-storage ARGS="-scenario vision -phase $phase -model \"$MODEL\" -proj \"$PROJ\" -directory \"$DIRECTORY\"" || break
-done
-```
+In `main.go`, replace `disk.New(...)` with your backend's constructor. Its result must implement `imc.Store`; provide it to the existing `model.WithStorage(model.StorageConfig{Store: store})` call. Adjust backend-specific configuration and cleanup as needed. The application owns storage and unloads the model before closing it. `imc.Store` itself does not require a store-level `Close` method.
 
-The original image is red. Save, cold, and restore require `red`. The example also reads the snapshot payloads through `Session.Read` and verifies the saved image bytes. This extra verification uses a separate allocation bounded to 512 MiB of target state; it is an example limit, not the engine's storage limit. Vision runs disable speculation to isolate media restoration.
+The example's `continueConversation` function accepts `imc.Store`, not a disk-specific type. It uses `Open`, `Record`, and `Session.Close` to read history without allocating checkpoint buffers. IMC calls `Find`, verifies candidate prefixes, and reads compatible model state when processing the next request. The application does not manually restore native state or force a match by session ID.
 
-Run the changed-image control against a **separate original save**, before any restore has extended it:
+Implement the contract in `sdk/kronk/imc`:
 
-```sh
-CONTROL_DIRECTORY=$(mktemp -d)
-for phase in save changed-image; do
-    make example-imc-storage ARGS="-scenario vision -phase $phase -model \"$MODEL\" -proj \"$PROJ\" -directory \"$CONTROL_DIRECTORY\"" || break
-done
-```
+- `Save` consumes borrowed snapshot data synchronously and atomically publishes the latest revision. Do not retain borrowed slices or require another checkpoint-sized copy. Reject stale revisions with `imc.ErrConflict`.
+- `Find` returns a bounded, ordered set of eligible summaries, not a selected match. Do not read complete requests or checkpoint payloads during discovery. The model owns prefix matching and compatibility verification.
+- `Open` returns an exact pinned revision implementing `imc.Session`. Supply owned record metadata, uncompressed sizes, complete verified payload reads, and handle cleanup. Missing sessions/revisions return an error matching `fs.ErrNotExist`.
+- `List` provides paginated summaries; `Delete` removes discovery and future opens while preserving already-open readers.
 
-`changed-image` changes only the image to blue, preserving the original input text and not replaying the saved red answer. It requires `blue`, zero cached tokens, no native restore, a new conversation ID, and an unchanged original summary. This checks that matching text cannot authorize reuse of a different image. Start with a new directory to repeat this control; it deliberately leaves two conversations.
+Support concurrent calls and preserve wrapped context/I/O errors. The supplied store owns access isolation and namespacing. Compression, integrity checking, physical layout, and documented durability guarantees belong to the backend. The full interface comments are authoritative.
 
-## MTP: independent draft KV
+## Optional disk logging
 
-Use a model with own-KV MTP, such as this installed embedded-MTP model:
+The example passes `disk.WithLog(kronk.FmtLogger)` so disk operations are visible. Replace the formatter with any concurrency-safe function matching `func(context.Context, string, ...any)`, or omit `WithLog` for silence. This option belongs to the disk backend, not the storage interface. Custom stores choose their own logging configuration.
 
-```sh
-MODEL="$HOME/.kronk/models/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf"
-DIRECTORY=$(mktemp -d)
-for phase in save cold restore; do
-    make example-imc-storage ARGS="-scenario mtp-own -phase $phase -model \"$MODEL\" -directory \"$DIRECTORY\"" || break
-done
-```
+The disk callback receives one completion event per operation, outside storage locks, with key/value fields including duration and error. Relevant events include session IDs/revisions, uncompressed payload sizes, discovery counts, and startup recovery counts. A save's `published` field distinguishes an error before publication from an error after the replacement became visible. Messages, assistant text, payload contents, and pagination cursors are omitted; returned errors may contain filesystem paths. Startup and close use a background context; other calls retain their operation context.
 
-For a separate MTP head, add `-mtp-drafter /path/to/matching-mtp.gguf` in every phase. Do not pass a separate head as the target model.
+A successful disk open/read is not a claim that the engine matched or restored the checkpoint. Diagnostic names and fields are not a versioned API.
 
-The expected answer is `713` exactly eight times, giving drafting enough output to run. Every phase requires positive drafted tokens and no draft-disable reason. Save and restore require nonempty draft state. Restore additionally requires successful native target and draft restores, restored hidden-state evidence, and resume source `restored-draft-kv`.
+## Maintainer verification
 
-## MTP: shared target KV
-
-Use a model with shared-target-KV MTP and its matching head:
-
-```sh
-MODEL="$HOME/.kronk/models/unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf"
-DRAFTER="$HOME/.kronk/models/unsloth/gemma-4-E4B-it-GGUF/mtp-gemma-4-E4B-it-Q4_K_M.gguf"
-DIRECTORY=$(mktemp -d)
-for phase in save cold restore; do
-    make example-imc-storage ARGS="-scenario mtp-shared -phase $phase -model \"$MODEL\" -mtp-drafter \"$DRAFTER\" -directory \"$DIRECTORY\"" || break
-done
-```
-
-This scenario requires active drafting, **empty** independent draft state, and, on restore, native target restoration with resume source `shared-target-kv`. It must not report an independent draft restore.
-
-## Native failure-recovery verification
-
-The opt-in `TestFailureRecovery` uses a real text model, native checkpoints, and temporary disk stores. It injects failures only at the storage boundary. Ordinary test runs skip it unless `KRONK_IMC_TEST_MODEL` is set.
-
-Run from the repository root:
+The larger verification harness is test-only, not part of the runnable example. Ordinary tests skip native scenarios unless model paths are supplied. For the text cold/restart controls and all 13 failure-recovery cases:
 
 ```sh
 GITHUB_WORKSPACE="$PWD" \
 KRONK_IMC_TEST_MODEL="$HOME/.kronk/models/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf" \
-go -C examples test -race ./imc-storage -run '^TestFailureRecovery$' -count=2 -timeout=5m -v
+go -C examples test -race ./imc-storage -run '^(TestStorageScenarios|TestFailureRecovery)$' -count=1 -timeout=5m -v
 ```
 
-Set `KRONK_IMC_TEST_LIB_PATH` if the native libraries are outside the default directory. The test disables speculation and uses a 500 ms storage timeout; it is intended for the small text fixture above. Each case has its own temporary directory, which the test runner removes.
+Optional native scenarios use `KRONK_IMC_TEST_VISION_MODEL` with `KRONK_IMC_TEST_VISION_PROJ`, `KRONK_IMC_TEST_MTP_OWN_MODEL` (and optional `KRONK_IMC_TEST_MTP_OWN_DRAFTER`), or `KRONK_IMC_TEST_MTP_SHARED_MODEL` with `KRONK_IMC_TEST_MTP_SHARED_DRAFTER`. Set `KRONK_IMC_TEST_LIB_PATH` for non-default libraries. Only configure the scenarios you intend to run; larger models may need a longer test timeout.
 
-The cases cover initial and replacement save errors, a save timeout, an error after successful publication, lookup/open/read/close errors, lookup and read timeouts, and real snapshot checksum damage, truncation, and deletion. Every case requires a correct answer. Save failures must preserve RAM reuse and allow a later full save under the same conversation ID. Failed imports must rebuild with zero reuse. The final check closes and reopens the store and loads a fresh model, requiring native restoration of the recovered snapshot and an increased revision. This is fresh-model verification within the test process, not a process-crash simulation.
-
-The `missing` case verifies that a deleted snapshot does not prevent reopening the store or restoring a healthy replacement. The missing snapshot's summary remains available to `List` and `Find`, but `Open` returns an error matching `fs.ErrNotExist`. Malformed summaries and filesystem errors other than not-found still prevent startup.
-
-## Limits of this verification
-
-These are local, separate-process functional checks, not performance benchmarks or reliability-pressure tests. They do not establish identical sampling behavior across restarts. Expected answers are deliberately strict; a different model may fail the answer check even when persistence works. MTP scenarios explicitly select MTP, never automatic target-only fallback.
-
-Native restore and MTP-resume assertions inspect structured engine diagnostics through the configured logger. Those diagnostic event names are not a stable part of `imc.Store`; the verifier must track changes to them. The example does not interpret private restore metadata.
-
-Failure tests do not simulate disk-full hardware, process crashes, power loss, noncooperative storage implementations, or MTP/media-specific recovery. Chat-history UI integration remains separate follow-up work. Remove directories created by the CLI phases when finished; the example never deletes saved conversations automatically.
+These tests retain cold controls, changed-image rejection, own/shared-KV MTP checks, and storage failure recovery. They reopen stores and load fresh models within the test process; the example commands above exercise separate processes. They are functional checks, not performance benchmarks, process-crash simulations, or reliability-pressure runs. Native assertions inspect engine diagnostics only in test code and must track diagnostic changes. MTP/media-specific failure recovery and chat-history UI integration remain outside this example.

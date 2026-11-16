@@ -26,7 +26,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/imc"
 )
 
@@ -37,6 +39,7 @@ const maxResults = 1000
 // Open sessions pin old files until closed, including after Delete or Save.
 type Store struct {
 	directory string
+	logFunc   applog.Logger
 	lock      *os.File
 	gate      chan struct{}
 	closed    bool
@@ -53,13 +56,45 @@ type entry struct {
 
 var _ imc.Store = (*Store)(nil)
 
+// Option configures a Store during construction.
+type Option func(*Store)
+
+// WithLog supplies an optional logging function. A nil function disables logging.
+// The function must be concurrency-safe. Calls are synchronous, outside storage
+// locks, and receive operation context and key/value fields, never conversation
+// content. New and Close, which have no context parameter, use a background
+// context. Errors are passed as returned and may contain filesystem paths.
+func WithLog(log applog.Logger) Option {
+	return func(s *Store) { s.logFunc = log }
+}
+
+func (s *Store) log(ctx context.Context, operation string, start time.Time, err error, args ...any) {
+	if s.logFunc != nil {
+		args = append(args, "elapsed", time.Since(start), "err", err)
+		s.logFunc(ctx, operation, args...)
+	}
+}
+
 // New opens or creates a dedicated storage directory. It rejects an already
 // open directory and invalid metadata rather than silently losing history.
 // Missing snapshots do not prevent opening: their summaries remain listable,
 // and Open returns an error matching fs.ErrNotExist for those snapshots.
 // Interrupted writes are reclaimed on reopening. No files outside directory
 // are used; do not share this directory with other application data.
-func New(directory string) (*Store, error) {
+func New(directory string, opts ...Option) (_ *Store, retErr error) {
+	var s Store
+	for _, opt := range opts {
+		opt(&s)
+	}
+
+	start := time.Now()
+	var missing, reclaimed int
+
+	defer func() {
+		s.log(context.Background(), "disk-new", start, retErr,
+			"sessions", len(s.entries), "missing_snapshots", missing, "reclaimed_files", reclaimed)
+	}()
+
 	if directory == "" {
 		return nil, errors.New("disk: directory is required")
 	}
@@ -78,12 +113,11 @@ func New(directory string) (*Store, error) {
 		return nil, fmt.Errorf("disk: lock directory: %w", err)
 	}
 
-	s := Store{
-		directory: directory, lock: lock, gate: make(chan struct{}, 1),
-		entries: make(map[imc.Key]entry), pins: make(map[string]int), retired: make(map[string]bool),
-	}
+	s.directory, s.lock, s.gate = directory, lock, make(chan struct{}, 1)
+	s.entries, s.pins, s.retired = make(map[imc.Key]entry), make(map[string]int), make(map[string]bool)
 
-	if err := s.load(); err != nil {
+	missing, reclaimed, err = s.load()
+	if err != nil {
 		return nil, errors.Join(err, lock.Close())
 	}
 
@@ -118,7 +152,10 @@ func (s *Store) release() {
 // Close releases the directory lock. Unload models and close all Session handles
 // first. If handles remain, Close returns an error and the Store stays open.
 // Repeated successful closes are harmless. No saved conversations are deleted.
-func (s *Store) Close() error {
+func (s *Store) Close() (retErr error) {
+	start := time.Now()
+	defer func() { s.log(context.Background(), "disk-close", start, retErr) }()
+
 	s.gate <- struct{}{}
 	defer s.release()
 
@@ -145,10 +182,10 @@ func validSummary(summary imc.Summary) bool {
 		summary.Prefix.Length > 0 && !summary.CreatedAt.IsZero() && !summary.SavedAt.IsZero()
 }
 
-func (s *Store) load() error {
+func (s *Store) load() (missing, reclaimed int, retErr error) {
 	files, err := os.ReadDir(s.directory)
 	if err != nil {
-		return err
+		return missing, reclaimed, err
 	}
 
 	live := make(map[string]bool)
@@ -161,20 +198,24 @@ func (s *Store) load() error {
 
 		var e entry
 		if err := readJSONFile(filepath.Join(s.directory, name), 64<<10, &e); err != nil {
-			return fmt.Errorf("disk: read summary %s: %w", name, err)
+			return missing, reclaimed, fmt.Errorf("disk: read summary %s: %w", name, err)
 		}
 
 		if e.Version != 1 {
-			return imc.ErrVersion
+			return missing, reclaimed, imc.ErrVersion
 		}
 
 		if !validSummary(e.Summary) || keyName(e.Summary.Ref.Key) != name ||
 			filepath.Base(e.Blob) != e.Blob || !strings.HasPrefix(e.Blob, "snapshot-") || !strings.HasSuffix(e.Blob, ".bin") {
-			return fmt.Errorf("disk: invalid summary %s: %w", name, imc.ErrCorrupt)
+			return missing, reclaimed, fmt.Errorf("disk: invalid summary %s: %w", name, imc.ErrCorrupt)
 		}
 
-		if _, err := os.Stat(filepath.Join(s.directory, e.Blob)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("disk: missing snapshot: %w", errors.Join(imc.ErrCorrupt, err))
+		_, err := os.Stat(filepath.Join(s.directory, e.Blob))
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			missing++
+		case err != nil:
+			return missing, reclaimed, fmt.Errorf("disk: missing snapshot: %w", errors.Join(imc.ErrCorrupt, err))
 		}
 
 		s.entries[e.Summary.Ref.Key] = e
@@ -185,12 +226,13 @@ func (s *Store) load() error {
 		name := file.Name()
 		if strings.HasPrefix(name, ".tmp-") || (strings.HasPrefix(name, "snapshot-") && strings.HasSuffix(name, ".bin") && !live[name]) {
 			if err := os.Remove(filepath.Join(s.directory, name)); err != nil {
-				return fmt.Errorf("disk: reclaim interrupted write: %w", err)
+				return missing, reclaimed, fmt.Errorf("disk: reclaim interrupted write: %w", err)
 			}
+			reclaimed++
 		}
 	}
 
-	return nil
+	return missing, reclaimed, nil
 }
 
 // Save compresses borrowed payloads directly to a new file and atomically
@@ -198,6 +240,22 @@ func (s *Store) load() error {
 // Failures before publication leave the previous snapshot intact. A failure
 // syncing the directory after publication has an uncertain commit outcome.
 func (s *Store) Save(ctx context.Context, snapshot imc.Snapshot) (retErr error) {
+	start := time.Now()
+	var exists, published bool
+	defer func() {
+		if s.logFunc == nil {
+			return
+		}
+		mediaBytes := int64(0)
+		for _, media := range snapshot.Media {
+			mediaBytes += int64(len(media))
+		}
+		ref := snapshot.Record.Summary.Ref
+		s.log(ctx, "disk-save", start, retErr, "model_id", ref.Key.Model, "session_id", ref.Key.ID,
+			"revision", ref.Revision, "replaced", exists, "published", published,
+			"target_bytes", len(snapshot.Target), "draft_bytes", len(snapshot.Draft), "media_bytes", mediaBytes)
+	}()
+
 	if err := s.acquire(ctx); err != nil {
 		return err
 	}
@@ -228,7 +286,6 @@ func (s *Store) Save(ctx context.Context, snapshot imc.Snapshot) (retErr error) 
 		return err
 	}
 
-	published := false
 	defer func() {
 		if !published {
 			retErr = errors.Join(retErr, os.Remove(filepath.Join(s.directory, blob)))
@@ -306,7 +363,16 @@ func (s *Store) retire(blob string) error {
 
 // Find returns recent eligible summaries without reading checkpoint or request
 // files. Limit must be between 1 and 1000; MaxPrefixLength must be positive.
-func (s *Store) Find(ctx context.Context, query imc.FindQuery) ([]imc.Summary, error) {
+func (s *Store) Find(ctx context.Context, query imc.FindQuery) (result []imc.Summary, retErr error) {
+	start := time.Now()
+	var eligible int
+
+	defer func() {
+		s.log(ctx, "disk-find", start, retErr, "model_id", query.Model, "limit", query.Limit,
+			"max_prefix_length", query.MaxPrefixLength, "saved_after", query.SavedAfter,
+			"eligible", eligible, "returned", len(result))
+	}()
+
 	if query.Model == "" || query.Limit < 1 || query.Limit > maxResults || query.MaxPrefixLength < 1 {
 		return nil, errors.New("disk: invalid find query")
 	}
@@ -333,6 +399,8 @@ func (s *Store) Find(ctx context.Context, query imc.FindQuery) ([]imc.Summary, e
 
 	slices.SortFunc(summaries, compareSummary)
 
+	eligible = len(summaries)
+
 	return summaries[:min(query.Limit, len(summaries))], nil
 }
 
@@ -349,7 +417,13 @@ type cursor struct {
 // List returns a live, keyset-paginated history of latest conversation snapshots.
 // Limit must be between 1 and 1000. Cursors are opaque, tied to the query's model
 // and limit, and not interchangeable with other storage implementations.
-func (s *Store) List(ctx context.Context, query imc.ListQuery) (imc.Page, error) {
+func (s *Store) List(ctx context.Context, query imc.ListQuery) (page imc.Page, retErr error) {
+	start := time.Now()
+	defer func() {
+		s.log(ctx, "disk-list", start, retErr, "model_id", query.Model, "limit", query.Limit,
+			"returned", len(page.Sessions), "has_more", page.NextCursor != "")
+	}()
+
 	if query.Limit < 1 || query.Limit > maxResults {
 		return imc.Page{}, errors.New("disk: invalid list limit")
 	}
@@ -390,7 +464,7 @@ func (s *Store) List(ctx context.Context, query imc.ListQuery) (imc.Page, error)
 	}
 
 	slices.SortFunc(summaries, compareSummary)
-	page := imc.Page{Sessions: summaries[:min(query.Limit, len(summaries))]}
+	page = imc.Page{Sessions: summaries[:min(query.Limit, len(summaries))]}
 
 	if len(summaries) > query.Limit {
 		data, err := json.Marshal(cursor{query.Model, query.Limit, page.Sessions[len(page.Sessions)-1]})
@@ -406,7 +480,15 @@ func (s *Store) List(ctx context.Context, query imc.ListQuery) (imc.Page, error)
 
 // Delete removes a conversation from discovery. Open sessions remain readable.
 // An absent conversation is already deleted and succeeds.
-func (s *Store) Delete(ctx context.Context, key imc.Key) error {
+func (s *Store) Delete(ctx context.Context, key imc.Key) (retErr error) {
+	start := time.Now()
+	var exists, published bool
+
+	defer func() {
+		s.log(ctx, "disk-delete", start, retErr, "model_id", key.Model, "session_id", key.ID,
+			"found", exists, "published", published)
+	}()
+
 	if key.Model == "" || key.ID == "" {
 		return errors.New("disk: invalid key")
 	}
@@ -427,6 +509,9 @@ func (s *Store) Delete(ctx context.Context, key imc.Key) error {
 	}
 
 	delete(s.entries, key)
+
+	published = true
+
 	if err := syncDirectory(s.directory); err != nil {
 		return err
 	}
