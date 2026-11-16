@@ -41,19 +41,19 @@ func (datasetConflict) Is(target error) bool { return target == ErrDatasetConfli
 
 // Dataset describes one immutable version of a reusable preparation dataset.
 type Dataset struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	Version       int               `json:"version"`
-	RecordCount   int               `json:"record_count"`
-	TrainingReady bool              `json:"training_ready"`
-	CreatedAt     time.Time         `json:"created_at"`
-	UpdatedAt     time.Time         `json:"updated_at"`
-	Versions      []int             `json:"versions"`
-	Documents     []DatasetDocument `json:"documents"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	Version       int        `json:"version"`
+	RecordCount   int        `json:"record_count"`
+	TrainingReady bool       `json:"training_ready"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	Versions      []int      `json:"versions"`
+	Documents     []Document `json:"documents"`
 }
 
-// DatasetDocument identifies a prepared contribution, not the original upload.
-type DatasetDocument struct {
+// Document identifies a prepared contribution, not the original upload.
+type Document struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	RecordCount int    `json:"record_count"`
@@ -61,8 +61,8 @@ type DatasetDocument struct {
 	PageEnd     int    `json:"page_end"`
 }
 
-// DatasetAddition binds verified records to an idempotent preparation run.
-type DatasetAddition struct {
+// Addition binds verified records to an idempotent preparation run.
+type Addition struct {
 	PublicationID string
 	Source        uploads.File
 	PageStart     int
@@ -71,7 +71,7 @@ type DatasetAddition struct {
 }
 
 type datasetContribution struct {
-	Document DatasetDocument   `json:"document"`
+	Document Document          `json:"document"`
 	SHA256   string            `json:"sha256"`
 	Records  []training.Record `json:"records"`
 }
@@ -83,35 +83,47 @@ type datasetSnapshot struct {
 	Digest        string                `json:"digest"`
 }
 
-// DatasetStore persists immutable snapshots outside individual job workspaces.
+// Store persists immutable snapshots outside individual job workspaces.
 // Atomic exclusive links serialize publishers, including different processes.
-type DatasetStore struct{ root string }
+type Store struct{ root string }
 
-func NewDatasetStore(path string) (*DatasetStore, error) {
-	if strings.TrimSpace(path) == "" {
+// Config supplies the directory that holds dataset snapshots.
+type Config struct {
+	Root string
+}
+
+// New creates the dataset directory when it does not exist.
+func New(cfg Config) (*Store, error) {
+	if strings.TrimSpace(cfg.Root) == "" {
 		return nil, fmt.Errorf("%w: dataset storage root is required", tmprl.ErrInvalidArgument)
 	}
-	absolute, err := filepath.Abs(path)
+	absolute, err := filepath.Abs(cfg.Root)
 	if err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(absolute, 0o700); err != nil {
 		return nil, err
 	}
-	return &DatasetStore{root: absolute}, nil
+	return &Store{root: absolute}, nil
 }
 
-func (s *DatasetStore) Create(ctx context.Context, name string) (Dataset, error) {
+func (s *Store) Create(ctx context.Context, name string) (Dataset, error) {
 	return s.CreateOperation(ctx, "dataset-"+rand.Text(), name, "", "")
 }
 
 // CreateOperation recovers a creation using its allocated dataset and operation IDs.
-func (s *DatasetStore) CreateOperation(ctx context.Context, id, name, operation, digest string) (Dataset, error) {
+func (s *Store) CreateOperation(ctx context.Context, id, name, operation, digest string) (Dataset, error) {
+	return s.write(ctx, func(ctx context.Context) (Dataset, error) { return s.create(ctx, id, name, operation, digest) })
+}
+
+// write runs one publication under the store lock and refreshes the index. A caller
+// that already holds the lock refreshes the index itself, after its catalog commit.
+func (s *Store) write(ctx context.Context, publish func(context.Context) (Dataset, error)) (Dataset, error) {
 	maintainIndex := ctx.Value(lockKey{}) != s.root
 	var dataset Dataset
 	err := s.WithLock(ctx, func(ctx context.Context) error {
 		var err error
-		dataset, err = s.create(ctx, id, name, operation, digest)
+		dataset, err = publish(ctx)
 		if err == nil && maintainIndex {
 			err = s.BuildIndex(ctx)
 		}
@@ -120,7 +132,7 @@ func (s *DatasetStore) CreateOperation(ctx context.Context, id, name, operation,
 	return dataset, err
 }
 
-func (s *DatasetStore) create(ctx context.Context, id, name, operation, digest string) (Dataset, error) {
+func (s *Store) create(ctx context.Context, id, name, operation, digest string) (Dataset, error) {
 	name = strings.TrimSpace(name)
 	if !ValidID(id) || name == "" || len(name) > 200 {
 		return Dataset{}, fmt.Errorf("%w: dataset name must contain 1–200 bytes", tmprl.ErrInvalidArgument)
@@ -134,7 +146,7 @@ func (s *DatasetStore) create(ctx context.Context, id, name, operation, digest s
 		return Dataset{}, err
 	}
 	now := time.Now().UTC()
-	dataset := Dataset{ID: id, Name: name, Version: 1, CreatedAt: now, UpdatedAt: now, Versions: []int{1}, Documents: []DatasetDocument{}}
+	dataset := Dataset{ID: id, Name: name, Version: 1, CreatedAt: now, UpdatedAt: now, Versions: []int{1}, Documents: []Document{}}
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
 		return Dataset{}, err
@@ -146,7 +158,7 @@ func (s *DatasetStore) create(ctx context.Context, id, name, operation, digest s
 	return dataset, s.publish(ctx, datasetSnapshot{Dataset: dataset, Operation: operation, Digest: digest})
 }
 
-func (s *DatasetStore) List(ctx context.Context) ([]Dataset, error) {
+func (s *Store) List(ctx context.Context) ([]Dataset, error) {
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
 		return nil, err
@@ -183,13 +195,13 @@ func (s *DatasetStore) List(ctx context.Context) ([]Dataset, error) {
 }
 
 // Get opens latest when version is zero, or an exact historical snapshot.
-func (s *DatasetStore) Get(ctx context.Context, id string, version int) (Dataset, error) {
+func (s *Store) Get(ctx context.Context, id string, version int) (Dataset, error) {
 	snapshot, err := s.read(ctx, id, version)
 	return snapshot.Dataset, err
 }
 
 // Records returns a copy decoded from the requested immutable snapshot.
-func (s *DatasetStore) Records(ctx context.Context, id string, version int) ([]training.Record, error) {
+func (s *Store) Records(ctx context.Context, id string, version int) ([]training.Record, error) {
 	snapshot, err := s.read(ctx, id, version)
 	if err != nil {
 		return nil, err
@@ -199,21 +211,11 @@ func (s *DatasetStore) Records(ctx context.Context, id string, version int) ([]t
 
 // Add publishes only this document's verified contribution. Concurrent additions
 // merge against the latest version; removed documents are never resurrected.
-func (s *DatasetStore) Add(ctx context.Context, id string, baseVersion int, addition DatasetAddition) (Dataset, error) {
-	maintainIndex := ctx.Value(lockKey{}) != s.root
-	var dataset Dataset
-	err := s.WithLock(ctx, func(ctx context.Context) error {
-		var err error
-		dataset, err = s.add(ctx, id, baseVersion, addition)
-		if err == nil && maintainIndex {
-			err = s.BuildIndex(ctx)
-		}
-		return err
-	})
-	return dataset, err
+func (s *Store) Add(ctx context.Context, id string, baseVersion int, addition Addition) (Dataset, error) {
+	return s.write(ctx, func(ctx context.Context) (Dataset, error) { return s.add(ctx, id, baseVersion, addition) })
 }
 
-func (s *DatasetStore) add(ctx context.Context, id string, baseVersion int, addition DatasetAddition) (Dataset, error) {
+func (s *Store) add(ctx context.Context, id string, baseVersion int, addition Addition) (Dataset, error) {
 	if addition.PublicationID == "" || addition.Source.ID == "" || addition.Source.Name == "" || baseVersion < 1 || len(addition.Records) == 0 {
 		return Dataset{}, fmt.Errorf("%w: prepared document, records, and base version are required", tmprl.ErrInvalidArgument)
 	}
@@ -268,7 +270,7 @@ func (s *DatasetStore) add(ctx context.Context, id string, baseVersion int, addi
 		if len(records) == 0 {
 			return Dataset{}, ErrQuestionsExist
 		}
-		document := DatasetDocument{ID: addition.PublicationID, Name: addition.Source.Name, RecordCount: len(records), PageStart: addition.PageStart, PageEnd: addition.PageEnd}
+		document := Document{ID: addition.PublicationID, Name: addition.Source.Name, RecordCount: len(records), PageStart: addition.PageStart, PageEnd: addition.PageEnd}
 		snapshot.Contributions = append(snapshot.Contributions, datasetContribution{Document: document, SHA256: addition.Source.SHA256, Records: records})
 		if err := training.ValidateRecords(snapshot.records()); err != nil {
 			return Dataset{}, fmt.Errorf("%w: combined dataset: %s", ErrDatasetConflict, err)
@@ -286,26 +288,18 @@ func (s *DatasetStore) add(ctx context.Context, id string, baseVersion int, addi
 
 // Remove excludes a contribution without touching uploads, historical versions,
 // or trained adapters. The base version prevents stale destructive edits.
-func (s *DatasetStore) Remove(ctx context.Context, id string, version int, documentID string) (Dataset, error) {
+func (s *Store) Remove(ctx context.Context, id string, version int, documentID string) (Dataset, error) {
 	return s.RemoveOperation(ctx, id, version, documentID, "remove/"+documentID, "")
 }
 
 // RemoveOperation records the exact operation identity for publication recovery.
-func (s *DatasetStore) RemoveOperation(ctx context.Context, id string, version int, documentID, operation, digest string) (Dataset, error) {
-	maintainIndex := ctx.Value(lockKey{}) != s.root
-	var dataset Dataset
-	err := s.WithLock(ctx, func(ctx context.Context) error {
-		var err error
-		dataset, err = s.remove(ctx, id, version, documentID, operation, digest)
-		if err == nil && maintainIndex {
-			err = s.BuildIndex(ctx)
-		}
-		return err
+func (s *Store) RemoveOperation(ctx context.Context, id string, version int, documentID, operation, digest string) (Dataset, error) {
+	return s.write(ctx, func(ctx context.Context) (Dataset, error) {
+		return s.remove(ctx, id, version, documentID, operation, digest)
 	})
-	return dataset, err
 }
 
-func (s *DatasetStore) remove(ctx context.Context, id string, version int, documentID, operation, digest string) (Dataset, error) {
+func (s *Store) remove(ctx context.Context, id string, version int, documentID, operation, digest string) (Dataset, error) {
 	snapshot, err := s.read(ctx, id, 0)
 	if err != nil {
 		return Dataset{}, err
@@ -322,7 +316,7 @@ func (s *DatasetStore) remove(ctx context.Context, id string, version int, docum
 	return snapshot.Dataset, s.publish(ctx, snapshot)
 }
 
-func sameSource(sha string, document DatasetDocument, source string, pageStart, pageEnd int) bool {
+func sameSource(sha string, document Document, source string, pageStart, pageEnd int) bool {
 	return sha == source && document.PageStart == pageStart && document.PageEnd == pageEnd
 }
 
@@ -338,7 +332,7 @@ func (snapshot *datasetSnapshot) advance(operation, digest string) {
 	snapshot.Dataset.Version++
 	snapshot.Dataset.UpdatedAt = time.Now().UTC()
 	snapshot.Dataset.Versions = append(snapshot.Dataset.Versions, snapshot.Dataset.Version)
-	snapshot.Dataset.Documents = []DatasetDocument{}
+	snapshot.Dataset.Documents = []Document{}
 	for _, contribution := range snapshot.Contributions {
 		snapshot.Dataset.Documents = append(snapshot.Dataset.Documents, contribution.Document)
 	}
@@ -348,7 +342,7 @@ func (snapshot *datasetSnapshot) advance(operation, digest string) {
 	snapshot.Operation, snapshot.Digest = operation, digest
 }
 
-func (s *DatasetStore) read(ctx context.Context, id string, version int) (datasetSnapshot, error) {
+func (s *Store) read(ctx context.Context, id string, version int) (datasetSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return datasetSnapshot{}, err
 	}
@@ -415,7 +409,7 @@ func (s *DatasetStore) read(ctx context.Context, id string, version int) (datase
 	return snapshot, nil
 }
 
-func (s *DatasetStore) publish(ctx context.Context, snapshot datasetSnapshot) error {
+func (s *Store) publish(ctx context.Context, snapshot datasetSnapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

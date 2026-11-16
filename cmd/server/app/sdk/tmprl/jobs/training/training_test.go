@@ -339,7 +339,7 @@ func testPreparationOnlySavedDataset(t *testing.T, db *moxiedb.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := datasets.New(j.Datasets(), j, db)
+	service := datasets.New(datasets.Config{Files: j.Datasets(), Job: j, DB: db})
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func testPreparationOnlySavedDataset(t *testing.T, db *moxiedb.DB) {
 	}
 	// Preserve an unrelated existing contribution throughout preparation.
 	original := optimization.Record{Prompt: "When does the harbor open?", Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: "old-upload", FactID: "harbor-opening"}
-	destination, err = service.Add(ctx, destination.ID, destination.Version, datasetstore.DatasetAddition{
+	destination, err = service.Add(ctx, destination.ID, destination.Version, datasetstore.Addition{
 		PublicationID: "old-run", Source: uploads.File{ID: "old-upload", Name: "harbor.txt", SHA256: strings.Repeat("a", 64)}, Records: []optimization.Record{original},
 	})
 	if err != nil {
@@ -485,7 +485,7 @@ func testPreparationOnlySavedDataset(t *testing.T, db *moxiedb.DB) {
 	}
 	if db != nil {
 		// The saved status keeps the fixed reason but never the failure text or raw types.
-		rows, _, err := service.ListCatalogRuns(ctx, datasets.RunFilter{PageSize: 50, Mode: "preparation"})
+		rows, _, err := service.ListRuns(ctx, datasets.RunFilter{PageSize: 50, Mode: "preparation"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -568,7 +568,7 @@ func TestTrainingJob(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			service := datasets.New(trainingJob.Datasets(), trainingJob)
+			service := datasets.New(datasets.Config{Files: trainingJob.Datasets(), Job: trainingJob})
 			request := job.Request{Model: "gemma", DatasetID: dataset.ID}
 			if test.document {
 				request.DatasetID = ""
@@ -788,7 +788,7 @@ func TestTrainingJob(t *testing.T) {
 			for !found {
 				var next []byte
 				for {
-					page, token, err := service.ListRuns(ctx, tmprl.ListOptions{PageSize: 100, NextPageToken: next, Statuses: []tmprl.Status{test.status}})
+					page, token, err := service.ListRuns(ctx, datasets.RunFilter{PageSize: 100, NextPageToken: next, Statuses: []tmprl.Status{test.status}})
 					if err != nil {
 						t.Fatal(err)
 					}

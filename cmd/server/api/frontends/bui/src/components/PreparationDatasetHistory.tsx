@@ -56,7 +56,7 @@ export function DatasetDownload({ dataset, initialVersion }: { dataset: Preparat
   </div>;
 }
 
-export default function PreparationDatasetHistory({ onOpen }: { onOpen: (id: string) => void }) {
+export default function PreparationDatasetHistory() {
   const [datasets, setDatasets] = useState<PreparationDataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -75,22 +75,20 @@ export default function PreparationDatasetHistory({ onOpen }: { onOpen: (id: str
       <div><span>Preparation</span><h3>Prepared datasets</h3></div>
       <div className="fine-actions">
         <button className="btn btn-secondary" type="button" disabled={loading} onClick={() => setAttempt((value) => value + 1)}>Refresh</button>
-        <button className="btn btn-primary" type="button" onClick={() => onOpen('')}>New dataset</button>
       </div>
     </div>
     {loading && <p role="status">Loading datasets…</p>}
     {error && <p className="fine-error" role="alert">{error} Select Refresh to retry.</p>}
-    {!loading && !error && datasets.length === 0 && <p>No prepared datasets yet. Create a dataset and add your first document.</p>}
+    {!loading && !error && datasets.length === 0 && <p>No prepared datasets yet. Start one from Preparation runs with + New preparation.</p>}
     <div className="fine-dataset-collection">
     {datasets.map((dataset) => <article className="fine-panel fine-dataset-card" key={`${dataset.id}:${dataset.version}`}>
       <div className="fine-panel-heading">
-        <div><h3>{dataset.name}</h3><p className="fine-action-note">{dataset.documents.length} documents · {dataset.record_count} examples · Version {dataset.version}</p></div>
+        <div><h3>{dataset.name}</h3><p className="fine-action-note">{dataset.documents.length} {dataset.documents.length === 1 ? 'document' : 'documents'} · {dataset.record_count} {dataset.record_count === 1 ? 'record' : 'records'} · Version {dataset.version}</p></div>
         <span className={`fine-status ${dataset.training_ready ? 'fine-status-completed' : 'fine-status-waiting'}`}>{dataset.training_ready ? 'Training ready' : 'Not training ready'}</span>
       </div>
       <p className="fine-action-note">Updated {new Date(dataset.updated_at).toLocaleString()}</p>
-      <details className="fine-recipe-details"><summary>View existing documents</summary><ul>{dataset.documents.map((doc) => <li key={doc.id}>{doc.name} · {doc.record_count} examples{doc.page_start > 0 ? ` · Pages ${doc.page_start}–${doc.page_end}` : ''}</li>)}</ul></details>
+      <details className="fine-recipe-details"><summary>View existing documents</summary><ul>{dataset.documents.map((doc) => <li key={doc.id}>{doc.name} · {doc.record_count} {doc.record_count === 1 ? 'record' : 'records'}{doc.page_start > 0 ? ` · Pages ${doc.page_start}–${doc.page_end}` : ''}</li>)}</ul></details>
       <DatasetDownload dataset={dataset} />
-      <div className="fine-actions"><button className="btn btn-primary" type="button" onClick={() => onOpen(dataset.id)}>Open Preparation</button></div>
     </article>)}
     </div>
   </section>;

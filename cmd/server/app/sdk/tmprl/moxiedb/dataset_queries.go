@@ -281,9 +281,3 @@ func (db *DB) MarkCatalogReady(ctx context.Context) error {
 	}
 	return err
 }
-
-func (db *DB) CatalogReady(ctx context.Context) (bool, error) {
-	var ready bool
-	err := db.sql.QueryRowContext(ctx, `SELECT state='ready' FROM catalog_initialization WHERE singleton`).Scan(&ready)
-	return ready, dbError(err)
-}

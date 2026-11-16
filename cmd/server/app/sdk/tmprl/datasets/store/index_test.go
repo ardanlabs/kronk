@@ -13,7 +13,7 @@ import (
 func TestIndexRebuildRelocationAndCorruption(t *testing.T) {
 	ctx := t.Context()
 	root := filepath.Join(t.TempDir(), "datasets")
-	files, err := store.NewDatasetStore(root)
+	files, err := store.New(store.Config{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestIndexRebuildRelocationAndCorruption(t *testing.T) {
 	if err := os.Rename(root, destination); err != nil {
 		t.Fatal(err)
 	}
-	files, err = store.NewDatasetStore(destination)
+	files, err = store.New(store.Config{Root: destination})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestIndexRebuildRelocationAndCorruption(t *testing.T) {
 }
 
 func TestCreationReceiptRecovery(t *testing.T) {
-	files, err := store.NewDatasetStore(t.TempDir())
+	files, err := store.New(store.Config{Root: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestCreationReceiptRecovery(t *testing.T) {
 }
 
 func TestForeignSnapshotsRejected(t *testing.T) {
-	files, err := store.NewDatasetStore(t.TempDir())
+	files, err := store.New(store.Config{Root: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}

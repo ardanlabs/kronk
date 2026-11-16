@@ -190,7 +190,7 @@ func newRecoveryHarness(t *testing.T) *recoveryHarness {
 	if h.j, err = job.New(env.Client, job.Config{TaskQueue: env.TaskQueue, Namespace: env.Namespace, Uploads: files, MoxieDB: db, StorageRoot: h.cfg.Storage, Trainer: &trainer{}, Completer: completer{}, Log: env.Log}); err != nil {
 		t.Fatal(err)
 	}
-	h.service = datasets.New(h.j.Datasets(), h.j, db)
+	h.service = datasets.New(datasets.Config{Files: h.j.Datasets(), Job: h.j, DB: db})
 	if err := h.service.Initialize(t.Context()); err != nil {
 		t.Fatal(err)
 	}

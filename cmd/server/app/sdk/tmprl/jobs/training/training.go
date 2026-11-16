@@ -99,7 +99,7 @@ type Config struct {
 	TaskQueue   string
 	Namespace   string
 	Uploads     *uploads.Store
-	Datasets    *datasetstore.DatasetStore
+	Datasets    *datasetstore.Store
 	MoxieDB     *moxiedb.DB
 	StorageRoot string
 	Models      map[string]string
@@ -129,7 +129,7 @@ func New(c client.Client, cfg Config) (*Job, error) {
 	}
 	cfg.StorageRoot = root
 	if cfg.Datasets == nil {
-		cfg.Datasets, err = datasetstore.NewDatasetStore(filepath.Join(root, "preparation-datasets"))
+		cfg.Datasets, err = datasetstore.New(datasetstore.Config{Root: filepath.Join(root, "preparation-datasets")})
 		if err != nil {
 			return nil, err
 		}
@@ -192,7 +192,7 @@ func (j *Job) Jobs() *tmprl.Jobs[Request, Artifacts] { return j.jobs }
 
 // Datasets exposes the configured reusable asset store for host integration.
 // HTTP dependencies are supplied explicitly by the host, not discovered here.
-func (j *Job) Datasets() *datasetstore.DatasetStore { return j.cfg.Datasets }
+func (j *Job) Datasets() *datasetstore.Store { return j.cfg.Datasets }
 
 var (
 	ErrNotFound      = errors.New("training resource not found")
@@ -708,7 +708,7 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 			if readErr != nil {
 				return tmprl.StepResult[Artifacts]{}, stepError(readErr)
 			}
-			saved, saveErr := j.saveDataset(ctx, request.TargetDatasetID, request.BaseVersion, datasetstore.DatasetAddition{
+			saved, saveErr := j.saveDataset(ctx, request.TargetDatasetID, request.BaseVersion, datasetstore.Addition{
 				PublicationID: r.RunID, Source: source, PageStart: request.PageStart, PageEnd: request.PageEnd, Records: records,
 			})
 			if saveErr != nil {
@@ -717,7 +717,7 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 			artifacts.Preparation.SavedDatasetID, artifacts.Preparation.SavedVersion = saved.ID, saved.Version
 			artifacts.Preparation.SavedRecordCount, artifacts.Preparation.SavedTrainingReady = saved.RecordCount, saved.TrainingReady
 			// The store skips questions the dataset already has.
-			if i := slices.IndexFunc(saved.Documents, func(d datasetstore.DatasetDocument) bool { return d.ID == r.RunID }); i >= 0 {
+			if i := slices.IndexFunc(saved.Documents, func(d datasetstore.Document) bool { return d.ID == r.RunID }); i >= 0 {
 				artifacts.Preparation.SavedSkippedRecords = len(records) - saved.Documents[i].RecordCount
 			}
 		}
@@ -766,7 +766,7 @@ func (j *Job) dataset(ctx context.Context, id string, version int) (datasetstore
 
 // saveDataset preserves verified Add idempotency while persisting publication
 // intent before touching files. Jobs call SQL directly, not datasets.Service.
-func (j *Job) saveDataset(ctx context.Context, id string, base int, addition datasetstore.DatasetAddition) (datasetstore.Dataset, error) {
+func (j *Job) saveDataset(ctx context.Context, id string, base int, addition datasetstore.Addition) (datasetstore.Dataset, error) {
 	if j.cfg.MoxieDB == nil {
 		return j.cfg.Datasets.Add(ctx, id, base, addition)
 	}

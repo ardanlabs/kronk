@@ -73,8 +73,8 @@ func catalogDB(t *testing.T) *moxiedb.DB {
 	return db
 }
 
-func addition(id, hash string) store.DatasetAddition {
-	return store.DatasetAddition{PublicationID: "run-" + id,
+func addition(id, hash string) store.Addition {
+	return store.Addition{PublicationID: "run-" + id,
 		Source:  uploads.File{ID: id, Name: id + ".txt", SHA256: strings.Repeat(hash, 64)},
 		Records: []optimization.Record{{Prompt: "When does " + id + " open?", Target: "Dawn.", Evidence: id + " opens at dawn.", SourceDocument: id}},
 	}
@@ -83,7 +83,7 @@ func addition(id, hash string) store.DatasetAddition {
 func TestCatalogImportRelocationAndIntegrity(t *testing.T) {
 	db, ctx := catalogDB(t), t.Context()
 	root := filepath.Join(t.TempDir(), "moxie")
-	files, err := store.NewDatasetStore(filepath.Join(root, "preparation-datasets"))
+	files, err := store.New(store.Config{Root: filepath.Join(root, "preparation-datasets")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestCatalogImportRelocationAndIntegrity(t *testing.T) {
 	if _, err := files.Remove(ctx, dataset.ID, 2, "run-harbor"); err != nil {
 		t.Fatal(err)
 	}
-	service := datasets.New(files, nil, db)
+	service := datasets.New(datasets.Config{Files: files, DB: db})
 	for range 2 {
 		if err := service.Initialize(ctx); err != nil {
 			t.Fatal(err)
@@ -123,11 +123,11 @@ func TestCatalogImportRelocationAndIntegrity(t *testing.T) {
 	if err := os.Rename(root, moved); err != nil {
 		t.Fatal(err)
 	}
-	files, err = store.NewDatasetStore(filepath.Join(moved, "preparation-datasets"))
+	files, err = store.New(store.Config{Root: filepath.Join(moved, "preparation-datasets")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service = datasets.New(files, nil, db)
+	service = datasets.New(datasets.Config{Files: files, DB: db})
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -161,11 +161,11 @@ func TestCatalogImportRelocationAndIntegrity(t *testing.T) {
 
 func TestCatalogPublicationAndRecovery(t *testing.T) {
 	db, ctx := catalogDB(t), t.Context()
-	files, err := store.NewDatasetStore(filepath.Join(t.TempDir(), "preparation-datasets"))
+	files, err := store.New(store.Config{Root: filepath.Join(t.TempDir(), "preparation-datasets")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := datasets.New(files, nil, db)
+	service := datasets.New(datasets.Config{Files: files, DB: db})
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -257,11 +257,11 @@ func TestCatalogPublicationAndRecovery(t *testing.T) {
 
 func TestInterruptedCreateRemoveAndUnresolvedIntent(t *testing.T) {
 	db, ctx := catalogDB(t), t.Context()
-	files, err := store.NewDatasetStore(filepath.Join(t.TempDir(), "preparation-datasets"))
+	files, err := store.New(store.Config{Root: filepath.Join(t.TempDir(), "preparation-datasets")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := datasets.New(files, nil, db)
+	service := datasets.New(datasets.Config{Files: files, DB: db})
 	data, _ := json.Marshal("Harbor")
 	digest := fmt.Sprintf("%x", sha256.Sum256(data))
 	p := moxiedb.Publication{ID: "create/interrupted", DatasetID: "dataset-interrupted", Kind: "create", InputDigest: digest}

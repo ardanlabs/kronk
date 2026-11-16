@@ -20,6 +20,17 @@ const activeStatuses = ['queued', 'running', 'recovering', 'pause_requested', 'p
 // preparationPath is where Prepare Dataset shows a run.
 export const preparationPath = (run: TrainingRun) => `/fine-tuning?${new URLSearchParams({ view: 'prepare', preparation: run.workflow_id, run: run.run_id })}`;
 
+export const preparationSteps: [string, string][] = [['extract', 'Extract document'], ['preview', 'Generate preview'], ['generate', 'Generate records'], ['verify', 'Verify records']];
+export const stepLabel = (name?: string) => preparationSteps.find(([key]) => key === name)?.[1] ?? 'Preparation';
+
+// sentence turns a server message, which starts lowercase, into a sentence.
+export const sentence = (text: string) => text ? `${text[0].toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}` : text;
+
+// requestMessage describes a failed request. Fetch failures (TypeError) and empty or
+// cut-off responses (SyntaxError) mean the server gave no usable answer.
+export const requestMessage = (err: unknown, fallback: string) => err instanceof TypeError || err instanceof SyntaxError ? 'The server could not be reached. Check that it is running.'
+  : err instanceof Error && err.message ? sentence(err.message) : fallback;
+
 export interface FineTuningActivity {
   kind: 'preparation' | 'training';
   title: string;
@@ -57,10 +68,14 @@ interface FineTuningRunnerValue {
   trainingRun: TrainingRun | null;
   error: string;
   watchError: string;
+  // adopting is true until the page knows whether a run is already in progress.
+  adopting: boolean;
+  adoptionError: string;
   preparationActivity: FineTuningActivity | null;
   trainingActivity: FineTuningActivity | null;
   chooseInput: (file: File | null, kind: 'dataset' | 'document') => Promise<void>;
   cancelPreparation: () => void;
+  clearError: () => void;
   startRun: (training: TrainingOptions, preparation?: PreparationOptions) => Promise<TrainingRun | null>;
   selectRun: (run: TrainingRun) => void;
   refreshRun: (run?: TrainingRun) => Promise<void>;
@@ -95,6 +110,8 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const [error, setError] = useState('');
   const [watchError, setWatchError] = useState('');
   const [watchAttempt, setWatchAttempt] = useState(0);
+  const [adopting, setAdopting] = useState(true);
+  const [adoptionError, setAdoptionError] = useState('');
   const uploadAbort = useRef<AbortController | null>(null);
   const submissionPending = useRef(false);
   const runSubmissionIDs = useRef<Record<string, string>>({});
@@ -113,18 +130,29 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
 
   // A page load starts with no runs in memory. Adopt the newest in-progress runs so the
   // sidebar and the one-preparation-at-a-time rule survive a reload or a new tab.
+  // Starting stays blocked until this answers, so it retries until it does.
   useEffect(() => {
     const controller = new AbortController();
-    api.trainingRuns('', controller.signal, '', { statuses: activeStatuses })
-      .then((page) => {
-        const runs = page.runs ?? [];
-        const preparation = runs.find((run) => run.stages.some((stage) => stage.name === 'preparation'));
-        const training = runs.find((run) => !run.stages.some((stage) => stage.name === 'preparation'));
-        if (preparation) setPreparationRun((current) => current ?? preparation);
-        if (training) setTrainingRun((current) => current ?? training);
-      })
-      // Without the list, runs are found when the user opens them, as before.
-      .catch(() => {});
+    void (async () => {
+      while (!controller.signal.aborted) {
+        try {
+          const page = await api.trainingRuns('', controller.signal, '', { statuses: activeStatuses });
+          if (controller.signal.aborted) return;
+          const runs = page.runs ?? [];
+          const preparation = runs.find((run) => run.stages.some((stage) => stage.name === 'preparation'));
+          const training = runs.find((run) => !run.stages.some((stage) => stage.name === 'preparation'));
+          if (preparation) setPreparationRun((current) => current ?? preparation);
+          if (training) setTrainingRun((current) => current ?? training);
+          setAdoptionError('');
+          setAdopting(false);
+          return;
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          setAdoptionError(requestMessage(err, 'Could not load runs in progress.'));
+          await retryDelay(controller.signal);
+        }
+      }
+    })();
     return () => controller.abort();
   }, []);
 
@@ -150,7 +178,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
         } catch (err) {
           if (controller.signal.aborted) return;
           // The server may be restarting; keep retrying until this run is no longer watched.
-          setWatchError(`Live updates paused: ${err instanceof Error ? err.message : 'Connection failed'}. Retrying automatically.`);
+          setWatchError(`Live updates paused: ${requestMessage(err, 'The connection failed.')} Retrying automatically.`);
           revision = '';
           await retryDelay(controller.signal);
         }
@@ -186,7 +214,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     if (!file) return;
     const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
     if (!(kind === 'dataset' ? ['jsonl'] : ['pdf', 'docx', 'md', 'txt']).includes(extension)) {
-      setError(kind === 'dataset' ? 'Choose a training-ready JSONL dataset.' : 'Choose a PDF, DOCX, Markdown, or text document.');
+      setError(kind === 'dataset' ? 'Only training-ready JSONL datasets are supported.' : 'Only PDF, DOCX, Markdown, and text documents are supported.');
       return;
     }
     const controller = new AbortController();
@@ -206,7 +234,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   };
 
   const startRun = async (training: TrainingOptions, preparation?: PreparationOptions): Promise<TrainingRun | null> => {
-    if (!upload || uploading || submissionPending.current) return null;
+    if (!upload || uploading || adopting || submissionPending.current) return null;
     if (inputKind === 'document' ? !!activePreparation : !!trainingJob) return null;
     if (inputKind === 'document' && !preparation?.model) return null;
     submissionPending.current = true;
@@ -230,8 +258,8 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       return run;
     } catch (err) {
       setError(err instanceof ApiError && err.status === 409
-        ? `${err.message} Refresh datasets if the destination changed, or check Training history if this job was already submitted.`
-        : err instanceof Error ? err.message : 'Job submission failed');
+        ? `${sentence(err.message)} Refresh datasets if the destination changed, or check Preparation runs if this run was already started.`
+        : requestMessage(err, 'The run could not be started.'));
       return null;
     } finally {
       submissionPending.current = false;
@@ -249,7 +277,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       setTrainingRun(update);
       setWatchAttempt((attempt) => attempt + 1);
     } catch (err) {
-      setWatchError(err instanceof Error ? err.message : 'Could not refresh training job');
+      setWatchError(requestMessage(err, 'Could not refresh this run.'));
     }
   };
 
@@ -353,12 +381,14 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
 
   return (
     <FineTuningRunnerContext.Provider value={{
-      inputKind, preparedFile, upload, uploading, submitting, currentRun, preparationRun, trainingRun, error, watchError,
+      inputKind, preparedFile, upload, uploading, submitting, currentRun, preparationRun, trainingRun, error, watchError, adopting, adoptionError,
       preparationActivity: uploading ? { kind: 'preparation', title: inputKind === 'document' ? 'Uploading document…' : 'Uploading dataset…', stage: preparedFile?.name ?? '', completed: 0, total: 0 }
         : activePreparation?.stage === 'preparation' ? {
           kind: 'preparation', paused: activePreparation.control_action === 'pause',
-          title: activePreparation.control_action === 'pause' ? activePreparation.status === 'pause_requested' ? 'Pausing preparation…' : 'Preparation paused' : activePreparation.status === 'waiting' ? 'Preparation waiting…' : 'Preparing dataset…',
-          stage: activePreparation.step || activePreparation.status,
+          title: activePreparation.control_action === 'pause' ? activePreparation.status === 'pause_requested' ? 'Pausing preparation…' : 'Preparation paused'
+            : activePreparation.status === 'waiting' ? activePreparation.checkpoint?.name === 'preview-review' ? 'Preview ready for review' : 'Preparation waiting…'
+            : activePreparation.status === 'queued' ? 'Preparation queued…' : 'Preparing dataset…',
+          stage: activePreparation.status === 'queued' ? 'Waiting for a worker' : stepLabel(activePreparation.step),
           completed: activePreparation.progress?.completed ?? 0, total: activePreparation.progress?.total ?? 0,
         } : null,
       trainingActivity: trainingJob ? {
@@ -366,7 +396,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
         stage: [trainingJob.stage, trainingJob.step].filter(Boolean).join(' / ') || trainingJob.status,
         completed: trainingJob.progress?.completed ?? 0, total: trainingJob.progress?.total ?? 0,
       } : null,
-      chooseInput, cancelPreparation, startRun,
+      chooseInput, cancelPreparation, clearError: () => setError(''), startRun,
       selectRun,
       refreshRun,
       previewSubmission: (run) => previewSubmissions[JSON.stringify([run.workflow_id, run.run_id])],

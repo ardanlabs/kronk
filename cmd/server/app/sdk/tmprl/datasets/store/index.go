@@ -28,7 +28,7 @@ type SnapshotInfo struct {
 }
 
 type DocumentInfo struct {
-	Document DatasetDocument
+	Document Document
 	SHA256   string
 }
 
@@ -57,13 +57,13 @@ type fileIndex struct {
 type lockKey struct{}
 
 // Path is the already-resolved dataset directory, not a second Moxie root.
-func (s *DatasetStore) Path() string { return s.root }
+func (s *Store) Path() string { return s.root }
 
 // WithLock serializes file publication, index rebuild and caller coordination
 // across processes. The context permits nested operations on the same store.
 // OS locks are released on process exit, including unexpected shutdown.
 // Nested writers defer index maintenance to this caller, after catalog commit.
-func (s *DatasetStore) WithLock(ctx context.Context, fn func(context.Context) error) error {
+func (s *Store) WithLock(ctx context.Context, fn func(context.Context) error) error {
 	if ctx.Value(lockKey{}) == s.root {
 		return fn(ctx)
 	}
@@ -80,7 +80,7 @@ func (s *DatasetStore) WithLock(ctx context.Context, fn func(context.Context) er
 }
 
 // Inspect validates an exact immutable snapshot and calculates its file digest.
-func (s *DatasetStore) Inspect(ctx context.Context, id string, version int) (SnapshotInfo, error) {
+func (s *Store) Inspect(ctx context.Context, id string, version int) (SnapshotInfo, error) {
 	snapshot, err := s.read(ctx, id, version)
 	if err != nil {
 		return SnapshotInfo{}, err
@@ -122,7 +122,7 @@ func (s *DatasetStore) Inspect(ctx context.Context, id string, version int) (Sna
 // Lookup reads the generated inventory but verifies the selected immutable file.
 // The index never authorizes a version; SQL callers pin their published version.
 // Missing, malformed and stale inventories are rebuilt, not treated as no data.
-func (s *DatasetStore) Lookup(ctx context.Context, id string, version int) (SnapshotInfo, error) {
+func (s *Store) Lookup(ctx context.Context, id string, version int) (SnapshotInfo, error) {
 	var info SnapshotInfo
 	err := s.WithLock(ctx, func(ctx context.Context) error {
 		var err error
@@ -150,7 +150,7 @@ func (s *DatasetStore) Lookup(ctx context.Context, id string, version int) (Snap
 }
 
 // Inventory reads snapshots themselves; an old or missing index is never authority.
-func (s *DatasetStore) Inventory(ctx context.Context) ([]SnapshotInfo, error) {
+func (s *Store) Inventory(ctx context.Context) ([]SnapshotInfo, error) {
 	datasets, err := s.List(ctx)
 	if err != nil {
 		return nil, err
@@ -171,7 +171,7 @@ func (s *DatasetStore) Inventory(ctx context.Context) ([]SnapshotInfo, error) {
 
 // BuildIndex follows Kronk's generated inventory/atomic rename pattern, with
 // the dataset publisher's cross-process lock and durable writes.
-func (s *DatasetStore) BuildIndex(ctx context.Context) error {
+func (s *Store) BuildIndex(ctx context.Context) error {
 	return s.WithLock(ctx, func(ctx context.Context) error {
 		inventory, err := s.Inventory(ctx)
 		if err != nil {
