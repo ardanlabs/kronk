@@ -17,21 +17,219 @@ services:
     volumes:
       - ./docling:/scratch
 
-  # Local development server; separate from the disposable tmprl test container.
+  # Shared PostgreSQL instance for the temporal and moxiedb databases.
+  postgres:
+    image: postgres:16
+    container_name: moxie-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${MOXIE_POSTGRES_PASSWORD:-}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - moxie-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot dependencies keep initialization out of the make recipe.
+  postgres-init:
+    image: postgres:16
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${MOXIE_POSTGRES_PASSWORD:-}
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:-}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        : "$${PGPASSWORD:?Export MOXIE_POSTGRES_PASSWORD first}"
+        : "$${TEMPORAL_DB_PASSWORD:?Export TEMPORAL_DB_PASSWORD first}"
+        psql -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+        \getenv temporal_password TEMPORAL_DB_PASSWORD
+        SELECT format(
+          'CREATE ROLE %I LOGIN PASSWORD %L', name, :'temporal_password'
+        )
+        FROM (VALUES ('temporal'), ('temporal_visibility')) AS roles(name)
+        WHERE NOT EXISTS (
+          SELECT FROM pg_roles WHERE rolname = name
+        )
+        \gexec
+        SELECT 'CREATE DATABASE temporal OWNER temporal'
+        WHERE NOT EXISTS (
+          SELECT FROM pg_database WHERE datname = 'temporal'
+        )
+        \gexec
+        SELECT 'CREATE DATABASE moxiedb'
+        WHERE NOT EXISTS (
+          SELECT FROM pg_database WHERE datname = 'moxiedb'
+        )
+        \gexec
+        SQL
+        psql -d temporal -v ON_ERROR_STOP=1 \
+          -c 'GRANT CREATE ON DATABASE temporal TO temporal_visibility' \
+          -c 'CREATE SCHEMA IF NOT EXISTS visibility AUTHORIZATION temporal_visibility' \
+          -c 'ALTER ROLE temporal_visibility IN DATABASE temporal SET search_path = visibility'
+        # Recompute from PostgreSQL on each start; this file is only a handoff.
+        psql -d temporal -v ON_ERROR_STOP=1 -At > /bootstrap/schema-state.tmp <<'SQL'
+        SELECT CASE
+          WHEN NOT EXISTS (
+            SELECT FROM pg_tables
+            WHERE schemaname IN ('public', 'visibility')
+          ) THEN 'empty'
+          WHEN to_regclass('public.schema_version') IS NOT NULL
+            AND to_regclass('visibility.schema_version') IS NOT NULL
+            THEN 'existing'
+          ELSE 'incomplete'
+        END;
+        SQL
+        chmod 644 /bootstrap/schema-state.tmp
+        mv /bootstrap/schema-state.tmp /bootstrap/schema-state
+    volumes:
+      - temporal-bootstrap:/bootstrap
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal-schema:
+    image: temporalio/admin-tools:1.32.2
+    restart: "no"
+    environment:
+      SQL_PASSWORD: ${TEMPORAL_DB_PASSWORD:-}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        case "$$(cat /bootstrap/schema-state)" in
+          empty) ;;
+          existing) echo "Temporal schemas already exist; skipping initialization and upgrades."; exit 0 ;;
+          *) echo "Temporal schemas are incomplete or unrecognized; explicit inspection/repair is required. No Temporal migrations applied."; exit 1 ;;
+        esac
+        for schema in temporal visibility; do
+          user=temporal
+          if [ "$$schema" = visibility ]; then user=temporal_visibility; fi
+          temporal-sql-tool --plugin postgres12 --ep postgres -p 5432 \
+            -u "$$user" --db temporal setup-schema -v 0.0
+          temporal-sql-tool --plugin postgres12 --ep postgres -p 5432 \
+            -u "$$user" --db temporal update-schema \
+            -d "/etc/temporal/schema/postgresql/v12/$$schema/versioned"
+        done
+    volumes:
+      - temporal-bootstrap:/bootstrap:ro
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+
+  # PostgreSQL-backed server; separate from the disposable tmprl test container.
   temporal:
-    image: temporalio/temporal:1.9.1
+    image: temporalio/server:1.32.2
     container_name: moxie-temporal
     restart: unless-stopped
-    command:
-      - server
-      - start-dev
-      - --ip=0.0.0.0
-      - --db-filename=/home/temporal/temporal.db
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_SEEDS: postgres
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:-}
+      DBNAME: temporal
+      # Workflow search uses a separate schema in the same temporal database.
+      VISIBILITY_DBNAME: temporal
+      VISIBILITY_POSTGRES_USER: temporal_visibility
+      ENABLE_ES: "false"
+      # Use default settings without requiring a separate dynamic-config file.
+      DYNAMIC_CONFIG_FILE_PATH: /dev/null
+      BIND_ON_IP: 0.0.0.0
     ports:
       - "127.0.0.1:7233:7233"
-      - "127.0.0.1:8233:8233"
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 7233"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Moxie SQL only: dataset files/indexing stay in the native datasets package.
+  moxie-schema:
+    image: postgres:16
+    profiles: ["setup"]
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${MOXIE_POSTGRES_PASSWORD:-}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        : "$${PGPASSWORD:?Export MOXIE_POSTGRES_PASSWORD first}"
+        checksum=$$(sha256sum /schema/001_init.sql)
+        export MOXIE_SCHEMA_CHECKSUM=$${checksum%% *}
+        psql -d moxiedb -v ON_ERROR_STOP=1 <<'SQL'
+        \getenv schema_checksum MOXIE_SCHEMA_CHECKSUM
+        SELECT pg_advisory_lock(705990121);
+        SELECT NOT EXISTS (
+          SELECT FROM pg_tables WHERE schemaname = 'public'
+        ) AS empty \gset
+        \if :empty
+          BEGIN;
+          \i /schema/001_init.sql
+          INSERT INTO schema_migrations (version, checksum)
+          VALUES (1, :'schema_checksum');
+          COMMIT;
+          \echo 'Moxie schema initialized.'
+        \else
+          SELECT to_regclass('public.schema_migrations') IS NOT NULL AS recognized \gset
+          \if :recognized
+            SELECT count(*) = 1
+              AND bool_and(version = 1 AND checksum = :'schema_checksum')
+              AND NOT EXISTS (
+                SELECT FROM (VALUES
+                  ('catalog_initialization'), ('datasets'), ('dataset_versions'),
+                  ('dataset_version_documents'), ('dataset_publications'),
+                  ('jobs'), ('job_attempts'), ('job_intents')
+                ) AS expected(name)
+                WHERE to_regclass('public.' || name) IS NULL
+              ) AS compatible
+            FROM schema_migrations \gset
+            \if :compatible
+              \echo 'Moxie schema already exists; skipping initialization and upgrades.'
+            \else
+              DO $$$$ BEGIN
+                RAISE EXCEPTION 'Moxie schema is incompatible; no upgrades applied.';
+              END $$$$;
+            \endif
+          \else
+            DO $$$$ BEGIN
+              RAISE EXCEPTION 'Moxie schema is unrecognized; no initialization applied.';
+            END $$$$;
+          \endif
+        \endif
+        SQL
     volumes:
-      - ./temporal:/home/temporal
+      - ../../cmd/server/app/sdk/tmprl/moxiedb/migrations/001_init.sql:/schema/001_init.sql:ro
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+
+  temporal-namespace:
+    image: temporalio/admin-tools:1.32.2
+    profiles: ["setup"]
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        namespaces=$$(temporal --address temporal:7233 operator namespace list --output json)
+        if ! printf '%s\n' "$$namespaces" | grep -Eq '"name"[[:space:]]*:[[:space:]]*"default"'; then
+          temporal --address temporal:7233 operator namespace create --namespace default --retention 1d
+        fi
+    depends_on:
+      temporal:
+        condition: service_healthy
 
   openwebui:
     image: ghcr.io/open-webui/open-webui:v0.11.1
@@ -168,3 +366,5 @@ networks:
 
 volumes:
   alloy-data:
+  moxie-postgres-data:
+  temporal-bootstrap:

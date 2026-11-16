@@ -148,7 +148,7 @@ const stepLabels: Record<string, string> = {
   split: 'Split dataset', train: 'Train adapter', evaluate: 'Evaluate adapter', publish: 'Publish adapter',
 };
 
-function duration(milliseconds: number): string {
+export function duration(milliseconds: number): string {
   const minutes = Math.max(1, Math.ceil(milliseconds / 60000));
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} hr ${minutes % 60} min`;
 }
@@ -413,8 +413,10 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
   const accepted = submission?.status === 'accepted';
   const editable = waiting && !run.state_stale && (!submission || submission.status === 'rejected');
   const records = submission && submission.status !== 'rejected' ? submission.request.records : waiting ? draft : savedRecords;
+  const validRecords = records.length > 0 && records.every((record) => record.prompt.trim() && record.target.trim());
 
   async function handleContinue() {
+    if (!uncertain && !validRecords) return;
     if (await continuePreview(run, records)) {
       previewDrafts.delete(draftKey);
       if (mounted.current) { setOpen(false); onRefresh(); }
@@ -442,11 +444,12 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
     }}>
     <section className="fine-panel fine-review-panel" aria-label="Review Examples">
       <div className="fine-panel-heading">
-        <div><span>Dataset preview · {records.length} {records.length === 1 ? 'record' : 'records'}</span><h3 id="fine-preview-title">Review Examples</h3></div>
+        <div><span>Dataset preview · {records.length} {records.length === 1 ? 'example' : 'examples'}</span><h3 id="fine-preview-title">Review examples</h3></div>
         <button className="btn btn-secondary" type="button" autoFocus onClick={() => setOpen(false)}>Close preview</button>
       </div>
+      <div className="fine-preview-scroll">
       <p className="fine-panel-copy">
-        {waiting ? 'Review and edit these examples before building the full dataset. Build Training Dataset does not start training.' : 'Saved preview examples. Review is read-only because this job is not waiting at Preview.'}
+        {waiting ? 'Review and edit these examples before building the full dataset. Build dataset does not start training.' : 'Saved preview examples. Review is read-only because this job is not waiting at Preview.'}
       </p>
       {editable && <p className="fine-action-note">Closing this preview does not stop preparation. Your edits stay in this browser session as you move between screens; submit them before reloading or closing this browser tab.</p>}
       {run.preview?.warnings && run.preview.warnings.length > 0 && (
@@ -458,10 +461,12 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
           const edited = record.prompt !== saved?.prompt || record.target !== saved?.target;
           return (
             <article className="fine-record" key={index}>
-              <div className="fine-record-number">{String(index + 1).padStart(2, '0')}</div>
+              <div className="fine-record-number" aria-label={`Example ${index + 1} of ${records.length}`}>{index + 1}/{records.length}</div>
               <div className="fine-record-fields">
-                <FieldLabel tooltipKey="fineTuningPrompt">Prompt<textarea readOnly={!editable} value={record.prompt} onChange={(event) => updateRecord(index, 'prompt', event.target.value)} /></FieldLabel>
-                <FieldLabel tooltipKey="fineTuningTarget">Target<textarea readOnly={!editable} value={record.target} onChange={(event) => updateRecord(index, 'target', event.target.value)} /></FieldLabel>
+                <FieldLabel tooltipKey="fineTuningPrompt">Input<textarea readOnly={!editable} required aria-invalid={!record.prompt.trim()} aria-describedby={!record.prompt.trim() ? `fine-preview-prompt-error-${index}` : undefined} value={record.prompt} onChange={(event) => updateRecord(index, 'prompt', event.target.value)} /></FieldLabel>
+                {!record.prompt.trim() && <p id={`fine-preview-prompt-error-${index}`} className="fine-error">Enter a nonblank input.</p>}
+                <FieldLabel tooltipKey="fineTuningTarget">Expected output<textarea readOnly={!editable} required aria-invalid={!record.target.trim()} aria-describedby={!record.target.trim() ? `fine-preview-target-error-${index}` : undefined} value={record.target} onChange={(event) => updateRecord(index, 'target', event.target.value)} /></FieldLabel>
+                {!record.target.trim() && <p id={`fine-preview-target-error-${index}`} className="fine-error">Enter a nonblank expected output.</p>}
                 <details><summary>Source evidence</summary><p>{record.evidence}</p></details>
               </div>
               <span className="fine-verification review">{accepted ? 'Accepted' : submitting || uncertain ? 'Submitted' : edited ? 'Edited' : waiting ? 'Review' : 'Saved'}</span>
@@ -471,16 +476,17 @@ function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecord
       </div>
       {records.length === 0 && <p role="status">No preview examples are available.</p>}
       {submission?.error && <p className="fine-error" role="alert">{submission.error}</p>}
+      </div>
       <div className="fine-review-actions">
         <span className="fine-action-note" role="status">
           {accepted ? 'Review accepted. Follow the job state for preparation progress.'
-            : uncertain ? 'Could not confirm acceptance. Retry Build Training Dataset sends the same submitted examples. Editing is locked until acceptance is confirmed.'
+            : uncertain ? 'Could not confirm acceptance. Retry Build dataset sends the same submitted examples. Editing is locked until acceptance is confirmed.'
               : submitting ? 'Submitting reviewed examples…'
-                : editable ? 'Build Training Dataset submits these examples and continues full-dataset preparation. Training remains a separate choice.'
-                  : 'Build Training Dataset is available only while Preview is waiting for review with current job state.'}
+                : editable ? validRecords ? 'Build dataset continues preparation. Training remains a separate choice.' : 'Complete each input and expected output to continue.'
+                  : 'Build dataset is available only while Preview is waiting for review with current job state.'}
         </span>
-        <button className="btn btn-primary" type="button" disabled={submitting || accepted || (!uncertain && (!editable || records.length === 0))} onClick={() => void handleContinue()}>
-          {submitting ? 'Submitting…' : uncertain ? 'Retry Build Training Dataset' : accepted ? 'Review Accepted' : 'Build Training Dataset'}
+        <button className="btn btn-primary" type="button" disabled={submitting || accepted || (!uncertain && (!editable || !validRecords))} onClick={() => void handleContinue()}>
+          {submitting ? 'Submitting…' : uncertain ? 'Retry Build dataset' : accepted ? 'Review Accepted' : 'Build dataset'}
         </button>
       </div>
     </section>

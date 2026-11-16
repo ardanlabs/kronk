@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -72,7 +73,11 @@ type config struct {
 		Probability float64 `conf:"help:Share of requests traced (0 to 1)" yaml:"probability"`
 	} `yaml:"tempo"`
 	Training trainingConfig `yaml:"training"`
-	Pool     struct {
+	Moxie    struct {
+		Root        string `yaml:"root"`
+		DatabaseURL string `conf:"mask" yaml:"database-url"`
+	} `yaml:"moxie"`
+	Pool struct {
 		ModelConfigFile string        `yaml:"-"`
 		BudgetPercent   int           `conf:"help:Percent (1 to 100) of system and GPU memory the loaded models may use" yaml:"budget-percent"`
 		ModelsInPool    int           `conf:"help:Most models kept loaded at once regardless of memory" yaml:"models-in-pool"`
@@ -221,6 +226,21 @@ func validateTrainingConfig(cfg trainingConfig) error {
 		return errors.New("configuration: enabled training requires a Temporal address, namespace, and approved model IDs")
 	}
 	return nil
+}
+
+// moxieRoot preserves the existing default and resolves one root for all owners.
+func moxieRoot(root string) (string, error) {
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("locating Moxie root: %w", err)
+		}
+		root = filepath.Join(home, ".moxie")
+	}
+	if strings.TrimSpace(root) == "" {
+		return "", errors.New("configuration: Moxie root must not be blank")
+	}
+	return filepath.Abs(root)
 }
 
 func validateTimeoutConfig(inferenceTimeout, writeTimeout time.Duration) error {

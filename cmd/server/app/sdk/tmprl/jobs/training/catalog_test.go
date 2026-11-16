@@ -1,0 +1,640 @@
+package training_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
+	job "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/client"
+	"google.golang.org/protobuf/types/known/durationpb"
+)
+
+type lostReceiptClient struct {
+	client.Client
+	submit atomic.Bool
+	review atomic.Bool
+	stop   atomic.Bool
+	list   atomic.Bool
+}
+
+func (c *lostReceiptClient) ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
+	if c.list.CompareAndSwap(true, false) {
+		return nil, serviceerror.NewUnavailable("injected discovery outage")
+	}
+	return c.Client.ListWorkflow(ctx, request)
+}
+
+func (c *lostReceiptClient) CancelWorkflow(ctx context.Context, workflowID, runID string) error {
+	err := c.Client.CancelWorkflow(ctx, workflowID, runID)
+	if err == nil && c.stop.CompareAndSwap(true, false) {
+		return serviceerror.NewUnavailable("injected lost cancellation receipt")
+	}
+	return err
+}
+
+func (c *lostReceiptClient) ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow any, args ...any) (client.WorkflowRun, error) {
+	run, err := c.Client.ExecuteWorkflow(ctx, options, workflow, args...)
+	if err == nil && c.submit.CompareAndSwap(true, false) {
+		return nil, serviceerror.NewUnavailable("injected lost submission receipt")
+	}
+	return run, err
+}
+
+func (c *lostReceiptClient) UpdateWorkflow(ctx context.Context, options client.UpdateWorkflowOptions) (client.WorkflowUpdateHandle, error) {
+	handle, err := c.Client.UpdateWorkflow(ctx, options)
+	if err == nil && c.review.CompareAndSwap(true, false) {
+		return nil, serviceerror.NewUnavailable("injected lost review receipt")
+	}
+	return handle, err
+}
+
+type unavailableCatalogClient struct{ client.Client }
+
+func (c unavailableCatalogClient) DescribeWorkflowExecution(context.Context, string, string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+	return nil, serviceerror.NewUnavailable("injected outage")
+}
+
+type delayedCatalogClient struct {
+	client.Client
+	once             atomic.Bool
+	entered, release chan struct{}
+}
+
+func (c *delayedCatalogClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+	response, err := c.Client.DescribeWorkflowExecution(ctx, workflowID, runID)
+	if err == nil && c.once.CompareAndSwap(false, true) {
+		close(c.entered)
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return response, err
+}
+
+func TestCatalogPreparationControls(t *testing.T) {
+	for _, failure := range []string{"temporal_receipt", "sql_receipt", "stop_before_resolution"} {
+		t.Run(failure, func(t *testing.T) {
+			db, setup := newCatalogDatabase(t)
+			env := newTestEnvironment(t)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			name, text := source(t, true)
+			upload, err := files.Put(ctx, uploads.Input{Name: name}, strings.NewReader(text))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := &lostReceiptClient{Client: env.Client}
+			cfg := job.Config{TaskQueue: env.TaskQueue, Namespace: env.Namespace, Uploads: files, MoxieDB: db, StorageRoot: t.TempDir(), Trainer: &trainer{}, Completer: completer{}, Log: env.Log}
+			j, err := job.New(c, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			workerJob, err := job.New(env.Client, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := workerJob.Jobs().NewWorker()
+			if err := w.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(w.Stop)
+			run, err := j.Start(ctx, job.Request{ID: "controls-" + env.TaskQueue, PreparationOnly: true, Prepare: &preparation.PreparationRequest{DatasetID: upload.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer, MaxQuestions: 5}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			waiting := waitForCheckpoint(t, ctx, j, run.Execution, "preview-review")
+			if failure == "sql_receipt" {
+				_, err := setup.ExecContext(ctx, `CREATE SEQUENCE control_fault;
+CREATE FUNCTION control_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN IF nextval('control_fault')=1 THEN RAISE EXCEPTION 'injected settlement failure'; END IF; RETURN NEW; END $$;
+CREATE TRIGGER control_fault BEFORE UPDATE ON job_intents FOR EACH ROW
+WHEN (NEW.kind IN ('pause','resume') AND NEW.state='accepted') EXECUTE FUNCTION control_fault();`)
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				c.review.Store(true)
+			}
+			pause := tmprl.ControlRequest{RequestID: "pause-1", Action: "pause"}
+			if _, err := j.PreparationControl(ctx, run.Execution, pause); err == nil {
+				t.Fatal("receipt-loss injection was not exercised")
+			}
+			pending, err := db.PendingIntents(ctx)
+			if err != nil || len(pending) != 1 || pending[0].Kind != "pause" {
+				t.Fatalf("lost receipt must retain intent: %+v %v", pending, err)
+			}
+			if failure == "stop_before_resolution" {
+				if err := j.Stop(ctx, run.Execution); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := j.Jobs().Wait(ctx, run.Execution); err == nil {
+					t.Fatal("Stop did not cancel the execution")
+				}
+			}
+			restarted, err := job.New(env.Client, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := restarted.Reconcile(ctx); err != nil {
+				t.Fatal(err)
+			}
+			service := datasets.New(restarted.Datasets(), restarted, db)
+			receipt, err := service.PreparationControl(ctx, run.Execution, pause)
+			if err != nil || receipt.Revision != 1 || receipt.ControlRequest != pause {
+				t.Fatalf("recovered receipt: %+v %v", receipt, err)
+			}
+			if failure == "stop_before_resolution" {
+				if _, err := service.PreparationControl(ctx, run.Execution, tmprl.ControlRequest{RequestID: "continue-stopped", Action: "resume", ExpectedRevision: 1}); !errors.Is(err, tmprl.ErrControlConflict) {
+					t.Fatalf("continued a canceled execution: %v", err)
+				}
+				if pending, err := db.PendingIntents(ctx); err != nil || len(pending) != 0 {
+					t.Fatalf("Stop left unresolved receipt: %+v %v", pending, err)
+				}
+				return
+			}
+			for _, command := range []tmprl.ControlRequest{
+				{RequestID: "resume-1", Action: "resume", ExpectedRevision: 1},
+				{RequestID: "pause-2", Action: "pause", ExpectedRevision: 2},
+				{RequestID: "resume-2", Action: "resume", ExpectedRevision: 3},
+			} {
+				if command.RequestID == "resume-1" {
+					c.review.Store(true)
+					if _, err := j.PreparationControl(ctx, run.Execution, command); !errors.Is(err, job.ErrUnavailable) {
+						t.Fatalf("lost Continue receipt not exercised: %v", err)
+					}
+					if err := restarted.Reconcile(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if r, err := service.PreparationControl(ctx, run.Execution, command); err != nil || r.Revision != command.ExpectedRevision+1 {
+					t.Fatalf("cycle: %+v %v", r, err)
+				}
+			}
+			for _, command := range []tmprl.ControlRequest{
+				{RequestID: "pause-1", Action: "resume", ExpectedRevision: 1},
+				{RequestID: "stale", Action: "pause", ExpectedRevision: 1},
+			} {
+				if _, err := service.PreparationControl(ctx, run.Execution, command); !errors.Is(err, tmprl.ErrControlConflict) {
+					t.Fatalf("conflict accepted: %+v %v", command, err)
+				}
+			}
+			if r, err := service.PreparationControl(ctx, run.Execution, pause); err != nil || r != receipt {
+				t.Fatalf("old replay changed receipt: %+v %v", r, err)
+			}
+			state, err := service.GetRun(ctx, run.Execution)
+			if err != nil || state.ControlRevision != 4 || state.ControlAction != "resume" || state.Checkpoint == nil || state.Checkpoint.ID != waiting.Checkpoint.ID || state.Status != tmprl.StatusWaiting {
+				t.Fatalf("continue bypassed review or replay changed state: %+v %v", state, err)
+			}
+			if _, err := service.PreparationControl(ctx, tmprl.Execution{WorkflowID: run.WorkflowID, RunID: "wrong-run"}, pause); !errors.Is(err, job.ErrNotFound) {
+				t.Fatalf("wrong execution accepted: %v", err)
+			}
+			if err := service.StopRun(ctx, run.Execution); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := restarted.Jobs().Wait(ctx, run.Execution); err == nil {
+				t.Fatal("Stop did not cancel the execution")
+			}
+			if r, err := service.PreparationControl(ctx, run.Execution, pause); err != nil || r != receipt {
+				t.Fatalf("Stop erased prior receipt: %+v %v", r, err)
+			}
+			if _, err := service.PreparationControl(ctx, run.Execution, tmprl.ControlRequest{RequestID: "after-stop", Action: "pause", ExpectedRevision: 4}); !errors.Is(err, tmprl.ErrControlConflict) {
+				t.Fatalf("stopped execution accepted a new command: %v", err)
+			}
+			if pending, err := db.PendingIntents(ctx); err != nil || len(pending) != 0 {
+				t.Fatalf("unresolved intents: %+v %v", pending, err)
+			}
+		})
+	}
+}
+
+func TestCatalogPreparationSafePoint(t *testing.T) {
+	db, _ := newCatalogDatabase(t)
+	env := newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, text := source(t, true)
+	upload, err := files.Put(ctx, uploads.Input{Name: name}, strings.NewReader(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	compute := &trainer{}
+	config := job.Config{TaskQueue: env.TaskQueue, Namespace: env.Namespace, Uploads: files, MoxieDB: db, StorageRoot: t.TempDir(), Trainer: compute, Log: env.Log,
+		Completer: preparationCompleter(func(ctx context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+			if strings.Contains(request.Messages[1].Content, "[EVIDENCE 1]") && calls.Add(1) == 2 {
+				close(entered)
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return providers.Completion{}, ctx.Err()
+				}
+			}
+			return (completer{}).Complete(ctx, request)
+		}),
+	}
+	j, err := job.New(env.Client, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := j.Jobs().NewWorker()
+	if err := w.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(w.Stop)
+	service := datasets.New(j.Datasets(), j, db)
+	if err := service.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	run, err := service.StartRun(ctx, job.Request{ID: "safe-" + env.TaskQueue, PreparationOnly: true, Prepare: &preparation.PreparationRequest{DatasetID: upload.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer, MaxQuestions: 12}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := waitForCheckpoint(t, ctx, j, run.Execution, "preview-review")
+	payload, err := json.Marshal(preparation.Review{Records: waiting.Artifacts.Preview.Preview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ContinuePreview(ctx, run.Execution, tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "accepted-review", Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if _, err := service.PreparationControl(ctx, run.Execution, tmprl.ControlRequest{RequestID: "pause-in-generation", Action: "pause"}); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	for {
+		state, err := service.GetRun(ctx, run.Execution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.Status == tmprl.StatusPaused {
+			if state.Step != "generate" || state.ControlAcknowledgedRevision != 1 || !strings.HasPrefix(state.ControlCheckpoint, "preparation/generate/steps.json:") {
+				t.Fatalf("catalog claimed pause without a saved generation checkpoint: %+v", state)
+			}
+			break
+		}
+		if state.Status.Terminal() {
+			t.Fatalf("preparation closed instead of pausing: %+v", state)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	// Host shutdown while paused: save, stop the worker, and stay offline.
+	if err := j.Jobs().Drain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	w.Stop()
+	// A catalog-only reader must retain the confirmed checkpoint while the
+	// worker/command facade is unavailable. It does not reconstruct the records.
+	reader := datasets.New(j.Datasets(), nil, db)
+	reader.Namespace = env.Namespace
+	state, err := reader.GetRun(ctx, run.Execution)
+	if err != nil || state.Status != tmprl.StatusPaused || state.ControlAcknowledgedRevision != 1 || state.ControlCheckpoint == "" {
+		t.Fatalf("SQL lost safe-point observation: %+v, %v", state, err)
+	}
+	// Restarted process: the run stays paused until Continue.
+	if j, err = job.New(env.Client, config); err != nil {
+		t.Fatal(err)
+	}
+	w = j.Jobs().NewWorker()
+	if err := w.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(w.Stop)
+	service = datasets.New(j.Datasets(), j, db)
+	if _, err := service.PreparationControl(ctx, run.Execution, tmprl.ControlRequest{RequestID: "continue-generation", Action: "resume", ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := j.Jobs().Wait(ctx, run.Execution)
+	if err != nil || completed.Execution != run.Execution || completed.Artifacts.Preparation == nil || completed.Artifacts.Preparation.RecordCount != 12 || compute.attempts.Load() != 0 || len(completed.Decisions) != 1 || completed.Decisions[0].SubmissionID != "accepted-review" {
+		t.Fatalf("Continue lost review/output or started training: %+v, %v", completed, err)
+	}
+}
+
+func TestCatalogSubmissionRecovery(t *testing.T) {
+	for _, failure := range []string{"temporal_receipt", "sql_receipt"} {
+		t.Run(failure, func(t *testing.T) {
+			db, setup := newCatalogDatabase(t)
+			env := newTestEnvironment(t)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			name, text := source(t, true)
+			upload, err := files.Put(ctx, uploads.Input{Name: name}, strings.NewReader(text))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := &lostReceiptClient{Client: env.Client}
+			c.submit.Store(failure == "temporal_receipt")
+			if failure == "sql_receipt" {
+				_, err := setup.ExecContext(ctx, `CREATE SEQUENCE link_fault;
+CREATE FUNCTION link_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN IF nextval('link_fault')=1 THEN RAISE EXCEPTION 'injected lost SQL receipt'; END IF; RETURN NEW; END $$;
+CREATE TRIGGER link_fault BEFORE UPDATE ON job_attempts FOR EACH ROW
+WHEN (OLD.run_id IS NULL AND NEW.run_id IS NOT NULL) EXECUTE FUNCTION link_fault();`)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg := job.Config{TaskQueue: env.TaskQueue, Namespace: env.Namespace, Uploads: files, MoxieDB: db, StorageRoot: t.TempDir(), Trainer: &trainer{}, Completer: completer{}, Log: env.Log}
+			j, err := job.New(c, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := job.Request{ID: "catalog-" + env.TaskQueue, PreparationOnly: true, Prepare: &preparation.PreparationRequest{DatasetID: upload.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer}}
+			if _, err := j.Start(ctx, input); err == nil {
+				t.Fatal("injected receipt loss was not exercised")
+			}
+			pending, err := db.PendingIntents(ctx)
+			if err != nil || len(pending) != 1 || pending[0].Kind != "submit" {
+				t.Fatalf("missing durable submit intent: %+v %v", pending, err)
+			}
+			a, err := db.GetAttempt(ctx, pending[0].AttemptID)
+			if err != nil || a.RunID.Valid {
+				t.Fatalf("receipt loss did not leave an unresolved execution link: %+v %v", a, err)
+			}
+			// Construct a fresh application object: recovery must use durable state,
+			// not the original handler's return value or its process-local memory.
+			restarted, err := job.New(env.Client, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := restarted.Reconcile(ctx); err != nil {
+				t.Fatal(err)
+			}
+			a, err = db.GetAttempt(ctx, a.AttemptID)
+			if err != nil || !a.RunID.Valid {
+				t.Fatalf("unresolved original execution: %+v %v", a, err)
+			}
+			replay, err := restarted.Start(ctx, input)
+			if err != nil || replay.RunID != a.RunID.String {
+				t.Fatalf("replay started another execution: %+v %v", replay, err)
+			}
+			input.Prepare.Model = "changed-model"
+			if _, err := restarted.Start(ctx, input); !errors.Is(err, tmprl.ErrInvalidArgument) {
+				t.Fatalf("changed input replay accepted: %v", err)
+			}
+			pending, err = db.PendingIntents(ctx)
+			if err != nil || len(pending) != 0 {
+				t.Fatalf("unsettled submission: %+v %v", pending, err)
+			}
+			rows, err := db.ListCatalog(ctx, moxiedb.CatalogFilter{Namespace: env.Namespace})
+			if err != nil || len(rows) != 1 || rows[0].Attempt.RunID.String != a.RunID.String {
+				t.Fatalf("duplicate or missing logical job: %+v %v", rows, err)
+			}
+			c.stop.Store(true)
+			if err := j.Stop(ctx, replay.Execution); !errors.Is(err, job.ErrUnavailable) {
+				t.Fatalf("lost Stop receipt not exercised: %v", err)
+			}
+			pending, err = db.PendingIntents(ctx)
+			if err != nil || len(pending) != 1 || pending[0].Kind != "stop" {
+				t.Fatalf("missing uncertain Stop: %+v %v", pending, err)
+			}
+			if err := restarted.Reconcile(ctx); err != nil {
+				t.Fatal(err)
+			}
+			pending, err = db.PendingIntents(ctx)
+			if err != nil || len(pending) != 0 {
+				t.Fatalf("Stop not reconciled: %+v %v", pending, err)
+			}
+			if err := restarted.Stop(ctx, replay.Execution); err != nil {
+				t.Fatalf("Stop replay failed: %v", err)
+			}
+		})
+	}
+}
+
+func TestCatalogReviewAndObservationRecovery(t *testing.T) {
+	db, _ := newCatalogDatabase(t)
+	env := newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, text := source(t, true)
+	upload, err := files.Put(ctx, uploads.Input{Name: name}, strings.NewReader(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &lostReceiptClient{Client: env.Client}
+	c.review.Store(true)
+	compute := &trainer{}
+	cfg := job.Config{TaskQueue: env.TaskQueue, Namespace: env.Namespace, Uploads: files, MoxieDB: db, StorageRoot: t.TempDir(), Trainer: compute, Completer: completer{}, Log: env.Log}
+	j, err := job.New(c, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := datasets.New(j.Datasets(), j, db)
+	if err := service.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	workerJob, err := job.New(env.Client, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := workerJob.Jobs().NewWorker()
+	if err := worker.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(worker.Stop)
+	run, err := j.Start(ctx, job.Request{ID: "review-" + env.TaskQueue, PreparationOnly: true, Prepare: &preparation.PreparationRequest{DatasetID: upload.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer, MaxQuestions: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := waitForCheckpoint(t, ctx, j, run.Execution, "preview-review")
+	// The foundation polling helper deliberately bypasses the application's
+	// catalog. Observe through the public application API before the outage.
+	if _, err := j.Get(ctx, run.Execution); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := db.GetCatalogExecution(ctx, env.Namespace, run.WorkflowID, run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(entry.Attempt.Observation), waiting.Artifacts.Preview.Preview[0].Target) || strings.Contains(string(entry.Attempt.Observation), upload.ID) {
+		t.Fatal("SQL observation contains source/preview text")
+	}
+	outage, err := job.New(unavailableCatalogClient{env.Client}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := outage.Reconcile(ctx); !errors.Is(err, job.ErrUnavailable) {
+		t.Fatalf("outage was hidden: %v", err)
+	}
+	stale, err := db.GetCatalogExecution(ctx, env.Namespace, run.WorkflowID, run.RunID)
+	if err != nil || !stale.Attempt.StateStale || stale.Attempt.ExecutionStatus.String != "waiting" || !stale.Attempt.ObservedAt.Time.Equal(entry.Attempt.ObservedAt.Time) {
+		t.Fatalf("outage fabricated state/freshness: %+v %v", stale, err)
+	}
+	delayed := &delayedCatalogClient{Client: env.Client, entered: make(chan struct{}), release: make(chan struct{})}
+	oldReader, err := job.New(delayed, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldResult := make(chan error, 1)
+	go func() { _, err := oldReader.Get(ctx, run.Execution); oldResult <- err }()
+	select {
+	case <-delayed.entered:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	payload, err := json.Marshal(preparation.Review{Records: waiting.Artifacts.Preview.Preview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "review-one", Payload: payload}
+	if _, err := j.ContinuePreview(ctx, run.Execution, decision); !errors.Is(err, job.ErrUnavailable) {
+		t.Fatalf("lost review receipt not exercised: %v", err)
+	}
+	finished, err := j.Jobs().Wait(ctx, run.Execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finished.Status != tmprl.StatusCompleted || compute.attempts.Load() != 0 {
+		t.Fatal("preparation unexpectedly authorized training")
+	}
+	restarted, err := job.New(env.Client, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.Get(ctx, run.Execution); err != nil {
+		t.Fatal(err)
+	}
+	close(delayed.release)
+	if err := <-oldResult; err != nil {
+		t.Fatal(err)
+	}
+	entry, err = db.GetCatalogExecution(ctx, env.Namespace, run.WorkflowID, run.RunID)
+	if err != nil || entry.Attempt.ExecutionStatus.String != "completed" || entry.Attempt.StateStale {
+		t.Fatalf("older observation regressed completion: %+v %v", entry, err)
+	}
+	pending, err := db.PendingIntents(ctx)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("accepted review receipt not reconciled: %+v %v", pending, err)
+	}
+	if _, err := restarted.ContinuePreview(ctx, run.Execution, decision); err != nil {
+		t.Fatalf("accepted review replay failed: %v", err)
+	}
+	decision.SubmissionID = "different-review"
+	if _, err := restarted.ContinuePreview(ctx, run.Execution, decision); !errors.Is(err, tmprl.ErrInvalidArgument) {
+		t.Fatalf("conflicting review accepted: %v", err)
+	}
+}
+
+func TestCatalogDiscoveryRecovery(t *testing.T) {
+	db, _ := newCatalogDatabase(t)
+	env := newTestEnvironment(t)
+	// History discovery is namespace-wide, unlike a task-queue-scoped worker.
+	// Keep this test independent of other runs and their saved-output catalogs.
+	namespace := "discovery-" + env.TaskQueue
+	if _, err := env.Client.WorkflowService().RegisterNamespace(t.Context(), &workflowservice.RegisterNamespaceRequest{Namespace: namespace, WorkflowExecutionRetentionPeriod: durationpb.New(24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEMPORAL_NAMESPACE", namespace)
+	env = newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, text := source(t, true)
+	upload, err := files.Put(ctx, uploads.Input{Name: name}, strings.NewReader(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := job.Config{TaskQueue: env.TaskQueue, Namespace: env.Namespace, Uploads: files, StorageRoot: t.TempDir(), Trainer: &trainer{}, Completer: completer{}, Log: env.Log}
+	legacy, err := job.New(env.Client, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := legacy.Start(ctx, job.Request{ID: "legacy-" + env.TaskQueue, PreparationOnly: true, Prepare: &preparation.PreparationRequest{DatasetID: upload.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wait for Temporal's eventually consistent visibility before injecting the
+	// startup outage, so the regression is discovery retry, not indexing timing.
+	for {
+		runs, _, err := legacy.List(ctx, tmprl.ListOptions{PageSize: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, existing := range runs {
+			found = found || existing.RunID == run.RunID
+		}
+		if found {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	c := &lostReceiptClient{Client: env.Client}
+	c.list.Store(true)
+	cfg.MoxieDB = db
+	restarted, err := job.New(c, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); restarted.RunCatalog(ctx) }()
+	defer func() { cancel(); <-done }()
+	for {
+		entry, err := db.GetCatalogExecution(ctx, env.Namespace, run.WorkflowID, run.RunID)
+		if err == nil {
+			if c.list.Load() || entry.Attempt.ExecutionStatus.String != "queued" {
+				t.Fatalf("discovery did not exercise/recover the outage: %+v", entry)
+			}
+			break
+		}
+		if !errors.Is(err, moxiedb.ErrNotFound) {
+			t.Fatal(err)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("legacy history not rediscovered after outage", ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}

@@ -3,12 +3,14 @@ package tmprl
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,8 +65,70 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 	}
 	var sample Progress
 	var progressMu sync.Mutex
+	var safePoint func(context.Context, string) error
+	var lastCheckpoint string
+	if input.SafePoints {
+		defer j.beginSafePointStep()()
+		// Validate the acknowledged checkpoint on the first resumed attempt.
+		// Later retries may have advanced it legitimately and use the step's own
+		// identity/cursor validation. Never reset a missing or changed pause file.
+		if input.ResumeCheckpoint != "" && info.Attempt == 1 {
+			relative, digest, ok := strings.Cut(input.ResumeCheckpoint, ":")
+			prefix := input.Stage + "/" + input.Step + "/"
+			checkpoint, scoped := strings.CutPrefix(relative, prefix)
+			if !ok || !scoped || !filepath.IsLocal(checkpoint) {
+				return output, temporal.NewNonRetryableApplicationError("invalid preparation resume checkpoint", "invalid-step-checkpoint", nil)
+			}
+			data, err := workspace.ReadFile(checkpoint)
+			if err != nil || fmt.Sprintf("%x", sha256.Sum256(data)) != digest {
+				return output, temporal.NewNonRetryableApplicationError("preparation resume checkpoint is missing or changed; saved work was not reset", "invalid-step-checkpoint", nil)
+			}
+			lastCheckpoint = checkpoint
+		}
+		safePoint = func(ctx context.Context, checkpoint string) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			reference := input.Stage + "/" + input.Step + ":not-started"
+			if checkpoint != "" {
+				if !filepath.IsLocal(checkpoint) {
+					return fmt.Errorf("invalid checkpoint reference")
+				}
+				data, err := workspace.ReadFile(checkpoint)
+				if err != nil {
+					return err
+				}
+				reference = fmt.Sprintf("%s/%s/%s:%x", input.Stage, input.Step, filepath.ToSlash(checkpoint), sha256.Sum256(data))
+			}
+			lastCheckpoint = checkpoint
+			if j.draining() {
+				// Host shutdown: same durable suspension as Pause, but the
+				// workflow reschedules it on the next worker without a Continue.
+				return temporal.NewNonRetryableApplicationError("step suspended for worker shutdown", "step-drained", nil, reference, info.Attempt)
+			}
+			value, err := j.client.QueryWorkflow(ctx, input.WorkflowID, input.RunID, j.cfg.Names.Query)
+			if err != nil {
+				return err // Never start another unit using a stale control observation.
+			}
+			var run Run[R, A]
+			if err := value.Get(&run); err != nil {
+				return err
+			}
+			if run.Execution != input.Execution || run.ControlStage != input.Stage || run.Status.Terminal() {
+				return fmt.Errorf("checkpoint execution is not active")
+			}
+			if run.ControlAction == "pause" {
+				return temporal.NewNonRetryableApplicationError("step suspended at durable checkpoint", "step-suspended", nil, reference, info.Attempt)
+			}
+			return ctx.Err()
+		}
+		if err := safePoint(ctx, lastCheckpoint); err != nil {
+			return output, err
+		}
+	}
 	output, err = implementation.Execute(ctx, StepContext[R, A]{
 		Request: input, Workspace: workspace,
+		SafePoint: safePoint,
 		Publish: func(progress Progress) {
 			progressMu.Lock()
 			defer progressMu.Unlock()
@@ -85,6 +149,11 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 	}
 	if err := ctx.Err(); err != nil {
 		return output, err
+	}
+	if safePoint != nil {
+		if err := safePoint(ctx, lastCheckpoint); err != nil {
+			return output, err
+		}
 	}
 	if output.Status != "" && output.Status != StatusCompleted && !slices.Contains(j.cfg.Outcomes, output.Status) {
 		return StepResult[A]{}, temporal.NewNonRetryableApplicationError("invalid step outcome", "invalid-step-output", nil)
@@ -109,9 +178,17 @@ func WriteJSON(root *os.Root, path string, value any) error {
 	}
 	defer root.Remove(temporary)
 	_, writeErr := file.Write(data)
+	syncErr := file.Sync()
 	closeErr := file.Close()
-	if err := errors.Join(writeErr, closeErr); err != nil {
+	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
 		return err
 	}
-	return root.Rename(temporary, path)
+	if err := root.Rename(temporary, path); err != nil {
+		return err
+	}
+	directory, err := root.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	return errors.Join(directory.Sync(), directory.Close())
 }

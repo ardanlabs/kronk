@@ -163,6 +163,24 @@ func TestPageRangeExtraction(t *testing.T) {
 		Input:  preparation.PreparationInput{Kind: preparation.PreparationFull, Request: preparation.PreparationRequest{Goal: preparation.GoalQuestionAnswer, PageStart: 11, PageEnd: 25}},
 		Source: info, Extractor: e, OpenSource: openSource(source, info),
 	}}
+	paused := errors.New("controlled extraction safe-point suspension")
+	input.SafePoint = func(_ context.Context, path string) error {
+		if path != "extraction.json" {
+			t.Fatalf("unexpected extraction checkpoint: %s", path)
+		}
+		return paused
+	}
+	if _, err := (extract.Step{}).Execute(t.Context(), input); !errors.Is(err, paused) {
+		t.Fatalf("completed conversion did not suspend before planning: %v", err)
+	}
+	if _, err := workspace.ReadFile(checkpoint.File); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("suspended extraction advanced its unit plan: %v", err)
+	}
+	input.SafePoint = nil
+	input.Preparation.Extractor = extractor{profile: "v1", convert: func(context.Context, string) (providers.Document, error) {
+		t.Fatal("Continue repeated committed conversion")
+		return providers.Document{}, nil
+	}}
 	if _, err := (extract.Step{}).Execute(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}

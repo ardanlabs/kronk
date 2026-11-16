@@ -54,6 +54,11 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	previewInput := input
 	previewInput.Preparation = &resources
 	previewInput.Workspace = workspace
+	if input.SafePoint != nil {
+		previewInput.SafePoint = func(ctx context.Context, path string) error {
+			return input.SafePoint(ctx, "preview/"+path)
+		}
+	}
 	state, exists, err := checkpoint.Load(ctx, previewInput, true)
 	if err != nil {
 		return tmprl.StepResult[preparation.Artifacts]{}, err
@@ -101,6 +106,9 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 
 	if state.Verified < len(state.Records) {
+		if err := checkpoint.SafePoint(ctx, previewInput); err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
 		report(0, len(state.Records), "Checking preview examples")
 		warnings, usage, err := verify.Run(ctx, resources.Completer, resources.Input.Request, "", state.Records)
 		if err != nil {
@@ -121,6 +129,9 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}
 	if err := tmprl.WriteJSON(workspace, checkpoint.File, state); err != nil {
+		return tmprl.StepResult[preparation.Artifacts]{}, err
+	}
+	if err := checkpoint.SafePoint(ctx, previewInput); err != nil {
 		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}
 

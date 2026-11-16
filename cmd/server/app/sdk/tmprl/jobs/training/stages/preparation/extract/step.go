@@ -34,6 +34,13 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
+		// The provider's whole-document result is durable here. This does not
+		// claim that an in-flight Docling conversion can be suspended/recovered.
+		if input.SafePoint != nil {
+			if err := input.SafePoint(ctx, "extraction.json"); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+		}
 		units, exclusions, err := SourceUnits(document, p.Input.Request.Goal)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
@@ -75,6 +82,9 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
+	}
+	if err := checkpoint.SafePoint(ctx, input); err != nil {
+		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}
 	if input.Publish != nil {
 		input.Publish(tmprl.Progress{Completed: 1, Total: 1, Message: "Source extraction complete"})

@@ -122,7 +122,8 @@ func (j *Jobs[R, A]) Get(ctx context.Context, e Execution) (Run[R, A], error) {
 			}
 			result = completed
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
-			result.Error = failureMessage(event.GetWorkflowExecutionFailedEventAttributes().GetFailure())
+			failure := event.GetWorkflowExecutionFailedEventAttributes().GetFailure()
+			result.Error, result.FailureTypes = failureMessage(failure), failureTypes(failure)
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 			result.Error = "job terminated: " + event.GetWorkflowExecutionTerminatedEventAttributes().GetReason()
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:

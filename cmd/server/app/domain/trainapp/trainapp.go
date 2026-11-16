@@ -15,24 +15,21 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"go.temporal.io/api/serviceerror"
 )
 
 type app struct {
 	training *training.Job
 	uploads  *uploads.Store
-	datasets *preparation.DatasetStore
+	datasets *datasets.Service
 }
 
 func newApp(cfg Config) *app {
-	if cfg.Datasets == nil && cfg.Job != nil {
-		cfg.Datasets = cfg.Job.Datasets()
-	}
 	return &app{training: cfg.Job, uploads: cfg.Uploads, datasets: cfg.Datasets}
 }
 
@@ -125,6 +122,24 @@ func (a *app) requireJob(next web.HandlerFunc) web.HandlerFunc {
 	}
 }
 
+func (a *app) requireRuns(next web.HandlerFunc) web.HandlerFunc {
+	return func(ctx context.Context, r *http.Request) web.Encoder {
+		if a.datasets == nil || !a.datasets.RunsAvailable() {
+			return errs.Errorf(errs.Unavailable, "training service is unavailable; check server startup logs")
+		}
+		return next(ctx, r)
+	}
+}
+
+func (a *app) requireCatalog(next web.HandlerFunc) web.HandlerFunc {
+	return func(ctx context.Context, r *http.Request) web.Encoder {
+		if a.datasets == nil || !a.datasets.CatalogAvailable() {
+			return errs.Errorf(errs.Unavailable, "preparation run catalog is unavailable; check server startup logs")
+		}
+		return next(ctx, r)
+	}
+}
+
 func (a *app) upload(ctx context.Context, r *http.Request) web.Encoder {
 	// Bound the entire request, including multipart framing, before parsing it.
 	r.Body = http.MaxBytesReader(web.GetWriter(ctx), r.Body, a.uploads.MaximumBytes()+(1<<20))
@@ -166,7 +181,7 @@ func (a *app) create(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	run, err := a.training.Start(ctx, request)
+	run, err := a.datasets.StartRun(ctx, request)
 	if err != nil {
 		return toAppError(err)
 	}
@@ -188,11 +203,40 @@ func (a *app) continuePreview(ctx context.Context, r *http.Request) web.Encoder 
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
-	receipt, err := a.training.ContinuePreview(ctx, execution, decision)
+	receipt, err := a.datasets.ContinuePreview(ctx, execution, decision)
 	if err != nil {
 		return toAppError(err)
 	}
 	return toAppDecisionReceipt(receipt)
+}
+
+func (a *app) pausePreparation(ctx context.Context, r *http.Request) web.Encoder {
+	return a.preparationControl(ctx, r, "pause")
+}
+
+func (a *app) continuePreparation(ctx context.Context, r *http.Request) web.Encoder {
+	return a.preparationControl(ctx, r, "resume")
+}
+
+func (a *app) preparationControl(ctx context.Context, r *http.Request, action string) web.Encoder {
+	execution := tmprl.Execution{WorkflowID: r.PathValue("workflow_id"), RunID: r.PathValue("run_id")}
+	if err := execution.Validate(); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+	r.Body = http.MaxBytesReader(web.GetWriter(ctx), r.Body, 4096)
+	var app PreparationControl
+	if err := web.Decode(r, &app); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+	request, err := toControlRequest(app, action)
+	if err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+	receipt, err := a.datasets.PreparationControl(ctx, execution, request)
+	if err != nil {
+		return toAppError(err)
+	}
+	return toAppControlReceipt(receipt)
 }
 
 func (a *app) startTraining(ctx context.Context, r *http.Request) web.Encoder {
@@ -220,7 +264,7 @@ func (a *app) stop(ctx context.Context, r *http.Request) web.Encoder {
 	if err := execution.Validate(); err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
-	if err := a.training.Jobs().Stop(ctx, execution); err != nil {
+	if err := a.datasets.StopRun(ctx, execution); err != nil {
 		return toAppError(err)
 	}
 	return nil
@@ -248,9 +292,13 @@ func (a *app) query(ctx context.Context, r *http.Request) web.Encoder {
 	web.GetWriter(ctx).Header().Set("Cache-Control", "no-store")
 	waitCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
+	options := datasets.RunFilter{PageSize: pageSize, NextPageToken: token, Mode: r.URL.Query().Get("mode"), TargetDatasetID: r.URL.Query().Get("target_dataset_id")}
+	for _, value := range r.URL.Query()["status"] {
+		options.Statuses = append(options.Statuses, tmprl.Status(value))
+	}
 	var result Runs
 	for {
-		runs, next, err := a.training.Jobs().List(waitCtx, tmprl.ListOptions{PageSize: pageSize, NextPageToken: token})
+		runs, next, err := a.datasets.ListCatalogRuns(waitCtx, options)
 		if err != nil {
 			if ctx.Err() == nil && waitCtx.Err() == context.DeadlineExceeded && result.Revision != "" {
 				return result
@@ -293,7 +341,7 @@ func (a *app) queryByID(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	run, err := a.training.Jobs().Get(ctx, execution)
+	run, err := a.datasets.GetRun(ctx, execution)
 	if err != nil {
 		return toAppError(err)
 	}
@@ -338,7 +386,7 @@ func (a *app) downloadArtifact(ctx context.Context, r *http.Request, kind string
 	}
 	open, filename := a.training.OpenAdapter, "adapter.gguf"
 	if kind == "dataset" {
-		open, filename = a.training.OpenDataset, "dataset.jsonl"
+		open, filename = a.datasets.OpenPreparedDataset, "dataset.jsonl"
 	}
 	file, err := open(ctx, execution)
 	if err != nil {
@@ -365,9 +413,13 @@ func (a *app) downloadArtifact(ctx context.Context, r *http.Request, kind string
 
 func toAppError(err error) *errs.Error {
 	switch {
-	case errors.Is(err, preparation.ErrDatasetConflict):
+	case errors.Is(err, tmprl.ErrControlConflict):
+		return errs.Errorf(errs.Aborted, "preparation control conflicts with the current run or request; refresh its state")
+	case errors.Is(err, datasetstore.ErrDocumentExists):
+		return errs.New(errs.FailedPrecondition, err)
+	case errors.Is(err, datasetstore.ErrDatasetConflict):
 		return errs.New(errs.Aborted, err)
-	case errors.Is(err, preparation.ErrDatasetNotFound):
+	case errors.Is(err, datasetstore.ErrDatasetNotFound):
 		return errs.Errorf(errs.NotFound, "preparation dataset or document not found")
 	case errors.Is(err, tmprl.ErrInvalidArgument), errors.Is(err, uploads.ErrInvalidArgument):
 		return errs.New(errs.InvalidArgument, err)
@@ -377,18 +429,12 @@ func toAppError(err error) *errs.Error {
 		return errs.New(errs.Canceled, err)
 	case errors.Is(err, context.DeadlineExceeded):
 		return errs.Errorf(errs.DeadlineExceeded, "training request timed out")
-	}
-	if _, ok := errors.AsType[*serviceerror.NotFound](err); ok {
+	case errors.Is(err, training.ErrNotFound):
 		return errs.Errorf(errs.NotFound, "training resource not found")
-	}
-	if _, ok := errors.AsType[*serviceerror.WorkflowExecutionAlreadyStarted](err); ok {
+	case errors.Is(err, training.ErrAlreadyExists):
 		return errs.Errorf(errs.AlreadyExists, "training job already exists")
-	}
-	if _, ok := errors.AsType[*serviceerror.Unavailable](err); ok {
+	case errors.Is(err, training.ErrUnavailable):
 		return errs.Errorf(errs.Unavailable, "training service is unavailable")
-	}
-	if _, ok := errors.AsType[*serviceerror.DeadlineExceeded](err); ok {
-		return errs.Errorf(errs.DeadlineExceeded, "training request timed out")
 	}
 	return errs.Errorf(errs.Internal, "training request: %s", err)
 }

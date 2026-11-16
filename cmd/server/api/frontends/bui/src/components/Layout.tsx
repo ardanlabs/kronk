@@ -6,7 +6,7 @@ import { useDownload } from '../contexts/DownloadContext';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import { useAccuracyRunner } from '../contexts/AccuracyRunnerContext';
 import { useEfficiencyRunner } from '../contexts/EfficiencyRunnerContext';
-import { useFineTuningRunner, type FineTuningActivity } from '../contexts/FineTuningRunnerContext';
+import { preparationPath, useFineTuningRunner, type FineTuningActivity } from '../contexts/FineTuningRunnerContext';
 import { usePlayground } from '../contexts/PlaygroundContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -330,6 +330,7 @@ export default function Layout({ children }: LayoutProps) {
     inputKind: fineTuningInputKind,
     uploading: fineTuningUploading,
     cancelPreparation: stopFineTuningPreparation,
+    preparationRun: fineTuningPreparationRun,
   } = useFineTuningRunner();
   const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
@@ -703,9 +704,9 @@ export default function Layout({ children }: LayoutProps) {
             {fineTuningPreparation && (
               <div className="download-indicator">
                 <div className="download-indicator-link autotest-indicator-link">
-                  <Link to={`${routeMap['fine-tuning']}?view=${fineTuningUploading && fineTuningInputKind === 'dataset' ? 'configure' : 'prepare'}`} className="autotest-indicator-top">
+                  <Link to={fineTuningUploading ? `${routeMap['fine-tuning']}?view=${fineTuningInputKind === 'dataset' ? 'configure' : 'prepare'}` : fineTuningPreparationRun ? preparationPath(fineTuningPreparationRun) : `${routeMap['fine-tuning']}?view=prepare`} className="autotest-indicator-top">
                     <div className="download-indicator-header">
-                      <span className="download-indicator-spinner" />
+                      {!fineTuningPreparation.paused && <span className="download-indicator-spinner" />}
                       <span className="download-indicator-title">{fineTuningPreparation.title}</span>
                     </div>
                     <div className="download-indicator-url" title={fineTuningProgress(fineTuningPreparation)}>
@@ -716,8 +717,8 @@ export default function Layout({ children }: LayoutProps) {
                     type="button"
                     className="autotest-indicator-stop"
                     onClick={stopFineTuningPreparation}
-                    aria-label="Cancel dataset upload"
-                    title="Cancel dataset upload"
+                    aria-label={fineTuningInputKind === 'document' ? 'Cancel document upload' : 'Cancel dataset upload'}
+                    title={fineTuningInputKind === 'document' ? 'Cancel document upload' : 'Cancel dataset upload'}
                   >
                     ■
                   </button>}

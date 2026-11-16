@@ -1,4 +1,4 @@
-package preparation_test
+package store_test
 
 import (
 	"errors"
@@ -7,13 +7,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
+	datasets "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
 
-func documentAddition(id, hash string, prompts ...string) preparation.DatasetAddition {
-	addition := preparation.DatasetAddition{PublicationID: "run-" + id, Source: uploads.File{ID: id, Name: id + ".txt", SHA256: strings.Repeat(hash, 64)}}
+func documentAddition(id, hash string, prompts ...string) datasets.DatasetAddition {
+	addition := datasets.DatasetAddition{PublicationID: "run-" + id, Source: uploads.File{ID: id, Name: id + ".txt", SHA256: strings.Repeat(hash, 64)}}
 	for _, prompt := range prompts {
 		addition.Records = append(addition.Records, training.Record{Prompt: prompt, Target: "dawn", Evidence: "The harbor opens at dawn.", SourceDocument: id})
 	}
@@ -23,7 +24,7 @@ func documentAddition(id, hash string, prompts ...string) preparation.DatasetAdd
 func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 	ctx := t.Context()
 	path := t.TempDir()
-	store, err := preparation.NewDatasetStore(path)
+	store, err := datasets.NewDatasetStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +34,16 @@ func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 	}
 	first := documentAddition("source-a", "a", "When does the harbor open?", "What is the opening time?")
 	second := documentAddition("source-b", "b", "At what time does the ferry leave?")
+	invalid := first
+	invalid.Source.SHA256 = "not-a-source-hash"
+	if _, err := store.Add(ctx, dataset.ID, 1, invalid); !errors.Is(err, tmprl.ErrInvalidArgument) {
+		t.Fatalf("invalid source hash: %v", err)
+	}
+	invalid = first
+	invalid.PageEnd = 2
+	if _, err := store.Add(ctx, dataset.ID, 1, invalid); !errors.Is(err, tmprl.ErrInvalidArgument) {
+		t.Fatalf("unpaired page range: %v", err)
+	}
 	added, err := store.Add(ctx, dataset.ID, 1, first)
 	if err != nil || added.Version != 2 || added.RecordCount != 2 {
 		t.Fatalf("first addition: %+v, %v", added, err)
@@ -41,7 +52,7 @@ func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 	if err != nil || added.Version != 3 || added.RecordCount != 3 {
 		t.Fatalf("second addition: %+v, %v", added, err)
 	}
-	if _, err := store.Remove(ctx, dataset.ID, 2, first.PublicationID); !errors.Is(err, preparation.ErrDatasetConflict) {
+	if _, err := store.Remove(ctx, dataset.ID, 2, first.PublicationID); !errors.Is(err, datasets.ErrDatasetConflict) {
 		t.Fatalf("stale removal: %v", err)
 	}
 	removed, err := store.Remove(ctx, dataset.ID, 3, first.PublicationID)
@@ -49,7 +60,7 @@ func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 		t.Fatalf("remove: %+v, %v", removed, err)
 	}
 	// Reopening the store proves persistence rather than an in-memory cache.
-	store, err = preparation.NewDatasetStore(path)
+	store, err = datasets.NewDatasetStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,31 +82,48 @@ func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 		t.Fatalf("latest: %+v, %v", latest, err)
 	}
 	first.Records[0].Prompt = "A conflicting change to accepted input?"
-	if _, err := store.Add(ctx, dataset.ID, 1, first); !errors.Is(err, preparation.ErrDatasetConflict) {
+	if _, err := store.Add(ctx, dataset.ID, 1, first); !errors.Is(err, datasets.ErrDatasetConflict) {
 		t.Fatalf("changed idempotency payload accepted: %v", err)
 	}
+	info, err := store.Inspect(ctx, dataset.ID, 4)
+	if err != nil || !info.HasDocument(second.Source.SHA256, 0, 0) || info.HasDocument(second.Source.SHA256, 1, 2) || info.HasDocument(first.Source.SHA256, 0, 0) {
+		t.Fatalf("HasDocument must match only a present source and exact page range: %+v, %v", info.Documents, err)
+	}
 	duplicate := documentAddition("duplicate", "b", "Another question about the ferry?")
-	if _, err := store.Add(ctx, dataset.ID, 4, duplicate); !errors.Is(err, preparation.ErrDatasetConflict) {
+	if _, err := store.Add(ctx, dataset.ID, 4, duplicate); !errors.Is(err, datasets.ErrDocumentExists) || !errors.Is(err, datasets.ErrDatasetConflict) {
 		t.Fatalf("duplicate document accepted: %v", err)
 	}
 	duplicate.Source.SHA256 = strings.Repeat("c", 64)
 	duplicate.Records[0].Prompt = second.Records[0].Prompt
-	if _, err := store.Add(ctx, dataset.ID, 4, duplicate); !errors.Is(err, preparation.ErrDatasetConflict) {
-		t.Fatalf("duplicate example accepted: %v", err)
+	if _, err := store.Add(ctx, dataset.ID, 4, duplicate); !errors.Is(err, datasets.ErrQuestionsExist) || !errors.Is(err, datasets.ErrDatasetConflict) {
+		t.Fatalf("all-repeated document accepted: %v", err)
+	}
+	// Repeats are compared case- and space-insensitively and skipped; new questions are saved.
+	partial := documentAddition("partial", "d", "  at WHAT time does the ferry leave? ", "Where is the fuel dock?")
+	saved, err := store.Add(ctx, dataset.ID, 4, partial)
+	if err != nil || saved.Version != 5 || saved.RecordCount != 2 || saved.Documents[1].ID != partial.PublicationID || saved.Documents[1].RecordCount != 1 {
+		t.Fatalf("partial repeat: %+v, %v", saved, err)
+	}
+	current, err = store.Records(ctx, dataset.ID, 5)
+	if err != nil || len(current) != 2 || current[1].Prompt != "Where is the fuel dock?" {
+		t.Fatalf("saved records after skipping a repeat: %+v, %v", current, err)
+	}
+	if replayed, err := store.Add(ctx, dataset.ID, 4, partial); err != nil || replayed.Version != 5 {
+		t.Fatalf("replay of a partially skipped publication: %+v, %v", replayed, err)
 	}
 	listed, err := store.List(ctx)
-	if err != nil || len(listed) != 1 || listed[0].RecordCount != 1 {
+	if err != nil || len(listed) != 1 || listed[0].RecordCount != 2 {
 		t.Fatalf("list: %+v, %v", listed, err)
 	}
 }
 
 func TestDatasetConcurrentPublishers(t *testing.T) {
 	path := t.TempDir()
-	first, err := preparation.NewDatasetStore(path)
+	first, err := datasets.NewDatasetStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := preparation.NewDatasetStore(path)
+	second, err := datasets.NewDatasetStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +134,7 @@ func TestDatasetConcurrentPublishers(t *testing.T) {
 	start := make(chan struct{})
 	failures := make(chan error, 2)
 	var group sync.WaitGroup
-	for i, store := range []*preparation.DatasetStore{first, second} {
+	for i, store := range []*datasets.DatasetStore{first, second} {
 		group.Go(func() {
 			<-start
 			addition := documentAddition("source-a", "a", "When does the harbor open?")
@@ -129,10 +157,10 @@ func TestDatasetConcurrentPublishers(t *testing.T) {
 	if err != nil || latest.Version != 3 || latest.RecordCount != 2 || len(latest.Documents) != 2 {
 		t.Fatalf("lost update: %+v, %v", latest, err)
 	}
-	if _, err := first.Get(t.Context(), "../outside", 0); !errors.Is(err, preparation.ErrInvalidArgument) {
+	if _, err := first.Get(t.Context(), "../outside", 0); !errors.Is(err, tmprl.ErrInvalidArgument) {
 		t.Fatalf("unconfined identity accepted: %v", err)
 	}
-	if _, err := first.Get(t.Context(), dataset.ID, 42); !errors.Is(err, preparation.ErrDatasetNotFound) {
+	if _, err := first.Get(t.Context(), dataset.ID, 42); !errors.Is(err, datasets.ErrDatasetNotFound) {
 		t.Fatalf("missing version: %v", err)
 	}
 }

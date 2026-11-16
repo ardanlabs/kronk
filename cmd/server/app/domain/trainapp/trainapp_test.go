@@ -3,7 +3,9 @@ package trainapp_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,9 +26,12 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
@@ -68,18 +74,161 @@ func testAPI(t *testing.T, c *mocks.Client) (*web.App, *uploads.Store) {
 	}
 	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, AuthorizationMode: auth.Open})
+	service := datasets.New(job.Datasets(), job)
+	service.Uploads = store
+	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: service, AuthorizationMode: auth.Open})
 	return api, store
 }
 
 func TestPreparationDatasetRoutes(t *testing.T) {
-	store, err := preparation.NewDatasetStore(t.TempDir())
+	testPreparationDatasetRoutes(t, nil)
+}
+
+func TestPreparationDatasetRoutesSQL(t *testing.T) {
+	testPreparationDatasetRoutes(t, httpCatalog(t))
+}
+
+// HTTP SQL tests opt in to a disposable database and each own a unique schema.
+func httpCatalog(t *testing.T) *moxiedb.DB {
+	t.Helper()
+	connection := os.Getenv("MOXIEDB_HTTP_TEST_URL")
+	if connection == "" {
+		t.Skip("set MOXIEDB_HTTP_TEST_URL to an isolated PostgreSQL test database")
+	}
+	admin, err := sql.Open("pgx", connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	schema := "http_catalog_" + strings.ToLower(rand.Text())
+	if _, err := admin.ExecContext(t.Context(), "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = admin.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE") })
+	u, err := url.Parse(connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := u.Query()
+	query.Set("search_path", schema)
+	u.RawQuery = query.Encode()
+	setup, err := sql.Open("pgx", u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer setup.Close()
+	migration, err := os.ReadFile(filepath.Join("..", "..", "sdk", "tmprl", "moxiedb", "migrations", "001_init.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(t.Context(), string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(t.Context(), "INSERT INTO schema_migrations(version,checksum) VALUES (1,$1)", fmt.Sprintf("%x", sha256.Sum256(migration))); err != nil {
+		t.Fatal(err)
+	}
+	db, err := moxiedb.Open(t.Context(), u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.CheckSchema(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func TestCatalogHTTPWithoutWorker(t *testing.T) {
+	db := httpCatalog(t)
+	files, err := datasetstore.NewDatasetStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := datasets.New(files, nil, db)
+	if err := service.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	log := logger.New(io.Discard, logger.LevelInfo, "catalog-http-test", nil)
+	api := web.NewApp(log.Info, mid.Errors(log))
+	trainapp.Routes(api, trainapp.Config{Datasets: service, AuthorizationMode: auth.Open})
+	get := func(path string) *httptest.ResponseRecorder {
+		t.Helper()
+		w := httptest.NewRecorder()
+		api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+		return w
+	}
+	if w := get("/v1/training/runs"); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"runs":[]`) {
+		t.Fatalf("empty catalog: %d %s", w.Code, w.Body)
+	}
+	for i, mode := range []string{"preparation", "training", "preparation"} {
+		id := fmt.Sprintf("job-%d", i)
+		if err := db.CreateJob(t.Context(), moxiedb.Job{JobID: id, Mode: mode}); err != nil {
+			t.Fatal(err)
+		}
+		a := moxiedb.Attempt{JobID: id, AttemptID: id + "/1", AttemptNumber: 1, TemporalNamespace: "default", WorkflowID: id, RunID: sql.NullString{String: "run-" + id, Valid: true}}
+		if err := db.CreateAttempt(t.Context(), a); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.UpdateAttemptObservation(t.Context(), a.AttemptID, 0, moxiedb.AttemptObservation{ExecutionStatus: sql.NullString{String: "waiting", Valid: true}, ObservedAt: sql.NullTime{Time: time.Now(), Valid: true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	payload := json.RawMessage(`{"private":"private-command-marker"}`)
+	if err := db.BeginIntent(t.Context(), moxiedb.Intent{IntentID: "review", JobID: "job-2", AttemptID: "job-2/1", Kind: "preview_review", CheckpointID: sql.NullString{String: "checkpoint", Valid: true}, Payload: payload, PayloadSHA256: fmt.Sprintf("%x", sha256.Sum256(payload))}); err != nil {
+		t.Fatal(err)
+	}
+	w := get("/v1/training/runs?mode=preparation&status=waiting&page_size=1")
+	var page trainapp.Runs
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" || len(page.Runs) != 1 || page.Runs[0].JobID != "job-2" || !page.Runs[0].StateStale || len(page.Runs[0].PendingActions) != 1 || page.NextPageToken == "" || strings.Contains(w.Body.String(), "private-command-marker") {
+		t.Fatalf("filtered workerless catalog: %d %s", w.Code, w.Body)
+	}
+	w = get("/v1/training/runs?mode=preparation&status=waiting&page_size=1&next_page_token=" + page.NextPageToken)
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || len(page.Runs) != 1 || page.Runs[0].JobID != "job-0" {
+		t.Fatalf("filtered next page: %d %s", w.Code, w.Body)
+	}
+	for _, path := range []string{"/v1/training/runs?mode=other", "/v1/training/runs?status=made-up", "/v1/training/runs?next_page_token=bad!"} {
+		if w := get(path); w.Code != http.StatusBadRequest {
+			t.Fatalf("invalid filter accepted: %s: %d %s", path, w.Code, w.Body)
+		}
+	}
+	if w := get("/v1/training/runs/job-2/run-job-2"); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"status":"waiting"`) || strings.Contains(w.Body.String(), "private-command-marker") {
+		t.Fatalf("persisted detail: %d %s", w.Code, w.Body)
+	}
+	if w := get("/v1/training/runs/job-2/wrong-run"); w.Code != http.StatusNotFound {
+		t.Fatalf("inexact execution accepted: %d %s", w.Code, w.Body)
+	}
+	w = httptest.NewRecorder()
+	api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/training/runs/job-2/run-job-2/stop", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("workerless control accepted: %d %s", w.Code, w.Body)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if w := get("/v1/training/runs"); w.Code != http.StatusInternalServerError {
+		t.Fatalf("SQL failure shown as empty/success: %d %s", w.Code, w.Body)
+	}
+}
+
+func testPreparationDatasetRoutes(t *testing.T, db *moxiedb.DB) {
+	t.Helper()
+	store, err := datasetstore.NewDatasetStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	log := logger.New(io.Discard, logger.LevelInfo, "datasets-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	trainapp.Routes(api, trainapp.Config{Datasets: store, AuthorizationMode: auth.Open})
+	service := datasets.New(store, nil, db)
+	if err := service.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	trainapp.Routes(api, trainapp.Config{Datasets: service, AuthorizationMode: auth.Open})
 	request := func(method, path, body string, status int) *httptest.ResponseRecorder {
 		t.Helper()
 		w := httptest.NewRecorder()
@@ -97,7 +246,7 @@ func TestPreparationDatasetRoutes(t *testing.T) {
 		t.Fatalf("create: %+v, %v", dataset, err)
 	}
 	row := optimization.Record{Prompt: "When does the harbor open?", Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: "upload-a"}
-	if _, err := store.Add(t.Context(), dataset.ID, 1, preparation.DatasetAddition{PublicationID: "run-a", Source: uploads.File{ID: "upload-a", Name: "harbor.txt", SHA256: "hash-a"}, Records: []optimization.Record{row}}); err != nil {
+	if _, err := service.Add(t.Context(), dataset.ID, 1, datasetstore.DatasetAddition{PublicationID: "run-a", Source: uploads.File{ID: "upload-a", Name: "harbor.txt", SHA256: strings.Repeat("a", 64)}, Records: []optimization.Record{row}}); err != nil {
 		t.Fatal(err)
 	}
 	path := "/v1/training/datasets/" + dataset.ID
@@ -120,6 +269,12 @@ func TestPreparationDatasetRoutes(t *testing.T) {
 	}
 	request(http.MethodGet, path+"/versions/99/download", "", http.StatusNotFound)
 	request(http.MethodPost, "/v1/training/datasets", `{"name":""}`, http.StatusBadRequest)
+	readStatus := http.StatusServiceUnavailable
+	if db != nil {
+		readStatus = http.StatusOK // Catalog reads no longer require a worker.
+	}
+	request(http.MethodGet, "/v1/training/runs", "", readStatus)
+	request(http.MethodPost, "/v1/training/runs", `{}`, http.StatusServiceUnavailable)
 }
 
 func uploadRequest(t *testing.T, fields map[string][]string, data string) *http.Request {
@@ -277,6 +432,7 @@ func TestReadState(t *testing.T) {
 	stamp := time.Date(2026, 10, 27, 15, 4, 5, 0, time.UTC)
 	state := tmprl.Run[training.Request, training.Artifacts]{
 		Status: tmprl.StatusPaused, Stage: "preparation", Step: "generate", StartedAt: stamp, UpdatedAt: stamp,
+		ControlRevision: 7, ControlAction: "pause",
 		Request: training.Request{Model: "/private/model.gguf"}, WorkerHost: "private-worker",
 		Stages: []tmprl.StageState{{Name: "preparation", Status: tmprl.StatusPaused, Steps: []tmprl.StepState{
 			{Name: "extract", Status: tmprl.StatusCompleted, Attempt: 1, ClosedAt: stamp},
@@ -309,6 +465,9 @@ func TestReadState(t *testing.T) {
 	}
 	if got.WorkflowID != "training-example" || got.RunID != "run-2" || got.Status != "paused" || got.Stage != "preparation" || got.Step != "generate" || !got.StateStale || !got.StartedAt.Equal(stamp) || !got.UpdatedAt.Equal(stamp) {
 		t.Fatalf("unexpected run: %+v", got)
+	}
+	if got.ControlRevision != 7 || got.ControlAction != "pause" {
+		t.Fatalf("missing control revision/action: %+v", got)
 	}
 	if len(got.Stages) != 2 || len(got.Stages[0].Steps) != 2 || got.Stages[0].Name != "preparation" || got.Stages[0].Status != "paused" || got.Stages[0].Steps[0].Name != "extract" || got.Stages[0].Steps[0].Status != "completed" || !got.Stages[0].Steps[0].ClosedAt.Equal(stamp) || got.Stages[0].Steps[1].Name != "generate" || got.Stages[0].Steps[1].Status != "paused" || got.Stages[0].Steps[1].Attempt != 3 {
 		t.Fatalf("unexpected stage state: %+v", got.Stages)
@@ -914,7 +1073,7 @@ func readyTrainingAPI(t *testing.T, c *mocks.Client) (*web.App, *tmprl.Run[train
 	}
 	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, AuthorizationMode: auth.Open})
+	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(job.Datasets(), job), AuthorizationMode: auth.Open})
 	state := &tmprl.Run[training.Request, training.Artifacts]{
 		Status: tmprl.StatusWaiting, Stage: "preparation",
 		Checkpoint: &tmprl.Checkpoint{ID: "run-2/preparation//start-training", Name: "start-training", Stage: "preparation"},
@@ -1421,7 +1580,7 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 						}
 					})
 					api := web.NewApp(log.Info, mid.Errors(log))
-					trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, AuthClient: client, AuthorizationMode: mode})
+					trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(job.Datasets(), job), AuthClient: client, AuthorizationMode: mode})
 					for _, method := range []string{http.MethodGet, http.MethodPost} {
 						path := statePath
 						if method == http.MethodPost {
@@ -1442,6 +1601,13 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 					api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, statePath+"/start-training", strings.NewReader(startTrainingBody)))
 					if w.Code != test.status {
 						t.Fatalf("start training response: %d %s", w.Code, w.Body)
+					}
+					for _, action := range []string{"pause", "continue"} {
+						w := httptest.NewRecorder()
+						api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, statePath+"/preparation/"+action, nil))
+						if w.Code != test.status {
+							t.Fatalf("preparation %s authorization: %d %s", action, w.Code, w.Body)
+						}
 					}
 					w = httptest.NewRecorder()
 					api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/training/runs", nil))
@@ -1569,6 +1735,11 @@ func TestCreatePreparation(t *testing.T) {
 	if got.WorkflowID != "preparation-submitted" || got.RunID != "run-submitted" || got.Status != "queued" || len(got.Stages) != 2 {
 		t.Fatalf("unexpected submitted state: %+v", got)
 	}
+	// Settings echo the job's normalized request, not the raw HTTP input.
+	wantSettings := trainapp.RunSettings{Model: "catalog/qwen", Goal: "question_answer", Instructions: "Answer briefly.", PageStart: 11, PageEnd: 25, MaxQuestions: 50}
+	if got.SourceDocument != "source.pdf" || got.Settings != wantSettings {
+		t.Fatalf("run identity: source %q, settings %+v", got.SourceDocument, got.Settings)
+	}
 	for i, expected := range []struct {
 		name  string
 		steps []string
@@ -1585,6 +1756,43 @@ func TestCreatePreparation(t *testing.T) {
 				t.Errorf("%s step %d: %+v", stage.Name, k, step)
 			}
 		}
+	}
+}
+
+func TestCreatePreparationRejectsDocumentInDataset(t *testing.T) {
+	store, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The mock client has no expectations: starting a workflow fails the test.
+	job, err := training.New(new(mocks.Client), training.Config{
+		Uploads: store, StorageRoot: t.TempDir(), Models: map[string]string{"model-a": filepath.Join(t.TempDir(), "model.gguf")},
+		Trainer: struct{ optimization.Trainer }{}, Completer: struct{ preparation.ModelCompleter }{}, Log: func(context.Context, string, ...any) {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
+	api := web.NewApp(log.Info, mid.Errors(log))
+	service := datasets.New(job.Datasets(), job)
+	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: service, AuthorizationMode: auth.Open})
+	file, err := store.Put(t.Context(), uploads.Input{Name: "harbor.md"}, strings.NewReader("The harbor opens at dawn."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataset, err := service.Create(t.Context(), "Harbor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := optimization.Record{Prompt: "When does the harbor open?", Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: file.ID}
+	if dataset, err = service.Add(t.Context(), dataset.ID, dataset.Version, datasetstore.DatasetAddition{PublicationID: "run-a", Source: file, Records: []optimization.Record{row}}); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"preparation_only":true,"prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","target_dataset_id":%q,"base_version":%d}}`, file.ID, dataset.ID, dataset.Version)
+	w := httptest.NewRecorder()
+	api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/training/runs", strings.NewReader(body)))
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "already in this dataset") {
+		t.Fatalf("duplicate document: %d %s", w.Code, w.Body)
 	}
 }
 
@@ -1688,9 +1896,162 @@ func TestCreateTrainingBackendFailure(t *testing.T) {
 	}
 }
 
+func TestPreparationControlBodies(t *testing.T) {
+	for _, action := range []string{"pause", "continue"} {
+		for _, test := range []struct {
+			body string
+			code int
+		}{
+			{`{"request_id":"control-1","expected_revision":0}`, http.StatusServiceUnavailable}, // No SQL catalog: never deliver an untracked control.
+			{`{}`, http.StatusBadRequest},
+			{`null`, http.StatusBadRequest},
+			{`{"request_id":" "}`, http.StatusBadRequest},
+			{`{"request_id":"control-1","expected_revision":-1}`, http.StatusBadRequest},
+			{`{"request_id":"control-1","expected_revision":9223372036854775807}`, http.StatusBadRequest},
+			{`{"request_id":"control-1","expected_revision":1.5}`, http.StatusBadRequest},
+			{`{"request_id":"control-1","action":"resume"}`, http.StatusBadRequest},
+			{`{"request_id":"control-1"} {}`, http.StatusBadRequest},
+			{`{"request_id":"` + strings.Repeat("x", 201) + `"}`, http.StatusBadRequest},
+			{strings.Repeat(" ", 4096) + `{}`, http.StatusBadRequest},
+		} {
+			t.Run(action+"/"+test.body[:min(len(test.body), 50)], func(t *testing.T) {
+				api, _ := testAPI(t, mocks.NewClient(t))
+				w := httptest.NewRecorder()
+				api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, statePath+"/preparation/"+action, strings.NewReader(test.body)))
+				if w.Code != test.code {
+					t.Fatalf("control body: %d %s, want %d", w.Code, w.Body, test.code)
+				}
+			})
+		}
+	}
+}
+
+func TestPreparationControlsHTTP(t *testing.T) {
+	db := httpCatalog(t)
+	files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := mocks.NewClient(t)
+	job, err := training.New(c, training.Config{Uploads: files, StorageRoot: t.TempDir(), MoxieDB: db,
+		Trainer: struct{ optimization.Trainer }{}, Log: func(context.Context, string, ...any) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateJob(t.Context(), moxiedb.Job{JobID: "http-control", Mode: "preparation"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateAttempt(t.Context(), moxiedb.Attempt{JobID: "http-control", AttemptID: "http-control/1", AttemptNumber: 1,
+		TemporalNamespace: "default", WorkflowID: "training-example", RunID: sql.NullString{String: "run-2", Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	state := tmprl.Run[training.Request, training.Artifacts]{Status: tmprl.StatusWaiting, Stage: "preparation", ControlStage: "preparation", Request: training.Request{PreparationOnly: true}}
+	payload, err := converter.GetDefaultDataConverter().ToPayload(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.On("DescribeWorkflowExecution", mock.Anything, "training-example", "run-2").Return(&workflowservice.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{
+		Execution: &commonpb.WorkflowExecution{WorkflowId: "training-example", RunId: "run-2"}, Type: &commonpb.WorkflowType{Name: "moxie.training.Job"},
+		Status: enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"moxie.training.job": payload}},
+	}}, nil)
+	log := logger.New(io.Discard, logger.LevelInfo, "controls-http-test", nil)
+	api := web.NewApp(log.Info, mid.Errors(log))
+	trainapp.Routes(api, trainapp.Config{Job: job, Datasets: datasets.New(job.Datasets(), job, db), AuthorizationMode: auth.Open})
+	for _, test := range []struct {
+		action, command, id string
+		revision            int64
+		failure             error
+		code                int
+	}{
+		{"pause", "pause", "pause-1", 0, nil, http.StatusOK},
+		{"continue", "resume", "continue-1", 1, nil, http.StatusOK},
+		{"pause", "pause", "stale", 0, tmprl.ErrControlConflict, http.StatusConflict},
+		{"pause", "pause", "outage", 2, serviceerror.NewUnavailable("private backend detail"), http.StatusServiceUnavailable},
+		{"pause", "pause", "timeout", 2, serviceerror.NewDeadlineExceeded("private backend detail"), http.StatusGatewayTimeout},
+	} {
+		t.Run(test.id, func(t *testing.T) {
+			request := tmprl.ControlRequest{RequestID: test.id, Action: test.command, ExpectedRevision: test.revision}
+			handle := new(mocks.WorkflowUpdateHandle)
+			c.On("UpdateWorkflow", mock.Anything, mock.MatchedBy(func(options client.UpdateWorkflowOptions) bool {
+				return options.WorkflowID == "training-example" && options.RunID == "run-2" && options.UpdateID == "ordered-control/"+test.id &&
+					options.UpdateName == "training-control.ordered" && len(options.Args) == 1 && options.Args[0] == request
+			})).Return(handle, nil).Once()
+			handle.On("Get", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+				*args.Get(1).(*tmprl.ControlReceipt) = tmprl.ControlReceipt{ControlRequest: request, Revision: test.revision + 1}
+			}).Return(test.failure).Once()
+			body := fmt.Sprintf(`{"request_id":%q,"expected_revision":%d}`, test.id, test.revision)
+			for range 2 {
+				w := httptest.NewRecorder()
+				api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, statePath+"/preparation/"+test.action, strings.NewReader(body)))
+				if w.Code != test.code || strings.Contains(w.Body.String(), "private") {
+					t.Fatalf("control response: %d %s", w.Code, w.Body)
+				}
+				if test.code == http.StatusOK {
+					var got trainapp.ControlReceipt
+					if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.RequestID != test.id || got.Action != test.command || got.Revision != test.revision+1 || strings.Contains(w.Body.String(), `"status"`) {
+						t.Fatalf("receipt fabricated state or lost identity: %s %v", w.Body, err)
+					}
+				}
+				if test.code == http.StatusServiceUnavailable || test.code == http.StatusGatewayTimeout {
+					break // Ambiguous failures remain pending, not falsely rejected.
+				}
+			}
+		})
+	}
+	if pending, err := db.PendingIntents(t.Context()); err != nil || len(pending) != 2 {
+		t.Fatalf("ambiguous controls must remain durable: %+v %v", pending, err)
+	}
+}
+
+func TestStopTrainingRun(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		lookupErr error
+		cancelErr error
+		workflow  string
+		status    int
+	}{
+		{name: "accepted", workflow: "moxie.training.Job", status: http.StatusNoContent},
+		{name: "missing", lookupErr: serviceerror.NewNotFound("private detail"), status: http.StatusNotFound},
+		{name: "wrong workflow", workflow: "unrelated.Job", status: http.StatusNotFound},
+		{name: "unavailable", workflow: "moxie.training.Job", cancelErr: serviceerror.NewUnavailable("private detail"), status: http.StatusServiceUnavailable},
+		{name: "timeout", workflow: "moxie.training.Job", cancelErr: serviceerror.NewDeadlineExceeded("private detail"), status: http.StatusGatewayTimeout},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := mocks.NewClient(t)
+			api, _ := testAPI(t, c)
+			c.On("DescribeWorkflowExecution", mock.Anything, "training-example", "run-2").Return(&workflowservice.DescribeWorkflowExecutionResponse{
+				WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Type: &commonpb.WorkflowType{Name: test.workflow}},
+			}, test.lookupErr)
+			if test.lookupErr == nil && test.workflow == "moxie.training.Job" {
+				c.On("CancelWorkflow", mock.Anything, "training-example", "run-2").Return(test.cancelErr)
+			}
+			w := httptest.NewRecorder()
+			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodPost, statePath+"/stop", nil))
+			if w.Code != test.status || strings.Contains(w.Body.String(), "private") {
+				t.Fatalf("stop response: %d %s", w.Code, w.Body)
+			}
+			if test.status == http.StatusNoContent && w.Body.Len() != 0 {
+				t.Fatalf("accepted cancellation must not fabricate terminal state: %s", w.Body)
+			}
+		})
+	}
+}
+
 func TestListTrainingRuns(t *testing.T) {
 	c := new(mocks.Client)
-	api, _ := testAPI(t, c)
+	files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := training.New(c, training.Config{Uploads: files, StorageRoot: t.TempDir(), Trainer: struct{ optimization.Trainer }{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := logger.New(io.Discard, logger.LevelInfo, "datasets-runs-test", nil)
+	api := web.NewApp(log.Info, mid.Errors(log))
+	// Run reads must go through datasets, not require an HTTP-owned training job.
+	trainapp.Routes(api, trainapp.Config{Datasets: datasets.New(job.Datasets(), job), AuthorizationMode: auth.Open})
 	state := tmprl.Run[training.Request, training.Artifacts]{
 		Status: tmprl.StatusPaused, Request: training.Request{Model: "/private/model"},
 		Stages: []tmprl.StageState{{Name: "training", Status: tmprl.StatusPaused, Steps: []tmprl.StepState{{Name: "train", Status: tmprl.StatusPaused, Attempt: 2}}}},

@@ -369,6 +369,47 @@ func TestPreviewMultiExampleBoundedDiverseReplay(t *testing.T) {
 	}
 }
 
+func TestPreviewSafePointContinuation(t *testing.T) {
+	for _, afterVerification := range []bool{false, true} {
+		t.Run(fmt.Sprintf("verified=%t", afterVerification), func(t *testing.T) {
+			input := inputFor(t, 3, passages)
+			paused := errors.New("controlled safe-point suspension")
+			input.SafePoint = func(_ context.Context, path string) error {
+				if path != "preview/steps.json" {
+					t.Fatalf("checkpoint escaped preview workspace: %s", path)
+				}
+				data, err := input.Workspace.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				var saved checkpoint.State
+				if err := json.Unmarshal(data, &saved); err != nil {
+					return err
+				}
+				if saved.Generated && (saved.Verified > 0) == afterVerification {
+					return paused
+				}
+				return nil
+			}
+			if _, err := (preview.Step{}).Execute(t.Context(), input); !errors.Is(err, paused) {
+				t.Fatalf("preview did not suspend: %v", err)
+			}
+			input.SafePoint = nil
+			original := responses(3, "Where is example")
+			input.Preparation.Completer = completer(func(ctx context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+				if !request.EnableThinking || afterVerification {
+					t.Fatal("Continue repeated committed preview computation")
+				}
+				return original(ctx, request)
+			})
+			result, err := (preview.Step{}).Execute(t.Context(), input)
+			if err != nil || result.Artifacts.Preview == nil || result.Artifacts.Preview.RecordCount != 3 || result.Artifacts.Preview.TrainingReady {
+				t.Fatalf("preview continuation changed reviewable output: %+v, %v", result, err)
+			}
+		})
+	}
+}
+
 func TestPreviewRetry(t *testing.T) {
 	for _, name := range []string{"verification failure", "verification context limit", "verification truncated", "verification malformed", "verification canceled", "generation canceled", "generation failure"} {
 		t.Run(name, func(t *testing.T) {

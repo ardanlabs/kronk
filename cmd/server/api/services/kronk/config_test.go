@@ -5,9 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 )
@@ -83,6 +85,9 @@ kms:
     models:
       - huggingface/model-a
       - huggingface/model-b
+  moxie:
+    root: /yaml/moxie
+    database-url: postgres://yaml:yaml-secret@localhost/moxiedb
   pool:
     budget-percent: 80
     ttl: 5m
@@ -102,6 +107,7 @@ kms:
 	t.Setenv("KRONK_MEDIA_BACKENDS_ENABLED", "false")
 	t.Setenv("KRONK_LIB_VERIFY_ENABLED", "true")
 	t.Setenv("KRONK_TRAINING_ADDRESS", "env-temporal.example:7233")
+	t.Setenv("KRONK_MOXIE_DATABASE_URL", "postgres://env:private-test-password@localhost/moxiedb")
 
 	cfg, err := loadConfig(false)
 	if err != nil {
@@ -119,6 +125,13 @@ kms:
 	}
 	if !cfg.Training.Enabled || cfg.Training.Address != "env-temporal.example:7233" || cfg.Training.Namespace != "moxie" || len(cfg.Training.Models) != 2 || cfg.Training.Models[0] != "huggingface/model-a" || cfg.Training.Models[1] != "huggingface/model-b" {
 		t.Errorf("Training: unexpected configuration %+v", cfg.Training)
+	}
+	if cfg.Moxie.Root != "/yaml/moxie" || !strings.Contains(cfg.Moxie.DatabaseURL, "private-test-password") {
+		t.Fatal("Moxie YAML defaults or environment precedence changed")
+	}
+	printed, err := conf.String(&cfg)
+	if err != nil || strings.Contains(printed, "private-test-password") || strings.Contains(printed, "yaml-secret") {
+		t.Fatal("database credentials are not masked")
 	}
 	if cfg.Pool.BudgetPercent != 75 {
 		t.Errorf("BudgetPercent: got %d, want %d", cfg.Pool.BudgetPercent, 75)
@@ -366,6 +379,24 @@ func TestValidateAdminConfig(t *testing.T) {
 				t.Fatalf("validateAdminConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestMoxieRoot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, err := moxieRoot("")
+	if err != nil || root != filepath.Join(os.Getenv("HOME"), ".moxie") {
+		t.Fatalf("existing default changed: %q %v", root, err)
+	}
+	custom := filepath.Join(t.TempDir(), "relocated")
+	if got, err := moxieRoot(custom); err != nil || got != custom {
+		t.Fatalf("explicit root: %q %v", got, err)
+	}
+	if _, err := moxieRoot(" "); err == nil {
+		t.Fatal("blank root accepted")
+	}
+	if newConfig().Moxie.DatabaseURL != "" {
+		t.Fatal("SQL mode must remain explicit")
 	}
 }
 

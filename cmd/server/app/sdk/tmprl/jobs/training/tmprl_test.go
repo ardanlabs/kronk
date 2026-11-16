@@ -5,17 +5,23 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/sdk/applog"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -32,6 +38,7 @@ const ownerLabel = "com.ardanlabs.moxie.tmprl-test"
 // Environment owns an isolated test client, queue, and failure-only log buffer.
 type Environment struct {
 	Client    client.Client
+	Namespace string
 	TaskQueue string
 	Log       applog.Logger
 }
@@ -109,8 +116,56 @@ func newTestEnvironment(t *testing.T) *Environment {
 		}
 	})
 	logger.InfoContext(ctx, "Temporal test server", "address", address, "namespace", namespace)
-	env := Environment{Client: c, TaskQueue: "moxie-test-" + rand.Text(), Log: logger.InfoContext}
+	env := Environment{Client: c, Namespace: namespace, TaskQueue: "moxie-test-" + rand.Text(), Log: logger.InfoContext}
 	return &env
+}
+
+// newCatalogDatabase installs the unchanged migration only inside a unique test
+// schema. An explicitly supplied disposable PostgreSQL database is required.
+func newCatalogDatabase(t *testing.T) (*moxiedb.DB, *sql.DB) {
+	t.Helper()
+	connection := os.Getenv("MOXIEDB_TEST_URL")
+	if connection == "" {
+		t.Skip("set MOXIEDB_TEST_URL to an isolated PostgreSQL test database")
+	}
+	admin, err := sql.Open("pgx", connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	schema := "job_catalog_" + strings.ToLower(rand.Text())
+	if _, err := admin.ExecContext(t.Context(), "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = admin.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE") })
+	u, err := url.Parse(connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	setup, err := sql.Open("pgx", u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = setup.Close() })
+	migration, err := os.ReadFile(filepath.Join("..", "..", "moxiedb", "migrations", "001_init.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(t.Context(), string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(t.Context(), "INSERT INTO schema_migrations(version,checksum) VALUES (1,$1)", fmt.Sprintf("%x", sha256.Sum256(migration))); err != nil {
+		t.Fatal(err)
+	}
+	db, err := moxiedb.Open(t.Context(), u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db, setup
 }
 
 // =============================================================================

@@ -2,8 +2,149 @@
 
 The new implementation lives in [`jobs/training`](jobs/training/README.md).
 It uses foundation's runner directly, with no dependency on `jobs/modeltraining`.
-The latter remains a reference while the new job is reviewed. The sections below
-describe that reference implementation, not the new job's public API.
+The latter remains a reference while the new job is reviewed. The Reference
+implementation section below describes that older implementation, not the new
+job's public API.
+
+## Current application boundaries
+
+- `datasets/` is the application service for dataset management and preparation
+  runs: submission, preview review, shared run list/read/stop and prepared-output
+  downloads. It calls application jobs and interprets saved dataset readiness.
+- `datasets/store/` owns immutable dataset files, safe publication, concurrency
+  guards and dataset-ID validation. Both datasets and jobs use this lower-level
+  package; it imports neither the datasets service nor the whole-job coordinator.
+  It reuses the training stage's record schema and validation.
+- `jobs/training/` owns plan/model/review/control rules, execution observations,
+  report/adapter readiness and ETA. It calls foundation for execution and uses
+  `datasets/store` to save results, never the parent datasets service.
+- `app/domain/trainapp` owns HTTP authorization, decoding, conversion, polling
+  response timing/revisions, and downloads. Preparation follows HTTP → datasets →
+  Jobs → foundation/Temporal. Training authorization, evaluation and adapter
+  endpoints remain on the training path. Existing mixed run URLs are unchanged;
+  HTTP neither constructs services nor coordinates the low-level runner.
+- `api/services/kronk/main.go` retains the existing `.moxie` startup and injects
+  uploads, datasets, and application jobs. No second storage root is initialized.
+- Foundation still owns actual execution, retries, controls, recovery, and history.
+  Application errors preserve backend causes without requiring HTTP to interpret
+  Temporal service errors.
+
+Dataset files remain in `.moxie/preparation-datasets` with their existing format.
+Both datasets and jobs call SQL-only `moxiedb` directly for publication metadata;
+jobs never persist through the parent datasets service. All screens, HTTP
+contracts, preparation/training stages and explicit training authorization remain.
+
+## Dataset catalog initialization and recovery
+
+`KRONK_MOXIE_ROOT` (YAML `kms.moxie.root`) selects the existing Moxie root,
+defaulting to `~/.moxie`. Uploads, dataset snapshots and execution storage share
+this one root. Moving the complete root preserves relative references.
+`KRONK_MOXIE_DATABASE_URL` (YAML `kms.moxie.database-url`) explicitly enables the
+SQL catalog. Configuration logging masks the entire connection string. An unset
+URL retains file-only compatibility; an unavailable configured database is an
+error, never a reason to switch authorities or accept uncataloged writes.
+
+Initialization has two distinct owners:
+
+1. The existing one-line `make tuning-up` runs the explicit Compose SQL initializer
+   against `moxiedb`, alongside the existing PostgreSQL-backed Temporal setup.
+   It installs `moxiedb/migrations/001_init.sql` transactionally on an empty schema,
+   serializes competing initializers and records its SHA-256. Compatible starts
+   skip installation/upgrades. Unknown, damaged or incompatible schemas fail
+   without changing application tables. There are no separate maintenance targets.
+2. Normal application startup opens/checks SQL without creating tables, constructs
+   the existing file store and training job, then calls `datasets.Initialize`.
+   That service verifies all snapshots, reconciles publication metadata and builds
+   the generated `.index.yaml` before any worker starts or routes accept requests.
+   Worker shutdown precedes Temporal-client and database closure.
+
+For cutover, stop old file-only writers first, retain backups of both Moxie files
+and PostgreSQL, run `tuning-up`, and configure SQL on every publisher using the same
+root. Do not run file-only and SQL publishers concurrently. Explicit schema
+upgrades are not implemented; a mismatch is a stop-and-inspect condition, not an
+invitation to delete tables or edit migration checksums.
+
+Snapshots retain actual generated records and historical contributions. SQL stores
+only dataset/version identity, relative paths from the Moxie root, digests, counts,
+readiness, contribution metadata and durable publication intents. `.index.yaml`
+is a rebuildable local file inventory, following Kronk's atomic temporary-file and
+rename pattern. Its paths are relative to `preparation-datasets`; it contains no
+records or job statuses and cannot authorize an SQL-unpublished version. Lookup
+validates the selected file and rebuilds missing, malformed or stale indexes.
+
+Create/remove are coordinated by datasets; verified preparation additions are
+coordinated directly by the training job. Each persists an operation intent,
+publishes a complete immutable snapshot, verifies it, commits SQL metadata/head
+atomically, then refreshes the index. A cross-process file lock covers that
+sequence and is released by the OS on process exit. Stable add identities recover
+lost receipts without duplicating contributions. Removal keeps strict base-version
+checks; concurrent additions preserve their existing merge semantics.
+
+Initialization imports verified historical versions idempotently and completes
+matching intents whose files were published before interruption. Missing/corrupt
+published files, changed identities/digests, or unresolved intents are reported;
+they are never reset or silently replaced. An intent without a verified snapshot
+is marked `needs_attention` and blocks initialization for inspection. Index failure
+after SQL commit explicitly reports the saved dataset/version, and replay or
+initialization can rebuild it without repeating an addition. Arbitrary repeated
+HTTP create/remove requests are not newly claimed to be idempotent.
+
+## Job catalog reads and reconciliation
+
+In SQL mode the existing job writes `jobs`, `job_attempts` and `job_intents` directly.
+The host starts and joins its reconciler independently of browser requests.
+Temporal owns execution; the catalog retains exact links, ordered confirmed
+observations and pending commands. SQL revisions protect writes but do not
+establish Temporal event order. Source timestamps and terminal-state guards
+prevent stale observations from regressing confirmed results.
+
+`datasets.Service` reads filtered catalog history directly from SQL without a
+worker. The existing GET `/v1/training/runs` accepts `mode`, `target_dataset_id`
+and repeated `status` parameters. Filters apply before deterministic pagination;
+tokens are bound to the namespace, filters and page size. Detail reads require
+the exact workflow/run identity, attempt a live read when available, and retain
+stale persisted state on execution-service loss. Commands still require the job.
+Public responses add job/attempt identity, observation revision/time and pending
+action summaries, never command payloads or internal paths. Saved dataset output
+is checked against its exact published version, not a newer head.
+
+### Preparation checkpoint suspension
+
+For new SQL-backed preparation-only runs, ordered Pause is a request until the
+active activity saves its completed unit and exits at a safe point. Only then
+does Temporal confirm Paused and the existing reconciler retain that observation
+in Moxiedb. Continue re-enters the same step and loads its durable `.moxie`
+checkpoint; it never bypasses preview review or authorizes Training. Stop is
+terminal cancellation, not a temporary Pause. Legacy and training behavior is
+unchanged. No migration, application-startup initialization, or maintenance command
+is added by this mechanism.
+
+The supported units, drain and crash evidence are documented in
+[`jobs/training/README.md`](jobs/training/README.md#preparation-safe-point-suspension-milestone-3b2).
+Extraction recovers at whole-document boundaries (an interrupted Docling
+conversion runs again); generation/evaluation/verification and preview
+checkpoints resume from their saved progress. Restart requires the same durable
+uploads, execution workspaces, PostgreSQL and Temporal history plus required model
+assets. Idle preparation runs (paused, awaiting review, drained) wait without a
+time limit; the Preparation budget counts active time only. Milestone 3B.3 proves
+process-kill recovery on isolated services; it does not establish physical
+power-loss durability or training recovery.
+
+File-only callers retain runner visibility and existing execution behavior.
+SQL failure never silently switches catalog authorities. The sample Preparation
+runs grid remains unchanged until milestone 4 connects it.
+
+SQL tests require explicit isolated-test configuration. `MOXIEDB_TEST_URL` selects
+a disposable PostgreSQL database; catalog/storage tests create and drop unique
+schemas inside it. `MOXIEDB_TEST_DOCKER=1` lets the SQL package create disposable
+PostgreSQL 16 containers instead. The existing preparation and HTTP contract tests
+also accept `MOXIEDB_JOB_TEST_URL` (a freshly initialized empty test catalog) and
+`MOXIEDB_HTTP_TEST_URL` (a disposable database; each test creates its own schema).
+The preparation SQL test injects a single failed metadata commit to exercise the
+real activity retry. Job catalog tests use `MOXIEDB_TEST_URL` and the configured
+Temporal test service with controlled computation and injected receipt loss.
+These URLs must never point to the live application catalog. No tests run from
+application startup or `tuning-up`.
 
 ## Reference implementation
 
@@ -140,6 +281,12 @@ batches separately; training does not resume unfinished epochs/batches.
 reservation deadline after a worker is acquired. Expiration fails the job with
 the nonretryable `reservation-expired` error and a message explaining that paused
 time counts. Expiration does not acquire a fresh reservation or restart the job.
+
+Preparation-only runs with ordered controls are the exception: they return their
+worker while paused, awaiting review, or after a host drain, then wait without a
+time limit. Only their first worker wait uses `queue_timeout`, and their stage
+budget counts active time only. `Jobs.Drain` lets running units save before the
+host stops its worker; see the training README's shutdown section.
 
 ## Polling and listing jobs
 

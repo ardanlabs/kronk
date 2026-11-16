@@ -2,6 +2,7 @@ package training_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	job "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
@@ -24,6 +27,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/preview"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/verify"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
@@ -273,6 +277,51 @@ func source(t *testing.T, document bool) (string, string) {
 }
 
 func TestPreparationOnlySavedDataset(t *testing.T) {
+	testPreparationOnlySavedDataset(t, nil)
+}
+
+// The caller supplies a freshly initialized, isolated SQL schema. This test
+// never creates/migrates an application database or uses the local live stack.
+func TestPreparationOnlySavedDatasetSQL(t *testing.T) {
+	connection := os.Getenv("MOXIEDB_JOB_TEST_URL")
+	if connection == "" {
+		t.Skip("set MOXIEDB_JOB_TEST_URL to a fresh isolated catalog")
+	}
+	db, err := moxiedb.Open(t.Context(), connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.CheckSchema(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := db.ListDatasets(t.Context()); err != nil || len(rows) != 0 {
+		t.Fatal("SQL preparation test requires an empty isolated catalog")
+	}
+	// Fail the first catalog commit after the verified preparation file exists.
+	// Sequences survive rollback, so the activity's real retry can recover it.
+	setup, err := sql.Open("pgx", connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer setup.Close()
+	_, err = setup.ExecContext(t.Context(), `
+CREATE SEQUENCE preparation_receipt_fault;
+CREATE FUNCTION preparation_receipt_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF nextval('preparation_receipt_fault') = 1 THEN RAISE EXCEPTION 'injected catalog receipt failure'; END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER preparation_receipt_fault BEFORE INSERT ON dataset_versions
+FOR EACH ROW WHEN (NEW.version = 3) EXECUTE FUNCTION preparation_receipt_fault();`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testPreparationOnlySavedDataset(t, db)
+}
+
+func testPreparationOnlySavedDataset(t *testing.T, db *moxiedb.DB) {
+	t.Helper()
 	env := newTestEnvironment(t)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
@@ -286,18 +335,22 @@ func TestPreparationOnlySavedDataset(t *testing.T) {
 		t.Fatal(err)
 	}
 	compute := &trainer{}
-	j, err := job.New(env.Client, job.Config{TaskQueue: env.TaskQueue, Uploads: storage, StorageRoot: t.TempDir(), Trainer: compute, Completer: completer{}, Log: env.Log})
+	j, err := job.New(env.Client, job.Config{TaskQueue: env.TaskQueue, Uploads: storage, MoxieDB: db, StorageRoot: t.TempDir(), Trainer: compute, Completer: completer{}, Log: env.Log})
 	if err != nil {
 		t.Fatal(err)
 	}
-	destination, err := j.Datasets().Create(ctx, "Device manual")
+	service := datasets.New(j.Datasets(), j, db)
+	if err := service.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	destination, err := service.Create(ctx, "Device manual")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Preserve an unrelated existing contribution throughout preparation.
 	original := optimization.Record{Prompt: "When does the harbor open?", Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: "old-upload", FactID: "harbor-opening"}
-	destination, err = j.Datasets().Add(ctx, destination.ID, destination.Version, preparation.DatasetAddition{
-		PublicationID: "old-run", Source: uploads.File{ID: "old-upload", Name: "harbor.txt", SHA256: "old-hash"}, Records: []optimization.Record{original},
+	destination, err = service.Add(ctx, destination.ID, destination.Version, datasetstore.DatasetAddition{
+		PublicationID: "old-run", Source: uploads.File{ID: "old-upload", Name: "harbor.txt", SHA256: strings.Repeat("a", 64)}, Records: []optimization.Record{original},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -307,7 +360,7 @@ func TestPreparationOnlySavedDataset(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(worker.Stop)
-	run, err := j.Start(ctx, job.Request{PreparationOnly: true, Prepare: &preparation.PreparationRequest{
+	run, err := service.StartRun(ctx, job.Request{PreparationOnly: true, Prepare: &preparation.PreparationRequest{
 		DatasetID: upload.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer, MaxQuestions: 5,
 		TargetDatasetID: destination.ID, BaseVersion: destination.Version,
 	}})
@@ -319,7 +372,7 @@ func TestPreparationOnlySavedDataset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := j.ContinuePreview(ctx, run.Execution, tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "review", Payload: payload}); err != nil {
+	if _, err := service.ContinuePreview(ctx, run.Execution, tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "review", Payload: payload}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := j.Jobs().Wait(ctx, run.Execution)
@@ -330,7 +383,11 @@ func TestPreparationOnlySavedDataset(t *testing.T) {
 	if result.Status != tmprl.StatusCompleted || len(result.Stages) != 1 || compute.attempts.Load() != 0 || prepared == nil || prepared.RecordCount != 5 || prepared.SavedRecordCount != 6 || prepared.SavedVersion != 3 {
 		t.Fatalf("preparation-only did not complete/save independently: %+v", result)
 	}
-	file, err := j.OpenDataset(ctx, run.Execution)
+	state, err := service.GetRun(ctx, run.Execution)
+	if err != nil || !state.DatasetAvailable || state.DatasetRecordCount != 6 || state.PreparedDatasetID != destination.ID || state.PreparedDatasetVersion != 3 || state.TrainingReady || state.AdapterAvailable || state.EvaluationAvailable {
+		t.Fatalf("saved dataset state must describe the combined version, not just five new records: %+v, %v", state, err)
+	}
+	file, err := service.OpenPreparedDataset(ctx, run.Execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +396,113 @@ func TestPreparationOnlySavedDataset(t *testing.T) {
 	if err != nil || len(records) != 6 || records[0] != original {
 		t.Fatalf("combined download lost original records or cap: %+v, %v", records, err)
 	}
+	if db != nil {
+		if _, err := service.Remove(ctx, destination.ID, 3, "old-run"); err != nil {
+			t.Fatal(err)
+		}
+		file, err := service.OpenPreparedDataset(ctx, run.Execution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := optimization.ReadRecords(ctx, file)
+		file.Close()
+		if err != nil || len(rows) != 6 || rows[0] != original {
+			t.Fatalf("job download selected newer head instead of exact output: %+v %v", rows, err)
+		}
+		path := filepath.Join(j.Datasets().Path(), destination.ID, "3.json")
+		if err := os.Rename(path, path+".missing"); err != nil {
+			t.Fatal(err)
+		}
+		if file, err := service.OpenPreparedDataset(ctx, run.Execution); err == nil {
+			file.Close()
+			t.Fatal("missing exact output silently fell back to another file")
+		}
+		if err := os.Rename(path+".missing", path); err != nil {
+			t.Fatal(err)
+		}
+		versions, err := db.ListVersions(ctx, destination.ID)
+		if err != nil || len(versions) != 4 {
+			t.Fatalf("activity retry duplicated publication or history disappeared: %+v %v", versions, err)
+		}
+	}
 	assertSteps(t, env, run.Execution, []string{"preparation/extract", "preparation/preview", "preparation/generate", "preparation/verify"})
+
+	// Dataset conflicts: a document already present is rejected before any work,
+	// and questions already present are skipped rather than failing the save.
+	prepare := func(content string, limit int) (tmprl.Run[job.Request, job.Artifacts], datasets.State) {
+		t.Helper()
+		head, err := j.Datasets().Get(ctx, destination.ID, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err := storage.Put(ctx, uploads.Input{Name: name}, strings.NewReader(content))
+		if err != nil {
+			t.Fatal(err)
+		}
+		started, err := service.StartRun(ctx, job.Request{PreparationOnly: true, Prepare: &preparation.PreparationRequest{
+			DatasetID: file.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer, MaxQuestions: limit,
+			TargetDatasetID: destination.ID, BaseVersion: head.Version,
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		waiting := waitForCheckpoint(t, ctx, j, started.Execution, "preview-review")
+		payload, err := json.Marshal(preparation.Review{Records: waiting.Artifacts.Preview.Preview})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.ContinuePreview(ctx, started.Execution, tmprl.Decision{CheckpointID: waiting.Checkpoint.ID, SubmissionID: "review", Payload: payload}); err != nil {
+			t.Fatal(err)
+		}
+		// Wait reports a failed run as an error; read its closed state instead.
+		if _, err := j.Jobs().Wait(ctx, started.Execution); err != nil {
+			t.Log(err)
+		}
+		closed, err := j.Jobs().Get(ctx, started.Execution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state, err := service.GetRun(ctx, started.Execution)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return closed, state
+	}
+	head, err := j.Datasets().Get(ctx, destination.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.StartRun(ctx, job.Request{PreparationOnly: true, Prepare: &preparation.PreparationRequest{
+		DatasetID: upload.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer, MaxQuestions: 5,
+		TargetDatasetID: destination.ID, BaseVersion: head.Version,
+	}}); !errors.Is(err, datasetstore.ErrDocumentExists) {
+		t.Fatalf("a document already in the dataset must be rejected at start: %v", err)
+	}
+	// Different bytes, same passages: the same five questions as the first run.
+	repeated, state := prepare(content+"\n", 5)
+	if repeated.Status != tmprl.StatusFailed || state.FailureReason != "dataset-questions-exist" {
+		t.Fatalf("an all-repeated run must fail with its reason: status %s reason %q", repeated.Status, state.FailureReason)
+	}
+	if db != nil {
+		// The saved status keeps the fixed reason but never the failure text or raw types.
+		rows, _, err := service.ListCatalogRuns(ctx, datasets.RunFilter{PageSize: 50, Mode: "preparation"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := slices.IndexFunc(rows, func(r datasets.State) bool { return r.Execution == repeated.Execution })
+		if i < 0 || rows[i].FailureReason != "dataset-questions-exist" || rows[i].Error != "" || rows[i].FailureTypes != nil {
+			t.Fatalf("catalog failure: %+v", rows)
+		}
+	}
+	partial, state := prepare(content+"\n\n", 8)
+	prepared = partial.Artifacts.Preparation
+	if partial.Status != tmprl.StatusCompleted || prepared == nil || prepared.SavedSkippedRecords != 5 || prepared.SavedRecordCount != head.RecordCount+prepared.RecordCount-5 || state.SkippedRecordCount != 5 || state.FailureReason != "" {
+		t.Fatalf("repeated questions must be skipped and counted: %+v, state skipped %d reason %q", prepared, state.SkippedRecordCount, state.FailureReason)
+	}
+	saved, err := j.Datasets().Records(ctx, destination.ID, 0)
+	if err != nil || optimization.ValidateRecords(saved) != nil || len(saved) != prepared.SavedRecordCount {
+		t.Fatalf("saved dataset after skipping repeats: %d records, %v", len(saved), err)
+	}
 }
 
 func waitForCheckpoint(t *testing.T, ctx context.Context, j *job.Job, e tmprl.Execution, name string) tmprl.Run[job.Request, job.Artifacts] {
@@ -405,6 +568,7 @@ func TestTrainingJob(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			service := datasets.New(trainingJob.Datasets(), trainingJob)
 			request := job.Request{Model: "gemma", DatasetID: dataset.ID}
 			if test.document {
 				request.DatasetID = ""
@@ -427,8 +591,8 @@ func TestTrainingJob(t *testing.T) {
 			request.ID = run.WorkflowID
 			if _, err := trainingJob.Start(ctx, request); err == nil {
 				t.Fatal("duplicate submission: got success, want already started")
-			} else if _, ok := errors.AsType[*serviceerror.WorkflowExecutionAlreadyStarted](err); !ok {
-				t.Fatalf("duplicate submission: got %v, want already started", err)
+			} else if _, ok := errors.AsType[*serviceerror.WorkflowExecutionAlreadyStarted](err); !ok || !errors.Is(err, job.ErrAlreadyExists) {
+				t.Fatalf("duplicate submission: got %v, want application conflict with original cause", err)
 			}
 			// Mutating the returned snapshot cannot change durable execution input.
 			run.Definition.Stages[0].Name = "mutated"
@@ -564,9 +728,12 @@ func TestTrainingJob(t *testing.T) {
 			}
 			// Endpoint reads must still work when no worker is available.
 			stopWorker()
-			polled, err := trainingJob.Jobs().Get(ctx, run.Execution)
+			polled, err := service.GetRun(ctx, run.Execution)
 			if err != nil || polled.Status != test.status || !reflect.DeepEqual(polled.Artifacts, result.Artifacts) {
 				t.Fatalf("workerless polling: got %+v, %v, want terminal result artifacts", polled, err)
+			}
+			if polled.EvaluationAvailable != (test.mode != "fail") || polled.AdapterAvailable != (test.status == tmprl.StatusCompleted) || polled.DatasetAvailable != test.document || polled.TrainingReady != test.document {
+				t.Fatalf("application output readiness: %+v", polled)
 			}
 			if test.mode != "fail" {
 				report, err := trainingJob.Evaluation(ctx, run.Execution)
@@ -621,7 +788,7 @@ func TestTrainingJob(t *testing.T) {
 			for !found {
 				var next []byte
 				for {
-					page, token, err := trainingJob.Jobs().List(ctx, tmprl.ListOptions{PageSize: 100, NextPageToken: next, Statuses: []tmprl.Status{test.status}})
+					page, token, err := service.ListRuns(ctx, tmprl.ListOptions{PageSize: 100, NextPageToken: next, Statuses: []tmprl.Status{test.status}})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -631,6 +798,9 @@ func TestTrainingJob(t *testing.T) {
 						}
 						if listed.Execution == run.Execution {
 							found = true
+							if listed.EvaluationAvailable != (test.mode != "fail") || listed.AdapterAvailable != (test.status == tmprl.StatusCompleted) || listed.DatasetAvailable != test.document || listed.TrainingReady != test.document {
+								t.Fatalf("listed application output readiness: %+v", listed)
+							}
 							if listed.ClosedAt.IsZero() || !reflect.DeepEqual(listed.Artifacts, result.Artifacts) {
 								t.Fatalf("listed run: got %+v, want closed run with result artifacts", listed)
 							}

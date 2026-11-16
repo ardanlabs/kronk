@@ -26,8 +26,10 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
@@ -46,6 +48,7 @@ import (
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -612,19 +615,31 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	if cfg.Web.Admin.Enabled {
 		options = append(options, mux.WithFileServer(true, static, "static", "/admin/", []string{"admin/api", "v1"}))
 	}
-	home, err := os.UserHomeDir()
+	root, err := moxieRoot(cfg.Moxie.Root)
 	if err != nil {
-		return fmt.Errorf("locating fine-tuning data directory: %w", err)
+		return err
 	}
-	store, err := uploads.New(uploads.Config{Root: filepath.Join(home, ".moxie", "uploads")})
+	var database *moxiedb.DB
+	if cfg.Moxie.DatabaseURL != "" {
+		database, err = moxiedb.Open(ctx, cfg.Moxie.DatabaseURL)
+		if err != nil {
+			return fmt.Errorf("opening Moxie database: %w", err)
+		}
+		defer database.Close()
+		if err := database.CheckSchema(ctx); err != nil {
+			return fmt.Errorf("checking Moxie schema; run make tuning-up: %w", err)
+		}
+	}
+	store, err := uploads.New(uploads.Config{Root: filepath.Join(root, "uploads")})
 	if err != nil {
 		return fmt.Errorf("initializing training uploads: %w", err)
 	}
-	datasets, err := preparation.NewDatasetStore(filepath.Join(home, ".moxie", "preparation-datasets"))
+	datasetFiles, err := datasetstore.NewDatasetStore(filepath.Join(root, "preparation-datasets"))
 	if err != nil {
 		return fmt.Errorf("initializing preparation datasets: %w", err)
 	}
-	trainConfig := trainapp.Config{Uploads: store, Datasets: datasets}
+	trainConfig := trainapp.Config{Uploads: store}
+	var trainingWorker worker.Worker
 	if cfg.Training.Enabled {
 		approvedModels := make(map[string]string, len(cfg.Training.Models))
 		for _, id := range cfg.Training.Models {
@@ -652,19 +667,51 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 			return fmt.Errorf("initializing document extractor: %w", err)
 		}
 		job, err := training.New(temporalClient, training.Config{
-			Uploads: store, Datasets: datasets, StorageRoot: filepath.Join(home, ".moxie"),
-			Models: approvedModels, ModelPool: p.Kronk, Extractor: extractor, Log: log.Info,
+			Uploads: store, Datasets: datasetFiles, MoxieDB: database, StorageRoot: root,
+			Namespace: cfg.Training.Namespace,
+			Models:    approvedModels, ModelPool: p.Kronk, Extractor: extractor, Log: log.Info,
 		})
 		if err != nil {
 			return fmt.Errorf("initializing training job: %w", err)
 		}
-		worker := job.Jobs().NewWorker()
-		if err := worker.Start(); err != nil {
+		trainingWorker = job.Jobs().NewWorker()
+		trainConfig.Job = job
+	}
+	trainConfig.Datasets = datasets.New(datasetFiles, trainConfig.Job, database)
+	trainConfig.Datasets.Namespace = cfg.Training.Namespace
+	trainConfig.Datasets.Uploads = store
+	if err := trainConfig.Datasets.Initialize(ctx); err != nil {
+		return fmt.Errorf("initializing datasets: %w", err)
+	}
+	if trainingWorker != nil {
+		if err := trainingWorker.Start(); err != nil {
 			return fmt.Errorf("starting training worker: %w", err)
 		}
-		defer worker.Stop()
-		trainConfig.Job = job
+		defer func() {
+			// Running preparation units finish and save before the worker stops,
+			// within the 120 seconds SageMaker and Unsloth allow (the
+			// systemd/launchd stop limit is 150). Unsaved units repeat after restart.
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+			log.Info(ctx, "shutdown", "status", "saving preparation work")
+			if err := trainConfig.Job.Jobs().Drain(ctx); err != nil {
+				log.Error(ctx, "shutdown", "status", "preparation save incomplete; unsaved units repeat after restart", "ERROR", err)
+			}
+			trainingWorker.Stop()
+		}()
 		log.Info(ctx, "startup", "status", "training worker started", "namespace", cfg.Training.Namespace)
+	}
+	if database != nil && trainConfig.Job != nil {
+		catalogCtx, cancelCatalog := context.WithCancel(ctx)
+		catalogDone := make(chan struct{})
+		go func() {
+			defer close(catalogDone)
+			trainConfig.Job.RunCatalog(catalogCtx)
+		}()
+		defer func() {
+			cancelCatalog()
+			<-catalogDone
+		}()
 	}
 
 	webAPI := mux.WebAPI(cfgMux, build.Routes(build.Config{Training: trainConfig}), options...)

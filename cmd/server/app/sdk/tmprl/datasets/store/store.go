@@ -1,4 +1,5 @@
-package preparation
+// Package store owns reusable dataset files and immutable versions without job coordination.
+package store
 
 import (
 	"context"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
 
@@ -24,6 +26,18 @@ var (
 	ErrDatasetNotFound = errors.New("preparation dataset not found")
 	ErrDatasetConflict = errors.New("preparation dataset changed; refresh before editing")
 )
+
+// These conflicts carry their own reason; errors.Is also matches ErrDatasetConflict.
+var (
+	ErrDocumentExists error = datasetConflict("this document and page range are already in this dataset; choose a different document, page range, or destination")
+	ErrQuestionsExist error = datasetConflict("every prepared record repeats a question already in this dataset")
+)
+
+type datasetConflict string
+
+func (e datasetConflict) Error() string { return string(e) }
+
+func (datasetConflict) Is(target error) bool { return target == ErrDatasetConflict }
 
 // Dataset describes one immutable version of a reusable preparation dataset.
 type Dataset struct {
@@ -75,7 +89,7 @@ type DatasetStore struct{ root string }
 
 func NewDatasetStore(path string) (*DatasetStore, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("%w: dataset storage root is required", ErrInvalidArgument)
+		return nil, fmt.Errorf("%w: dataset storage root is required", tmprl.ErrInvalidArgument)
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -88,21 +102,48 @@ func NewDatasetStore(path string) (*DatasetStore, error) {
 }
 
 func (s *DatasetStore) Create(ctx context.Context, name string) (Dataset, error) {
+	return s.CreateOperation(ctx, "dataset-"+rand.Text(), name, "", "")
+}
+
+// CreateOperation recovers a creation using its allocated dataset and operation IDs.
+func (s *DatasetStore) CreateOperation(ctx context.Context, id, name, operation, digest string) (Dataset, error) {
+	maintainIndex := ctx.Value(lockKey{}) != s.root
+	var dataset Dataset
+	err := s.WithLock(ctx, func(ctx context.Context) error {
+		var err error
+		dataset, err = s.create(ctx, id, name, operation, digest)
+		if err == nil && maintainIndex {
+			err = s.BuildIndex(ctx)
+		}
+		return err
+	})
+	return dataset, err
+}
+
+func (s *DatasetStore) create(ctx context.Context, id, name, operation, digest string) (Dataset, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || len(name) > 200 {
-		return Dataset{}, fmt.Errorf("%w: dataset name must contain 1–200 bytes", ErrInvalidArgument)
+	if !ValidID(id) || name == "" || len(name) > 200 {
+		return Dataset{}, fmt.Errorf("%w: dataset name must contain 1–200 bytes", tmprl.ErrInvalidArgument)
+	}
+	if previous, err := s.read(ctx, id, 1); err == nil {
+		if operation != "" && previous.Operation == operation && previous.Digest == digest {
+			return previous.Dataset, nil
+		}
+		return Dataset{}, ErrDatasetConflict
+	} else if !errors.Is(err, ErrDatasetNotFound) {
+		return Dataset{}, err
 	}
 	now := time.Now().UTC()
-	dataset := Dataset{ID: "dataset-" + rand.Text(), Name: name, Version: 1, CreatedAt: now, UpdatedAt: now, Versions: []int{1}, Documents: []DatasetDocument{}}
+	dataset := Dataset{ID: id, Name: name, Version: 1, CreatedAt: now, UpdatedAt: now, Versions: []int{1}, Documents: []DatasetDocument{}}
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
 		return Dataset{}, err
 	}
 	defer root.Close()
-	if err := root.Mkdir(dataset.ID, 0o700); err != nil {
+	if err := root.Mkdir(dataset.ID, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 		return Dataset{}, err
 	}
-	return dataset, s.publish(ctx, datasetSnapshot{Dataset: dataset})
+	return dataset, s.publish(ctx, datasetSnapshot{Dataset: dataset, Operation: operation, Digest: digest})
 }
 
 func (s *DatasetStore) List(ctx context.Context) ([]Dataset, error) {
@@ -122,7 +163,10 @@ func (s *DatasetStore) List(ctx context.Context) ([]Dataset, error) {
 	}
 	datasets := []Dataset{}
 	for _, entry := range entries {
-		if !entry.IsDir() || !validDatasetID(entry.Name()) {
+		if ValidID(entry.Name()) && entry.Type()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("dataset directory must not be a symbolic link: %s", entry.Name())
+		}
+		if !entry.IsDir() || !ValidID(entry.Name()) {
 			continue
 		}
 		dataset, err := s.Get(ctx, entry.Name(), 0)
@@ -156,16 +200,33 @@ func (s *DatasetStore) Records(ctx context.Context, id string, version int) ([]t
 // Add publishes only this document's verified contribution. Concurrent additions
 // merge against the latest version; removed documents are never resurrected.
 func (s *DatasetStore) Add(ctx context.Context, id string, baseVersion int, addition DatasetAddition) (Dataset, error) {
+	maintainIndex := ctx.Value(lockKey{}) != s.root
+	var dataset Dataset
+	err := s.WithLock(ctx, func(ctx context.Context) error {
+		var err error
+		dataset, err = s.add(ctx, id, baseVersion, addition)
+		if err == nil && maintainIndex {
+			err = s.BuildIndex(ctx)
+		}
+		return err
+	})
+	return dataset, err
+}
+
+func (s *DatasetStore) add(ctx context.Context, id string, baseVersion int, addition DatasetAddition) (Dataset, error) {
 	if addition.PublicationID == "" || addition.Source.ID == "" || addition.Source.Name == "" || baseVersion < 1 || len(addition.Records) == 0 {
-		return Dataset{}, fmt.Errorf("%w: prepared document, records, and base version are required", ErrInvalidArgument)
+		return Dataset{}, fmt.Errorf("%w: prepared document, records, and base version are required", tmprl.ErrInvalidArgument)
+	}
+	if !validSHA(addition.Source.SHA256) || !((addition.PageStart == 0 && addition.PageEnd == 0) || (addition.PageStart > 0 && addition.PageEnd >= addition.PageStart)) {
+		return Dataset{}, fmt.Errorf("%w: valid source SHA-256 and paired page bounds are required", tmprl.ErrInvalidArgument)
 	}
 	for _, record := range addition.Records {
 		if record.SourceDocument != addition.Source.ID {
-			return Dataset{}, fmt.Errorf("%w: record belongs to a different source document", ErrInvalidArgument)
+			return Dataset{}, fmt.Errorf("%w: record belongs to a different source document", tmprl.ErrInvalidArgument)
 		}
 	}
 	if err := training.ValidateRecords(addition.Records); err != nil {
-		return Dataset{}, fmt.Errorf("%w: %s", ErrInvalidArgument, err)
+		return Dataset{}, fmt.Errorf("%w: %s", tmprl.ErrInvalidArgument, err)
 	}
 	data, err := json.Marshal(addition)
 	if err != nil {
@@ -194,12 +255,21 @@ func (s *DatasetStore) Add(ctx context.Context, id string, baseVersion int, addi
 			return Dataset{}, ErrDatasetConflict
 		}
 		for _, contribution := range snapshot.Contributions {
-			if contribution.SHA256 == addition.Source.SHA256 && contribution.Document.PageStart == addition.PageStart && contribution.Document.PageEnd == addition.PageEnd {
-				return Dataset{}, fmt.Errorf("%w: this document and page range are already prepared", ErrDatasetConflict)
+			if sameSource(contribution.SHA256, contribution.Document, addition.Source.SHA256, addition.PageStart, addition.PageEnd) {
+				return Dataset{}, ErrDocumentExists
 			}
 		}
-		document := DatasetDocument{ID: addition.PublicationID, Name: addition.Source.Name, RecordCount: len(addition.Records), PageStart: addition.PageStart, PageEnd: addition.PageEnd}
-		snapshot.Contributions = append(snapshot.Contributions, datasetContribution{Document: document, SHA256: addition.Source.SHA256, Records: addition.Records})
+		// A question already in the dataset is skipped, not saved twice.
+		existing := make(map[string]bool)
+		for _, record := range snapshot.records() {
+			existing[training.Key(record.Prompt)] = true
+		}
+		records := slices.DeleteFunc(slices.Clone(addition.Records), func(r training.Record) bool { return existing[training.Key(r.Prompt)] })
+		if len(records) == 0 {
+			return Dataset{}, ErrQuestionsExist
+		}
+		document := DatasetDocument{ID: addition.PublicationID, Name: addition.Source.Name, RecordCount: len(records), PageStart: addition.PageStart, PageEnd: addition.PageEnd}
+		snapshot.Contributions = append(snapshot.Contributions, datasetContribution{Document: document, SHA256: addition.Source.SHA256, Records: records})
 		if err := training.ValidateRecords(snapshot.records()); err != nil {
 			return Dataset{}, fmt.Errorf("%w: combined dataset: %s", ErrDatasetConflict, err)
 		}
@@ -217,6 +287,25 @@ func (s *DatasetStore) Add(ctx context.Context, id string, baseVersion int, addi
 // Remove excludes a contribution without touching uploads, historical versions,
 // or trained adapters. The base version prevents stale destructive edits.
 func (s *DatasetStore) Remove(ctx context.Context, id string, version int, documentID string) (Dataset, error) {
+	return s.RemoveOperation(ctx, id, version, documentID, "remove/"+documentID, "")
+}
+
+// RemoveOperation records the exact operation identity for publication recovery.
+func (s *DatasetStore) RemoveOperation(ctx context.Context, id string, version int, documentID, operation, digest string) (Dataset, error) {
+	maintainIndex := ctx.Value(lockKey{}) != s.root
+	var dataset Dataset
+	err := s.WithLock(ctx, func(ctx context.Context) error {
+		var err error
+		dataset, err = s.remove(ctx, id, version, documentID, operation, digest)
+		if err == nil && maintainIndex {
+			err = s.BuildIndex(ctx)
+		}
+		return err
+	})
+	return dataset, err
+}
+
+func (s *DatasetStore) remove(ctx context.Context, id string, version int, documentID, operation, digest string) (Dataset, error) {
 	snapshot, err := s.read(ctx, id, 0)
 	if err != nil {
 		return Dataset{}, err
@@ -229,8 +318,12 @@ func (s *DatasetStore) Remove(ctx context.Context, id string, version int, docum
 		return Dataset{}, ErrDatasetNotFound
 	}
 	snapshot.Contributions = slices.Delete(snapshot.Contributions, index, index+1)
-	snapshot.advance("remove/"+documentID, "")
+	snapshot.advance(operation, digest)
 	return snapshot.Dataset, s.publish(ctx, snapshot)
+}
+
+func sameSource(sha string, document DatasetDocument, source string, pageStart, pageEnd int) bool {
+	return sha == source && document.PageStart == pageStart && document.PageEnd == pageEnd
 }
 
 func (snapshot datasetSnapshot) records() []training.Record {
@@ -259,8 +352,8 @@ func (s *DatasetStore) read(ctx context.Context, id string, version int) (datase
 	if err := ctx.Err(); err != nil {
 		return datasetSnapshot{}, err
 	}
-	if !validDatasetID(id) || version < 0 {
-		return datasetSnapshot{}, fmt.Errorf("%w: invalid dataset identity or version", ErrInvalidArgument)
+	if !ValidID(id) || version < 0 {
+		return datasetSnapshot{}, fmt.Errorf("%w: invalid dataset identity or version", tmprl.ErrInvalidArgument)
 	}
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
@@ -300,9 +393,20 @@ func (s *DatasetStore) read(ctx context.Context, id string, version int) (datase
 		return datasetSnapshot{}, err
 	}
 	defer file.Close()
-	var snapshot datasetSnapshot
-	if err := json.NewDecoder(io.LimitReader(file, 100<<20)).Decode(&snapshot); err != nil {
+	stat, err := file.Stat()
+	if err != nil {
 		return datasetSnapshot{}, err
+	}
+	if !stat.Mode().IsRegular() || stat.Size() > 100<<20 {
+		return datasetSnapshot{}, fmt.Errorf("dataset snapshot must be a regular file no larger than 100 MiB")
+	}
+	var snapshot datasetSnapshot
+	decoder := json.NewDecoder(io.LimitReader(file, (100<<20)+1))
+	if err := decoder.Decode(&snapshot); err != nil {
+		return datasetSnapshot{}, err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return datasetSnapshot{}, fmt.Errorf("dataset snapshot has trailing or oversized content")
 	}
 	if snapshot.Dataset.ID != id || snapshot.Dataset.Version != version {
 		return datasetSnapshot{}, fmt.Errorf("dataset snapshot identity mismatch")
@@ -320,7 +424,7 @@ func (s *DatasetStore) publish(ctx context.Context, snapshot datasetSnapshot) er
 		return err
 	}
 	if len(data) > 100<<20 {
-		return fmt.Errorf("%w: dataset version exceeds 100 MiB", ErrInvalidArgument)
+		return fmt.Errorf("%w: dataset version exceeds 100 MiB", tmprl.ErrInvalidArgument)
 	}
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
@@ -345,10 +449,27 @@ func (s *DatasetStore) publish(ctx context.Context, snapshot datasetSnapshot) er
 	if errors.Is(err, os.ErrExist) {
 		return ErrDatasetConflict
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	dir, err := root.Open(snapshot.Dataset.ID)
+	if err != nil {
+		return err
+	}
+	err = errors.Join(dir.Sync(), dir.Close())
+	if err != nil {
+		return err
+	}
+	// Persist a newly created dataset directory before a caller commits SQL.
+	directory, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	return errors.Join(directory.Sync(), directory.Close())
 }
 
-func validDatasetID(id string) bool {
+// ValidID checks the dataset identity format accepted by storage and preparation.
+func ValidID(id string) bool {
 	if !strings.HasPrefix(id, "dataset-") || len(id) < 9 || len(id) > 128 {
 		return false
 	}

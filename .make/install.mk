@@ -176,6 +176,9 @@ TEMPO      := grafana/tempo:3.1.1
 LOKI       := grafana/loki:3.7.9
 ALLOY      := grafana/alloy:v1.21.2
 DOCLING    := quay.io/docling-project/docling-serve:v1.38.1
+POSTGRES   := postgres:16
+TEMPORAL   := temporalio/server:1.32.2
+TEMPORAL_ADMIN := temporalio/admin-tools:1.32.2
 
 # Keep these values in sync with cmd/server/foundation/tmprl/docker_test.go.
 TMPRL_TEST_IMAGE := temporalio/temporal:1.9.1
@@ -190,5 +193,8 @@ install-docker: ## Pull supporting Docker images
 	docker pull $(LOKI) & \
 	docker pull $(ALLOY) & \
 	docker pull $(DOCLING) & \
+	docker pull $(POSTGRES) & \
+	docker pull $(TEMPORAL) & \
+	docker pull $(TEMPORAL_ADMIN) & \
 	docker pull $(TMPRL_TEST_IMAGE) & \
 	wait;
