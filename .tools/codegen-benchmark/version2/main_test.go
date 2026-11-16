@@ -144,6 +144,10 @@ func TestPrepareAttemptDirectoryCreatesRepositoryBoundary(t *testing.T) {
 	if got, want := programDir, filepath.Join(dir, "tictactoe"); got != want {
 		t.Errorf("program directory: got %q, want %q", got, want)
 	}
+	version, err := runCommand(t.Context(), programDir, "go", "list", "-m", "-f", "{{.GoVersion}}")
+	if err != nil || strings.TrimSpace(version) != "1.27.0" {
+		t.Fatalf("workspace Go version: got %q, want 1.27.0: %v", version, err)
+	}
 
 	cmd = exec.Command("git", "rev-parse", "--show-toplevel")
 	cmd.Dir = programDir
@@ -267,6 +271,49 @@ func TestWarmAndUnloadModel(t *testing.T) {
 	}
 }
 
+func TestServerVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		libraryStatus int
+		libraryBody   string
+		wantError     bool
+	}{
+		{"installed, not latest", http.StatusOK, `{"current":"b12283","latest":"b99999"}`, false},
+		{"missing installed version", http.StatusOK, `{"latest":"b99999"}`, true},
+		{"access denied", http.StatusForbidden, `{}`, true},
+		{"invalid metadata", http.StatusOK, `{`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("KRONK_TOKEN", "test-token")
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer test-token" {
+					t.Errorf("metadata request: %s %s", r.Method, r.Header.Get("Authorization"))
+				}
+				switch r.URL.Path {
+				case "/v1/liveness":
+					_, _ = w.Write([]byte(`{"build":"1.33.4+dev"}`))
+				case "/v1/kronk/libs":
+					w.WriteHeader(tc.libraryStatus)
+					_, _ = w.Write([]byte(tc.libraryBody))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			kronk, llama, err := serverVersions(t.Context(), server.URL)
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("unavailable metadata must not be recorded as a successful version lookup")
+				}
+				return
+			}
+			if err != nil || kronk != "1.33.4+dev" || llama != "b12283" {
+				t.Fatalf("server versions: Kronk=%q llama.cpp=%q error=%v", kronk, llama, err)
+			}
+		})
+	}
+}
+
 func TestParseAgentResult(t *testing.T) {
 	events := strings.Join([]string{
 		`{"type":"tool_use","part":{"type":"tool","tool":"bash","state":{"status":"error","error":"permission denied"}}}`,
@@ -332,33 +379,61 @@ func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 
 func TestGraderFeedbackRepeatedScenarioFailures(t *testing.T) {
 	grade := gradeResult{Total: 7}
-	for _, name := range []string{"scenario-X-line-1", "scenario-O-line-1", "scenario-draw"} {
-		grade.add(name, false, "unexpected game state", gradeFinding{Kind: "interaction", Location: name,
-			Step: 1, Expected: "1", Actual: "\x01", Detail: "unexpected game state", Example: `expected "1", actual "\x01"`})
+	finding := gradeFinding{Kind: "interaction", Location: "scenario-X-line-1", Step: 2,
+		Input: "1\n", Expected: "\x1b[32mX\x1b[0m\n", Actual: "\x1b[32mO\x1b[0m\n", Detail: "unexpected game state"}
+	grade.add(finding.Location, false, finding.Detail, finding, finding)
+	for _, change := range []func(*gradeFinding){
+		func(f *gradeFinding) { f.Location = "scenario-O-line-1" },
+		func(f *gradeFinding) { f.Input = "2\n" },
+		func(f *gradeFinding) { f.Step = 3 },
+	} {
+		distinct := finding
+		change(&distinct)
+		grade.Findings = append(grade.Findings, distinct)
 	}
-	grade.add("scenario-replay-score", false, "unexpected score", gradeFinding{Kind: "interaction", Location: "scenario-replay-score",
-		Step: 1, Expected: "1", Actual: "0", Detail: "unexpected score", Example: `expected "Score: 1", actual "Score: 0"`})
-	grade.add("go-build", false, "build failed")
-	grade.add("go-vet", false, "build failed")
+	grade.add("go-build", false, "build failed\ncompiler diagnostic\n")
+	grade.add("go-vet", false, "build failed\nvet diagnostic\n")
 	grade.add("scenario-passed", true, "")
-	feedback := graderFeedback(grade)
-	if strings.Count(feedback, "unexpected game state") != 1 ||
-		!strings.Contains(feedback, "scenario-X-line-1, step 1 (3 occurrences; one example)") {
-		t.Fatalf("identical scenario failures were not consolidated: %s", feedback)
+	before, err := json.Marshal(grade)
+	if err != nil {
+		t.Fatal(err)
 	}
+	feedback := graderFeedback(grade)
 	for _, want := range []string{
-		"1/7 checks", "scenario-replay-score, step 1 [interaction]: unexpected score",
-		`Expected "1", actual "0"`, "go-build [check]: build failed", "go-vet [check]: build failed",
+		"1/7 checks. Failed: 3. Not reached: 3.", "(2 identical observations)",
+		"scenario-O-line-1 [interaction], step 2", "scenario-X-line-1 [interaction], step 3",
+		`Input sent: "1\n"`, `Input sent: "2\n"`,
+		`Expected: "\x1b[32mX\x1b[0m\n"`, `Actual: "\x1b[32mO\x1b[0m\n"`,
+		"Diagnostic: build failed\ncompiler diagnostic\n", "Diagnostic: build failed\nvet diagnostic\n",
 	} {
 		if !strings.Contains(feedback, want) {
 			t.Errorf("feedback omitted %q: %s", want, feedback)
 		}
 	}
-	if strings.Contains(feedback, "scenario-passed") {
-		t.Fatalf("feedback included a passing check: %s", feedback)
+	if strings.Count(feedback, "Diagnostic: unexpected game state") != 4 || strings.Contains(feedback, "scenario-passed") {
+		t.Fatalf("feedback merged distinct evidence or included a passing check: %s", feedback)
 	}
-	if len(grade.Checks) != 7 || grade.Checks[2].Detail != grade.Checks[0].Detail || grade.Passed != 1 {
+	after, err := json.Marshal(grade)
+	if err != nil || string(after) != string(before) {
 		t.Fatal("feedback changed the recorded grade")
+	}
+}
+
+func TestGraderFeedbackPreservesLongEvidence(t *testing.T) {
+	grade := gradeResult{Total: 3}
+	grade.add("long-output", false, "", gradeFinding{Kind: "transcript", Location: "long-output",
+		Expected: strings.Repeat("\x1b[32mX\x1b[0m\n", 2500), Actual: strings.Repeat("\x1b[32mO\x1b[0m\n", 2500)})
+	diagnostic := strings.Repeat("compiler diagnostic\n", 200)
+	grade.add("go-build", false, diagnostic)
+	feedback := graderFeedback(grade)
+	for _, want := range []string{
+		"Not reached: 1", diagnostic,
+		`Expected: "` + strings.Repeat(`\x1b[32mX\x1b[0m\n`, 2500) + `"`,
+		`Actual: "` + strings.Repeat(`\x1b[32mO\x1b[0m\n`, 2500) + `"`,
+	} {
+		if !strings.Contains(feedback, want) {
+			t.Fatalf("long evidence or diagnostics were lost: expected %d-byte field", len(want))
+		}
 	}
 }
 
@@ -424,8 +499,8 @@ func TestSubmissionLimit(t *testing.T) {
 	}
 }
 
-// This fake CLI never contacts a model; it checks actual process arguments,
-// retained workspace/home, and source snapshots across two submissions.
+// This fake CLI never contacts a model; it checks process arguments, exact stdin
+// messages, retained workspace/home, and source snapshots across two submissions.
 func TestRunModelResumesWorkspace(t *testing.T) {
 	binDir := t.TempDir()
 	script := `#!/bin/sh
@@ -439,10 +514,13 @@ done
 [ "$thinking" = true ]
 if [ -f "$HOME/submitted" ]; then
   [ "$continued" = true ]
+  cat > "$CAPTURE_DIR/message-02"
+  grep -q 'go-parse' "$CAPTURE_DIR/message-02"
   grep -q 'first-version' tictactoe/main.go
   printf 'package main\nfunc second-version\n' > tictactoe/main.go
 else
   [ "$continued" = false ]
+  cat > "$CAPTURE_DIR/message-01"
   touch "$HOME/submitted"
   printf 'package main\nfunc first-version\n' > tictactoe/main.go
 fi
@@ -463,7 +541,9 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	if err := runModel(root, runDir, server.URL, "original task", model,
+	t.Setenv("CAPTURE_DIR", binDir)
+	prompt := "original task\n" + strings.Repeat("evidence with spaces, \"quotes\" and \\x1b[32m\n", 5000)
+	if err := runModel(root, runDir, server.URL, prompt, model,
 		options{attempts: 2, feedback: true, steps: 5, timeout: time.Minute}); err != nil {
 		t.Fatal(err)
 	}
@@ -489,6 +569,13 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 	}
 	if loaded[0].Attempts[0].Repair != "" || !strings.Contains(loaded[0].Attempts[1].Repair, "go-parse") {
 		t.Fatalf("saved repair messages: %+v", loaded[0].Attempts)
+	}
+	for i, want := range []string{prompt, loaded[0].Attempts[1].Repair} {
+		name := []string{"message-01", "message-02"}[i]
+		got, err := os.ReadFile(filepath.Join(binDir, name))
+		if err != nil || string(got) != want {
+			t.Fatalf("%s stdin changed: got %d bytes, want %d, error %v", name, len(got), len(want), err)
+		}
 	}
 	feedback := graderFeedback(loaded[0].Attempts[1].Grade)
 	if !strings.Contains(feedback, "go-parse") || !strings.Contains(feedback, "1/37") {

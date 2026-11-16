@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,11 +19,13 @@ type modelResults struct {
 }
 
 type runRecord struct {
-	Started  time.Time `json:"started"`
-	Finished time.Time `json:"finished,omitzero"`
-	Status   string    `json:"status"`
-	Machine  string    `json:"machine,omitempty"`
-	Error    string    `json:"error,omitempty"`
+	Started      time.Time `json:"started"`
+	Finished     time.Time `json:"finished,omitzero"`
+	Status       string    `json:"status"`
+	Machine      string    `json:"machine,omitempty"`
+	KronkVersion string    `json:"kronk_version,omitempty"`
+	LlamaVersion string    `json:"llama_cpp_version,omitempty"`
+	Error        string    `json:"error,omitempty"`
 }
 
 // Bump this label when the prompt or acceptance rules intentionally change.
@@ -49,6 +52,10 @@ func loadRunRecord(runDir string) (runRecord, error) {
 				record.Status = value
 			case "Runner machine":
 				record.Machine = value
+			case "Kronk version":
+				record.KronkVersion = value
+			case "llama.cpp library":
+				record.LlamaVersion = value
 			case "Error":
 				record.Error = value
 			}
@@ -141,7 +148,9 @@ func renderReport(runDir string, models []modelResults, record runRecord) string
 	if !record.Finished.IsZero() {
 		fmt.Fprintf(&report, "Finished: %s\nElapsed: %s\n", record.Finished.Format(time.RFC3339Nano), record.Finished.Sub(record.Started).Round(time.Second))
 	}
-	fmt.Fprintf(&report, "Runner machine: %s\nWorkflow: %s\n", record.Machine, record.Status)
+	fmt.Fprintf(&report, "Runner machine: %s\n", record.Machine)
+	fmt.Fprintf(&report, "Kronk version: %s\nllama.cpp library: %s\n", cmp.Or(record.KronkVersion, "not recorded"), cmp.Or(record.LlamaVersion, "not recorded"))
+	fmt.Fprintf(&report, "Workflow: %s\n", record.Status)
 	if record.Error != "" {
 		fmt.Fprintf(&report, "Error: %s\n", strings.Join(strings.Fields(record.Error), " "))
 	}

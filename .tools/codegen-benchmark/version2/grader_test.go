@@ -127,7 +127,7 @@ func TestAcceptanceFormattingFeedback(t *testing.T) {
 	}
 	feedback := graderFeedback(grade)
 	for _, want := range []string{
-		`Expected "\n", actual ""`, `Expected "", actual "\n"`, "Fix every occurrence",
+		`Input sent: "1\n4\n2\n5\n3\nn\n"`,
 		`Draws: 0\n\n \x1b[37m1\x1b[0m`, `Draws: 0\n \x1b[37m1\x1b[0m`,
 		`\n\nPlayer X wins!\n`, `\n\n\nPlayer X wins!\n`,
 	} {
@@ -135,25 +135,13 @@ func TestAcceptanceFormattingFeedback(t *testing.T) {
 			t.Errorf("feedback omitted %q: %s", want, feedback)
 		}
 	}
-	if strings.Count(feedback, "Example:") != 2 || len(feedback) > 2000 {
-		t.Fatalf("repeated formatting errors were not consolidated: %s", feedback)
+	if e.SentInput != s.input {
+		t.Fatalf("completed gameplay lost sent inputs: %q", e.SentInput)
 	}
-	count := 0
-	steps := make(map[int]bool)
-	for _, finding := range grade.Findings {
-		if finding.Location == "scenario-"+s.name {
-			if finding.Kind != "formatting" {
-				t.Fatalf("presentation defect reported as a stopped interaction: %+v", finding)
-			}
-			count++
-			steps[finding.Step] = true
-		}
-	}
-	if !steps[1] || !steps[len(s.steps)-1] {
-		t.Fatalf("missing initial or end-of-game formatting location: %+v", grade.Findings)
-	}
-	if count != len(s.steps) { // Each rendered board, plus the extra result newline.
-		t.Fatalf("detailed evidence lost independent edits: %+v", grade.Findings)
+	finding := grade.Findings[0]
+	if finding.Location != "scenario-"+s.name || finding.Kind != "transcript" ||
+		finding.Expected != e.Expected || finding.Actual != e.Actual || finding.Input != e.SentInput {
+		t.Fatalf("feedback must retain complete transcripts, not inferred edits: %+v", finding)
 	}
 }
 
@@ -193,28 +181,30 @@ func TestAcceptanceFeedbackPreservesStoppedContext(t *testing.T) {
 		source := strings.Replace(fixtureSource(t), `Draws: %d\n\n`, `Draws: %d\n`, 1)
 		source = strings.Replace(source, `fmt.Println("Invalid move. Enter an empty position from 1 to 9.")`,
 			tc.output+`; for { _, _ = stdin.ReadString('\n') }`, 1)
-		s := transcript(tc.name, "\n") // An empty move needs an error and repeat prompt.
+		s := transcript(tc.name, "\n1\n") // The second input must not be sent after the missing prompt.
 		e, findings := executeScenario(t.Context(), fixtureBinary(t, source), s)
 		if e.Passed || !strings.Contains(e.Error, "deadline exceeded") {
 			t.Fatalf("missing output must stop the scenario: %+v", e)
 		}
-		if len(findings) != 2 || findings[0].Kind != "formatting" {
-			t.Fatalf("lost preceding formatting defect: %+v", findings)
+		if len(findings) != 1 {
+			t.Fatalf("want one complete scenario observation: %+v", findings)
 		}
-		stopped := findings[1]
-		if stopped.Kind != "interaction" || stopped.Step != 2 || stopped.Expected != tc.missing || stopped.Actual != "" {
-			t.Fatalf("lost missing output context: %+v", stopped)
+		stopped := findings[0]
+		wantActual := strings.Replace(s.steps[0], "Draws: 0\n\n", "Draws: 0\n", 1) + strings.TrimSuffix(invalid+prompt, tc.missing)
+		if stopped.Kind != "interaction" || stopped.Step != 2 || stopped.Expected != s.steps[0]+invalid+prompt ||
+			stopped.Actual != wantActual || stopped.Input != "\n" || e.SentInput != "\n" {
+			t.Fatalf("lost preceding formatting, stopped interaction, or actual inputs: %+v", stopped)
 		}
 		grade.add("scenario-"+s.name, e.Passed, e.Error, findings...)
 	}
 	feedback := graderFeedback(grade)
-	for _, want := range []string{"missing-prompt, step 2", "missing-message-and-prompt, step 2", prompt, "[formatting]"} {
+	for _, want := range []string{"missing-prompt [interaction], step 2", "missing-message-and-prompt [interaction], step 2", prompt, `Draws: 0\n\n`, `Draws: 0\n `} {
 		if !strings.Contains(feedback, want) {
 			t.Errorf("feedback omitted %q: %s", want, feedback)
 		}
 	}
-	if strings.Count(feedback, "[interaction]") != 2 || strings.Count(feedback, "[formatting]") != 1 {
-		t.Fatalf("distinct timeouts merged or repeated formatting duplicated: %s", feedback)
+	if strings.Count(feedback, "[interaction]") != 2 {
+		t.Fatalf("distinct scenario observations merged: %s", feedback)
 	}
 }
 
@@ -230,6 +220,24 @@ func TestAcceptanceBoundedExecution(t *testing.T) {
 		if e.Passed || len(e.Actual) > 65539 || e.Error == "" {
 			t.Fatalf("unbounded execution: %+v", e)
 		}
+	}
+}
+
+func TestCompilerDiagnosticsPreserved(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("package main\nvar (\n")
+	for i := range 8 {
+		source.WriteString("_ = " + strings.Repeat("unknown", 50) + string(rune('a'+i)) + "\n")
+	}
+	source.WriteString("_ = missingTailDiagnostic\n)\nfunc main() {}\n")
+	formatted, err := format.Source([]byte(source.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grade := gradeProgram(t.Context(), string(formatted))
+	feedback := graderFeedback(grade)
+	if grade.PassedCheck("go-build") || !strings.Contains(feedback, "undefined: missingTailDiagnostic") {
+		t.Fatalf("feedback lost the compiler diagnostic after the first 2000 bytes: %s", feedback)
 	}
 }
 

@@ -8,7 +8,7 @@ kms:
   insecure-logging: true
 
 models:
-  # Code-generation benchmark: version1 passers, Swift, and a Flash-Next retry.
+  # Code-generation benchmark: version1 passers and additional candidates.
   # One slot, 128K context; preserve existing sampling settings.
   unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/BENCHMARK:
     nseq-max: 1
@@ -50,6 +50,20 @@ models:
       max_tokens: 32000
 
   ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 32000
+
+  AtomicChat/Ripple-65B-Preview-Q4_K_M/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 32000
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/BENCHMARK:
     nseq-max: 1
     context-window: 131072
     chat-template-kwargs:

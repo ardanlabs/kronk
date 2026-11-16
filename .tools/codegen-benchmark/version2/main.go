@@ -161,6 +161,10 @@ func run(opts options) (runErr error) {
 	if err := verifyServer(context.Background(), host, selected); err != nil {
 		return err
 	}
+	kronkVersion, llamaVersion, err := serverVersions(context.Background(), host)
+	if err != nil {
+		return err
+	}
 	prompt, err := loadPrompt(opts.promptFile)
 	if err != nil {
 		return err
@@ -178,7 +182,7 @@ func run(opts options) (runErr error) {
 	if err != nil {
 		machine = "unknown"
 	}
-	record := runRecord{Started: time.Now(), Status: "running", Machine: fmt.Sprintf("%s (%s/%s)", machine, runtime.GOOS, runtime.GOARCH)}
+	record := runRecord{Started: time.Now(), Status: "running", Machine: fmt.Sprintf("%s (%s/%s)", machine, runtime.GOOS, runtime.GOARCH), KronkVersion: kronkVersion, LlamaVersion: llamaVersion}
 	if err := generateReport(runDir, &record); err != nil {
 		return err
 	}
@@ -253,8 +257,15 @@ func runSubmissions(prompt string, limit int, feedback bool, submit func(int, st
 }
 
 func graderFeedback(grade gradeResult) string {
+	var failed []string
+	for _, check := range grade.Checks {
+		if !check.Passed {
+			failed = append(failed, check.Name)
+		}
+	}
 	var message strings.Builder
-	fmt.Fprintf(&message, "Your submission passed %d/%d checks and did not pass the benchmark. Repair the existing tictactoe/main.go in this workspace; do not start a new project. Preserve all original requirements and working behavior.\n\nFix these failures:\n", grade.Passed, grade.Total)
+	fmt.Fprintf(&message, "Your submission passed %d/%d checks. Failed: %d. Not reached: %d.\nFailed checks: %s\n", grade.Passed, grade.Total, len(failed), max(0, grade.Total-len(grade.Checks)), strings.Join(failed, ", "))
+	message.WriteString("\nObservations follow. Quoted strings preserve whitespace and ANSI escapes. Each scenario includes the input actually sent and its captured output transcript. Expected output ends at the stopped interaction, or at scenario completion.\n")
 	type repeatedFinding struct {
 		gradeFinding
 		count int
@@ -262,41 +273,31 @@ func graderFeedback(grade gradeResult) string {
 	var groups []repeatedFinding
 	byFinding := make(map[gradeFinding]int)
 	for _, finding := range grade.Findings {
-		key := finding
-		key.Example = ""
-		if finding.Kind != "check" {
-			key.Location = ""
-		}
-		if finding.Kind == "formatting" {
-			key.Step = 0
-		}
-		index, exists := byFinding[key]
+		index, exists := byFinding[finding]
 		if !exists {
 			index = len(groups)
-			byFinding[key] = index
+			byFinding[finding] = index
 			groups = append(groups, repeatedFinding{gradeFinding: finding})
 		}
 		groups[index].count++
 	}
-	message.WriteString("\nFix every occurrence, not only the example. Output excerpts preserve whitespace and ANSI codes as escaped bytes.\n")
 	for _, group := range groups {
-		label := group.Location
+		fmt.Fprintf(&message, "\n- %s [%s]", group.Location, group.Kind)
 		if group.Step > 0 {
-			label = fmt.Sprintf("%s, step %d", label, group.Step)
+			fmt.Fprintf(&message, ", step %d", group.Step)
 		}
 		if group.count > 1 {
-			label = fmt.Sprintf("%s (%d occurrences; one example)", label, group.count)
+			fmt.Fprintf(&message, " (%d identical observations)", group.count)
 		}
-		fmt.Fprintf(&message, "\n- %s [%s]", label, group.Kind)
 		if group.Detail != "" {
-			fmt.Fprintf(&message, ": %s", group.Detail)
+			fmt.Fprintf(&message, "\n  Diagnostic: %s", group.Detail)
 		}
-		if group.Example != "" {
-			fmt.Fprintf(&message, "\n  Expected %q, actual %q. Example: %s", truncate(group.Expected, 120), truncate(group.Actual, 120), group.Example)
+		if group.Kind != "check" {
+			fmt.Fprintf(&message, "\n  Input sent: %q\n  Expected: %q\n  Actual: %q", group.Input, group.Expected, group.Actual)
 		}
 		message.WriteByte('\n')
 	}
-	message.WriteString("\nChecks not reached because of an earlier failure will be evaluated after it is fixed. Fix the cause, not just the displayed examples. Format and build the code, then submit by finishing your response. The grader will evaluate it again. Do not add features or change the original requirements.\n")
+	message.WriteString("\nRepair tictactoe/main.go under the original requirements, then finish your response to resubmit.\n")
 	return message.String()
 }
 
@@ -460,10 +461,11 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 	} else {
 		args = append(args, "--continue")
 	}
-	args = append(args, prompt)
 	cmd := exec.CommandContext(ctx, "opencode", args...)
 	cmd.Dir = dir
 	cmd.Env = env
+	// OpenCode reads piped input as the message, avoiding OS argument-size limits.
+	cmd.Stdin = strings.NewReader(prompt)
 
 	var stdout bytes.Buffer
 	events, err := os.Create(filepath.Join(artifactDir, "events.jsonl"))
@@ -563,7 +565,7 @@ func prepareAttemptDirectory(dir string) (string, error) {
 	if err := os.MkdirAll(programDir, 0o755); err != nil {
 		return "", fmt.Errorf("codegen benchmark: creating program directory: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(programDir, "go.mod"), []byte("module tictactoe\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(programDir, "go.mod"), []byte("module tictactoe\n\ngo 1.27.0\n"), 0o644); err != nil {
 		return "", fmt.Errorf("codegen benchmark: writing go.mod: %w", err)
 	}
 	return programDir, nil
@@ -797,6 +799,53 @@ func verifyServer(parent context.Context, host string, selected []benchmarkModel
 		}
 	}
 	return nil
+}
+
+// Read provenance from the inference server, never the benchmark's checkout.
+func serverVersions(parent context.Context, host string) (string, string, error) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	versions := make([]string, 0, 2)
+	for _, path := range []string{"/v1/liveness", "/v1/kronk/libs"} {
+		requestURL, err := url.JoinPath(host, path)
+		if err != nil {
+			return "", "", fmt.Errorf("codegen benchmark: building version URL: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return "", "", err
+		}
+		if token := strings.TrimSpace(os.Getenv("KRONK_TOKEN")); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		var metadata struct {
+			Build   string `json:"build"`
+			Current string `json:"current"`
+		}
+		err = func() error {
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("returned %s", resp.Status)
+			}
+			return json.NewDecoder(io.LimitReader(resp.Body, 8*1024)).Decode(&metadata)
+		}()
+		if err != nil {
+			return "", "", fmt.Errorf("codegen benchmark: reading server version from %s: %w", path, err)
+		}
+		version := metadata.Build
+		if path == "/v1/kronk/libs" {
+			version = metadata.Current
+		}
+		if strings.TrimSpace(version) == "" {
+			return "", "", fmt.Errorf("codegen benchmark: missing server version from %s", path)
+		}
+		versions = append(versions, version)
+	}
+	return versions[0], versions[1], nil
 }
 
 func loadPrompt(path string) (string, error) {

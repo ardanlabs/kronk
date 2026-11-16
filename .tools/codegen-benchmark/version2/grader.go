@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -36,33 +35,26 @@ type gradeResult struct {
 	Findings []gradeFinding      `json:"findings,omitempty"`
 }
 
-// A finding records an observation independently of its feedback presentation.
-// Kind distinguishes check diagnostics, formatting edits, and stopped execution.
-// Location and Step identify the example, not the identity of a repeated edit.
+// A finding records native check diagnostics or a failed scenario's transcript,
+// independently of its feedback presentation. Input is the prefix actually sent.
 type gradeFinding struct {
 	Kind     string `json:"kind"`
 	Location string `json:"location"`
 	Step     int    `json:"step,omitempty"`
+	Input    string `json:"input_sent,omitempty"`
 	Expected string `json:"expected"`
 	Actual   string `json:"actual"`
 	Detail   string `json:"detail,omitempty"`
-	Example  string `json:"example,omitempty"`
-}
-
-type outputDifference struct {
-	Expected string
-	Actual   string
-	Example  string
-	offset   int
 }
 
 type executionEvidence struct {
-	Scenario string `json:"scenario"`
-	Input    string `json:"input"`
-	Expected string `json:"expected_raw_output"`
-	Actual   string `json:"actual_raw_output"`
-	Error    string `json:"error,omitempty"`
-	Passed   bool   `json:"passed"`
+	Scenario  string `json:"scenario"`
+	Input     string `json:"input"`
+	SentInput string `json:"input_sent"`
+	Expected  string `json:"expected_raw_output"`
+	Actual    string `json:"actual_raw_output"`
+	Error     string `json:"error,omitempty"`
+	Passed    bool   `json:"passed"`
 }
 
 type scenario struct {
@@ -305,14 +297,24 @@ func runCommand(ctx context.Context, dir, name string, args ...string) (string, 
 	return output.String(), err
 }
 
-type boundedOutput struct{ bytes.Buffer }
+type boundedOutput struct {
+	bytes.Buffer
+	truncated bool
+}
 
 func (b *boundedOutput) Write(p []byte) (int, error) {
 	n := len(p)
-	if remaining := 65536 - b.Len(); remaining > 0 {
-		_, _ = b.Buffer.Write(p[:min(len(p), remaining)])
-	}
+	remaining := max(0, 65536-b.Len())
+	_, _ = b.Buffer.Write(p[:min(n, remaining)])
+	b.truncated = b.truncated || n > remaining
 	return n, nil
+}
+
+func (b *boundedOutput) String() string {
+	if b.truncated {
+		return b.Buffer.String() + "\n[command output truncated at 65536 bytes]\n"
+	}
+	return b.Buffer.String()
 }
 
 func commandDetail(ctx context.Context, err error, output string) string {
@@ -320,9 +322,9 @@ func commandDetail(ctx context.Context, err error, output string) string {
 		return ""
 	}
 	if ctx.Err() != nil {
-		return ctx.Err().Error()
+		err = ctx.Err()
 	}
-	return truncate(strings.TrimSpace(output), 2000)
+	return err.Error() + "\n" + output
 }
 
 func errorDetail(err error) string {
@@ -330,13 +332,6 @@ func errorDetail(err error) string {
 		return ""
 	}
 	return err.Error()
-}
-
-func truncate(value string, size int) string {
-	if len(value) <= size {
-		return value
-	}
-	return value[:size] + "..."
 }
 
 // The oracle models only the frozen step-one contract, never candidate helpers.
@@ -493,63 +488,6 @@ func acceptanceScenarios() []scenario {
 // The trailing escape alternative handles a CSI sequence split across PTY reads.
 var terminalPresentation = regexp.MustCompile(`\x1b\[(?:[0-9;]*m|2J|H)|\x1b(?:\[[0-9;]*)?$|[ \t\r\n]`)
 
-func transcriptDifference(expected, actual string) outputDifference {
-	index := 0
-	for index < len(actual) && index < len(expected) && actual[index] == expected[index] {
-		index++
-	}
-	start := max(0, index-30)
-	example := fmt.Sprintf("first difference at byte %d: expected %q, actual %q (ANSI escapes shown literally)", index,
-		expected[start:min(len(expected), index+100)], actual[start:min(len(actual), index+100)])
-	// Remove shared context so the same edit groups together across boards,
-	// scores, scenarios and interaction steps. Keep one contextual example.
-	expected, actual = expected[index:], actual[index:]
-	for len(expected) > 0 && len(actual) > 0 && expected[len(expected)-1] == actual[len(actual)-1] {
-		expected = expected[:len(expected)-1]
-		actual = actual[:len(actual)-1]
-	}
-	return outputDifference{Expected: expected, Actual: actual, Example: example}
-}
-
-// The recognizable text is identical, so presentation gaps can be compared at
-// their positions in that text. This separates independent edits within a screen.
-func formattingDifferences(expected, actual string) []outputDifference {
-	gaps := make(map[int][2]string)
-	for side, text := range []string{expected, actual} {
-		removed := 0
-		for _, span := range terminalPresentation.FindAllStringIndex(text, -1) {
-			position := span[0] - removed
-			pair := gaps[position]
-			pair[side] += text[span[0]:span[1]]
-			gaps[position] = pair
-			removed += span[1] - span[0]
-		}
-	}
-	var positions []int
-	for position := range gaps {
-		positions = append(positions, position)
-	}
-	slices.Sort(positions)
-	var removed [2]int
-	var differences []outputDifference
-	for _, position := range positions {
-		pair := gaps[position]
-		expectedStart, actualStart := position+removed[0], position+removed[1]
-		removed[0] += len(pair[0])
-		removed[1] += len(pair[1])
-		if pair[0] == pair[1] {
-			continue
-		}
-		difference := transcriptDifference(pair[0], pair[1])
-		difference.offset = expectedStart
-		difference.Example = fmt.Sprintf("expected %q, actual %q (ANSI escapes shown literally)",
-			expected[max(0, expectedStart-30):min(len(expected), expectedStart+100)],
-			actual[max(0, actualStart-30):min(len(actual), actualStart+100)])
-		differences = append(differences, difference)
-	}
-	return differences
-}
-
 // A real terminal preserves the exact bytes specified by the task. Formatting
 // mismatches remain failures, but do not block later inputs when the complete
 // expected interaction state is recognizable. Semantic mismatches stop the run.
@@ -628,25 +566,21 @@ func executeScenario(parent context.Context, binary string, s scenario) (executi
 			}
 		}
 	}
-	var consumed int
-	var stopped *gradeFinding
-	var recognizedExpected, recognizedActual string
-	var want strings.Builder
+	var stoppedStep int
+	var want, sent strings.Builder
 	inputs := strings.Split(strings.TrimSuffix(s.input, "\n"), "\n")
 	for i, step := range s.steps {
 		want.WriteString(step)
 		if err = readUntil(want.String()); err != nil {
-			difference := transcriptDifference(step, string(actual[consumed:]))
-			stopped = &gradeFinding{Kind: "interaction", Location: "scenario-" + s.name, Step: i + 1,
-				Expected: difference.Expected, Actual: difference.Actual, Example: difference.Example, Detail: err.Error()}
-			err = fmt.Errorf("step %d: %w", i+1, err)
-			consumed = len(actual)
+			stoppedStep = i + 1
+			err = fmt.Errorf("step %d: %w", stoppedStep, err)
 			break
 		}
-		recognizedExpected, recognizedActual = want.String(), string(actual)
-		consumed = len(actual)
 		if i < len(inputs) {
-			_, err = f.Write([]byte(inputs[i] + "\n"))
+			input := inputs[i] + "\n"
+			var n int
+			n, err = f.Write([]byte(input))
+			sent.WriteString(input[:n])
 			if err != nil {
 				break
 			}
@@ -671,39 +605,25 @@ func executeScenario(parent context.Context, binary string, s scenario) (executi
 	if err == nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
-	var findings []gradeFinding
-	step, end := 1, len(s.steps[0])
-	for _, difference := range formattingDifferences(recognizedExpected, recognizedActual) {
-		for step < len(s.steps) && difference.offset >= end {
-			end += len(s.steps[step])
-			step++
-		}
-		findings = append(findings, gradeFinding{Kind: "formatting", Location: "scenario-" + s.name, Step: step,
-			Expected: difference.Expected, Actual: difference.Actual, Example: difference.Example})
-	}
-	if err != nil {
-		if stopped == nil {
-			difference := transcriptDifference(e.Expected, string(actual))
-			stopped = &gradeFinding{Kind: "execution", Location: "scenario-" + s.name,
-				Expected: difference.Expected, Actual: difference.Actual, Example: difference.Example, Detail: err.Error()}
-		}
-		findings = append(findings, *stopped)
-	}
+	kind := "execution"
 	if err == nil && string(actual) != e.Expected {
-		if consumed < len(actual) {
-			difference := transcriptDifference("", string(actual[consumed:]))
-			findings = append(findings, gradeFinding{Kind: "interaction", Location: "scenario-" + s.name, Step: len(s.steps),
-				Expected: difference.Expected, Actual: difference.Actual, Example: difference.Example, Detail: "unexpected output after final step"})
-		}
 		err = fmt.Errorf("raw terminal transcript mismatch")
+		kind = "transcript"
 	}
-	if err == nil {
-		findings = nil // PTY chunk boundaries alone are not formatting failures.
+	if stoppedStep > 0 {
+		kind = "interaction"
 	}
-	e.Actual = truncate(string(actual), 65536)
+	e.SentInput = sent.String()
+	e.Actual = string(actual)
 	e.Error = errorDetail(err)
 	e.Passed = err == nil
-	return e, findings
+	if e.Passed {
+		return e, nil
+	}
+	// Report the complete captured transcript, not edits inferred from it or
+	// output fragments whose boundaries depend on how the PTY split its reads.
+	return e, []gradeFinding{{Kind: kind, Location: "scenario-" + s.name, Step: stoppedStep,
+		Input: e.SentInput, Expected: want.String(), Actual: e.Actual, Detail: e.Error}}
 }
 
 const graderUnitTests = `package main

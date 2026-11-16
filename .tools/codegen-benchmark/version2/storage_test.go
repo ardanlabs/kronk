@@ -25,7 +25,7 @@ func TestRegenerateLegacyReportAsPlainText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Started: 2026-11-13T13:30:46-05:00", "Elapsed: 4m47s", "Runner machine: original-host (darwin/arm64)", "Workflow: completed"} {
+	for _, want := range []string{"Started: 2026-11-13T13:30:46-05:00", "Elapsed: 4m47s", "Runner machine: original-host (darwin/arm64)", "Workflow: completed", "Kronk version: not recorded", "llama.cpp library: not recorded"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("regenerated report missing %q: %s", want, data)
 		}
@@ -49,8 +49,7 @@ func TestSavedRunsAreRunnableAndRetained(t *testing.T) {
 	t.Setenv("BENCHMARK_PROMPT_LOG", promptLog)
 	script := `#!/bin/sh
 set -eu
-for arg; do :; done
-printf '%s' "$arg" > "$BENCHMARK_PROMPT_LOG"
+cat > "$BENCHMARK_PROMPT_LOG"
 cp "$BENCHMARK_FIXTURE" tictactoe/main.go
 if [ "${BENCHMARK_API_ERROR:-}" = yes ]; then
   printf '%s\n' '{"type":"error","error":{"name":"APIError","data":{"message":"input tokens [143702] exceed context window [131072]"}}}'
@@ -69,8 +68,13 @@ fi
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/models" {
+		switch r.URL.Path {
+		case "/v1/models":
 			fmt.Fprint(w, `{"data":[{"id":"org/model/BENCHMARK"}]}`)
+		case "/v1/liveness":
+			fmt.Fprint(w, `{"build":"1.33.4+dev"}`)
+		case "/v1/kronk/libs":
+			fmt.Fprint(w, `{"current":"b12283","latest":"b99999"}`)
 		}
 	}))
 	defer server.Close()
@@ -123,14 +127,15 @@ fi
 			filepath.Join(runDir, "prompt.md"), filepath.Join(runDir, "report.md"),
 			filepath.Join(runDir, modelDirName(item.Model.ID), "workspace"),
 			filepath.Join(runDir, attempt, "main.go.txt"), filepath.Join(runDir, attempt, "grading"),
-			filepath.Join(runDir, attempt, "feedback.md"), filepath.Join(runDir, attempt, "prompt.md"),
+			filepath.Join(runDir, attempt, "feedback.md"), filepath.Join(runDir, attempt, "feedback.json"), filepath.Join(runDir, attempt, "prompt.md"),
 			filepath.Join(dir, "history.md")} {
 			if _, err := os.Stat(path); !os.IsNotExist(err) {
 				t.Fatalf("unnecessary artifact retained: %s: %v", path, err)
 			}
 		}
 		report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
-		if err != nil || !strings.Contains(string(report), "37/37") || !strings.Contains(string(report), "Workload: v1") {
+		if err != nil || !strings.Contains(string(report), "37/37") || !strings.Contains(string(report), "Workload: v1") ||
+			!strings.Contains(string(report), "Kronk version: 1.33.4+dev\nllama.cpp library: b12283\n") || strings.Contains(string(report), "b99999") {
 			t.Fatalf("report: %s %v", report, err)
 		}
 		record, err := loadRunRecord(runDir)

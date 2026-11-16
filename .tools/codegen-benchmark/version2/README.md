@@ -15,21 +15,24 @@ the same session with `--continue`. It stops immediately on a passing grade or
 after the submission budget. Finishing the OpenCode response constitutes submission.
 
 Feedback is enabled by default. Disabling feedback runs only the initial submission.
-Feedback can include test expectations and output excerpts, but not the grader's
-source. Repeated formatting edits are grouped across steps and scenarios, with an
-occurrence count and one example per distinct edit; every occurrence must be fixed.
-Examples show expected and actual output excerpts with the original whitespace
-and ANSI codes preserved as escaped text.
-Scenario-stopping findings are grouped only when the step, stop reason, and
-expected/actual differences match, with an occurrence count and one example.
-Different missing output is kept separate even when both scenarios time out.
-A preceding formatting defect never replaces the stopping finding's context.
-Feedback is deterministic: objective observations plus fixed repair instructions,
-not an AI diagnosis of the generated code.
-Detailed findings remain in `result.json`, under `grade.findings`, with their kind,
-location, interaction step, expected/actual differences and contextual example.
-Later grades may expose additional failures that earlier errors prevented the grader from reaching. This is a repair
-evaluation, not independent sampling.
+The repair message lists failed checks and distinguishes them from checks not reached.
+It includes native diagnostics and, for each failed scenario, the inputs actually sent,
+expected output up to the stopped interaction or completion, the complete captured
+output transcript, and any execution/stop reason. Whitespace and ANSI escapes are
+quoted literally; no minimal edits, inferred causes, or suggested fixes are produced.
+Only identical observations, including their location, step and input, are collapsed.
+The only instruction is to repair the existing program under the original requirements
+and finish the response to resubmit. This is a repair evaluation, not independent sampling.
+
+There is no separate feedback file or extra repair-message size cap. Prompts are
+piped to OpenCode through stdin, avoiding operating-system argument-size limits.
+The existing command-output capture is bounded at 64 KiB and explicitly marks discarded output;
+terminal execution retains its output limit and reports when it is exceeded.
+Feedback is input context: it must fit alongside the conversation in the model's
+context window. `max_tokens` limits each model response, not the repair message,
+and does not guarantee enough remaining input space. Detailed findings and captured
+evidence remain in the existing `result.json`. Later grades may expose additional
+failures that earlier errors prevented the grader from reaching.
 
 An OpenCode error event, nonzero exit, or timeout stops the workflow. Its events,
 error and available source snapshot are retained, but that attempt is not graded.
@@ -57,8 +60,8 @@ sequences are ignored only for deciding when to send the next input, allowing
 formatting defects at later steps to be reported in the same submission. An
 unexpected game state or prompt stops that scenario; other scenarios still run.
 Exact output bytes remain required for a pass, including ANSI colors, resets,
-screen clearing, spacing, and newlines. Feedback includes the observed formatting
-mismatches by interaction step.
+screen clearing, spacing, and newlines. Feedback preserves complete captured
+transcripts, including any earlier formatting defects when a later interaction stops.
 
 Scenarios cover all eight winning lines for both players, a draw, a ninth-move
 win taking precedence over a draw, invalid and occupied inputs, whitespace,
@@ -157,7 +160,13 @@ using `git clean -fdx` can remove them. Back up important runs yourself.
 
 The plain-text `report.txt` contains only the entry to copy into `version2/history.txt`:
 run ID, workload label, timestamps, workflow status, elapsed time, runner machine,
-and a table of model outcomes, submissions, final checks and cumulative agent time.
+Kronk version, llama.cpp library tag, and a table of model outcomes, submissions,
+final checks and cumulative agent time. Versions are read once before inference from
+that run's server: `/v1/liveness` (`build`) and `/v1/kronk/libs` (`current`, not `latest`).
+The build string is preserved as reported, including any development suffix; the
+benchmark does not infer `+dev` from its own checkout. A new run stops before inference
+if either version cannot be retrieved. Report regeneration preserves the recorded
+values without querying a server; old reports without them show `not recorded`.
 History is maintained manually; the benchmark never updates it. The runner machine
 is the OpenCode/grader host, not a remote inference server.
 
