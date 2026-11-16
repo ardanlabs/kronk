@@ -117,7 +117,7 @@ Here are some of the known compatible versions:
 
 | kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.33.3 | 7157079 | b12432    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
+| 1.33.3 | 7157079 | b12435    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
 | 1.33.2 | 7600f25 | b12283    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
 | 1.33.1 | 18f0b31 | b11960    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
 | 1.33.0 | 4e61a12 | b11797    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
@@ -130,14 +130,14 @@ these releases publish CUDA 13.5 archives. This does not affect the CPU,
 Vulkan, ROCm, or OpenVINO download paths.
 
 The current source pins llama.cpp to
-`b12432@sha256:f9ea653561065181c161ed10a2a7524bc818082a78402b3ddc0785689c1d8da5`,
+`b12435@sha256:90e888334bc6157745fce13c0948a1462c64e852b005aafa78500708caafcfeb`,
 paired with Yzma `v1.33.1-0.20261116110349-71570796dd03`.
 After upgrading Kronk, run `kronk libs --local` and restart to load the matching
 native libraries. User-managed native builds must be rebuilt or replaced with
-b12432; updating Yzma alone does not update those libraries. Update any explicit
-library version override to b12432 as well. The new bindings change native media
-initialization and speech-input layouts and are not compatible with the older
-bundle. This Yzma revision also resolves the Windows CUDA asset names to the
+b12435; updating Yzma alone does not update those libraries. Update any explicit
+library version override to b12435 as well. The new bindings change native media
+initialization and speech-input layouts and are not compatible with the
+pre-upgrade b12359 bundle. This Yzma revision also resolves the Windows CUDA asset names to the
 published CUDA 13.5 archives.
 
 The exact authenticated Malina native pin is
