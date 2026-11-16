@@ -79,10 +79,28 @@ done
 
 This scenario requires active drafting, **empty** independent draft state, and, on restore, native target restoration with resume source `shared-target-kv`. It must not report an independent draft restore.
 
+## Native failure-recovery verification
+
+The opt-in `TestFailureRecovery` uses a real text model, native checkpoints, and temporary disk stores. It injects failures only at the storage boundary. Ordinary test runs skip it unless `KRONK_IMC_TEST_MODEL` is set.
+
+Run from the repository root:
+
+```sh
+GITHUB_WORKSPACE="$PWD" \
+KRONK_IMC_TEST_MODEL="$HOME/.kronk/models/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf" \
+go -C examples test -race ./imc-storage -run '^TestFailureRecovery$' -count=2 -timeout=5m -v
+```
+
+Set `KRONK_IMC_TEST_LIB_PATH` if the native libraries are outside the default directory. The test disables speculation and uses a 500 ms storage timeout; it is intended for the small text fixture above. Each case has its own temporary directory, which the test runner removes.
+
+The cases cover initial and replacement save errors, a save timeout, an error after successful publication, lookup/open/read/close errors, lookup and read timeouts, and real snapshot checksum damage, truncation, and deletion. Every case requires a correct answer. Save failures must preserve RAM reuse and allow a later full save under the same conversation ID. Failed imports must rebuild with zero reuse. The final check closes and reopens the store and loads a fresh model, requiring native restoration of the recovered snapshot and an increased revision. This is fresh-model verification within the test process, not a process-crash simulation.
+
+The `missing` case verifies that a deleted snapshot does not prevent reopening the store or restoring a healthy replacement. The missing snapshot's summary remains available to `List` and `Find`, but `Open` returns an error matching `fs.ErrNotExist`. Malformed summaries and filesystem errors other than not-found still prevent startup.
+
 ## Limits of this verification
 
 These are local, separate-process functional checks, not performance benchmarks or reliability-pressure tests. They do not establish identical sampling behavior across restarts. Expected answers are deliberately strict; a different model may fail the answer check even when persistence works. MTP scenarios explicitly select MTP, never automatic target-only fallback.
 
 Native restore and MTP-resume assertions inspect structured engine diagnostics through the configured logger. Those diagnostic event names are not a stable part of `imc.Store`; the verifier must track changes to them. The example does not interpret private restore metadata.
 
-Failure-recovery scenarios and chat-history UI integration are separate follow-up work. Remove the temporary directories when finished; the example never deletes saved conversations automatically.
+Failure tests do not simulate disk-full hardware, process crashes, power loss, noncooperative storage implementations, or MTP/media-specific recovery. Chat-history UI integration remains separate follow-up work. Remove directories created by the CLI phases when finished; the example never deletes saved conversations automatically.

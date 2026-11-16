@@ -323,6 +323,78 @@ func TestCorruptionAndMetadataOnlyDiscovery(t *testing.T) {
 	}
 }
 
+func TestMissingSnapshotPreservesHistory(t *testing.T) {
+	directory := t.TempDir()
+	s := newStore(t, directory)
+	missing := snapshot("missing")
+	if err := s.Save(t.Context(), missing); err != nil {
+		t.Fatal(err)
+	}
+	files, err := filepath.Glob(filepath.Join(directory, "snapshot-*.bin"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("snapshot files: got %v/%v, want one", files, err)
+	}
+	if err := os.Remove(files[0]); err != nil {
+		t.Fatal(err)
+	}
+	healthy := snapshot("healthy")
+	if err := s.Save(t.Context(), healthy); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s = newStore(t, directory)
+	page, err := s.List(t.Context(), imc.ListQuery{Limit: 10})
+	if err != nil || len(page.Sessions) != 2 || !slices.ContainsFunc(page.Sessions, func(summary imc.Summary) bool {
+		return summary.Ref == missing.Record.Summary.Ref && summary.Prefix == missing.Record.Summary.Prefix
+	}) {
+		t.Fatalf("history: got %+v/%v, want both sessions including the missing snapshot's summary", page, err)
+	}
+	if _, err := s.Open(t.Context(), missing.Record.Summary.Ref); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing snapshot: got %v, want not-exist", err)
+	}
+	checkSession(t, open(t, s, healthy.Record.Summary.Ref), healthy)
+}
+
+func TestInvalidSummaryRejectedOnReopen(t *testing.T) {
+	for _, damage := range []string{"malformed JSON", "invalid filesystem path"} {
+		t.Run(damage, func(t *testing.T) {
+			directory := t.TempDir()
+			s := newStore(t, directory)
+			v := snapshot("invalid")
+			if err := s.Save(t.Context(), v); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			files, err := filepath.Glob(filepath.Join(directory, "*.json"))
+			if err != nil || len(files) != 1 {
+				t.Fatalf("summary files: got %v/%v, want one", files, err)
+			}
+			data := []byte("{")
+			if damage == "invalid filesystem path" {
+				data, err = json.Marshal(map[string]any{
+					"Version": 1, "Summary": v.Record.Summary, "Blob": "snapshot-\x00.bin",
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(files[0], data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if reopened, err := disk.New(directory); err == nil {
+				if err := reopened.Close(); err != nil {
+					t.Error(err)
+				}
+				t.Fatal("accepted invalid summary or non-not-found filesystem error")
+			}
+		})
+	}
+}
+
 func TestConcurrentConversations(t *testing.T) {
 	s := newStore(t, t.TempDir())
 	var wg sync.WaitGroup

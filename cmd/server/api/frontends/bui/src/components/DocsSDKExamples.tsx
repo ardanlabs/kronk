@@ -3220,10 +3220,12 @@ func run() (retErr error) {
 			if len(conversation.Messages) != 1 {
 				return errors.New("changed-image needs the original save; use a separate directory before running restore")
 			}
+
 			image, err := colorImage(true)
 			if err != nil {
 				return err
 			}
+
 			// Keep the original input text unchanged; do not replay the saved
 			// final answer, which would reveal the original image's color.
 			conversation.Messages[0] = model.ImageMessage(visionQuestion, image, "png")[0]
@@ -3247,13 +3249,16 @@ func run() (retErr error) {
 		model.WithIncrementalCache(true), model.WithCacheMinTokens(1),
 		model.WithLog(observed.log),
 	}
+
 	if *phase != "cold" {
 		opts = append(opts, model.WithStorage(model.StorageConfig{Store: store}))
 	}
+
 	speculation := model.SpeculationDisabled
 	if strings.HasPrefix(*scenario, "mtp-") {
 		speculation = model.SpeculationMTP // Never silently select target-only.
 	}
+
 	opts = append(opts, model.WithSpeculationMode(speculation))
 	krn, err := kronk.NewWithContext(ctx, opts...)
 	if err != nil {
@@ -3293,9 +3298,11 @@ func run() (retErr error) {
 	if *phase == "changed-image" {
 		wantSessions = 2
 	}
+
 	if len(page.Sessions) != wantSessions {
 		return fmt.Errorf("expected %d saved conversations, got %d", wantSessions, len(page.Sessions))
 	}
+
 	current := page.Sessions[0]
 	if *phase == "restore" && (current.Ref.Key != previous.Ref.Key || current.Ref.Revision <= previous.Ref.Revision) {
 		return errors.New("restored checkpoint did not advance under the same conversation ID")

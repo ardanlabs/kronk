@@ -55,6 +55,8 @@ var _ imc.Store = (*Store)(nil)
 
 // New opens or creates a dedicated storage directory. It rejects an already
 // open directory and invalid metadata rather than silently losing history.
+// Missing snapshots do not prevent opening: their summaries remain listable,
+// and Open returns an error matching fs.ErrNotExist for those snapshots.
 // Interrupted writes are reclaimed on reopening. No files outside directory
 // are used; do not share this directory with other application data.
 func New(directory string) (*Store, error) {
@@ -171,7 +173,7 @@ func (s *Store) load() error {
 			return fmt.Errorf("disk: invalid summary %s: %w", name, imc.ErrCorrupt)
 		}
 
-		if _, err := os.Stat(filepath.Join(s.directory, e.Blob)); err != nil {
+		if _, err := os.Stat(filepath.Join(s.directory, e.Blob)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("disk: missing snapshot: %w", errors.Join(imc.ErrCorrupt, err))
 		}
 
