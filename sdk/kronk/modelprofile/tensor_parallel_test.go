@@ -24,6 +24,8 @@ func TestSupportsTensorParallel(t *testing.T) {
 		{"unsupported experimental architecture", "qwen4exp", false},
 		{"unsupported Kimi K3.1 architecture", "kimi-k31", false},
 		{"mixed-case Kimi K3.1 architecture", "KIMI-K31", false},
+		{"unsupported Inkling2 architecture", "inkling2", false},
+		{"mixed-case Inkling2 architecture", "INKLING2", false},
 	}
 
 	for _, tt := range tests {
