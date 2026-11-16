@@ -23,7 +23,7 @@ expected output up to the stopped interaction or completion, the complete captur
 output transcript, and any execution/stop reason. Whitespace and ANSI escapes are
 quoted literally; no minimal edits, inferred causes, or suggested fixes are produced.
 Only identical observations, including their location, step and input, are collapsed.
-The only instruction is to repair the existing program under the current workload requirements
+The only instruction is to repair the existing program under the original requirements
 and finish the response to resubmit. This is a repair evaluation, not independent sampling.
 
 There is no separate feedback file or extra repair-message size cap. Prompts are
@@ -197,6 +197,11 @@ and can omit responses without such events, including the final response, so
 they are not guaranteed exact totals. Unavailable usage shows
 `generated-toks: not reported`, not zero. Warm-up tokens are excluded.
 Step2 is `Not reached` when Step1 fails.
+OpenCode errors, including context-window overflow and submission timeouts, stop
+that model's evaluation and are reported as `Agent error`; the benchmark unloads
+the model and continues with the next selected model. A completed workflow does
+not mean every model passed. Setup, artifact/report writing, and unload failures
+still stop the benchmark.
 A Step2 failure does not erase the Step1 pass. Old results without step metadata
 remain basic-game-only when reports are regenerated.
 

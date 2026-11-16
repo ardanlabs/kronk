@@ -621,8 +621,8 @@ func TestRunAttemptTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	item, err := runAttempt(modelDir, "prompt", env, model, 1, 1, benchmarkStep{name: basicGameStep, grade: gradeProgram}, options{steps: 5, timeout: 100 * time.Millisecond})
-	if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
-		t.Fatalf("timeout must fail the workflow: %v", err)
+	if err != nil {
+		t.Fatalf("agent timeout must be a model result, not a workflow failure: %v", err)
 	}
 	if item.OpenCode.Error != context.DeadlineExceeded.Error() || item.OpenCode.ExitCode == 0 {
 		t.Fatalf("timeout not recorded: %+v", item.OpenCode)

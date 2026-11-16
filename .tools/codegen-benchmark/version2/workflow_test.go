@@ -77,10 +77,8 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 			wantCount := 6
 			if outcome == "agent-error" {
 				wantCount = 4
-				if runErr == nil || !strings.Contains(runErr.Error(), "inference unavailable") {
-					t.Fatalf("undo infrastructure failure was lost: %v", runErr)
-				}
-			} else if runErr != nil {
+			}
+			if runErr != nil {
 				t.Fatal(runErr)
 			}
 			if err := generateReport(runDir, nil); err != nil {

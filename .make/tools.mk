@@ -283,7 +283,7 @@ CODEGEN_HOST ?= http://localhost:11435
 CODEGEN_MODEL ?= all
 CODEGEN_ATTEMPTS ?= 1
 CODEGEN_STEPS ?= 40
-CODEGEN_TIMEOUT ?= 30m
+CODEGEN_TIMEOUT ?= 10m
 
 benchmark-codegen: ## Run the OpenCode coding benchmark
 	go run ./.tools/codegen-benchmark \

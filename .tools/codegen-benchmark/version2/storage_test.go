@@ -68,9 +68,14 @@ else
   cp "$BENCHMARK_FIXTURE" tictactoe/main.go
   touch "$HOME/v1-passed"
 fi
-if [ "${BENCHMARK_API_ERROR:-}" = yes ]; then
-  printf '%s\n' '{"type":"error","error":{"name":"APIError","data":{"message":"input tokens [143702] exceed context window [131072]"}}}'
-elif [ "${BENCHMARK_BAD_EVENTS:-}" = yes ]; then
+case " $* " in
+  *' --model kronk/org/model/BENCHMARK '*)
+    if [ "${BENCHMARK_API_ERROR:-}" = yes ]; then
+      printf '%s\n' '{"type":"error","error":{"name":"APIError","data":{"message":"input tokens [143702] exceed context window [131072]"}}}'
+      exit 0
+    fi ;;
+esac
+if [ "${BENCHMARK_BAD_EVENTS:-}" = yes ]; then
   printf '{\n'
 else
   printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
@@ -87,7 +92,7 @@ fi
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
-			fmt.Fprint(w, `{"data":[{"id":"org/model/BENCHMARK"}]}`)
+			fmt.Fprint(w, `{"data":[{"id":"org/model/BENCHMARK"},{"id":"org/next/BENCHMARK"}]}`)
 		case "/v1/liveness":
 			fmt.Fprint(w, `{"build":"1.33.4+dev"}`)
 		case "/v1/kronk/libs":
@@ -217,20 +222,31 @@ fi
 	if err != nil || !strings.Contains(string(report), "No completed submissions.") || strings.Contains(string(report), "37/37") {
 		t.Fatalf("failed report: %s %v", report, err)
 	}
-	// OpenCode can report an API failure while its process still exits zero.
-	// Even a correct source snapshot must not turn that failure into a pass.
+	// A context overflow stops only the affected model, even when OpenCode exits
+	// zero. Keep its ungraded source and continue through both steps of the next model.
 	t.Setenv("BENCHMARK_BAD_EVENTS", "")
 	t.Setenv("BENCHMARK_API_ERROR", "yes")
-	if err := run(opts); err == nil || !strings.Contains(err.Error(), "exceed context window") {
-		t.Fatalf("API failure did not stop the workflow: %v", err)
+	if err := os.WriteFile(config, []byte("version: 2\nmodels:\n  org/model/BENCHMARK:\n    context-window: 8192\n    sampling-parameters:\n      max_tokens: 1024\n  org/next/BENCHMARK:\n    context-window: 8192\n    sampling-parameters:\n      max_tokens: 1024\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(opts); err != nil {
+		t.Fatalf("model API failure stopped the workflow: %v", err)
 	}
 	runDir, err = latestRun(opts.outputDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	models, err := loadResults(runDir)
-	if err != nil || len(models) != 1 || len(models[0].Attempts) != 1 {
-		t.Fatalf("API error should stop further submissions: %+v %v", models, err)
+	if err != nil || len(models) != 2 || len(models[0].Attempts) != 1 || len(models[1].Attempts) != 2 {
+		t.Fatalf("API error should stop only the affected model: %+v %v", models, err)
+	}
+	if models[1].Model.ID != "org/next/BENCHMARK" {
+		t.Fatalf("next model was not evaluated: %+v", models[1].Model)
+	}
+	for _, item := range models[1].Attempts {
+		if item.OpenCode.Error != "" || item.Grade.Total == 0 || item.Grade.Passed != item.Grade.Total {
+			t.Fatalf("next model did not complete both steps: %+v", item)
+		}
 	}
 	failed := models[0].Attempts[0]
 	if failed.OpenCode.ExitCode != 0 || !strings.Contains(failed.OpenCode.Error, "exceed context window") || failed.Grade.Total != 0 {
@@ -244,13 +260,15 @@ fi
 		t.Fatal(err)
 	}
 	report, err = os.ReadFile(filepath.Join(runDir, "report.txt"))
-	for _, want := range []string{"Workflow: failed", "Agent error", "Not graded", "exceed context window"} {
+	for _, want := range []string{"Workflow: completed", "Agent error", "Not graded", "Not reached", "37/37", "48/48"} {
 		if err != nil || !strings.Contains(string(report), want) {
-			t.Errorf("API failure report missing %q: %s %v", want, report, err)
+			t.Errorf("mixed outcome report missing %q: %s %v", want, report, err)
 		}
 	}
-	if strings.Contains(string(report), "37/37") {
-		t.Fatal("API failure received a passing grade")
+	for line := range strings.SplitSeq(string(report), "\n") {
+		if strings.HasPrefix(line, failed.Model.ID+" ") && (strings.Contains(line, "Passed") || strings.Contains(line, "37/37")) {
+			t.Fatalf("API failure received a passing grade: %s", line)
+		}
 	}
 	if data, err := os.ReadFile(historyPath); err != nil || string(data) != history {
 		t.Fatalf("benchmark modified manual history: %s %v", data, err)

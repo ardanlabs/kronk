@@ -274,14 +274,14 @@ func runModel(root, runDir, host string, stages []benchmarkStep, model benchmark
 }
 
 // runSubmissions owns the feedback loop; each callback resumes the same workspace
-// and session. Execution failures stop the workflow; failed grades allow repairs.
+// and session. Agent errors stop this model; failed grades allow repairs.
 func runSubmissions(prompt string, limit int, feedback bool, submit func(int, string) (result, error)) error {
 	for attempt := 1; attempt <= limit; attempt++ {
 		item, err := submit(attempt, prompt)
 		if err != nil {
 			return err
 		}
-		if item.Grade.Passed == item.Grade.Total || !feedback || attempt == limit {
+		if item.OpenCode.Error != "" || item.Grade.Passed == item.Grade.Total || !feedback || attempt == limit {
 			return nil
 		}
 		prompt = graderFeedback(item.Grade)
@@ -330,7 +330,7 @@ func graderFeedback(grade gradeResult) string {
 		}
 		message.WriteByte('\n')
 	}
-	message.WriteString("\nRepair tictactoe/main.go under the current workload requirements, then finish your response to resubmit.\n")
+	message.WriteString("\nRepair tictactoe/main.go under the original requirements, then finish your response to resubmit.\n")
 	return message.String()
 }
 
@@ -581,7 +581,8 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 	}
 
 	if agent.Error != "" {
-		return item, fmt.Errorf("codegen benchmark: OpenCode %s submission %d for %s: %s", task.name, attempt, model.ID, agent.Error)
+		fmt.Fprintf(os.Stderr, "codegen benchmark: OpenCode %s submission %d for %s: %s\n", task.name, attempt, model.ID, agent.Error)
+		return item, nil
 	}
 	fmt.Printf("score=%d/%d build=%t turns=%d tools=%d wall=%s\n",
 		grade.Passed, grade.Total, grade.PassedCheck("go-build"), agent.Turns, agent.ToolCalls, wallTime.Round(time.Second))
