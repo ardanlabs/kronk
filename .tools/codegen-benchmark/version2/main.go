@@ -121,7 +121,7 @@ func parseFlags() (options, error) {
 	flag.StringVar(&opts.reportDir, "run", "", "saved run directory to use with -report (defaults to latest)")
 	flag.Parse()
 	opts.configFile = filepath.Join(root, "zarf", "kms", "tools_model_config.yaml")
-	opts.promptFile = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "tic-tac-toe-"+workloadVersion+".md")
+	opts.promptFile = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "tic-tac-toe-v2.md")
 	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "runs")
 	return opts, nil
 }
@@ -177,15 +177,11 @@ func run(opts options) (runErr error) {
 	if err != nil {
 		return err
 	}
-	prompt, err := loadPrompt(opts.promptFile)
+	fullPrompt, err := loadPrompt(opts.promptFile)
 	if err != nil {
 		return err
 	}
-	fullPrompt, err := loadPrompt(filepath.Join(filepath.Dir(opts.promptFile), "tic-tac-toe-v2.md"))
-	if err != nil {
-		return err
-	}
-	_, undoPrompt, found := strings.Cut(fullPrompt, "\n# Add One-Move Undo\n")
+	prompt, undoPrompt, found := strings.Cut(fullPrompt, "\n\n================================================================================\n\n# Add One-Move Undo\n")
 	if !found || strings.TrimSpace(undoPrompt) == "" {
 		return errors.New("codegen benchmark: v2 prompt is missing the undo extension")
 	}

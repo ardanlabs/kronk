@@ -105,7 +105,7 @@ fi
 		t.Fatal(err)
 	}
 	opts := options{host: server.URL, model: "all", configFile: config,
-		promptFile: filepath.Join(root, ".tools/codegen-benchmark/version2/tic-tac-toe-v1.md"),
+		promptFile: filepath.Join(root, ".tools/codegen-benchmark/version2/tic-tac-toe-v2.md"),
 		outputDir:  filepath.Join(dir, "runs"), attempts: 3, feedback: true, steps: 5, timeout: time.Minute}
 	historyPath := filepath.Join(dir, "history.txt")
 	const history = "Previously recorded run\n"
@@ -120,7 +120,7 @@ fi
 			t.Fatal(err)
 		}
 		sent, err := os.ReadFile(promptLog)
-		if err != nil || !strings.HasPrefix(string(sent), "# Tic-Tac-Toe — v1") || strings.Contains(string(sent), "Undo") || strings.Contains(string(sent), "writing-go") || !strings.Contains(string(sent), "Do not declare any struct types") || !strings.Contains(string(sent), "without a trailing space or newline") {
+		if err != nil || !strings.HasPrefix(string(sent), "# Tic-Tac-Toe — v1") || strings.Contains(string(sent), "Undo") || strings.Contains(string(sent), "====") || strings.Contains(string(sent), "writing-go") || !strings.Contains(string(sent), "Do not declare any struct types") || !strings.Contains(string(sent), "without a trailing space or newline") {
 			t.Fatalf("incorrect prompt sent to agent: %s %v", sent, err)
 		}
 		undoSent, err := os.ReadFile(promptLog + ".undo")

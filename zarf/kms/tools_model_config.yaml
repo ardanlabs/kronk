@@ -27,6 +27,12 @@ models:
     sampling-parameters:
       max_tokens: 32000
 
+  mradermacher/Qwopus3.5-4B-Coder.Q8_0/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 32000
+
   ukisai/Swift-Qwen3.8-27B-Q8_0/BENCHMARK:
     nseq-max: 1
     context-window: 131072

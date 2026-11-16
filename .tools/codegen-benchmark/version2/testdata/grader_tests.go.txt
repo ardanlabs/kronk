@@ -1,0 +1,65 @@
+package main
+
+import (
+	"bufio"
+	"strings"
+	"testing"
+)
+
+func TestGeneratedPlayers(t *testing.T) {
+	saved := stdin
+	defer func() { stdin = saved }()
+	for _, player := range []func(*Board) int{playerX, playerO} {
+		for index := range 9 {
+			var b Board
+			input := "word\n0\n10\n\n01\n \t" + string(byte('1'+index)) + " \r\n"
+			stdin = bufio.NewReader(strings.NewReader(input))
+			if got := player(&b); got != index { t.Fatalf("move: got %d want %d", got, index) }
+			if b != (Board{}) { t.Fatal("player function changed board") }
+		}
+	}
+	b := Board{'X'}
+	stdin = bufio.NewReader(strings.NewReader("1\n2\n3\n"))
+	if playerO(&b) != 1 || playerX(&b) != 2 { t.Fatal("occupied rejection or shared buffered input failed") }
+	if b != (Board{'X'}) { t.Fatal("player function changed occupied board") }
+}
+
+func TestGeneratedWinnerLines(t *testing.T) {
+	lines := [][3]int{
+		{0, 1, 2}, {3, 4, 5}, {6, 7, 8},
+		{0, 3, 6}, {1, 4, 7}, {2, 5, 8},
+		{0, 4, 8}, {2, 4, 6},
+	}
+	for _, mark := range []byte{'X', 'O'} {
+		for _, line := range lines {
+			var board Board
+			for _, index := range line {
+				board[index] = mark
+			}
+			if !hasWinner(&board) {
+				t.Fatalf("hasWinner(%v, %c): got false, want true", line, mark)
+			}
+		}
+	}
+	var empty Board
+	if hasWinner(&empty) { t.Fatal("empty board won") }
+
+	board := Board{'X', 'O', 'X', 'O', 'X', 'O', 'O', 'X'}
+	if hasWinner(&board) {
+		t.Fatal("hasWinner(non-winning board): got true, want false")
+	}
+}
+
+func TestGeneratedBoardFull(t *testing.T) {
+	board := Board{'X', 'O', 'X', 'O', 'X', 'O', 'O', 'X', 'O'}
+	if !boardFull(&board) {
+		t.Fatal("boardFull(full board): got false, want true")
+	}
+	for i := range board {
+		partial := board
+		partial[i] = 0
+		if boardFull(&partial) {
+			t.Fatalf("boardFull(empty cell %d): got true, want false", i)
+		}
+	}
+}

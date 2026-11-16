@@ -79,9 +79,10 @@ replays preserving all three scores, and exit answers. Each scenario is bounded
 to three seconds and 64 KiB of output. A complete pass means these acceptance
 cases passed, not a proof against every possible program defect or terminal.
 Check percentages are diagnostic, not a percentage of playability. No Amp grader
-or screenshot review is involved. The benchmark initially loads `tic-tac-toe-v1.md`.
-Only after it passes, the agent receives the `# Add One-Move Undo` section from
-`tic-tac-toe-v2.md`; the base-game prompt is not repeated. Step2 checks both players'
+or screenshot review is involved. Both steps come from `tic-tac-toe-v2.md`.
+Initially the agent receives only the basic-game section before the separator.
+Only after it passes, the agent receives the `# Add One-Move Undo` section;
+the base-game prompt is not repeated. Step2 checks both players'
 undo, restored turns and cell numbers, invalid/repeated undo, replacement moves,
 score preservation, replay reset, and ordinary gameplay with the updated prompts.
 The existing exact-output requirements remain in force.
@@ -190,10 +191,10 @@ values without querying a server; old reports without them show `not recorded`.
 History is maintained manually; the benchmark never updates it. The runner machine
 is the OpenCode/grader host, not a remote inference server.
 
-The prompts and acceptance checks together define workload v1. The canonical
-prompt files remain `tic-tac-toe-v1.md` and `tic-tac-toe-v2.md` (the latter supplies
-only the undo extension); these filenames do not indicate different workload
-versions. Neither is copied into runs. Reports show `Workload: v1`, with one row
+The prompt and acceptance checks together define workload v1. The single canonical
+prompt file is `tic-tac-toe-v2.md`, containing the basic game and undo extension
+separated by a divider. Its filename does not indicate the workload version.
+It is not copied into runs. Reports show `Workload: v1`, with one row
 per model and separate `Step 1 (Basic game)` and `Step 2 (Undo move)` columns.
 Each cell shows the outcome, attempt count, checks, agent time, and generated
 tokens, for example `Passed (attempts 2, checks 37/37, time 3m49s, generated-toks: 14133)`.
