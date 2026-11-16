@@ -169,36 +169,61 @@ func renderReport(runDir string, models []modelResults, record runRecord) string
 	}
 	report.WriteByte('\n')
 	table := tabwriter.NewWriter(&report, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(table, "Model\tStep\tSubmissions\tOutcome\tChecks\tAgent time")
-	fmt.Fprintln(table, "-----\t----\t-----------\t-------\t------\t----------")
+	steps := strings.Split(cmp.Or(record.Steps, basicGameStep), ", ")
+	titles := map[string]string{
+		basicGameStep: "Step 1 (Basic game)",
+		undoMoveStep:  "Step 2 (Undo move)",
+	}
+	fmt.Fprint(table, "Model")
+	for _, step := range steps {
+		fmt.Fprintf(table, "\t%s", cmp.Or(titles[step], step))
+	}
+	fmt.Fprintln(table)
+	fmt.Fprint(table, "-----")
+	for _, step := range steps {
+		fmt.Fprintf(table, "\t%s", strings.Repeat("-", len(cmp.Or(titles[step], step))))
+	}
+	fmt.Fprintln(table)
 	for _, model := range models {
-		for step := range strings.SplitSeq(cmp.Or(record.Steps, basicGameStep), ", ") {
+		fmt.Fprint(table, model.Model.ID)
+		for _, step := range steps {
 			var attempts []result
 			for _, attempt := range model.Attempts {
 				if cmp.Or(attempt.Step, basicGameStep) == step {
 					attempts = append(attempts, attempt)
 				}
 			}
-			status, checks := "Not reached", "-"
-			var wall time.Duration
+			summary := "Not reached"
 			if len(attempts) > 0 {
 				final := attempts[len(attempts)-1]
-				status, checks = "Not passed", "Not graded"
+				status, checks := "Failed", "Not graded"
 				if final.OpenCode.Error != "" {
 					status = "Agent error"
 				}
 				if final.Grade.Total > 0 {
 					checks = fmt.Sprintf("%d/%d", final.Grade.Passed, final.Grade.Total)
 				}
-				for i, attempt := range attempts {
+				var wall time.Duration
+				var generated int
+				var usageReported bool
+				for _, attempt := range attempts {
 					wall += attempt.OpenCode.WallTime
+					usage := attempt.OpenCode.Usage
+					generated += usage.Output + usage.Reasoning
+					usageReported = usageReported || usage != (tokenUsage{})
 					if attempt.Grade.Total > 0 && attempt.Grade.Passed == attempt.Grade.Total {
-						status = fmt.Sprintf("Passed on submission %d", i+1)
+						status = "Passed"
 					}
 				}
+				tokenSummary := "generated-toks: not reported"
+				if usageReported {
+					tokenSummary = fmt.Sprintf("generated-toks: %d", generated)
+				}
+				summary = fmt.Sprintf("%s (attempts %d, checks %s, time %s, %s)", status, len(attempts), checks, wall.Round(time.Second), tokenSummary)
 			}
-			fmt.Fprintf(table, "%s\t%s\t%d\t%s\t%s\t%s\n", model.Model.ID, step, len(attempts), status, checks, wall.Round(time.Second))
+			fmt.Fprintf(table, "\t%s", summary)
 		}
+		fmt.Fprintln(table)
 	}
 	_ = table.Flush()
 	return report.String()

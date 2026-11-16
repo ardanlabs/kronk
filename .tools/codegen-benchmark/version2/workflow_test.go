@@ -108,14 +108,14 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 				t.Fatal(err)
 			}
 			plain := strings.Join(strings.Fields(string(report)), " ")
-			wantUndo := "Step2 (Undo move) 3 Not passed"
+			wantUndo := "Failed (attempts 3, checks 1/48,"
 			if outcome == "pass" {
-				wantUndo = "Step2 (Undo move) 3 Passed on submission 3"
+				wantUndo = "Passed (attempts 3, checks 48/48,"
 			}
 			if outcome == "agent-error" {
-				wantUndo = "Step2 (Undo move) 1 Agent error Not graded"
+				wantUndo = "Agent error (attempts 1, checks Not graded,"
 			}
-			for _, want := range []string{"Workload: v1", "Step1 (basic game) 3 Passed on submission 3 37/37", wantUndo} {
+			for _, want := range []string{"Workload: v1", "Step 1 (Basic game) Step 2 (Undo move)", "Passed (attempts 3, checks 37/37,", wantUndo} {
 				if !strings.Contains(plain, want) {
 					t.Fatalf("report conflated workload outcomes: missing %q in %s", want, report)
 				}

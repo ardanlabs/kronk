@@ -187,9 +187,16 @@ is the OpenCode/grader host, not a remote inference server.
 The prompts and acceptance checks together define workload v1. The canonical
 prompt files remain `tic-tac-toe-v1.md` and `tic-tac-toe-v2.md` (the latter supplies
 only the undo extension); these filenames do not indicate different workload
-versions. Neither is copied into runs. Reports show `Workload: v1`, with separate
-rows for `Step1 (basic game)` and `Step2 (Undo move)`, each with its own outcome,
-submission count, checks, and agent time. Step2 is `Not reached` when Step1 fails.
+versions. Neither is copied into runs. Reports show `Workload: v1`, with one row
+per model and separate `Step 1 (Basic game)` and `Step 2 (Undo move)` columns.
+Each cell shows the outcome, attempt count, checks, agent time, and generated
+tokens, for example `Passed (attempts 2, checks 37/37, time 3m49s, generated-toks: 14133)`.
+Generated tokens sum output and reasoning across all submissions in that step;
+input and cached input are excluded. Counts come from OpenCode's usage events
+and can omit responses without such events, including the final response, so
+they are not guaranteed exact totals. Unavailable usage shows
+`generated-toks: not reported`, not zero. Warm-up tokens are excluded.
+Step2 is `Not reached` when Step1 fails.
 A Step2 failure does not erase the Step1 pass. Old results without step metadata
 remain basic-game-only when reports are regenerated.
 

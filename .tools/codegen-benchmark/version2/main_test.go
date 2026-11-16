@@ -352,22 +352,33 @@ func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 	report := renderReport("run", []modelResults{{
 		Model: benchmarkModel{ID: "org/model/BENCHMARK"},
 		Attempts: []result{
-			{Attempt: 1, Grade: gradeResult{Passed: 12, Total: 20}, OpenCode: agentResult{WallTime: 3 * time.Second, Turns: 2, ToolCalls: 4, Usage: tokenUsage{Input: 100, Output: 30}}},
-			{Attempt: 2, Grade: gradeResult{Passed: 20, Total: 20, Checks: []gradeCheck{{Name: "go-build", Passed: true}}}, OpenCode: agentResult{WallTime: 7 * time.Second, Turns: 5, ToolCalls: 6, Usage: tokenUsage{Input: 200, Output: 50}}},
+			{Attempt: 1, Grade: gradeResult{Passed: 12, Total: 20}, OpenCode: agentResult{WallTime: 3 * time.Second, Turns: 2, ToolCalls: 4, Usage: tokenUsage{Input: 100, Output: 30, Reasoning: 7, CacheRead: 40}}},
+			{Attempt: 2, Grade: gradeResult{Passed: 20, Total: 20, Checks: []gradeCheck{{Name: "go-build", Passed: true}}}, OpenCode: agentResult{WallTime: 7 * time.Second, Turns: 5, ToolCalls: 6, Usage: tokenUsage{Input: 200, Output: 50, Reasoning: 11, CacheRead: 80}}},
+			{Step: undoMoveStep, Attempt: 3, Grade: gradeResult{Passed: 7, Total: 9}, OpenCode: agentResult{WallTime: 11 * time.Second, Usage: tokenUsage{Input: 13, Output: 17, Reasoning: 19, CacheRead: 23}}},
 		},
 	}, {
 		Model:    benchmarkModel{ID: "org/failed/BENCHMARK"},
 		Attempts: []result{{Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}}},
-	}}, runRecord{})
+	}, {
+		Model:    benchmarkModel{ID: "org/no-generation/BENCHMARK"},
+		Attempts: []result{{Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}, OpenCode: agentResult{Usage: tokenUsage{Input: 29, CacheRead: 31}}}},
+	}}, runRecord{Steps: basicGameStep + ", " + undoMoveStep})
 
 	plain := strings.Join(strings.Fields(report), " ")
 	for _, want := range []string{
 		"Workload: v1",
-		"org/model/BENCHMARK Step1 (basic game) 2 Passed on submission 2 20/20 10s",
-		"org/failed/BENCHMARK Step1 (basic game) 1 Not passed 19/20 0s",
+		"Model Step 1 (Basic game) Step 2 (Undo move)",
+		"org/model/BENCHMARK Passed (attempts 2, checks 20/20, time 10s, generated-toks: 98) Failed (attempts 1, checks 7/9, time 11s, generated-toks: 36)",
+		"org/failed/BENCHMARK Failed (attempts 1, checks 19/20, time 0s, generated-toks: not reported) Not reached",
+		"org/no-generation/BENCHMARK Failed (attempts 1, checks 19/20, time 0s, generated-toks: 0) Not reached",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("report: missing %q in %s", want, report)
+		}
+	}
+	for _, model := range []string{"org/model/BENCHMARK", "org/failed/BENCHMARK"} {
+		if strings.Count(report, "\n"+model+" ") != 1 {
+			t.Errorf("report must contain one row for %s: %s", model, report)
 		}
 	}
 	for _, unwanted := range []string{"```", "|", "#", "Input tokens", "Failure", "SHA-256"} {
@@ -584,7 +595,7 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 		}
 	}
 	report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
-	if err != nil || !strings.Contains(strings.Join(strings.Fields(string(report)), " "), "Step2 (Undo move) 0 Not reached - 0s") {
+	if err != nil || !strings.Contains(string(report), "Failed (attempts 2, checks 1/37,") || !strings.Contains(string(report), "Not reached") {
 		t.Fatalf("Step1 failure must leave Step2 unattempted: %s %v", report, err)
 	}
 	feedback := graderFeedback(loaded[0].Attempts[1].Grade)

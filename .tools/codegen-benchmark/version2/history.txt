@@ -1,4 +1,17 @@
 Code-generation benchmark history
 =================================
 
-Paste completed report.txt entries below. Detailed artifacts under runs/ are gitignored.
+Date: 2026-11-16
+Workload: v1
+Steps: Step1 (basic game), Step2 (Undo move)
+Runner machine: Pachas-Mac-Studio.local (darwin/arm64)
+Kronk version: 1.33.3-rc
+llama.cpp library: b12359
+Elapsed (combined): 39m18s
+Workflow: completed
+
+Model                                           Step 1 (Basic game)                                                    Step 2 (Undo move)
+-----                                           -------------------                                                    ------------------
+ornith-ai/Ornith-1.5-9B-Q8_0/BENCHMARK          Failed (attempts 3, checks 15/37, time 13m27s, generated-toks: 38701)  Not reached
+ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK         Passed (attempts 2, checks 37/37, time 3m49s, generated-toks: 14133)   Passed (attempts 1, checks 48/48, time 2m23s, generated-toks: 7847)
+AtomicChat/Ripple-65B-Preview-Q4_K_M/BENCHMARK  Passed (attempts 1, checks 37/37, time 11m26s, generated-toks: 5284)   Passed (attempts 1, checks 48/48, time 6m41s, generated-toks: 3224)
