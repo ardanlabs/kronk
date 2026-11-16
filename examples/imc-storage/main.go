@@ -1,21 +1,7 @@
-// This example verifies disk-backed IMC across two separate program runs.
-// Save writes a conversation, its final assistant text, and an input checkpoint.
-// Restore reads the messages, appends the saved assistant text and a new user
-// message, and lets normal IMC discovery import the checkpoint into a fresh model.
-// This is application-managed text replay, not a manual native-state restore API.
-//
-// Install libraries and a model first (from the repository root):
-//
-//	kronk libs --local
-//	kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
-//
-// Run with the same model, directory, configuration, and library version:
-//
-//	make example-imc-storage ARGS='-phase save -model /path/to/model.gguf -directory /tmp/imc-demo'
-//	make example-imc-storage ARGS='-phase restore -model /path/to/model.gguf -directory /tmp/imc-demo'
-//
-// Use a new directory for the save phase. Restore exits with an error if no
-// checkpoint tokens were reused or the saved conversation ID was not preserved.
+// This example verifies disk-backed IMC across separate program runs for text,
+// vision, own-KV MTP, and shared-target-KV MTP. It also provides cold and changed
+// image controls. See README.md for models, commands, and pass criteria.
+// Application-managed text replay is not a manual native-state restore API.
 package main
 
 import (
@@ -25,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -41,14 +28,20 @@ func main() {
 }
 
 func run() (retErr error) {
-	phase := flag.String("phase", "save", "save or restore (run in separate processes)")
-	modelPath := flag.String("model", "", "path to an installed text GGUF model")
+	phase := flag.String("phase", "save", "save, restore, cold, or changed-image (separate processes)")
+	scenario := flag.String("scenario", "text", "text, vision, mtp-own, or mtp-shared")
+	modelPath := flag.String("model", "", "path to an installed GGUF model")
+	projPath := flag.String("proj", "", "vision projector GGUF (required for vision)")
+	drafterPath := flag.String("mtp-drafter", "", "optional companion MTP GGUF; omit for embedded MTP")
 	directory := flag.String("directory", "imc-sessions", "private IMC storage directory")
 	libPath := flag.String("lib-path", "", "optional llama.cpp library directory")
 	flag.Parse()
 
-	if *modelPath == "" || (*phase != "save" && *phase != "restore") {
-		return errors.New("provide -model and -phase save|restore")
+	if *modelPath == "" || (*phase != "save" && *phase != "restore" && *phase != "cold" && *phase != "changed-image") {
+		return errors.New("provide -model and -phase save|restore|cold|changed-image")
+	}
+	if (*scenario == "vision" && *projPath == "") || (*phase == "changed-image" && *scenario != "vision") {
+		return errors.New("vision needs -proj; changed-image is only available for vision")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -66,14 +59,9 @@ func run() (retErr error) {
 		return err
 	}
 
-	request := model.D{
-		"messages": []model.D{
-			{"role": "system", "content": "You are a concise assistant. Follow the user's instructions and answer in one short sentence."},
-			{"role": "user", "content": "Remember this project code: 713. We are building a disk backed conversation cache."},
-			{"role": "assistant", "content": "I will remember project code 713."},
-			{"role": "user", "content": "What is our project code? Reply with only the number."},
-		},
-		"max_tokens": 64, "temperature": 0.0, "enable_thinking": false,
+	request, err := initialRequest(*scenario)
+	if err != nil {
+		return err
 	}
 
 	var previous imc.Summary
@@ -84,21 +72,15 @@ func run() (retErr error) {
 			return errors.New("save phase needs a new directory; existing history is not overwritten by this example")
 		}
 
-	case "restore":
+	case "restore", "cold", "changed-image":
 		if len(page.Sessions) == 0 {
 			return errors.New("run the save phase first")
 		}
 
 		previous = page.Sessions[0]
 
-		handle, err := store.Open(ctx, previous.Ref)
+		record, err := inspectSnapshot(ctx, store, previous.Ref, *scenario, false)
 		if err != nil {
-			return err
-		}
-
-		record := handle.Record()
-
-		if err := handle.Close(); err != nil {
 			return err
 		}
 
@@ -117,22 +99,46 @@ func run() (retErr error) {
 			return errors.New("saved response has no final text to replay")
 		}
 
-		request["messages"] = append(conversation.Messages,
-			model.D{"role": "assistant", "content": record.AssistantText},
-			model.D{"role": "user", "content": "Repeat our project code. Reply with only the number."})
+		if *phase == "changed-image" {
+			if len(conversation.Messages) != 1 {
+				return errors.New("changed-image needs the original save; use a separate directory before running restore")
+			}
+			image, err := colorImage(true)
+			if err != nil {
+				return err
+			}
+			// Keep the original input text unchanged; do not replay the saved
+			// final answer, which would reveal the original image's color.
+			conversation.Messages[0] = model.ImageMessage(visionQuestion, image, "png")[0]
+			request["messages"] = conversation.Messages
+		} else {
+			request["messages"] = append(conversation.Messages,
+				model.D{"role": "assistant", "content": record.AssistantText},
+				model.D{"role": "user", "content": followUp(*scenario)})
+		}
 	}
 
 	if err := kronk.Init(kronk.WithLibPath(*libPath)); err != nil {
 		return err
 	}
 
-	krn, err := kronk.NewWithContext(ctx,
+	var observed evidence
+	opts := []model.Option{
 		model.WithModelFiles([]string{*modelPath}),
+		model.WithProjFile(*projPath), model.WithMTPDrafterFile(*drafterPath),
 		model.WithContextWindow(2048), model.WithNSeqMax(1),
 		model.WithIncrementalCache(true), model.WithCacheMinTokens(1),
-		model.WithStorage(model.StorageConfig{Store: store}),
-		model.WithLog(kronk.FmtLogger),
-	)
+		model.WithLog(observed.log),
+	}
+	if *phase != "cold" {
+		opts = append(opts, model.WithStorage(model.StorageConfig{Store: store}))
+	}
+	speculation := model.SpeculationDisabled
+	if strings.HasPrefix(*scenario, "mtp-") {
+		speculation = model.SpeculationMTP // Never silently select target-only.
+	}
+	opts = append(opts, model.WithSpeculationMode(speculation))
+	krn, err := kronk.NewWithContext(ctx, opts...)
 	if err != nil {
 		return err
 	}
@@ -149,29 +155,41 @@ func run() (retErr error) {
 	}
 
 	fmt.Printf("Assistant: %s\nCached prompt tokens: %d\n", response.Choices[0].Message.Content, response.Usage.PromptTokensDetails.CachedTokens)
+	if err := observed.check(*scenario, *phase, response); err != nil {
+		return err
+	}
 
 	page, err = store.List(ctx, imc.ListQuery{Limit: 2})
 	if err != nil {
 		return err
 	}
 
-	if len(page.Sessions) != 1 {
-		return fmt.Errorf("expected one saved conversation, got %d", len(page.Sessions))
+	if *phase == "cold" {
+		if len(page.Sessions) != 1 || page.Sessions[0] != previous {
+			return errors.New("cold control changed saved history")
+		}
+		fmt.Printf("PASS: %s cold control; history unchanged\n", *scenario)
+		return nil
 	}
 
+	wantSessions := 1
+	if *phase == "changed-image" {
+		wantSessions = 2
+	}
+	if len(page.Sessions) != wantSessions {
+		return fmt.Errorf("expected %d saved conversations, got %d", wantSessions, len(page.Sessions))
+	}
 	current := page.Sessions[0]
-	if *phase == "restore" && (response.Usage.PromptTokensDetails.CachedTokens == 0 || current.Ref.Key != previous.Ref.Key || current.Ref.Revision <= previous.Ref.Revision) {
-		return errors.New("disk checkpoint was not reused and advanced under the same conversation ID")
+	if *phase == "restore" && (current.Ref.Key != previous.Ref.Key || current.Ref.Revision <= previous.Ref.Revision) {
+		return errors.New("restored checkpoint did not advance under the same conversation ID")
 	}
 
-	handle, err := store.Open(ctx, current.Ref)
+	if *phase == "changed-image" && (current.Ref.Key == previous.Ref.Key || page.Sessions[1] != previous) {
+		return errors.New("changed image reused or overwrote the original conversation")
+	}
+
+	record, err := inspectSnapshot(ctx, store, current.Ref, *scenario, *phase == "changed-image")
 	if err != nil {
-		return err
-	}
-
-	record := handle.Record()
-	target, draft, media := handle.Sizes()
-	if err := handle.Close(); err != nil {
 		return err
 	}
 
@@ -179,8 +197,8 @@ func run() (retErr error) {
 		return errors.New("stored assistant text differs from the delivered response")
 	}
 
-	fmt.Printf("Saved conversation: %s\nRevision: %d\nUncompressed target/draft: %d/%d bytes; media items: %d\n", current.Ref.Key.ID, current.Ref.Revision, target, draft, len(media))
-	fmt.Printf("PASS: %s phase\n", *phase)
+	fmt.Printf("Saved conversation: %s\nRevision: %d\n", current.Ref.Key.ID, current.Ref.Revision)
+	fmt.Printf("PASS: %s %s phase\n", *scenario, *phase)
 
 	return nil
 }
