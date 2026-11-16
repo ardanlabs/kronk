@@ -1299,9 +1299,6 @@ class ApiService {
 
   // ── Training app ──
 
-  async preparationDatasets(signal?: AbortSignal): Promise<{ datasets: PreparationDataset[] }> {
-    return this.request('/training/datasets', { signal, cache: 'no-store' });
-  }
 
   async createPreparationDataset(name: string): Promise<PreparationDataset> {
     return this.request('/training/datasets', { method: 'POST', body: JSON.stringify({ name }) });
@@ -1359,11 +1356,13 @@ class ApiService {
     });
   }
 
-  async trainingRuns(nextPageToken = '', signal?: AbortSignal, since = '', filter: { mode?: string; statuses?: string[] } = {}): Promise<TrainingRunsResponse> {
+  async trainingRuns(nextPageToken = '', signal?: AbortSignal, since = '', filter: { mode?: string; statuses?: string[]; pageSize?: number; order?: 'newest' | 'oldest' } = {}): Promise<TrainingRunsResponse> {
     const query = new URLSearchParams();
     if (nextPageToken) query.set('next_page_token', nextPageToken);
     if (since) query.set('since', since);
     if (filter.mode) query.set('mode', filter.mode);
+    if (filter.pageSize) query.set('page_size', String(filter.pageSize));
+    if (filter.order) query.set('order', filter.order);
     for (const status of filter.statuses ?? []) query.append('status', status);
     return this.request<TrainingRunsResponse>(`/training/runs${query.size ? `?${query}` : ''}`, {
       signal,

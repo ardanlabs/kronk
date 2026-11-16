@@ -293,6 +293,13 @@ func (a *app) query(ctx context.Context, r *http.Request) web.Encoder {
 	waitCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	options := datasets.RunFilter{PageSize: pageSize, NextPageToken: token, Mode: r.URL.Query().Get("mode"), TargetDatasetID: r.URL.Query().Get("target_dataset_id")}
+	switch r.URL.Query().Get("order") {
+	case "", "newest":
+	case "oldest":
+		options.Oldest = true
+	default:
+		return errs.Errorf(errs.InvalidArgument, "order must be newest or oldest")
+	}
 	for _, value := range r.URL.Query()["status"] {
 		options.Statuses = append(options.Statuses, tmprl.Status(value))
 	}

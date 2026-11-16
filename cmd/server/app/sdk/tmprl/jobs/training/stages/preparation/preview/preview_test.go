@@ -912,7 +912,8 @@ func TestPreviewGenerationRepairReservations(t *testing.T) {
 				return providers.Completion{Content: `{"decisions":[]}`, PromptTokens: 2, CompletionTokens: 1}, nil
 			})
 			got, err := (preview.Step{}).Execute(t.Context(), input)
-			if err == nil || got.Artifacts.Preview != nil || !exhaust && !errors.Is(err, unavailable) || exhaust && !strings.Contains(err.Error(), "budget exhausted") {
+			// Three invalid replies leave the passages out, so nothing is left to preview.
+			if err == nil || got.Artifacts.Preview != nil || !exhaust && !errors.Is(err, unavailable) || exhaust && !strings.Contains(err.Error(), "no supported examples") {
 				t.Fatalf("interrupted repair = %+v, %v", got, err)
 			}
 			wantCalls := 2
@@ -939,7 +940,7 @@ func TestPreviewGenerationRepairReservations(t *testing.T) {
 			})
 			retried, err := (preview.Step{}).Execute(t.Context(), input)
 			if exhaust {
-				if err == nil || !strings.Contains(err.Error(), "budget exhausted") || retried.Artifacts.Preview != nil {
+				if err == nil || !strings.Contains(err.Error(), "no supported examples") || retried.Artifacts.Preview != nil {
 					t.Fatalf("exhausted recovery = %+v, %v", retried, err)
 				}
 			} else if err != nil || retried.Artifacts.Preview == nil || retried.Artifacts.Preview.PromptTokens != 20 || retried.Artifacts.Preview.CompletionTokens != 6 {

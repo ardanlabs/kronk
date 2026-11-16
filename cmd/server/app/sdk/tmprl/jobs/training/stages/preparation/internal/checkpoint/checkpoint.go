@@ -65,6 +65,9 @@ type State struct {
 	GenerationRejections      uint32 `json:"generation_rejections,omitzero"`
 	GenerationRejectedPrompt  string `json:"generation_rejected_prompt,omitzero"`
 	GenerationRejectionReason string `json:"generation_rejection_reason,omitzero"`
+	// GenerationLastRejected reports that the last reserved request returned a
+	// reply that failed validation. An interrupted request leaves it false.
+	GenerationLastRejected bool `json:"generation_last_rejected,omitzero"`
 	// Decisions remain provisional until every unit in the original batch resolves.
 	GenerationDecisions []GenerationDecision `json:"generation_decisions,omitzero"`
 	// Rejection feedback belongs only to the pending EvaluationNext question.
@@ -156,7 +159,7 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 	if state.GenerationAttempts > 0 && (state.Next >= len(state.Units) || state.Generated || state.EvaluationNext != 0 || state.Verified != 0) {
 		return State{}, false, fmt.Errorf("request reservation does not match pending source batch")
 	}
-	if state.GenerationRejections == 0 && (state.GenerationRejectedPrompt != "" || state.GenerationRejectionReason != "") || state.GenerationRejections > 0 && strings.TrimSpace(state.GenerationRejectedPrompt+state.GenerationRejectionReason) == "" {
+	if state.GenerationRejections == 0 && (state.GenerationRejectedPrompt != "" || state.GenerationRejectionReason != "") || state.GenerationRejections > 0 && strings.TrimSpace(state.GenerationRejectedPrompt+state.GenerationRejectionReason) == "" || state.GenerationLastRejected && strings.TrimSpace(state.GenerationRejectionReason) == "" {
 		return State{}, false, fmt.Errorf("inconsistent generation rejection checkpoint")
 	}
 	if state.GenerationRejections > 0 && (state.Generated || state.Next >= len(state.Units) || state.EvaluationNext != 0 || state.Verified != 0) {

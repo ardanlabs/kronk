@@ -1015,6 +1015,111 @@ func TestGenerationPersistentDuplicates(t *testing.T) {
 	}
 }
 
+// Only a last reply that fails validation leaves passages out. Passages that
+// resolved keep their records, and a request with an unknown outcome stops the run.
+func TestGenerationInvalidLastReply(t *testing.T) {
+	malformed := providers.Completion{Content: `{`, PromptTokens: 5, CompletionTokens: 1}
+	nextBatch := func(t *testing.T, request providers.CompletionRequest) {
+		t.Helper()
+		if request.Seed != 3407 || !strings.Contains(request.Messages[1].Content, "Harbor 33 opens at dawn.") {
+			t.Fatal("generation did not advance to the next batch")
+		}
+	}
+	stop := errors.New("stop at the next source batch")
+
+	t.Run("invalid replies exclude the batch", func(t *testing.T) {
+		input, original := generationInput(t)
+		calls := 0
+		input.Preparation.Completer = completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+			calls++
+			if calls == 4 {
+				nextBatch(t, request)
+				return providers.Completion{}, stop
+			}
+			return malformed, nil
+		})
+		if _, err := (generate.Step{}).Execute(t.Context(), input); !errors.Is(err, stop) || calls != 4 {
+			t.Fatalf("invalid replies stopped the run: calls=%d err=%v", calls, err)
+		}
+		state := savedState(t, input)
+		if state.Next != 30 || !reflect.DeepEqual(state.Records, original.Records) || state.GenerationAttempts != 1 || state.GenerationLastRejected {
+			t.Fatalf("batch was not closed: next=%d records=%d attempts=%d", state.Next, len(state.Records), state.GenerationAttempts)
+		}
+		excluded := state.Result.Exclusions[len(original.Result.Exclusions):]
+		if len(excluded) != 5 || len(state.Result.Warnings) != len(original.Result.Warnings)+5 {
+			t.Fatalf("excluded passages were not reported: %+v", state.Result)
+		}
+		for i, exclusion := range excluded {
+			if exclusion.Reference != fmt.Sprintf("harbor-%d", 28+i) || !strings.Contains(exclusion.Reason, "invalid model reply: return only the required decisions object") {
+				t.Fatalf("exclusion %d: %+v", i, exclusion)
+			}
+		}
+	})
+
+	t.Run("resolved passages keep their records", func(t *testing.T) {
+		input, original := generationInput(t)
+		calls := 0
+		input.Preparation.Completer = completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+			calls++
+			switch calls {
+			case 1:
+				// The second passage repeats a prompt already in the dataset; the others resolve.
+				var rows []map[string]any
+				for i, prompt := range []string{"First question?", original.Records[0].Prompt, "Third question?", "Fourth question?", "Fifth question?"} {
+					rows = append(rows, spanDecision(i+1, prompt, fmt.Sprintf("Harbor %d opens at dawn.", 28+i)))
+				}
+				data, err := json.Marshal(map[string]any{"decisions": rows})
+				return providers.Completion{Content: string(data), PromptTokens: 7, CompletionTokens: 2}, err
+			case 4:
+				nextBatch(t, request)
+				return providers.Completion{}, stop
+			}
+			return malformed, nil
+		})
+		if _, err := (generate.Step{}).Execute(t.Context(), input); !errors.Is(err, stop) || calls != 4 {
+			t.Fatalf("invalid repairs stopped the run: calls=%d err=%v", calls, err)
+		}
+		state := savedState(t, input)
+		if state.Next != 30 || len(state.Records) != len(original.Records)+4 || !reflect.DeepEqual(state.Records[:len(original.Records)], original.Records) {
+			t.Fatalf("resolved passages lost their records: next=%d records=%d", state.Next, len(state.Records))
+		}
+		excluded := state.Result.Exclusions[len(original.Result.Exclusions):]
+		if len(excluded) != 1 || excluded[0].Reference != "harbor-29" || !strings.Contains(excluded[0].Reason, "invalid model reply") {
+			t.Fatalf("only the unresolved passage may be excluded: %+v", excluded)
+		}
+	})
+
+	t.Run("interrupted last request stops the run", func(t *testing.T) {
+		input, original := generationInput(t)
+		interrupted := errors.New("interrupted last request")
+		calls := 0
+		input.Preparation.Completer = completionFunc(func(context.Context, providers.CompletionRequest) (providers.Completion, error) {
+			calls++
+			if calls == 3 {
+				return providers.Completion{}, interrupted
+			}
+			return malformed, nil
+		})
+		if _, err := (generate.Step{}).Execute(t.Context(), input); !errors.Is(err, interrupted) || calls != 3 {
+			t.Fatalf("interruption was not returned: calls=%d err=%v", calls, err)
+		}
+		reopen(t, &input)
+		input.Preparation.Completer = completionFunc(func(context.Context, providers.CompletionRequest) (providers.Completion, error) {
+			t.Fatal("request dispatched past the request budget")
+			return providers.Completion{}, nil
+		})
+		_, err := (generate.Step{}).Execute(t.Context(), input)
+		application, ok := errors.AsType[*temporal.ApplicationError](err)
+		if !ok || !application.NonRetryable() || application.Type() != "preparation-request-budget-exhausted" {
+			t.Fatalf("unknown outcome did not stop the run: %v", err)
+		}
+		state := savedState(t, input)
+		if state.Next != 25 || len(state.Result.Exclusions) != len(original.Result.Exclusions) {
+			t.Fatalf("passages were excluded after an unknown outcome: next=%d exclusions=%d", state.Next, len(state.Result.Exclusions))
+		}
+	})
+}
+
 func TestGenerationFailuresPreserveCheckpoint(t *testing.T) {
 	providerError := errors.New("provider unavailable")
 	for _, name := range []string{"provider", "canceled before call", "canceled duplicate", "canceled malformed", "canceled success", "write rejected", "write invalid", "write accepted"} {
