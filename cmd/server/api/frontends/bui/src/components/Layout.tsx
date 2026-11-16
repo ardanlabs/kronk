@@ -200,6 +200,7 @@ const menuStructure: MenuCategory[] = [
             { page: 'docs-sdk-examples', label: 'Decision (Image)', hash: 'example-decision-image' },
             { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
             { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
+            { page: 'docs-sdk-examples', label: 'Imc-Storage', hash: 'example-imc-storage' },
             { page: 'docs-sdk-examples', label: 'Malina', hash: 'example-malina' },
             { page: 'docs-sdk-examples', label: 'Malina-Adetailer', hash: 'example-malina-adetailer' },
             { page: 'docs-sdk-examples', label: 'Malina-Animatediff', hash: 'example-malina-animatediff' },

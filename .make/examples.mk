@@ -24,6 +24,9 @@ example-bucky-diar: ## Run the bucky diar example
 example-chat: ## Run the chat example
 	cd examples && go run ./chat/main.go
 
+example-imc-storage: ## Verify disk-backed IMC (ARGS: -phase save|restore -model /path/to/model.gguf -directory /tmp/imc-demo)
+	cd examples && go run ./imc-storage/main.go $(ARGS)
+
 example-concurrency: ## Run the concurrency example
 	cd examples && go run ./concurrency/main.go
 
