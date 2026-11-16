@@ -5,8 +5,13 @@ go 1.27.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
+	charm.land/bubbles/v2 v2.2.1
+	charm.land/bubbletea/v2 v2.1.1
+	charm.land/lipgloss/v2 v2.1.1
 	github.com/ardanlabs/bucky v1.1.6
 	github.com/ardanlabs/kronk v1.33.2
+	github.com/atotto/clipboard v0.1.4
+	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/duckdb/duckdb-go/v2 v2.20000.0
 	github.com/gen2brain/malgo v0.11.28
 	github.com/hybridgroup/yzma v1.33.1-0.20261116110349-71570796dd03
@@ -49,6 +54,13 @@ require (
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/charmbracelet/colorprofile v0.4.3 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect
+	github.com/charmbracelet/x/term v0.2.2 // indirect
+	github.com/charmbracelet/x/termios v0.1.1 // indirect
+	github.com/charmbracelet/x/windows v0.2.2 // indirect
+	github.com/clipperhouse/displaywidth v0.11.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/duckdb/duckdb-go-bindings v0.20000.0 // indirect
 	github.com/ebitengine/purego v0.11.3 // indirect
@@ -76,11 +88,14 @@ require (
 	github.com/jupiterrider/ffi v0.8.0 // indirect
 	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.2 // indirect
+	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
+	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/maypok86/otter/v2 v2.4.0 // indirect
 	github.com/mewkiz/flac v1.0.14 // indirect
 	github.com/mewkiz/pkg v0.0.0-20260703220044-4fb89b18cc87 // indirect
 	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pandatix/go-abnf v0.5.5 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
@@ -89,8 +104,10 @@ require (
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.74.0 // indirect
 	github.com/prometheus/procfs v0.23.0 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.9.0 // indirect
 	github.com/ulikunitz/xz v0.5.17 // indirect
+	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.duckdb.org/libduckdb/darwin-amd64 v0.20000.0 // indirect
 	go.duckdb.org/libduckdb/darwin-arm64 v0.20000.0 // indirect

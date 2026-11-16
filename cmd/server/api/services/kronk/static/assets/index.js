@@ -2757,368 +2757,151 @@ func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {
 
 	return b, nil
 }
-`,Hy=`// This example shows you how to create a simple chat application against an
-// inference model using kronk. Thanks to Kronk and yzma, reasoning and tool
-// calling is enabled.
-//
-// The first time you run this program the system will download and install
-// the model and libraries.
-//
-// Run the example like this from the root of the project:
-// $ make example-chat
-
+`,Hy=`// This example provides a terminal chat with tools, images, and saved IMC conversations.
+// Run the entire package: make example-chat (or go run ./chat from examples).
+// See README.md for controls, vision setup, and replacing the storage backend.
 package main
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
+	"log"
 	"os"
-	"strings"
+	"path/filepath"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/storage/disk"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// modelSource is the model to download. It may be a HuggingFace URL,
-// a canonical "provider/modelID", or a bare model id.
-var modelSource = "unsloth/Qwen3-0.6B-Q8_0"
+// Match the agent example, including its tool-capable vision model.
+const modelSource = "ornith-ai/Ornith-1.5-9B-Q4_K_M"
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Printf("\\nERROR: %s\\n", err)
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	mp, err := installSystem()
+func run() (retErr error) {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("run: unable to install system: %w", err)
-	}
-
-	krn, err := newKronk(mp)
-	if err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	defer func() {
-		fmt.Println("\\nUnloading Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			fmt.Printf("run: failed to unload model: %v", err)
-		}
-	}()
-
-	if err := chat(context.Background(), krn); err != nil {
 		return err
 	}
+	modelPath := flag.String("model", "", "path to an installed GGUF model")
+	source := flag.String("model-source", modelSource, "model to locate or download when -model is omitted")
+	projector := flag.String("projector", "", "matching vision projector GGUF; enables image attachments")
+	directory := flag.String("directory", filepath.Join(home, ".kronk", "examples", "chat"), "private snapshot directory")
+	logPath := flag.String("log", filepath.Join(home, ".kronk", "examples", "chat.log"), "storage and model diagnostic log file")
+	workspace := flag.String("workspace", ".", "directory accessible to file tools; writes require confirmation")
+	libPath := flag.String("lib-path", "", "optional llama.cpp library directory")
+	window := flag.Int("context", 65536, "model context window; keep unchanged when testing checkpoint reuse")
+	flag.Parse()
+	*logPath, err = filepath.Abs(*logPath)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(*workspace)
+	if err != nil {
+		return err
+	}
+	defer func() { retErr = errors.Join(retErr, root.Close()) }()
 
-	return nil
-}
+	if err := os.MkdirAll(filepath.Dir(*logPath), 0700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(*logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer func() { retErr = errors.Join(retErr, f.Close()) }()
+	logger := log.New(f, "", log.LstdFlags|log.LUTC|log.Lmicroseconds)
+	logFunc := func(_ context.Context, operation string, args ...any) {
+		logger.Printf("%s %v", operation, args)
+	}
 
-func installSystem() (models.Path, error) {
+	// Replace this constructor with your own imc.Store. The UI uses only that
+	// public contract. Both log callbacks write to the file, never to the TUI.
+	store, err := disk.New(*directory, disk.WithLog(logFunc))
+	if err != nil {
+		return err
+	}
+	defer func() { retErr = errors.Join(retErr, store.Close()) }()
+	// Clear only after acquiring the backend's directory lock, so a second
+	// app using the same snapshots cannot erase the active app's log.
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	logger.Printf("chat-start model_source=%q model_path=%q projector=%q context=%d workspace=%q storage=%q",
+		*source, *modelPath, *projector, *window, *workspace, *directory)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	defer cancel()
-
-	libs, err := libs.New(
-		libs.WithDetect(ctx, kronk.FmtLogger),
-		libs.WithValidation(true),
-	)
-	if err != nil {
-		return models.Path{}, err
+	if *libPath == "" {
+		manager, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger), libs.WithValidation(true))
+		if err != nil {
+			return err
+		}
+		if _, err := manager.Download(ctx, kronk.FmtLogger); err != nil {
+			return err
+		}
+		*libPath = manager.LibsPath()
 	}
-
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	if err := kronk.Init(kronk.WithLibPath(*libPath)); err != nil {
+		return err
 	}
-
-	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
-		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	files := []string{*modelPath}
+	if *modelPath == "" {
+		manager, err := models.New()
+		if err != nil {
+			return err
+		}
+		paths, err := manager.Download(ctx, kronk.FmtLogger, *source)
+		if err != nil {
+			return err
+		}
+		files = paths.ModelFiles
+		if *projector == "" {
+			*projector = paths.ProjFile
+		}
 	}
-
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
-	}
-
-	fmt.Println("Downloading model:", modelSource)
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource)
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	return mp, nil
-}
-
-func newKronk(mp models.Path) (*kronk.Kronk, error) {
-	fmt.Println("loading model...")
-
+	fmt.Println("Loading model. Diagnostic log:", *logPath)
 	krn, err := kronk.New(
-		model.WithModelFiles(mp.ModelFiles),
-		model.WithAutoTune(true),
-	)
+		model.WithLog(logFunc),
+		model.WithModelFiles(files), model.WithProjFile(*projector), model.WithAutoTune(true),
+		model.WithContextWindow(*window), model.WithNSeqMax(1),
+		model.WithIncrementalCache(true), model.WithCacheMinTokens(1),
+		model.WithSpeculationMode(model.SpeculationDisabled),
+		model.WithStorage(model.StorageConfig{Store: store}))
 	if err != nil {
-		return nil, fmt.Errorf("unable to create inference model: %w", err)
+		return err
 	}
+	// Unload before closing storage. The TUI drains each stream even on cancel.
+	defer func() { retErr = errors.Join(retErr, krn.Unload(context.Background())) }()
 
-	fmt.Print("- system info:\\n\\t")
-	for k, v := range krn.SystemInfo() {
-		fmt.Printf("%s:%v, ", k, v)
-	}
-	fmt.Println()
-
-	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow())
-	fmt.Printf("- k/v            : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention())
-	fmt.Println("- prefill batch  :", krn.ModelConfig().PrefillBatchSize())
-	fmt.Println("- modelType      :", krn.ModelInfo().Type)
-	fmt.Println("- sequence type  :", krn.ModelInfo().SequenceProcessing)
-	fmt.Println("- architecture   :", krn.ModelInfo().Architecture)
-	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
-	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
-	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
-	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
-	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
-	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache())
-	if n := krn.ModelConfig().PtrNGpuLayers; n != nil {
-		fmt.Println("- nGPULayers     :", *n)
-	} else {
-		fmt.Println("- nGPULayers     : all")
-	}
-	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
-		fmt.Println("- splitMode      :", sm)
-	} else {
-		fmt.Println("- splitMode      : auto")
-	}
-
-	return krn, nil
-}
-
-const systemPrompt = \`You are designed to help users answer questions, create
-content, and provide information in a helpful and accurate manner. Always follow
-the user's instructions carefully and respond with clear, concise, and
-well-structured answers.\`
-
-func chat(ctx context.Context, krn *kronk.Kronk) error {
-	conversation := []model.D{
-		{"role": "system", "content": systemPrompt},
-	}
-
-	scanner := bufio.NewScanner(os.Stdin)
-
-	for {
-		nextConversation, ok := promptUser(scanner, conversation)
-		if !ok {
-			return scanner.Err()
-		}
-		conversation = nextConversation
-
-		// Keep running model turns until the assistant responds without asking
-		// for another tool. Only then prompt the user again.
-		for {
-			content, toolCalls, usage, err := streamModelTurn(ctx, krn, conversation)
-			if err != nil {
-				return err
-			}
-
-			printUsage(krn, usage)
-
-			if len(toolCalls) == 0 {
-				conversation = appendAssistant(conversation, content)
-				break
-			}
-
-			conversation = appendToolCalls(conversation, toolCalls)
-			conversation = append(conversation, callTools(toolCalls)...)
-		}
-	}
-}
-
-func promptUser(scanner *bufio.Scanner, conversation []model.D) ([]model.D, bool) {
-	fmt.Print("\\nUSER> ")
-
-	if !scanner.Scan() {
-		return conversation, false
-	}
-
-	userInput := scanner.Text()
-	if userInput == "quit" {
-		return conversation, false
-	}
-
-	conversation = append(conversation, model.D{
-		"role":    "user",
-		"content": userInput,
-	})
-
-	return conversation, true
-}
-
-func toolDocuments() []model.D {
-	return model.DocumentArray(
-		model.D{
-			"type": "function",
-			"function": model.D{
-				"name":        "get_weather",
-				"description": "Get the current weather for a location",
-				"parameters": model.D{
-					"type": "object",
-					"properties": model.D{
-						"location": model.D{
-							"type":        "string",
-							"description": "The location to get the weather for, e.g. San Francisco, CA",
-						},
-					},
-					"required": []any{"location"},
-				},
-			},
-		},
-	)
-}
-
-func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model.D) (string, []model.ResponseToolCall, *model.Usage, error) {
-	d := model.D{
-		"messages":   conversation,
-		"tools":      toolDocuments(),
-		"max_tokens": 2048,
-		"stream_options": model.D{
-			"include_usage": true,
-		},
-	}
-
-	fmt.Print("\\nMODEL> ")
-
-	callCtx, cancelCall := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancelCall()
-
-	ch, err := krn.ChatStreaming(callCtx, d)
-	if err != nil {
-		return "", nil, nil, fmt.Errorf("chat streaming: %w", err)
-	}
-
-	var content strings.Builder
-	var usage *model.Usage
-	var toolCalls []model.ResponseToolCall
-	reasoning := false
-
-	for resp := range ch {
-		if len(resp.Choices) == 0 {
-			usage = resp.Usage
-			continue
-		}
-
-		switch resp.Choices[0].FinishReason() {
-		case model.FinishReasonError:
-			return "", nil, usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
-
-		case model.FinishReasonStop, model.FinishReasonLength:
-			continue
-
-		case model.FinishReasonTool:
-			toolCalls = resp.Choices[0].Message.ToolCalls
-			continue
-
-		default:
-			delta := resp.Choices[0].Delta
-			for _, tool := range delta.ToolCallDeltas {
-				if tool.Function.Name != "" {
-					fmt.Printf("\\n\\n\\u001b[92mExecuting %s...\\u001b[0m", tool.Function.Name)
-				}
-			}
-
-			switch {
-			case delta.Reasoning != "":
-				reasoning = true
-				fmt.Printf("\\u001b[91m%s\\u001b[0m", delta.Reasoning)
-
-			case delta.Content != "":
-				if reasoning {
-					reasoning = false
-					fmt.Print("\\n\\n")
-				}
-
-				fmt.Print(delta.Content)
-				content.WriteString(delta.Content)
+	app := newChat(krn, store, root, *projector != "")
+	app.logPath = *logPath
+	_, err = tea.NewProgram(app, tea.WithFilter(func(m tea.Model, msg tea.Msg) tea.Msg {
+		// Signals must take the same cancellation/drain path as Ctrl+Q;
+		// Bubble Tea otherwise handles these before Update sees them.
+		switch msg.(type) {
+		case tea.InterruptMsg:
+			return tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl}
+		case tea.QuitMsg:
+			if m.(*chat).busy {
+				return tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl}
 			}
 		}
-	}
-
-	if len(toolCalls) > 0 {
-		return "", toolCalls, usage, nil
-	}
-
-	return strings.TrimLeft(content.String(), "\\n"), nil, usage, nil
-}
-
-func appendToolCalls(conversation []model.D, toolCalls []model.ResponseToolCall) []model.D {
-	fmt.Print("\\n\\n")
-
-	var toolCallDocs []model.D
-	for _, toolCall := range toolCalls {
-		argsJSON, _ := json.Marshal(toolCall.Function.Arguments)
-		toolCallDocs = append(toolCallDocs, model.D{
-			"id":   toolCall.ID,
-			"type": "function",
-			"function": model.D{
-				"name":      toolCall.Function.Name,
-				"arguments": string(argsJSON),
-			},
-		})
-	}
-
-	return append(conversation, model.D{
-		"role":       "assistant",
-		"tool_calls": toolCallDocs,
-	})
-}
-
-func appendAssistant(conversation []model.D, content string) []model.D {
-	if content == "" {
-		return conversation
-	}
-
-	fmt.Print("\\n")
-	return append(conversation, model.D{"role": "assistant", "content": content})
-}
-
-func printUsage(krn *kronk.Kronk, usage *model.Usage) {
-	if usage == nil {
-		return
-	}
-
-	contextTokens := usage.PromptTokens + usage.CompletionTokens
-	contextWindow := krn.ModelConfig().ContextWindow()
-	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
-	of := float32(contextWindow) / float32(1024)
-
-	fmt.Printf("\\n\\n\\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Total: %d  Window: %d (%.0f%% of %.0fK) TPS: %.2f\\u001b[0m",
-		usage.PromptTokens, usage.CompletionTokensDetails.ReasoningTokens, usage.CompletionTokens, usage.TotalTokens, contextTokens, percentage, of, usage.TokensPerSecond)
-}
-
-func callTools(toolCalls []model.ResponseToolCall) []model.D {
-	results := make([]model.D, 0, len(toolCalls))
-
-	for _, toolCall := range toolCalls {
-		fmt.Printf("\\u001b[92m%s(%v)\\u001b[0m: \\u001b[90mok\\u001b[0m\\n",
-			toolCall.Function.Name, toolCall.Function.Arguments)
-
-		// This example hard-codes the tool execution and its result. The agent
-		// example replaces this with registered Tool implementations.
-		results = append(results, model.D{
-			"role":         "tool",
-			"name":         toolCall.Function.Name,
-			"tool_call_id": toolCall.ID,
-			"content":      \`{"temperature": "72°F", "condition": "sunny"}\`,
-		})
-	}
-
-	return results
+		return msg
+	})).Run()
+	return err
 }
 `,Uy=`// This example shows you how to leverage Kronk's batch processing by running
 // multiple inference requests concurrently against a single loaded model. It
@@ -7593,7 +7376,7 @@ func readImage(imageFile string) ([]byte, error) {
 
 	return image, nil
 }
-`;function fb(){let e=tt();return(0,_.useEffect)(()=>{let t=document.querySelector(`.main-content`);if(!t)return;if(!e.hash){t.scrollTo({top:0});return}let n=e.hash.slice(1);requestAnimationFrame(()=>{let e=document.getElementById(n);if(!e)return;let r=t.getBoundingClientRect(),i=e.getBoundingClientRect().top-r.top+t.scrollTop;t.scrollTo({top:i-20,behavior:`smooth`})})},[e.key,e.hash]),(0,G.jsxs)(`div`,{children:[(0,G.jsxs)(`div`,{className:`page-header`,children:[(0,G.jsx)(`h2`,{children:`SDK Examples`}),(0,G.jsx)(`p`,{children:`Complete working examples demonstrating how to use the Kronk SDK`})]}),(0,G.jsxs)(`div`,{className:`doc-layout`,children:[(0,G.jsxs)(`div`,{className:`doc-content`,children:[(0,G.jsxs)(`div`,{className:`card`,id:`example-agent`,children:[(0,G.jsx)(`h3`,{children:`Agent`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple agent application against an`}),(0,G.jsx)(_a,{code:Ly,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-audio`,children:[(0,G.jsx)(`h3`,{children:`Audio`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to execute a simple prompt against an audio model.`}),(0,G.jsx)(_a,{code:Ry,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-bucky`,children:[(0,G.jsx)(`h3`,{children:`Bucky`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to transcribe an audio file with the`}),(0,G.jsx)(_a,{code:zy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-bucky-diar`,children:[(0,G.jsx)(`h3`,{children:`Bucky-Diar`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to perform channel-separated speaker`}),(0,G.jsx)(_a,{code:By,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-bucky-stream`,children:[(0,G.jsx)(`h3`,{children:`Bucky-Stream`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example is a LIVE MICROPHONE transcription demo for the bucky`}),(0,G.jsx)(_a,{code:Vy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-chat`,children:[(0,G.jsx)(`h3`,{children:`Chat`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple chat application against an`}),(0,G.jsx)(_a,{code:Hy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-concurrency`,children:[(0,G.jsx)(`h3`,{children:`Concurrency`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to leverage Kronk's batch processing by running`}),(0,G.jsx)(_a,{code:Uy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-decision`,children:[(0,G.jsx)(`h3`,{children:`Decision`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use a decision model.`}),(0,G.jsx)(_a,{code:Wy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-decision-audio`,children:[(0,G.jsx)(`h3`,{children:`Decision (Audio)`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to evaluate audio with an LFM3-d1-omni decision model.`}),(0,G.jsx)(_a,{code:Gy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-decision-image`,children:[(0,G.jsx)(`h3`,{children:`Decision (Image)`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use an image with a vision-capable Clef decision model.`}),(0,G.jsx)(_a,{code:Ky,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-embedding`,children:[(0,G.jsx)(`h3`,{children:`Embedding`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use an embedding model.`}),(0,G.jsx)(_a,{code:qy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-grammar`,children:[(0,G.jsx)(`h3`,{children:`Grammar`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows how to use GBNF grammars to constrain model output.`}),(0,G.jsx)(_a,{code:Jy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-imc-storage`,children:[(0,G.jsx)(`h3`,{children:`Imc-Storage`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example supplies an IMC store, saves a conversation, and continues it`}),(0,G.jsx)(_a,{code:Yy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina`,children:[(0,G.jsx)(`h3`,{children:`Malina`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to generate an image with the Malina SDK`}),(0,G.jsx)(_a,{code:Xy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-adetailer`,children:[(0,G.jsx)(`h3`,{children:`Malina-Adetailer`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example detects and refines faces using ADetailer.`}),(0,G.jsx)(_a,{code:Zy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-animatediff`,children:[(0,G.jsx)(`h3`,{children:`Malina-Animatediff`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example generates an AnimateDiff video and writes a Motion-JPEG AVI.`}),(0,G.jsx)(_a,{code:Qy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-controlnet`,children:[(0,G.jsx)(`h3`,{children:`Malina-Controlnet`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example generates an image using Canny ControlNet conditioning.`}),(0,G.jsx)(_a,{code:$y,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-img2img`,children:[(0,G.jsx)(`h3`,{children:`Malina-Img2img`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to transform an existing image with the Malina`}),(0,G.jsx)(_a,{code:eb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-s2v`,children:[(0,G.jsx)(`h3`,{children:`Malina-S2v`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example generates a Wan2.2 S2V video from a source image and a WAV`}),(0,G.jsx)(_a,{code:tb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-sd-encode`,children:[(0,G.jsx)(`h3`,{children:`Malina-Sd-Encode`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to encode PNG and JPEG frames into a Motion-JPEG`}),(0,G.jsx)(_a,{code:nb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-system`,children:[(0,G.jsx)(`h3`,{children:`Malina-System`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example prints Malina and stable-diffusion.cpp system information.`}),(0,G.jsx)(_a,{code:rb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-upscale`,children:[(0,G.jsx)(`h3`,{children:`Malina-Upscale`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example enlarges a PNG or JPEG using Real-ESRGAN.`}),(0,G.jsx)(_a,{code:ib,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-pool`,children:[(0,G.jsx)(`h3`,{children:`Pool`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use the pool package to manage multiple`}),(0,G.jsx)(_a,{code:ab,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-question`,children:[(0,G.jsx)(`h3`,{children:`Question`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you a basic program of using Kronk to ask a model a question.`}),(0,G.jsx)(_a,{code:ob,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-rag`,children:[(0,G.jsx)(`h3`,{children:`Rag`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you a complete RAG application using DuckDB as an embedding`}),(0,G.jsx)(_a,{code:sb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-rerank`,children:[(0,G.jsx)(`h3`,{children:`Rerank`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use a reranker model.`}),(0,G.jsx)(_a,{code:cb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-response`,children:[(0,G.jsx)(`h3`,{children:`Response`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple chat application against an`}),(0,G.jsx)(_a,{code:lb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-speech`,children:[(0,G.jsx)(`h3`,{children:`Speech`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to generate speech with Kronk.`}),(0,G.jsx)(_a,{code:ub,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-vision`,children:[(0,G.jsx)(`h3`,{children:`Vision`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to execute a simple prompt against a vision model.`}),(0,G.jsx)(_a,{code:db,language:`go`})]})]}),(0,G.jsx)(`nav`,{className:`doc-sidebar`,children:(0,G.jsx)(`div`,{className:`doc-sidebar-content`,children:(0,G.jsxs)(`div`,{className:`doc-index-section`,children:[(0,G.jsx)(`span`,{className:`doc-index-header`,children:`Examples`}),(0,G.jsxs)(`ul`,{children:[(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-agent`,children:`Agent`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-audio`,children:`Audio`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-bucky`,children:`Bucky`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-bucky-diar`,children:`Bucky-Diar`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-bucky-stream`,children:`Bucky-Stream`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-chat`,children:`Chat`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-concurrency`,children:`Concurrency`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-decision`,children:`Decision`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-decision-audio`,children:`Decision (Audio)`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-decision-image`,children:`Decision (Image)`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-embedding`,children:`Embedding`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-grammar`,children:`Grammar`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-imc-storage`,children:`Imc-Storage`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina`,children:`Malina`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-adetailer`,children:`Malina-Adetailer`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-animatediff`,children:`Malina-Animatediff`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-controlnet`,children:`Malina-Controlnet`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-img2img`,children:`Malina-Img2img`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-s2v`,children:`Malina-S2v`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-sd-encode`,children:`Malina-Sd-Encode`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-system`,children:`Malina-System`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-upscale`,children:`Malina-Upscale`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-pool`,children:`Pool`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-question`,children:`Question`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-rag`,children:`Rag`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-rerank`,children:`Rerank`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-response`,children:`Response`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-speech`,children:`Speech`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-vision`,children:`Vision`})})]})]})})})]})]})}function pb(){let{"*":e=``}=ot(),t=e?`kronk ${e}`:`kronk`,n=Yi.find(e=>e.path===t),r=Yi.filter(n=>n.path===t||e&&n.path.startsWith(`${t} `)),i=e=>e===t?`usage`:`cmd-${e.slice(t.length+1).replaceAll(` `,`-`)}`;return n?(0,G.jsxs)(`div`,{children:[(0,G.jsxs)(`div`,{className:`page-header`,children:[(0,G.jsx)(`h2`,{children:n.path}),(0,G.jsx)(`p`,{children:n.short})]}),(0,G.jsxs)(`p`,{className:`doc-description`,children:[`Generated from the CLI command definitions. Defaults below are flag defaults; environment variables and server configuration may supply effective values. See the `,(0,G.jsx)(hn,{to:`/docs/manual`,children:`manual`}),` for operational workflows and environment settings.`]}),(0,G.jsxs)(`div`,{className:`doc-layout`,children:[(0,G.jsxs)(`div`,{className:`doc-content`,children:[!e&&(0,G.jsxs)(`div`,{className:`card`,children:[(0,G.jsx)(`h3`,{children:`Commands`}),(0,G.jsx)(`ul`,{children:Yi.filter(e=>e.path===`kronk ${e.name}`).map(e=>(0,G.jsxs)(`li`,{children:[(0,G.jsx)(hn,{to:`/docs/cli/${e.name}`,children:e.name}),` — `,e.short]},e.path))})]}),r.map(e=>(0,G.jsxs)(`div`,{className:`card`,id:i(e.path),children:[(0,G.jsx)(`h3`,{children:e.path}),(0,G.jsx)(`p`,{className:`doc-description`,style:{whiteSpace:`pre-wrap`},children:e.description||e.short}),(0,G.jsx)(`h4`,{children:`Usage`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:e.usage})}),e.example&&(0,G.jsxs)(G.Fragment,{children:[(0,G.jsx)(`h4`,{children:`Examples`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:e.example})})]}),e.flags.length>0&&(0,G.jsxs)(G.Fragment,{children:[(0,G.jsx)(`h4`,{children:`Flags`}),(0,G.jsx)(`div`,{className:`table-container`,tabIndex:0,role:`region`,"aria-label":`${e.path} flags`,children:(0,G.jsxs)(`table`,{className:`flags-table`,style:{minWidth:560},children:[(0,G.jsx)(`thead`,{children:(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`th`,{children:`Flag`}),(0,G.jsx)(`th`,{children:`Type`}),(0,G.jsx)(`th`,{children:`Default`}),(0,G.jsx)(`th`,{children:`Description`})]})}),(0,G.jsx)(`tbody`,{children:e.flags.map(e=>(0,G.jsxs)(`tr`,{children:[(0,G.jsxs)(`td`,{children:[(0,G.jsxs)(`code`,{style:{whiteSpace:`nowrap`},children:[e.shorthand?`-${e.shorthand}, `:``,`--`,e.name]}),e.inherited&&(0,G.jsx)(`small`,{children:` (inherited)`})]}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:e.type})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:e.default===``?`""`:e.default})}),(0,G.jsx)(`td`,{children:e.usage})]},e.name))})]})})]})]},e.path))]}),(0,G.jsx)(`nav`,{className:`doc-sidebar`,"aria-label":`CLI command index`,children:(0,G.jsx)(`div`,{className:`doc-sidebar-content`,children:r.map(e=>(0,G.jsx)(`div`,{className:`doc-index-section`,children:(0,G.jsx)(`a`,{href:`#${i(e.path)}`,className:`doc-index-header`,children:e.path})},e.path))})})]})]}):(0,G.jsxs)(`div`,{className:`card`,children:[(0,G.jsx)(`h2`,{children:`Command not found`}),(0,G.jsx)(hn,{to:`/docs/cli`,children:`CLI reference`})]})}function mb(){return(0,G.jsxs)(`div`,{children:[(0,G.jsxs)(`div`,{className:`page-header`,children:[(0,G.jsx)(`h2`,{children:`Chat Completions API`}),(0,G.jsx)(`p`,{children:`Generate chat completions using language models. Compatible with the OpenAI Chat Completions API.`})]}),(0,G.jsxs)(`div`,{className:`doc-layout`,children:[(0,G.jsxs)(`div`,{className:`doc-content`,children:[(0,G.jsxs)(`div`,{className:`card`,id:`overview`,children:[(0,G.jsx)(`h3`,{children:`Overview`}),(0,G.jsxs)(`p`,{children:[`All endpoints are prefixed with `,(0,G.jsx)(`code`,{children:`/v1`}),`. Base URL: `,(0,G.jsx)(`code`,{children:`http://localhost:11435`})]}),(0,G.jsx)(`h4`,{children:`Authentication`}),(0,G.jsx)(`p`,{children:`When authentication is enabled, include the token in the Authorization header:`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`Authorization: Bearer YOUR_TOKEN`})})]}),(0,G.jsxs)(`div`,{className:`card`,id:`chat-completions`,children:[(0,G.jsx)(`h3`,{children:`Chat Completions`}),(0,G.jsx)(`p`,{children:`Create chat completions with language models.`}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`chat-completions-post--chat-completions`,children:[(0,G.jsxs)(`h4`,{children:[(0,G.jsx)(`span`,{className:`method-post`,children:`POST`}),` /chat/completions`]}),(0,G.jsx)(`p`,{className:`doc-description`,children:`Create a chat completion. Supports streaming responses.`}),(0,G.jsxs)(`p`,{children:[(0,G.jsx)(`strong`,{children:`Authentication:`}),` Required when auth is enabled. Token must have 'chat-completions' endpoint access.`]}),(0,G.jsx)(`h5`,{children:`Headers`}),(0,G.jsxs)(`table`,{className:`flags-table`,children:[(0,G.jsx)(`thead`,{children:(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`th`,{children:`Header`}),(0,G.jsx)(`th`,{children:`Required`}),(0,G.jsx)(`th`,{children:`Description`})]})}),(0,G.jsxs)(`tbody`,{children:[(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`Authorization`})}),(0,G.jsx)(`td`,{children:`Yes`}),(0,G.jsx)(`td`,{children:`Bearer token for authentication`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`Content-Type`})}),(0,G.jsx)(`td`,{children:`Yes`}),(0,G.jsx)(`td`,{children:`Must be application/json`})]})]})]}),(0,G.jsx)(`h5`,{children:`Request Body`}),(0,G.jsx)(`p`,{children:(0,G.jsx)(`code`,{children:`application/json`})}),(0,G.jsxs)(`table`,{className:`flags-table`,children:[(0,G.jsx)(`thead`,{children:(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`th`,{children:`Field`}),(0,G.jsx)(`th`,{children:`Type`}),(0,G.jsx)(`th`,{children:`Required`}),(0,G.jsx)(`th`,{children:`Description`})]})}),(0,G.jsxs)(`tbody`,{children:[(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`model`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`string`})}),(0,G.jsx)(`td`,{children:`Yes`}),(0,G.jsx)(`td`,{children:`Model ID to use for completion (e.g., 'qwen3-8b-q8_0')`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`messages`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`array`})}),(0,G.jsx)(`td`,{children:`Yes`}),(0,G.jsx)(`td`,{children:`Array of message objects. See Message Formats section below for supported formats.`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`stream`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`boolean`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Enable streaming responses (default: false)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`tools`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`array`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Array of tool definitions for function calling. See Tool Definitions section below.`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`tool_choice`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`string`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Use auto or the exact name of a declared function tool`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`temperature`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Controls randomness of output by rescaling probability distribution`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`top_k`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Limits token pool to K most probable tokens`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`top_p`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Nucleus sampling - selects tokens whose cumulative probability exceeds threshold`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`min_p`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Dynamic sampling threshold balancing coherence and diversity`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`max_tokens`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Legacy maximum output-token field`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`max_completion_tokens`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Maximum output tokens; takes precedence over max_tokens`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`repeat_penalty`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Penalty for repeated tokens to reduce repetitive text`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`repeat_last_n`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Number of recent tokens to consider for repetition penalty`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`dry_multiplier`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`DRY sampler multiplier for n-gram repetition penalty (0 = disabled)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`dry_base`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Base for exponential penalty growth in DRY`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`dry_allowed_length`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Minimum n-gram length before DRY applies`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`dry_penalty_last_n`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Number of recent tokens DRY considers (0 = full context)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`xtc_probability`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`XTC probability for extreme token culling (0 = disabled)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`xtc_threshold`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Probability threshold for XTC culling`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`xtc_min_keep`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`uint32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Minimum tokens to keep after XTC culling`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`enable_thinking`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`string`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Enable model thinking/reasoning for non-GPT models`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`reasoning_effort`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`string`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Reasoning level for GPT models: none, minimal, low, medium, high`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`stream_options`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`object`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Set include_usage to true to send a final usage-only chunk with an empty choices array (default: false)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`logprobs`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`bool`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Return log probabilities of output tokens`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`top_logprobs`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Number of most likely tokens to return at each position (0-5)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`stream`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`bool`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Stream response as server-sent events (SSE)`})]})]})]}),(0,G.jsx)(`h5`,{children:`Response`}),(0,G.jsxs)(`p`,{children:[`Returns a chat completion object, or streams Server-Sent Events if stream=true. Reaching the output limit sets `,(0,G.jsx)(`code`,{children:`finish_reason`}),` to `,(0,G.jsx)(`code`,{children:`length`}),`. Custom `,(0,G.jsx)(`code`,{children:`stop`}),` strings are not supported and are rejected.`]}),(0,G.jsx)(`h5`,{children:`Example`}),(0,G.jsx)(`p`,{className:`example-label`,children:(0,G.jsx)(`strong`,{children:`Simple text message:`})}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`curl -X POST http://localhost:11435/v1/chat/completions \\
+`;function fb(){let e=tt();return(0,_.useEffect)(()=>{let t=document.querySelector(`.main-content`);if(!t)return;if(!e.hash){t.scrollTo({top:0});return}let n=e.hash.slice(1);requestAnimationFrame(()=>{let e=document.getElementById(n);if(!e)return;let r=t.getBoundingClientRect(),i=e.getBoundingClientRect().top-r.top+t.scrollTop;t.scrollTo({top:i-20,behavior:`smooth`})})},[e.key,e.hash]),(0,G.jsxs)(`div`,{children:[(0,G.jsxs)(`div`,{className:`page-header`,children:[(0,G.jsx)(`h2`,{children:`SDK Examples`}),(0,G.jsx)(`p`,{children:`Complete working examples demonstrating how to use the Kronk SDK`})]}),(0,G.jsxs)(`div`,{className:`doc-layout`,children:[(0,G.jsxs)(`div`,{className:`doc-content`,children:[(0,G.jsxs)(`div`,{className:`card`,id:`example-agent`,children:[(0,G.jsx)(`h3`,{children:`Agent`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple agent application against an`}),(0,G.jsx)(_a,{code:Ly,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-audio`,children:[(0,G.jsx)(`h3`,{children:`Audio`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to execute a simple prompt against an audio model.`}),(0,G.jsx)(_a,{code:Ry,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-bucky`,children:[(0,G.jsx)(`h3`,{children:`Bucky`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to transcribe an audio file with the`}),(0,G.jsx)(_a,{code:zy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-bucky-diar`,children:[(0,G.jsx)(`h3`,{children:`Bucky-Diar`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to perform channel-separated speaker`}),(0,G.jsx)(_a,{code:By,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-bucky-stream`,children:[(0,G.jsx)(`h3`,{children:`Bucky-Stream`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example is a LIVE MICROPHONE transcription demo for the bucky`}),(0,G.jsx)(_a,{code:Vy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-chat`,children:[(0,G.jsx)(`h3`,{children:`Chat`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example provides a terminal chat with tools, images, and saved IMC conversations.`}),(0,G.jsx)(_a,{code:Hy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-concurrency`,children:[(0,G.jsx)(`h3`,{children:`Concurrency`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to leverage Kronk's batch processing by running`}),(0,G.jsx)(_a,{code:Uy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-decision`,children:[(0,G.jsx)(`h3`,{children:`Decision`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use a decision model.`}),(0,G.jsx)(_a,{code:Wy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-decision-audio`,children:[(0,G.jsx)(`h3`,{children:`Decision (Audio)`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to evaluate audio with an LFM3-d1-omni decision model.`}),(0,G.jsx)(_a,{code:Gy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-decision-image`,children:[(0,G.jsx)(`h3`,{children:`Decision (Image)`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use an image with a vision-capable Clef decision model.`}),(0,G.jsx)(_a,{code:Ky,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-embedding`,children:[(0,G.jsx)(`h3`,{children:`Embedding`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use an embedding model.`}),(0,G.jsx)(_a,{code:qy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-grammar`,children:[(0,G.jsx)(`h3`,{children:`Grammar`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows how to use GBNF grammars to constrain model output.`}),(0,G.jsx)(_a,{code:Jy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-imc-storage`,children:[(0,G.jsx)(`h3`,{children:`Imc-Storage`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example supplies an IMC store, saves a conversation, and continues it`}),(0,G.jsx)(_a,{code:Yy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina`,children:[(0,G.jsx)(`h3`,{children:`Malina`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to generate an image with the Malina SDK`}),(0,G.jsx)(_a,{code:Xy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-adetailer`,children:[(0,G.jsx)(`h3`,{children:`Malina-Adetailer`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example detects and refines faces using ADetailer.`}),(0,G.jsx)(_a,{code:Zy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-animatediff`,children:[(0,G.jsx)(`h3`,{children:`Malina-Animatediff`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example generates an AnimateDiff video and writes a Motion-JPEG AVI.`}),(0,G.jsx)(_a,{code:Qy,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-controlnet`,children:[(0,G.jsx)(`h3`,{children:`Malina-Controlnet`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example generates an image using Canny ControlNet conditioning.`}),(0,G.jsx)(_a,{code:$y,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-img2img`,children:[(0,G.jsx)(`h3`,{children:`Malina-Img2img`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to transform an existing image with the Malina`}),(0,G.jsx)(_a,{code:eb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-s2v`,children:[(0,G.jsx)(`h3`,{children:`Malina-S2v`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example generates a Wan2.2 S2V video from a source image and a WAV`}),(0,G.jsx)(_a,{code:tb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-sd-encode`,children:[(0,G.jsx)(`h3`,{children:`Malina-Sd-Encode`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to encode PNG and JPEG frames into a Motion-JPEG`}),(0,G.jsx)(_a,{code:nb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-system`,children:[(0,G.jsx)(`h3`,{children:`Malina-System`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example prints Malina and stable-diffusion.cpp system information.`}),(0,G.jsx)(_a,{code:rb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-malina-upscale`,children:[(0,G.jsx)(`h3`,{children:`Malina-Upscale`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example enlarges a PNG or JPEG using Real-ESRGAN.`}),(0,G.jsx)(_a,{code:ib,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-pool`,children:[(0,G.jsx)(`h3`,{children:`Pool`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use the pool package to manage multiple`}),(0,G.jsx)(_a,{code:ab,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-question`,children:[(0,G.jsx)(`h3`,{children:`Question`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you a basic program of using Kronk to ask a model a question.`}),(0,G.jsx)(_a,{code:ob,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-rag`,children:[(0,G.jsx)(`h3`,{children:`Rag`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you a complete RAG application using DuckDB as an embedding`}),(0,G.jsx)(_a,{code:sb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-rerank`,children:[(0,G.jsx)(`h3`,{children:`Rerank`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to use a reranker model.`}),(0,G.jsx)(_a,{code:cb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-response`,children:[(0,G.jsx)(`h3`,{children:`Response`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to create a simple chat application against an`}),(0,G.jsx)(_a,{code:lb,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-speech`,children:[(0,G.jsx)(`h3`,{children:`Speech`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to generate speech with Kronk.`}),(0,G.jsx)(_a,{code:ub,language:`go`})]}),(0,G.jsxs)(`div`,{className:`card`,id:`example-vision`,children:[(0,G.jsx)(`h3`,{children:`Vision`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`This example shows you how to execute a simple prompt against a vision model.`}),(0,G.jsx)(_a,{code:db,language:`go`})]})]}),(0,G.jsx)(`nav`,{className:`doc-sidebar`,children:(0,G.jsx)(`div`,{className:`doc-sidebar-content`,children:(0,G.jsxs)(`div`,{className:`doc-index-section`,children:[(0,G.jsx)(`span`,{className:`doc-index-header`,children:`Examples`}),(0,G.jsxs)(`ul`,{children:[(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-agent`,children:`Agent`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-audio`,children:`Audio`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-bucky`,children:`Bucky`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-bucky-diar`,children:`Bucky-Diar`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-bucky-stream`,children:`Bucky-Stream`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-chat`,children:`Chat`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-concurrency`,children:`Concurrency`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-decision`,children:`Decision`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-decision-audio`,children:`Decision (Audio)`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-decision-image`,children:`Decision (Image)`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-embedding`,children:`Embedding`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-grammar`,children:`Grammar`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-imc-storage`,children:`Imc-Storage`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina`,children:`Malina`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-adetailer`,children:`Malina-Adetailer`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-animatediff`,children:`Malina-Animatediff`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-controlnet`,children:`Malina-Controlnet`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-img2img`,children:`Malina-Img2img`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-s2v`,children:`Malina-S2v`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-sd-encode`,children:`Malina-Sd-Encode`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-system`,children:`Malina-System`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-malina-upscale`,children:`Malina-Upscale`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-pool`,children:`Pool`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-question`,children:`Question`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-rag`,children:`Rag`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-rerank`,children:`Rerank`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-response`,children:`Response`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-speech`,children:`Speech`})}),(0,G.jsx)(`li`,{children:(0,G.jsx)(`a`,{href:`#example-vision`,children:`Vision`})})]})]})})})]})]})}function pb(){let{"*":e=``}=ot(),t=e?`kronk ${e}`:`kronk`,n=Yi.find(e=>e.path===t),r=Yi.filter(n=>n.path===t||e&&n.path.startsWith(`${t} `)),i=e=>e===t?`usage`:`cmd-${e.slice(t.length+1).replaceAll(` `,`-`)}`;return n?(0,G.jsxs)(`div`,{children:[(0,G.jsxs)(`div`,{className:`page-header`,children:[(0,G.jsx)(`h2`,{children:n.path}),(0,G.jsx)(`p`,{children:n.short})]}),(0,G.jsxs)(`p`,{className:`doc-description`,children:[`Generated from the CLI command definitions. Defaults below are flag defaults; environment variables and server configuration may supply effective values. See the `,(0,G.jsx)(hn,{to:`/docs/manual`,children:`manual`}),` for operational workflows and environment settings.`]}),(0,G.jsxs)(`div`,{className:`doc-layout`,children:[(0,G.jsxs)(`div`,{className:`doc-content`,children:[!e&&(0,G.jsxs)(`div`,{className:`card`,children:[(0,G.jsx)(`h3`,{children:`Commands`}),(0,G.jsx)(`ul`,{children:Yi.filter(e=>e.path===`kronk ${e.name}`).map(e=>(0,G.jsxs)(`li`,{children:[(0,G.jsx)(hn,{to:`/docs/cli/${e.name}`,children:e.name}),` — `,e.short]},e.path))})]}),r.map(e=>(0,G.jsxs)(`div`,{className:`card`,id:i(e.path),children:[(0,G.jsx)(`h3`,{children:e.path}),(0,G.jsx)(`p`,{className:`doc-description`,style:{whiteSpace:`pre-wrap`},children:e.description||e.short}),(0,G.jsx)(`h4`,{children:`Usage`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:e.usage})}),e.example&&(0,G.jsxs)(G.Fragment,{children:[(0,G.jsx)(`h4`,{children:`Examples`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:e.example})})]}),e.flags.length>0&&(0,G.jsxs)(G.Fragment,{children:[(0,G.jsx)(`h4`,{children:`Flags`}),(0,G.jsx)(`div`,{className:`table-container`,tabIndex:0,role:`region`,"aria-label":`${e.path} flags`,children:(0,G.jsxs)(`table`,{className:`flags-table`,style:{minWidth:560},children:[(0,G.jsx)(`thead`,{children:(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`th`,{children:`Flag`}),(0,G.jsx)(`th`,{children:`Type`}),(0,G.jsx)(`th`,{children:`Default`}),(0,G.jsx)(`th`,{children:`Description`})]})}),(0,G.jsx)(`tbody`,{children:e.flags.map(e=>(0,G.jsxs)(`tr`,{children:[(0,G.jsxs)(`td`,{children:[(0,G.jsxs)(`code`,{style:{whiteSpace:`nowrap`},children:[e.shorthand?`-${e.shorthand}, `:``,`--`,e.name]}),e.inherited&&(0,G.jsx)(`small`,{children:` (inherited)`})]}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:e.type})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:e.default===``?`""`:e.default})}),(0,G.jsx)(`td`,{children:e.usage})]},e.name))})]})})]})]},e.path))]}),(0,G.jsx)(`nav`,{className:`doc-sidebar`,"aria-label":`CLI command index`,children:(0,G.jsx)(`div`,{className:`doc-sidebar-content`,children:r.map(e=>(0,G.jsx)(`div`,{className:`doc-index-section`,children:(0,G.jsx)(`a`,{href:`#${i(e.path)}`,className:`doc-index-header`,children:e.path})},e.path))})})]})]}):(0,G.jsxs)(`div`,{className:`card`,children:[(0,G.jsx)(`h2`,{children:`Command not found`}),(0,G.jsx)(hn,{to:`/docs/cli`,children:`CLI reference`})]})}function mb(){return(0,G.jsxs)(`div`,{children:[(0,G.jsxs)(`div`,{className:`page-header`,children:[(0,G.jsx)(`h2`,{children:`Chat Completions API`}),(0,G.jsx)(`p`,{children:`Generate chat completions using language models. Compatible with the OpenAI Chat Completions API.`})]}),(0,G.jsxs)(`div`,{className:`doc-layout`,children:[(0,G.jsxs)(`div`,{className:`doc-content`,children:[(0,G.jsxs)(`div`,{className:`card`,id:`overview`,children:[(0,G.jsx)(`h3`,{children:`Overview`}),(0,G.jsxs)(`p`,{children:[`All endpoints are prefixed with `,(0,G.jsx)(`code`,{children:`/v1`}),`. Base URL: `,(0,G.jsx)(`code`,{children:`http://localhost:11435`})]}),(0,G.jsx)(`h4`,{children:`Authentication`}),(0,G.jsx)(`p`,{children:`When authentication is enabled, include the token in the Authorization header:`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`Authorization: Bearer YOUR_TOKEN`})})]}),(0,G.jsxs)(`div`,{className:`card`,id:`chat-completions`,children:[(0,G.jsx)(`h3`,{children:`Chat Completions`}),(0,G.jsx)(`p`,{children:`Create chat completions with language models.`}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`chat-completions-post--chat-completions`,children:[(0,G.jsxs)(`h4`,{children:[(0,G.jsx)(`span`,{className:`method-post`,children:`POST`}),` /chat/completions`]}),(0,G.jsx)(`p`,{className:`doc-description`,children:`Create a chat completion. Supports streaming responses.`}),(0,G.jsxs)(`p`,{children:[(0,G.jsx)(`strong`,{children:`Authentication:`}),` Required when auth is enabled. Token must have 'chat-completions' endpoint access.`]}),(0,G.jsx)(`h5`,{children:`Headers`}),(0,G.jsxs)(`table`,{className:`flags-table`,children:[(0,G.jsx)(`thead`,{children:(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`th`,{children:`Header`}),(0,G.jsx)(`th`,{children:`Required`}),(0,G.jsx)(`th`,{children:`Description`})]})}),(0,G.jsxs)(`tbody`,{children:[(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`Authorization`})}),(0,G.jsx)(`td`,{children:`Yes`}),(0,G.jsx)(`td`,{children:`Bearer token for authentication`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`Content-Type`})}),(0,G.jsx)(`td`,{children:`Yes`}),(0,G.jsx)(`td`,{children:`Must be application/json`})]})]})]}),(0,G.jsx)(`h5`,{children:`Request Body`}),(0,G.jsx)(`p`,{children:(0,G.jsx)(`code`,{children:`application/json`})}),(0,G.jsxs)(`table`,{className:`flags-table`,children:[(0,G.jsx)(`thead`,{children:(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`th`,{children:`Field`}),(0,G.jsx)(`th`,{children:`Type`}),(0,G.jsx)(`th`,{children:`Required`}),(0,G.jsx)(`th`,{children:`Description`})]})}),(0,G.jsxs)(`tbody`,{children:[(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`model`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`string`})}),(0,G.jsx)(`td`,{children:`Yes`}),(0,G.jsx)(`td`,{children:`Model ID to use for completion (e.g., 'qwen3-8b-q8_0')`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`messages`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`array`})}),(0,G.jsx)(`td`,{children:`Yes`}),(0,G.jsx)(`td`,{children:`Array of message objects. See Message Formats section below for supported formats.`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`stream`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`boolean`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Enable streaming responses (default: false)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`tools`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`array`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Array of tool definitions for function calling. See Tool Definitions section below.`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`tool_choice`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`string`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Use auto or the exact name of a declared function tool`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`temperature`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Controls randomness of output by rescaling probability distribution`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`top_k`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Limits token pool to K most probable tokens`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`top_p`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Nucleus sampling - selects tokens whose cumulative probability exceeds threshold`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`min_p`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Dynamic sampling threshold balancing coherence and diversity`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`max_tokens`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Legacy maximum output-token field`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`max_completion_tokens`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Maximum output tokens; takes precedence over max_tokens`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`repeat_penalty`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Penalty for repeated tokens to reduce repetitive text`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`repeat_last_n`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Number of recent tokens to consider for repetition penalty`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`dry_multiplier`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`DRY sampler multiplier for n-gram repetition penalty (0 = disabled)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`dry_base`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Base for exponential penalty growth in DRY`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`dry_allowed_length`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Minimum n-gram length before DRY applies`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`dry_penalty_last_n`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Number of recent tokens DRY considers (0 = full context)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`xtc_probability`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`XTC probability for extreme token culling (0 = disabled)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`xtc_threshold`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`float32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Probability threshold for XTC culling`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`xtc_min_keep`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`uint32`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Minimum tokens to keep after XTC culling`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`enable_thinking`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`string`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Enable model thinking/reasoning for non-GPT models`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`reasoning_effort`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`string`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Reasoning level for GPT models: none, minimal, low, medium, high`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`stream_options`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`object`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Set include_usage to true to send a final usage-only chunk with an empty choices array (default: false)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`logprobs`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`bool`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Return log probabilities of output tokens`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`top_logprobs`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`int`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Number of most likely tokens to return at each position (0-5)`})]}),(0,G.jsxs)(`tr`,{children:[(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`stream`})}),(0,G.jsx)(`td`,{children:(0,G.jsx)(`code`,{children:`bool`})}),(0,G.jsx)(`td`,{children:`No`}),(0,G.jsx)(`td`,{children:`Stream response as server-sent events (SSE)`})]})]})]}),(0,G.jsx)(`h5`,{children:`Response`}),(0,G.jsxs)(`p`,{children:[`Returns a chat completion object, or streams Server-Sent Events if stream=true. Reaching the output limit sets `,(0,G.jsx)(`code`,{children:`finish_reason`}),` to `,(0,G.jsx)(`code`,{children:`length`}),`. Custom `,(0,G.jsx)(`code`,{children:`stop`}),` strings are not supported and are rejected.`]}),(0,G.jsx)(`h5`,{children:`Example`}),(0,G.jsx)(`p`,{className:`example-label`,children:(0,G.jsx)(`strong`,{children:`Simple text message:`})}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`curl -X POST http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
