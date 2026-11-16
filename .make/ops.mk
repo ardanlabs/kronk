@@ -1,17 +1,23 @@
 ##@ Operations and observability
 
 # ==============================================================================
-# Development dependencies (Docling and Temporal only)
+# Development dependencies (Docling and PostgreSQL-backed Temporal)
+# Reuse container credentials unless explicitly supplied in the environment.
+# First startup or deleted containers require exporting the original passwords.
+# Empty Temporal schemas are initialized once; normal starts never upgrade them.
+
+tuning-up: export MOXIE_POSTGRES_PASSWORD ?= $(or $(shell docker inspect moxie-postgres --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^POSTGRES_PASSWORD=//p'),$(error Export MOXIE_POSTGRES_PASSWORD before first startup or after container removal))
+tuning-up: export TEMPORAL_DB_PASSWORD ?= $(or $(shell docker inspect moxie-temporal --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^POSTGRES_PWD=//p'),$(error Export TEMPORAL_DB_PASSWORD before first startup or after container removal))
 
 tuning-up:
-	docker compose -f zarf/docker/compose.yaml up -d --no-deps docling temporal
+	docker compose -f zarf/docker/compose.yaml up -d --wait docling temporal && docker compose -f zarf/docker/compose.yaml run --rm --no-deps moxie-schema && docker compose -f zarf/docker/compose.yaml run --rm --no-deps temporal-namespace
 
-# Stop without removing persisted Temporal history or Docling scratch files.
+# Stop without removing PostgreSQL history or Docling scratch files.
 tuning-down:
-	docker compose -f zarf/docker/compose.yaml stop docling temporal
+	docker compose -f zarf/docker/compose.yaml stop docling temporal postgres
 
 tuning-logs:
-	docker compose -f zarf/docker/compose.yaml logs -f docling temporal
+	docker compose -f zarf/docker/compose.yaml logs -f docling temporal postgres
 
 # ==============================================================================
 # Running OpenWebUI

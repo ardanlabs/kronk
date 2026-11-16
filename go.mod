@@ -14,6 +14,7 @@ require (
 	github.com/arl/statsviz v0.8.2
 	github.com/charmbracelet/x/ansi v0.11.10
 	github.com/dgraph-io/badger/v4 v4.9.6
+	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gomlx/compute v0.1.15
 	github.com/gomlx/go-xla v0.4.15
@@ -23,6 +24,7 @@ require (
 	github.com/hashicorp/go-version v1.9.0
 	github.com/hybridgroup/yzma v1.33.1-0.20261119115438-ba9c7e926b5d
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
+	github.com/jackc/pgx/v5 v5.7.6
 	github.com/jupiterrider/ffi v0.8.0
 	github.com/maypok86/otter/v2 v2.4.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
@@ -39,7 +41,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.temporal.io/api v1.63.5
-	go.temporal.io/sdk v1.49.0
+	go.temporal.io/sdk v1.50.0
 	go.yaml.in/yaml/v2 v2.4.5
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/image v0.48.0
@@ -126,6 +128,9 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.4.0 // indirect

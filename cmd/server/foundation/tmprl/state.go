@@ -38,43 +38,56 @@ func (s Status) Terminal() bool {
 type JobInput[R any] struct {
 	Job     *Job `json:"job,omitzero"`
 	Request R    `json:"request"`
+	// ControlStage opts new executions into ordered controls for this stage.
+	// Empty preserves the legacy signal protocol and workflow history.
+	ControlStage string `json:"control_stage,omitzero"`
 }
 
 // Run contains durable state. R and A are application-owned requests and artifacts.
 // These JSON fields are also the workflow, memo, and polling wire contract.
 type Run[R, A any] struct {
 	Execution
-	Definition          *Job         `json:"definition,omitzero"`
-	Request             R            `json:"request"`
-	Status              Status       `json:"status"`
-	Stage               StageName    `json:"stage,omitzero"`
-	Step                string       `json:"step,omitzero"`
-	Artifacts           A            `json:"artifacts"`
-	Checkpoint          *Checkpoint  `json:"checkpoint,omitzero"`
-	Decisions           []Decision   `json:"decisions,omitzero"`
-	Progress            *Progress    `json:"progress,omitzero"`
-	StartedAt           time.Time    `json:"started_at"`
-	ClosedAt            time.Time    `json:"closed_at,omitzero"`
-	Error               string       `json:"error,omitzero"`
-	Stages              []StageState `json:"stages,omitzero"`
-	SessionAttempt      int          `json:"session_attempt,omitzero"`
-	WorkerHost          string       `json:"worker_host,omitzero"`
-	ReservationDeadline time.Time    `json:"reservation_deadline,omitzero"`
-	UpdatedAt           time.Time    `json:"updated_at,omitzero"`
-	StateStale          bool         `json:"state_stale,omitzero"`
+	Definition                  *Job         `json:"definition,omitzero"`
+	Request                     R            `json:"request"`
+	Status                      Status       `json:"status"`
+	Stage                       StageName    `json:"stage,omitzero"`
+	Step                        string       `json:"step,omitzero"`
+	Artifacts                   A            `json:"artifacts"`
+	Checkpoint                  *Checkpoint  `json:"checkpoint,omitzero"`
+	Decisions                   []Decision   `json:"decisions,omitzero"`
+	Progress                    *Progress    `json:"progress,omitzero"`
+	StartedAt                   time.Time    `json:"started_at"`
+	ClosedAt                    time.Time    `json:"closed_at,omitzero"`
+	Error                       string       `json:"error,omitzero"`
+	FailureTypes                []string     `json:"failure_types,omitzero"` // Application error types in the failure chain, outermost first.
+	Stages                      []StageState `json:"stages,omitzero"`
+	SessionAttempt              int          `json:"session_attempt,omitzero"`
+	WorkerHost                  string       `json:"worker_host,omitzero"`
+	ReservationDeadline         time.Time    `json:"reservation_deadline,omitzero"`
+	UpdatedAt                   time.Time    `json:"updated_at,omitzero"`
+	StateStale                  bool         `json:"state_stale,omitzero"`
+	ControlStage                string       `json:"control_stage,omitzero"`
+	ControlRevision             int64        `json:"control_revision,omitzero"`
+	ControlAction               string       `json:"control_action,omitzero"`
+	ControlAcknowledgedRevision int64        `json:"control_acknowledged_revision,omitzero"`
+	ControlCheckpoint           string       `json:"control_checkpoint,omitzero"`
 }
 
 // StageState records a stage's total budget and its ordered step diagnostics.
 type StageState struct {
-	Name            StageName   `json:"name"`
-	Status          Status      `json:"status"`
-	Steps           []StepState `json:"steps,omitzero"`
-	Deadline        time.Time   `json:"deadline,omitzero"`
-	Attempt         int32       `json:"attempt,omitzero"`
-	StartedAt       time.Time   `json:"started_at,omitzero"`
-	ClosedAt        time.Time   `json:"closed_at,omitzero"`
-	LastHeartbeatAt time.Time   `json:"last_heartbeat_at,omitzero"`
-	LastError       string      `json:"last_error,omitzero"`
+	Name     StageName   `json:"name"`
+	Status   Status      `json:"status"`
+	Steps    []StepState `json:"steps,omitzero"`
+	Deadline time.Time   `json:"deadline,omitzero"`
+	// ActiveElapsed is the budget consumed by earlier worker reservations when
+	// paused, review, and offline time do not count. Deadline is then the
+	// current reservation's projection of the remaining budget.
+	ActiveElapsed   time.Duration `json:"active_elapsed,omitzero"`
+	Attempt         int32         `json:"attempt,omitzero"`
+	StartedAt       time.Time     `json:"started_at,omitzero"`
+	ClosedAt        time.Time     `json:"closed_at,omitzero"`
+	LastHeartbeatAt time.Time     `json:"last_heartbeat_at,omitzero"`
+	LastError       string        `json:"last_error,omitzero"`
 }
 
 // StepState records committed work and the latest execution diagnostics.
@@ -115,12 +128,14 @@ func (p Progress) Remaining() time.Duration {
 // StepRequest carries a stable idempotency key and the incoming artifact set.
 type StepRequest[R, A any] struct {
 	Execution
-	Key       string     `json:"key"`
-	Stage     string     `json:"stage"`
-	Step      string     `json:"step"`
-	Request   R          `json:"request"`
-	Artifacts A          `json:"artifacts"`
-	Decisions []Decision `json:"decisions,omitzero"`
+	Key              string     `json:"key"`
+	Stage            string     `json:"stage"`
+	Step             string     `json:"step"`
+	Request          R          `json:"request"`
+	Artifacts        A          `json:"artifacts"`
+	Decisions        []Decision `json:"decisions,omitzero"`
+	SafePoints       bool       `json:"safe_points,omitzero"`
+	ResumeCheckpoint string     `json:"resume_checkpoint,omitzero"`
 }
 
 // Checkpoint identifies a required decision after a committed step.

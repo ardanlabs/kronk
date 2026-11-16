@@ -3,19 +3,162 @@ package tmprl_test
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"go.temporal.io/sdk/temporal"
 )
+
+func TestJobsOrderedControls(t *testing.T) {
+	env := newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	handler := tmprl.StepFunc[string, []string](func(ctx context.Context, in tmprl.StepContext[string, []string]) (tmprl.StepResult[[]string], error) {
+		if in.Request.Step == "commit" {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return tmprl.StepResult[[]string]{}, ctx.Err()
+			}
+		}
+		return tmprl.StepResult[[]string]{Artifacts: append(slices.Clone(in.Request.Artifacts), in.Request.Step)}, nil
+	})
+	j, err := tmprl.New(env.Client, tmprl.Config[string, []string]{
+		Names:     tmprl.Names{Workflow: "example.Ordered", Activity: "example.OrderedStep", Memo: "ordered.state", Query: "ordered-query", Control: "ordered-control"},
+		TaskQueue: env.TaskQueue, StorageRoot: t.TempDir(), StorageDirectory: "ordered", Log: env.Log,
+		Steps: map[string]tmprl.StepHandler[string, []string]{"work/commit": handler, "work/finish": handler},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := j.NewWorker()
+	if err := w.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(w.Stop)
+	plan := recoveryPlan()
+	plan.Stages[0].Steps[0].WaitAfter = "review"
+	run, err := j.Submit(ctx, "ordered-"+rand.Text(), tmprl.JobInput[string]{Job: &plan, ControlStage: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	pause := tmprl.ControlRequest{RequestID: "pause-1", Action: "pause"}
+	receipt, err := j.Control(ctx, run.Execution, pause)
+	if err != nil || receipt.Revision != 1 || receipt.ControlRequest != pause {
+		t.Fatalf("pause receipt: %+v %v", receipt, err)
+	}
+	awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool {
+		return s.Status == tmprl.StatusPauseRequested && s.ControlRevision == 1
+	}) // An executing activity has not acknowledged a safe point.
+	resume := tmprl.ControlRequest{RequestID: "resume-1", Action: "resume", ExpectedRevision: 1}
+	if r, err := j.Control(ctx, run.Execution, resume); err != nil || r.Revision != 2 {
+		t.Fatalf("resume: %+v %v", r, err)
+	}
+	if r, err := j.Control(ctx, run.Execution, pause); err != nil || r != receipt {
+		t.Fatalf("old receipt replay: %+v %v", r, err)
+	}
+	for _, request := range []tmprl.ControlRequest{
+		{RequestID: "pause-1", Action: "resume"},
+		{RequestID: "stale-pause", Action: "pause"},
+	} {
+		if _, err := j.Control(ctx, run.Execution, request); !errors.Is(err, tmprl.ErrControlConflict) {
+			t.Fatalf("conflicting request accepted: %+v %v", request, err)
+		}
+	}
+	state := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool {
+		return s.ControlRevision == 2 && s.ControlAction == "resume"
+	})
+	if state.Status != tmprl.StatusRunning {
+		t.Fatalf("receipt replay reapplied an old pause: %+v", state)
+	}
+	results := make(chan error, 2)
+	for _, id := range []string{"tab-a", "tab-b"} {
+		go func() {
+			r, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: id, Action: "pause", ExpectedRevision: 2})
+			if err == nil && r.Revision != 3 {
+				err = fmt.Errorf("revision = %d, want 3", r.Revision)
+			}
+			results <- err
+		}()
+	}
+	accepted, conflicts := 0, 0
+	for range 2 {
+		switch err := <-results; {
+		case err == nil:
+			accepted++
+		case errors.Is(err, tmprl.ErrControlConflict):
+			conflicts++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if accepted != 1 || conflicts != 1 {
+		t.Fatalf("competing commands: %d accepted, %d conflicts", accepted, conflicts)
+	}
+	close(release)
+	state = awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status == tmprl.StatusPaused })
+	w.Stop()
+	replacement := j.NewWorker()
+	if err := replacement.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(replacement.Stop)
+	if r, err := j.Control(ctx, run.Execution, pause); err != nil || r != receipt {
+		t.Fatalf("receipt after worker replacement: %+v %v", r, err)
+	}
+	if r, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: "resume-2", Action: "resume", ExpectedRevision: 3}); err != nil || r.Revision != 4 {
+		t.Fatalf("second cycle: %+v %v", r, err)
+	}
+	state = awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.ControlRevision == 4 && s.Checkpoint != nil })
+	checkpoint := *state.Checkpoint
+	if state.Status != tmprl.StatusWaiting {
+		t.Fatalf("resume bypassed review: %+v", state)
+	}
+	if r, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: "pause-3", Action: "pause", ExpectedRevision: 4}); err != nil || r.Revision != 5 {
+		t.Fatalf("pause before review acceptance: %+v %v", r, err)
+	}
+	if _, err := j.Decide(ctx, run.Execution, tmprl.Decision{CheckpointID: checkpoint.ID, SubmissionID: "review-1"}); err != nil {
+		t.Fatal(err)
+	}
+	state = awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Checkpoint == nil && s.Status == tmprl.StatusPaused })
+	if len(state.Decisions) != 1 || len(state.Artifacts) != 1 {
+		t.Fatalf("review acceptance bypassed pause: %+v", state)
+	}
+	if r, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: "resume-3", Action: "resume", ExpectedRevision: 5}); err != nil || r.Revision != 6 {
+		t.Fatalf("continue after accepted review: %+v %v", r, err)
+	}
+	if completed, err := j.Wait(ctx, run.Execution); err != nil || !slices.Equal(completed.Artifacts, []string{"commit", "finish"}) {
+		t.Fatalf("completion: %+v %v", completed, err)
+	}
+	if r, err := j.Control(ctx, run.Execution, pause); err != nil || r != receipt {
+		t.Fatalf("closed receipt: %+v %v", r, err)
+	}
+	if _, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: "after-close", Action: "pause", ExpectedRevision: 6}); !errors.Is(err, tmprl.ErrControlConflict) {
+		t.Fatalf("closed run accepted a new control: %v", err)
+	}
+}
 
 func awaitCheckpointState(t *testing.T, ctx context.Context, j *tmprl.Jobs[string, []string], e tmprl.Execution, match func(tmprl.Run[string, []string]) bool) tmprl.Run[string, []string] {
 	t.Helper()
@@ -32,6 +175,337 @@ func awaitCheckpointState(t *testing.T, ctx context.Context, j *tmprl.Jobs[strin
 			t.Fatalf("state never matched: %+v: %v", run, ctx.Err())
 		case <-time.After(20 * time.Millisecond):
 		}
+	}
+}
+
+func TestJobsSafePointControls(t *testing.T) {
+	for _, outcome := range []string{"continue", "stop", "missing checkpoint", "changed checkpoint", "retry budget"} {
+		t.Run(outcome, func(t *testing.T) {
+			env := newTestEnvironment(t)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			entered, permit := make(chan int, 4), make(chan struct{})
+			root := t.TempDir()
+			var invocations atomic.Int32
+			handler := tmprl.StepFunc[string, []string](func(ctx context.Context, in tmprl.StepContext[string, []string]) (tmprl.StepResult[[]string], error) {
+				if invocation := invocations.Add(1); outcome == "retry budget" && invocation != 2 {
+					return tmprl.StepResult[[]string]{}, errors.New("controlled retry-budget failure")
+				}
+				var saved []string
+				data, err := in.Workspace.ReadFile("cursor.json")
+				switch {
+				case err == nil:
+					if err := json.Unmarshal(data, &saved); err != nil {
+						return tmprl.StepResult[[]string]{}, err
+					}
+				case !errors.Is(err, os.ErrNotExist):
+					return tmprl.StepResult[[]string]{}, err
+				}
+				for len(saved) < 3 {
+					entered <- len(saved)
+					select {
+					case <-permit:
+					case <-ctx.Done():
+						return tmprl.StepResult[[]string]{}, ctx.Err()
+					}
+					saved = append(saved, fmt.Sprintf("unit-%d", len(saved)))
+					if err := tmprl.WriteJSON(in.Workspace, "cursor.json", saved); err != nil {
+						return tmprl.StepResult[[]string]{}, err
+					}
+					if err := in.SafePoint(ctx, "cursor.json"); err != nil {
+						return tmprl.StepResult[[]string]{}, err
+					}
+				}
+				return tmprl.StepResult[[]string]{Artifacts: saved}, nil
+			})
+			j, err := tmprl.New(env.Client, tmprl.Config[string, []string]{
+				Names:     tmprl.Names{Workflow: "example.SafePoint", Activity: "example.SafePointStep", Memo: "safe.state", Query: "safe-query", Control: "safe-control"},
+				TaskQueue: env.TaskQueue, StorageRoot: root, StorageDirectory: "safe", Log: env.Log,
+				Steps: map[string]tmprl.StepHandler[string, []string]{"work/commit": handler},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := j.NewWorker()
+			if err := w.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(w.Stop)
+			plan := recoveryPlan()
+			plan.Stages[0].Steps = plan.Stages[0].Steps[:1]
+			if outcome == "retry budget" {
+				plan.Stages[0].Steps[0].Retry.MaximumAttempts = 2
+			}
+			run, err := j.Submit(ctx, "safe-"+rand.Text(), tmprl.JobInput[string]{Job: &plan, ControlStage: "work"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for cycle := range 2 {
+				select {
+				case index := <-entered:
+					if index != cycle {
+						t.Fatalf("saved unit repeated: got %d, want %d", index, cycle)
+					}
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				}
+				if _, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: fmt.Sprintf("pause-%d", cycle), Action: "pause", ExpectedRevision: int64(cycle * 2)}); err != nil {
+					t.Fatal(err)
+				}
+				requested := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status == tmprl.StatusPauseRequested })
+				if requested.ControlAcknowledgedRevision == requested.ControlRevision {
+					t.Fatal("in-flight work was incorrectly acknowledged as paused")
+				}
+				permit <- struct{}{}
+				paused := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status == tmprl.StatusPaused })
+				path := filepath.Join(root, "safe", run.RunID, "steps", "work")
+				data, err := os.ReadFile(filepath.Join(path, "cursor.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var saved []string
+				if err := json.Unmarshal(data, &saved); err != nil || len(saved) != cycle+1 || paused.ControlAcknowledgedRevision != int64(cycle*2+1) || paused.Step != "commit" || paused.ControlCheckpoint != fmt.Sprintf("work/commit/cursor.json:%x", sha256.Sum256(data)) {
+					t.Fatalf("pause did not identify committed sub-step: %+v, %q, %v", paused, data, err)
+				}
+				if _, err := os.Stat(filepath.Join(path, "commit.json")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("suspension incorrectly completed the step: %v", err)
+				}
+				if cycle == 0 {
+					w.Stop()
+					replacement := j.NewWorker()
+					if err := replacement.Start(); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(replacement.Stop)
+					state, err := j.Get(ctx, run.Execution)
+					if err != nil || state.Status != tmprl.StatusPaused || state.ControlAcknowledgedRevision != 1 {
+						t.Fatalf("worker replacement lost pause: %+v, %v", state, err)
+					}
+				}
+				if outcome == "stop" && cycle == 1 {
+					if err := j.Stop(ctx, run.Execution); err != nil {
+						t.Fatal(err)
+					}
+					stopped := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status.Terminal() })
+					if stopped.Status != tmprl.StatusStopped {
+						t.Fatalf("Stop resumed or failed preparation: %+v", stopped)
+					}
+					select {
+					case <-entered:
+						t.Fatal("Stop launched another unit")
+					default:
+					}
+					return
+				}
+				switch outcome {
+				case "missing checkpoint":
+					if err := os.Remove(filepath.Join(path, "cursor.json")); err != nil {
+						t.Fatal(err)
+					}
+				case "changed checkpoint":
+					if err := os.WriteFile(filepath.Join(path, "cursor.json"), []byte(`[]`), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: fmt.Sprintf("resume-%d", cycle), Action: "resume", ExpectedRevision: int64(cycle*2 + 1)}); err != nil {
+					t.Fatal(err)
+				}
+				if outcome != "continue" && outcome != "stop" {
+					failed, err := j.Wait(ctx, run.Execution)
+					if err == nil {
+						t.Fatalf("Continue hid %s: %+v", outcome, failed)
+					}
+					if outcome == "retry budget" {
+						if invocations.Load() != 3 {
+							t.Fatalf("Continue refreshed failed-attempt budget: %d", invocations.Load())
+						}
+					} else if failure, ok := errors.AsType[*temporal.ApplicationError](err); !ok || failure.Type() != "invalid-step-checkpoint" {
+						t.Fatalf("did not reject damaged resume checkpoint: %v", err)
+					}
+					select {
+					case <-entered:
+						t.Fatal("failed continuation launched another unit")
+					default:
+					}
+					return
+				}
+			}
+			select {
+			case index := <-entered:
+				if index != 2 {
+					t.Fatalf("Continue repeated committed work: %d", index)
+				}
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			permit <- struct{}{}
+			completed, err := j.Wait(ctx, run.Execution)
+			if err != nil || completed.Execution != run.Execution || !slices.Equal(completed.Artifacts, []string{"unit-0", "unit-1", "unit-2"}) || completed.Stages[0].Steps[0].Attempt != 1 {
+				t.Fatalf("Continue lost/duplicated work or charged voluntary pauses as failures: %+v, %v", completed, err)
+			}
+		})
+	}
+}
+
+// TestJobsDrain models host shutdowns: each process drains before stopping its
+// worker. Draining finishes the running unit, saves it, and suspends without a
+// recovery attempt; the next process continues the saved checkpoint. Paused
+// and active-only budgets must not count idle time between processes.
+func TestJobsDrain(t *testing.T) {
+	env := newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	entered, permit := make(chan int, 8), make(chan struct{})
+	root := t.TempDir()
+	handler := tmprl.StepFunc[string, []string](func(ctx context.Context, in tmprl.StepContext[string, []string]) (tmprl.StepResult[[]string], error) {
+		var saved []string
+		if data, err := in.Workspace.ReadFile("cursor.json"); err == nil {
+			if err := json.Unmarshal(data, &saved); err != nil {
+				return tmprl.StepResult[[]string]{}, err
+			}
+		}
+		for len(saved) < 4 {
+			entered <- len(saved)
+			select {
+			case <-permit:
+			case <-ctx.Done():
+				return tmprl.StepResult[[]string]{}, ctx.Err()
+			}
+			saved = append(saved, fmt.Sprintf("unit-%d", len(saved)))
+			if err := tmprl.WriteJSON(in.Workspace, "cursor.json", saved); err != nil {
+				return tmprl.StepResult[[]string]{}, err
+			}
+			if err := in.SafePoint(ctx, "cursor.json"); err != nil {
+				return tmprl.StepResult[[]string]{}, err
+			}
+		}
+		return tmprl.StepResult[[]string]{Artifacts: saved}, nil
+	})
+	config := tmprl.Config[string, []string]{
+		Names:     tmprl.Names{Workflow: "example.Drain", Activity: "example.DrainStep", Memo: "drain.state", Query: "drain-query", Control: "drain-control"},
+		TaskQueue: env.TaskQueue, StorageRoot: root, StorageDirectory: "drain", Log: env.Log,
+		Steps: map[string]tmprl.StepHandler[string, []string]{"work/commit": handler},
+	}
+	// Each process has its own Jobs, as after a restart.
+	start := func() (*tmprl.Jobs[string, []string], func()) {
+		j, err := tmprl.New(env.Client, config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := j.NewWorker()
+		if err := w.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(w.Stop)
+		return j, w.Stop
+	}
+	unit := func(want int) {
+		t.Helper()
+		select {
+		case got := <-entered:
+			if got != want {
+				t.Fatalf("unit %d started, want %d: saved work repeated or skipped", got, want)
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	j, stop := start()
+	plan := recoveryPlan()
+	plan.Stages[0].Steps = plan.Stages[0].Steps[:1]
+	plan.SessionAttempts = 1 // A drain must not consume the only recovery attempt.
+	plan.Stages[0].Timeout = 30 * time.Second
+	run, err := j.Submit(ctx, "drain-"+rand.Text(), tmprl.JobInput[string]{Job: &plan, ControlStage: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First shutdown: Drain waits for the in-flight unit to save.
+	unit(0)
+	drained := make(chan error, 1)
+	go func() { drained <- j.Drain(ctx) }()
+	select {
+	case err := <-drained:
+		t.Fatalf("Drain returned while a unit was in flight: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	permit <- struct{}{}
+	if err := <-drained; err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	time.Sleep(time.Second) // Offline time must not count toward active budgets.
+
+	// Second process: records the drained suspension (the stopped worker could
+	// not), then continues the saved unit without a user Continue.
+	j, stop = start()
+	unit(1)
+	resumed, err := j.Get(ctx, run.Execution)
+	if err != nil || resumed.SessionAttempt != 1 || resumed.Stages[0].Steps[0].Attempt != 1 {
+		t.Fatalf("drain consumed a recovery or step attempt: %+v, %v", resumed, err)
+	}
+	// Pause, then shut down while paused: the run must stay paused.
+	if _, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: "pause", Action: "pause"}); err != nil {
+		t.Fatal(err)
+	}
+	permit <- struct{}{}
+	paused := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool {
+		return s.Status == tmprl.StatusPaused && s.WorkerHost == ""
+	})
+	if paused.SessionAttempt != 1 || paused.Stages[0].Deadline != (time.Time{}) {
+		t.Fatalf("paused run held its worker, consumed an attempt, or kept a deadline: %+v", paused)
+	}
+	if err := j.Drain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+
+	// Third process: paused work stays paused until Continue.
+	j, _ = start()
+	select {
+	case got := <-entered:
+		t.Fatalf("restart ignored Pause and started unit %d", got)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if _, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: "continue", Action: "resume", ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	unit(2)
+	permit <- struct{}{}
+	unit(3)
+	permit <- struct{}{}
+	completed, err := j.Wait(ctx, run.Execution)
+	if err != nil || !slices.Equal(completed.Artifacts, []string{"unit-0", "unit-1", "unit-2", "unit-3"}) || completed.SessionAttempt != 1 || completed.Stages[0].Steps[0].Attempt != 1 {
+		t.Fatalf("restart lost, duplicated, or charged work: %+v, %v", completed, err)
+	}
+	stage := completed.Stages[0]
+	if active := stage.ActiveElapsed; active <= 0 || active >= stage.ClosedAt.Sub(stage.StartedAt)-time.Second {
+		t.Fatalf("stage budget counted idle time: active %v of %v", active, stage.ClosedAt.Sub(stage.StartedAt))
+	}
+}
+
+func TestWriteJSONReplacement(t *testing.T) {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	for _, value := range []string{"long original checkpoint", "new"} {
+		if err := tmprl.WriteJSON(root, "state.json", value); err != nil {
+			t.Fatal(err)
+		}
+		data, err := root.ReadFile("state.json")
+		var got string
+		if err != nil || json.Unmarshal(data, &got) != nil || got != value {
+			t.Fatalf("incomplete replacement: %s, %v", data, err)
+		}
+	}
+	if err := tmprl.WriteJSON(root, "state.json", make(chan int)); err == nil {
+		t.Fatal("accepted unencodable checkpoint")
+	}
+	data, err := root.ReadFile("state.json")
+	if err != nil || string(data) != `"new"` {
+		t.Fatalf("failed write damaged committed state: %s, %v", data, err)
 	}
 }
 

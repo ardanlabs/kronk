@@ -10,12 +10,15 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/applog"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -29,6 +32,10 @@ type StepContext[R, A any] struct {
 	Request   StepRequest[R, A]
 	Workspace *os.Root
 	Publish   func(Progress)
+	// SafePoint is non-nil only for opted-in checkpointed steps. Call after
+	// committing progress and before starting another unit. An error must be
+	// returned unchanged; it may suspend this activity without completing it.
+	SafePoint func(context.Context, string) error
 }
 
 // StepHandler executes application computation without scheduling Temporal work.
@@ -69,6 +76,14 @@ type Config[R, A any] struct {
 type Jobs[R, A any] struct {
 	client client.Client
 	cfg    Config[R, A]
+	// drain owns host shutdown for this process's workers. Once draining
+	// starts, opted-in steps suspend at their next durable safe point.
+	drain struct {
+		sync.Mutex
+		started bool
+		active  int
+		idle    chan struct{}
+	}
 }
 
 // New constructs job infrastructure without contacting Temporal or loading models.
@@ -133,6 +148,9 @@ func (j *Jobs[R, A]) Submit(ctx context.Context, id string, input JobInput[R]) (
 	if err := j.ValidatePlan(*input.Job); err != nil {
 		return Run[R, A]{}, err
 	}
+	if input.ControlStage != "" && (len(input.Job.Stages) != 1 || input.Job.Stages[0].Name != input.ControlStage) {
+		return Run[R, A]{}, fmt.Errorf("%w: ordered controls require a single matching stage", ErrInvalidArgument)
+	}
 	state := QueuedJob[R, A](input)
 	e, err := Start(ctx, j.client, client.StartWorkflowOptions{
 		ID: id, TaskQueue: j.cfg.TaskQueue, Memo: map[string]any{j.cfg.Names.Memo: state},
@@ -151,6 +169,53 @@ func (j *Jobs[R, A]) Submit(ctx context.Context, id string, input JobInput[R]) (
 // workflow payloads may register their own dispatcher and call RunJob instead.
 func (j *Jobs[R, A]) Workflow(ctx workflow.Context, input JobInput[R]) (Run[R, A], error) {
 	return RunJob[R, A](ctx, input, j.cfg.Names)
+}
+
+// Drain prepares this process for shutdown before its workers stop. Opted-in
+// steps suspend at their next durable safe point without completing their step
+// or consuming a worker-recovery attempt; other steps are unaffected. Drain
+// returns when no opted-in step is running here, or ctx's error. The host then
+// stops its workers; an unfinished unit repeats after restart.
+func (j *Jobs[R, A]) Drain(ctx context.Context) error {
+	j.drain.Lock()
+	j.drain.started = true
+	if j.drain.active == 0 {
+		j.drain.Unlock()
+		return nil
+	}
+	if j.drain.idle == nil {
+		j.drain.idle = make(chan struct{})
+	}
+	idle := j.drain.idle
+	j.drain.Unlock()
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// beginSafePointStep tracks a running opted-in step until Drain may return.
+func (j *Jobs[R, A]) beginSafePointStep() (done func()) {
+	j.drain.Lock()
+	defer j.drain.Unlock()
+	j.drain.active++
+	return func() {
+		j.drain.Lock()
+		defer j.drain.Unlock()
+		j.drain.active--
+		if j.drain.active == 0 && j.drain.idle != nil {
+			close(j.drain.idle)
+			j.drain.idle = nil
+		}
+	}
+}
+
+func (j *Jobs[R, A]) draining() bool {
+	j.drain.Lock()
+	defer j.drain.Unlock()
+	return j.drain.started
 }
 
 // WorkerOptions reserves one worker for one complete job, including pauses.
@@ -190,6 +255,50 @@ func (j *Jobs[R, A]) Pause(ctx context.Context, e Execution) error {
 // Resume continues the same run without repeating committed steps.
 func (j *Jobs[R, A]) Resume(ctx context.Context, e Execution) error {
 	return j.control(ctx, e, "resume")
+}
+
+// Control uses a stable Temporal update identity. The server retains its result
+// across worker loss and workflow closure; request-ID reuse is checked against
+// the original receipt rather than silently accepting a different command.
+func (j *Jobs[R, A]) Control(ctx context.Context, e Execution, request ControlRequest) (ControlReceipt, error) {
+	if err := request.Validate(); err != nil {
+		return ControlReceipt{}, err
+	}
+	run, err := j.Get(ctx, e)
+	if err != nil {
+		return ControlReceipt{}, err
+	}
+	if run.ControlStage == "" {
+		return ControlReceipt{}, ErrControlConflict
+	}
+	id := "ordered-control/" + request.RequestID
+	handle, err := j.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID: e.WorkflowID, RunID: e.RunID, UpdateID: id,
+		UpdateName: j.cfg.Names.Control + ".ordered", Args: []any{request},
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	if err != nil {
+		// A closed execution cannot accept a new update. Resolve only a stored
+		// receipt, never submit a new execution or substitute the current run.
+		if _, closed := errors.AsType[*serviceerror.NotFound](err); !closed {
+			return ControlReceipt{}, err
+		}
+		handle = j.client.GetWorkflowUpdateHandle(client.GetWorkflowUpdateHandleOptions{WorkflowID: e.WorkflowID, RunID: e.RunID, UpdateID: id})
+	}
+	var receipt ControlReceipt
+	if err := handle.Get(ctx, &receipt); err != nil {
+		if _, missing := errors.AsType[*serviceerror.NotFound](err); missing && run.Status.Terminal() {
+			return ControlReceipt{}, ErrControlConflict
+		}
+		if failure, ok := errors.AsType[*temporal.ApplicationError](err); ok && failure.Type() == "control-conflict" {
+			return ControlReceipt{}, ErrControlConflict
+		}
+		return ControlReceipt{}, err
+	}
+	if receipt.ControlRequest != request || receipt.Revision != request.ExpectedRevision+1 {
+		return ControlReceipt{}, ErrControlConflict
+	}
+	return receipt, nil
 }
 
 // Validate checks the decision envelope, not application-specific approval rules.

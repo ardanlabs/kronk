@@ -394,6 +394,61 @@ func generationInput(t *testing.T) (preparation.StepContext, checkpoint.State) {
 	return input, state
 }
 
+func TestGenerationSafePointContinuation(t *testing.T) {
+	for _, phase := range []string{"generation", "evaluation"} {
+		t.Run(phase, func(t *testing.T) {
+			input, initial := generationInput(t)
+			wantCount := 64
+			if phase == "evaluation" {
+				input, initial = evaluationInput(t)
+				wantCount = 50
+			}
+			paused := errors.New("controlled safe-point suspension")
+			input.SafePoint = func(_ context.Context, path string) error {
+				if path != checkpoint.File {
+					t.Fatalf("unexpected checkpoint: %s", path)
+				}
+				saved := savedState(t, input)
+				if phase == "generation" && saved.Next == 30 || phase == "evaluation" && saved.EvaluationNext == 6 {
+					return paused
+				}
+				return nil
+			}
+			evaluations := initial.EvaluationNext
+			input.Preparation.Completer = completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+				if !strings.Contains(request.Messages[1].Content, "[EVIDENCE 1]") {
+					evaluations++
+					return providers.Completion{Content: fmt.Sprintf(`{"record_1":"Which hour applies in evaluation question %d?"}`, evaluations)}, nil
+				}
+				var decisions []any
+				for _, unit := range initial.Units {
+					if strings.Contains(request.Messages[1].Content, "\n"+unit.Evidence+"\n") {
+						decisions = append(decisions, spanDecision(len(decisions)+1, "What is the opening schedule for "+unit.Reference+"?", unit.Evidence))
+					}
+				}
+				data, err := json.Marshal(map[string]any{"decisions": decisions})
+				return providers.Completion{Content: string(data)}, err
+			})
+			if _, err := (generate.Step{}).Execute(t.Context(), input); !errors.Is(err, paused) {
+				t.Fatalf("did not suspend at saved progress: %v", err)
+			}
+			saved := savedState(t, input)
+			if saved.Generated || saved.ReviewID != initial.ReviewID || !slices.Equal(saved.Records[:len(initial.Records)], initial.Records) || saved.GenerationAttempts != 0 {
+				t.Fatalf("pause damaged review, records or request budget: %+v", saved)
+			}
+			reopen(t, &input)
+			input.SafePoint = nil
+			if _, err := (generate.Step{}).Execute(t.Context(), input); err != nil {
+				t.Fatal(err)
+			}
+			completed := savedState(t, input)
+			if !completed.Generated || len(completed.Records) != wantCount || completed.EvaluationNext != 30 || !slices.Equal(completed.Records[:len(saved.Records)], saved.Records) || completed.ReviewID != initial.ReviewID {
+				t.Fatalf("Continue repeated or lost committed progress: %+v", completed)
+			}
+		})
+	}
+}
+
 func TestDocumentQuestionCap(t *testing.T) {
 	for _, test := range []struct {
 		limit int

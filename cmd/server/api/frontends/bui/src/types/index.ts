@@ -1474,12 +1474,44 @@ export interface TrainingDecisionReceipt {
   submission_id: string;
 }
 
+// Echo of the preparation request; absent while the live run is unreadable.
+export interface TrainingRunSettings {
+  model: string;
+  goal: PreparationOptions['goal'];
+  preview_records?: number;
+  max_questions?: number;
+  page_start?: number;
+  page_end?: number;
+  instructions?: string;
+}
+
+// Pause/Continue target the run's control revision, not its observation revision.
+export interface PreparationControl {
+  request_id: string;
+  expected_revision: number;
+}
+
+export interface PreparationControlReceipt {
+  request_id: string;
+  action: string;
+  revision: number;
+}
+
 export interface TrainingRun {
   workflow_id: string;
   run_id: string;
   preparation_only: boolean;
   prepared_dataset_id?: string;
   prepared_dataset_version?: number;
+  target_dataset_id?: string;
+  target_dataset_name?: string;
+  base_version?: number;
+  source_document?: string;
+  settings?: TrainingRunSettings;
+  control_revision: number;
+  control_action?: string;
+  observed_at?: string;
+  pending_actions?: { id: string; kind: string; state: string }[];
   status: string;
   stage?: string;
   step?: string;
@@ -1488,6 +1520,8 @@ export interface TrainingRun {
   adapter_available: boolean;
   dataset_available: boolean;
   dataset_record_count: number;
+  skipped_records?: number;
+  failure_reason?: 'dataset-document-exists' | 'dataset-questions-exist' | 'dataset-changed' | 'preparation-no-examples';
   training_ready: boolean;
   started_at: string;
   updated_at?: string;

@@ -109,7 +109,7 @@ func TestRunRequest(t *testing.T) {
 }
 
 func TestStepRecovery(t *testing.T) {
-	for _, failure := range []string{"provider", "context budget", "truncated", "malformed", "rejected", "canceled"} {
+	for _, failure := range []string{"provider", "context budget", "truncated", "malformed", "rejected", "canceled", "pause"} {
 		t.Run(failure, func(t *testing.T) {
 			store, err := uploads.New(uploads.Config{Root: t.TempDir()})
 			if err != nil {
@@ -183,6 +183,20 @@ func TestStepRecovery(t *testing.T) {
 				wantErr = providers.ErrCompletionTruncated
 			case "canceled":
 				wantErr = context.Canceled
+			}
+			if failure == "pause" {
+				input.SafePoint = func(_ context.Context, path string) error {
+					if offset != failureOffset || failed {
+						return nil
+					}
+					failed = true
+					var err error
+					savedBeforeFailure, err = input.Workspace.ReadFile(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return wantErr
+				}
 			}
 			input.Preparation.Completer = completer{respond: func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
 				end := min(offset+5, 20)

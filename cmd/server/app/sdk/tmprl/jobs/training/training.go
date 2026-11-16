@@ -20,7 +20,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/generate"
@@ -31,11 +33,13 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training/publish"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training/split"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training/train"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 )
@@ -62,13 +66,41 @@ type Artifacts struct {
 	Training    optimization.Artifacts         `json:"training"`
 }
 
+// State combines an execution observation with training output readiness and ETA.
+// Catalog persistence uses a sanitized projection; execution history and stage
+// artifacts retain their existing formats.
+type State struct {
+	tmprl.Run[Request, Artifacts]
+	EvaluationAvailable bool
+	AdapterAvailable    bool
+	RemainingSeconds    int64
+	FailureReason       string
+}
+
+// Describe interprets an execution observation without querying or changing it.
+func Describe(run tmprl.Run[Request, Artifacts]) State {
+	state := State{
+		Run:                 run,
+		EvaluationAvailable: run.Artifacts.Training.Report != "",
+		AdapterAvailable: run.Status == tmprl.StatusCompleted && run.Artifacts.Training.Accepted &&
+			run.Artifacts.Training.Report != "" && run.Artifacts.Training.Adapter != "",
+		FailureReason: FailureReason(run.FailureTypes),
+	}
+	if run.Progress != nil && run.Status == tmprl.StatusRunning && !run.StateStale && run.Progress.Stage == run.Stage && run.Progress.Step == run.Step {
+		state.RemainingSeconds = int64(run.Progress.Remaining().Round(time.Second) / time.Second)
+	}
+	return state
+}
+
 // Config supplies worker-local training resources, not execution policies.
 // Models maps approved identifiers to GGUF paths. Trainer defaults to GoMLX.
 // ModelPool supplies KMS inference for the default trainer and completer.
 type Config struct {
 	TaskQueue   string
+	Namespace   string
 	Uploads     *uploads.Store
-	Datasets    *preparation.DatasetStore
+	Datasets    *datasetstore.DatasetStore
+	MoxieDB     *moxiedb.DB
 	StorageRoot string
 	Models      map[string]string
 	Trainer     optimization.Trainer
@@ -80,8 +112,9 @@ type Config struct {
 
 // Job validates training submissions and connects stage resources to the runner.
 type Job struct {
-	cfg  Config
-	jobs *tmprl.Jobs[Request, Artifacts]
+	cfg    Config
+	client client.Client
+	jobs   *tmprl.Jobs[Request, Artifacts]
 }
 
 // New constructs the job without contacting Temporal or loading a model.
@@ -96,13 +129,16 @@ func New(c client.Client, cfg Config) (*Job, error) {
 	}
 	cfg.StorageRoot = root
 	if cfg.Datasets == nil {
-		cfg.Datasets, err = preparation.NewDatasetStore(filepath.Join(root, "preparation-datasets"))
+		cfg.Datasets, err = datasetstore.NewDatasetStore(filepath.Join(root, "preparation-datasets"))
 		if err != nil {
 			return nil, err
 		}
 	}
 	if cfg.TaskQueue == "" {
 		cfg.TaskQueue = "moxie-training"
+	}
+	if cfg.Namespace == "" {
+		cfg.Namespace = "default"
 	}
 	cfg.Models = maps.Clone(cfg.Models)
 	for id, path := range cfg.Models {
@@ -130,7 +166,7 @@ func New(c client.Client, cfg Config) (*Job, error) {
 	if cfg.Log == nil {
 		cfg.Log = applog.FmtLogger
 	}
-	j := Job{cfg: cfg}
+	j := Job{cfg: cfg, client: c}
 	jobs, err := tmprl.New(c, tmprl.Config[Request, Artifacts]{
 		Names:     tmprl.Names{Workflow: "moxie.training.Job", Activity: "moxie.training.Step", Memo: "moxie.training.job", Query: "training-state", Control: "training-control"},
 		TaskQueue: cfg.TaskQueue, StorageRoot: cfg.StorageRoot, StorageDirectory: storageDirectory,
@@ -150,25 +186,121 @@ func New(c client.Client, cfg Config) (*Job, error) {
 	return &j, nil
 }
 
-// Jobs exposes foundation's worker, status, history, progress, and control APIs.
-// Submit training requests through Start so training validation is applied.
+// Jobs exposes foundation's worker and infrastructure APIs to the host.
+// Application callers use Start, Get, List, review methods, and Stop instead.
 func (j *Job) Jobs() *tmprl.Jobs[Request, Artifacts] { return j.jobs }
 
-// Datasets exposes preparation's durable asset store to the application API.
-func (j *Job) Datasets() *preparation.DatasetStore { return j.cfg.Datasets }
+// Datasets exposes the configured reusable asset store for host integration.
+// HTTP dependencies are supplied explicitly by the host, not discovered here.
+func (j *Job) Datasets() *datasetstore.DatasetStore { return j.cfg.Datasets }
+
+var (
+	ErrNotFound      = errors.New("training resource not found")
+	ErrAlreadyExists = errors.New("training job already exists")
+	ErrUnavailable   = errors.New("training service is unavailable")
+)
+
+// executionError provides application error identities while preserving the cause.
+func executionError(err error) error {
+	if _, ok := errors.AsType[*serviceerror.NotFound](err); ok {
+		return errors.Join(ErrNotFound, err)
+	}
+	if _, ok := errors.AsType[*serviceerror.WorkflowExecutionAlreadyStarted](err); ok {
+		return errors.Join(ErrAlreadyExists, err)
+	}
+	if _, ok := errors.AsType[*serviceerror.Unavailable](err); ok {
+		return errors.Join(ErrUnavailable, err)
+	}
+	if _, ok := errors.AsType[*serviceerror.DeadlineExceeded](err); ok {
+		return errors.Join(context.DeadlineExceeded, err)
+	}
+	return err
+}
+
+// Get reads execution state and interprets training-specific output readiness.
+func (j *Job) Get(ctx context.Context, e tmprl.Execution) (State, error) {
+	var attempt moxiedb.Attempt
+	if j.cfg.MoxieDB != nil {
+		var err error
+		attempt, err = j.cfg.MoxieDB.GetAttempt(ctx, jobIdentity(j.cfg.Namespace, e.WorkflowID)+"/1")
+		if err != nil && !errors.Is(err, moxiedb.ErrNotFound) {
+			return State{}, err
+		}
+	}
+	run, err := j.jobs.Get(ctx, e)
+	if err != nil {
+		return State{}, executionError(err)
+	}
+	if j.cfg.MoxieDB != nil {
+		if attempt.AttemptID == "" {
+			attempt, err = j.registerAttempt(ctx, run)
+		} else {
+			err = j.cfg.MoxieDB.LinkAttemptRun(ctx, attempt.AttemptID, run.RunID)
+		}
+		if err == nil {
+			err = j.observe(ctx, attempt, run)
+		}
+		if err != nil {
+			return State{}, err
+		}
+	}
+	return Describe(run), nil
+}
+
+// List preserves runner ordering and pagination and interprets each observation.
+func (j *Job) List(ctx context.Context, options tmprl.ListOptions) ([]State, []byte, error) {
+	runs, next, err := j.jobs.List(ctx, options)
+	if err != nil {
+		return nil, nil, executionError(err)
+	}
+	states := make([]State, len(runs))
+	for i, run := range runs {
+		states[i] = Describe(run)
+	}
+	return states, next, nil
+}
+
+// Stop requests cooperative cancellation without deleting committed outputs.
+// Acceptance is not terminal completion; Get or List establishes that outcome.
+func (j *Job) Stop(ctx context.Context, e tmprl.Execution) error {
+	if j.cfg.MoxieDB == nil {
+		return executionError(j.jobs.Stop(ctx, e))
+	}
+	intent, err := j.beginControl(ctx, e, "stop", tmprl.Decision{})
+	if err != nil || intent.State == "accepted" {
+		return err
+	}
+	return j.settleControl(ctx, intent, executionError(j.jobs.Stop(ctx, e)))
+}
 
 // Start submits the embedded plan after validating and copying training inputs.
 // Prepared JSONL skips preparation. Documents wait for Preview review;
 // preparation-only runs finish after Verify, while combined runs wait for
 // explicit authorization to enter Training, using one reserved worker.
 func (j *Job) Start(ctx context.Context, input Request) (tmprl.Run[Request, Artifacts], error) {
-	input, err := j.validate(ctx, input)
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		input.ID = "training-" + rand.Text()
+	}
+	if j.cfg.MoxieDB != nil {
+		return j.catalogSubmit(ctx, input)
+	}
+	input, plan, err := j.submission(ctx, input)
 	if err != nil {
 		return tmprl.Run[Request, Artifacts]{}, err
 	}
+	run, err := j.jobs.Submit(ctx, input.ID, tmprl.JobInput[Request]{Job: &plan, Request: input})
+	return run, executionError(err)
+}
+
+func (j *Job) submission(ctx context.Context, input Request) (Request, tmprl.Job, error) {
+	input, err := j.validate(ctx, input)
+	if err != nil {
+		return Request{}, tmprl.Job{}, err
+	}
 	plan, err := tmprl.ParseJob(jobYAML)
 	if err != nil {
-		return tmprl.Run[Request, Artifacts]{}, err
+		return Request{}, tmprl.Job{}, err
 	}
 	if input.Prepare == nil {
 		plan.Stages = slices.DeleteFunc(plan.Stages, func(stage tmprl.Stage) bool { return stage.Name == "preparation" })
@@ -177,10 +309,7 @@ func (j *Job) Start(ctx context.Context, input Request) (tmprl.Run[Request, Arti
 		plan.Stages = slices.DeleteFunc(plan.Stages, func(stage tmprl.Stage) bool { return stage.Name == "training" })
 		plan.Stages[0].WaitAfter = ""
 	}
-	if input.ID == "" {
-		input.ID = "training-" + rand.Text()
-	}
-	return j.jobs.Submit(ctx, input.ID, tmprl.JobInput[Request]{Job: &plan, Request: input})
+	return input, plan, nil
 }
 
 // ContinuePreview accepts edits to the saved examples and releases Preview.
@@ -191,7 +320,7 @@ func (j *Job) ContinuePreview(ctx context.Context, e tmprl.Execution, decision t
 	}
 	run, err := j.jobs.Get(ctx, e)
 	if err != nil {
-		return tmprl.Decision{}, err
+		return tmprl.Decision{}, executionError(err)
 	}
 	if run.Request.Prepare == nil || decision.CheckpointID != run.RunID+"/preparation/preview/preview-review" {
 		return tmprl.Decision{}, fmt.Errorf("%w: decision must identify this run's Preview", tmprl.ErrInvalidArgument)
@@ -215,7 +344,7 @@ func (j *Job) ContinuePreview(ctx context.Context, e tmprl.Execution, decision t
 	if run.Status.Terminal() || run.Checkpoint == nil || run.Checkpoint.ID != decision.CheckpointID || run.Checkpoint.Stage != "preparation" || run.Checkpoint.Step != "preview" {
 		return tmprl.Decision{}, fmt.Errorf("%w: Preview is not waiting for review", tmprl.ErrInvalidArgument)
 	}
-	return j.jobs.Decide(ctx, e, decision)
+	return j.decide(ctx, e, "preview_review", decision)
 }
 
 // StartTraining authorizes the Training stage only after document preparation
@@ -229,7 +358,7 @@ func (j *Job) StartTraining(ctx context.Context, e tmprl.Execution, decision tmp
 	}
 	run, err := j.jobs.Get(ctx, e)
 	if err != nil {
-		return tmprl.Decision{}, err
+		return tmprl.Decision{}, executionError(err)
 	}
 	if run.Request.Prepare == nil || decision.CheckpointID != run.RunID+"/preparation//start-training" {
 		return tmprl.Decision{}, fmt.Errorf("%w: decision must identify this run's completed Preparation", tmprl.ErrInvalidArgument)
@@ -250,7 +379,7 @@ func (j *Job) StartTraining(ctx context.Context, e tmprl.Execution, decision tmp
 	if _, err := j.records(ctx, run.Request, run.Artifacts, run.RunID); err != nil {
 		return tmprl.Decision{}, err
 	}
-	return j.jobs.Decide(ctx, e, decision)
+	return j.decide(ctx, e, "authorize_training", decision)
 }
 
 // Evaluation reads the persisted report, including a rejected candidate's report.
@@ -279,12 +408,15 @@ func (j *Job) OpenAdapter(ctx context.Context, e tmprl.Execution) (io.ReadCloser
 func (j *Job) OpenDataset(ctx context.Context, e tmprl.Execution) (io.ReadCloser, error) {
 	run, err := j.jobs.Get(ctx, e)
 	if err != nil {
-		return nil, err
+		return nil, executionError(err)
 	}
 	if run.Request.Prepare == nil || run.Artifacts.Preparation == nil || run.Artifacts.Preparation.RecordsPath == "" || run.Artifacts.Preparation.DatasetID != run.Request.Prepare.DatasetID {
 		return nil, fmt.Errorf("%w: prepared dataset is not available", tmprl.ErrInvalidArgument)
 	}
 	if result := run.Artifacts.Preparation; result.SavedDatasetID != "" {
+		if _, err := j.dataset(ctx, result.SavedDatasetID, result.SavedVersion); err != nil {
+			return nil, err
+		}
 		records, err := j.cfg.Datasets.Records(ctx, result.SavedDatasetID, result.SavedVersion)
 		if err != nil {
 			return nil, err
@@ -347,12 +479,24 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 			if !r.PreparationOnly {
 				return Request{}, fmt.Errorf("%w: saving to a reusable dataset requires a preparation-only run", tmprl.ErrInvalidArgument)
 			}
-			dataset, err := j.cfg.Datasets.Get(ctx, prepared.TargetDatasetID, 0)
+			dataset, err := j.dataset(ctx, prepared.TargetDatasetID, 0)
 			if err != nil {
 				return Request{}, err
 			}
 			if dataset.Version != prepared.BaseVersion {
-				return Request{}, preparation.ErrDatasetConflict
+				return Request{}, datasetstore.ErrDatasetConflict
+			}
+			// Reject a document the dataset already holds before any model work.
+			source, err := j.cfg.Uploads.Get(ctx, prepared.DatasetID)
+			if err != nil {
+				return Request{}, err
+			}
+			info, err := j.cfg.Datasets.Inspect(ctx, dataset.ID, dataset.Version)
+			if err != nil {
+				return Request{}, err
+			}
+			if info.HasDocument(source.SHA256, prepared.PageStart, prepared.PageEnd) {
+				return Request{}, datasetstore.ErrDocumentExists
 			}
 		}
 	} else if _, err := j.records(ctx, r, Artifacts{}, ""); err != nil {
@@ -364,7 +508,7 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 func (j *Job) openArtifact(ctx context.Context, e tmprl.Execution, adapter bool) (*os.File, error) {
 	run, err := j.jobs.Get(ctx, e)
 	if err != nil {
-		return nil, err
+		return nil, executionError(err)
 	}
 	name := "evaluation.json"
 	if run.Artifacts.Training.Report == "" || adapter && (run.Status != tmprl.StatusCompleted || !run.Artifacts.Training.Accepted || run.Artifacts.Training.Adapter == "") {
@@ -544,12 +688,17 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 				},
 			},
 			Workspace: input.Workspace, Artifacts: preparation.Artifacts{Preview: r.Artifacts.Preview, Preparation: r.Artifacts.Preparation},
-			Review: review, ReviewID: reviewID, Publish: input.Publish,
+			Review: review, ReviewID: reviewID, Publish: input.Publish, SafePoint: input.SafePoint,
 		})
 		artifacts := r.Artifacts
 		artifacts.Preview = output.Artifacts.Preview
 		artifacts.Preparation = output.Artifacts.Preparation
 		if err == nil && step.Name() == "verify" && request.TargetDatasetID != "" && artifacts.Preparation != nil {
+			if input.SafePoint != nil {
+				if err := input.SafePoint(ctx, "result.json"); err != nil {
+					return tmprl.StepResult[Artifacts]{}, err
+				}
+			}
 			file, openErr := input.Workspace.Open("dataset.jsonl")
 			if openErr != nil {
 				return tmprl.StepResult[Artifacts]{}, openErr
@@ -559,7 +708,7 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 			if readErr != nil {
 				return tmprl.StepResult[Artifacts]{}, stepError(readErr)
 			}
-			saved, saveErr := j.cfg.Datasets.Add(ctx, request.TargetDatasetID, request.BaseVersion, preparation.DatasetAddition{
+			saved, saveErr := j.saveDataset(ctx, request.TargetDatasetID, request.BaseVersion, datasetstore.DatasetAddition{
 				PublicationID: r.RunID, Source: source, PageStart: request.PageStart, PageEnd: request.PageEnd, Records: records,
 			})
 			if saveErr != nil {
@@ -567,6 +716,10 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 			}
 			artifacts.Preparation.SavedDatasetID, artifacts.Preparation.SavedVersion = saved.ID, saved.Version
 			artifacts.Preparation.SavedRecordCount, artifacts.Preparation.SavedTrainingReady = saved.RecordCount, saved.TrainingReady
+			// The store skips questions the dataset already has.
+			if i := slices.IndexFunc(saved.Documents, func(d datasetstore.DatasetDocument) bool { return d.ID == r.RunID }); i >= 0 {
+				artifacts.Preparation.SavedSkippedRecords = len(records) - saved.Documents[i].RecordCount
+			}
 		}
 		return tmprl.StepResult[Artifacts]{Artifacts: artifacts, Status: output.Status}, stepError(err)
 	})
@@ -588,12 +741,153 @@ func (j *Job) optimize(step optimization.StepHandler) tmprl.StepHandler[Request,
 
 // =============================================================================
 
+// dataset resolves SQL-published versions before opening immutable files.
+func (j *Job) dataset(ctx context.Context, id string, version int) (datasetstore.Dataset, error) {
+	if j.cfg.MoxieDB == nil {
+		return j.cfg.Datasets.Get(ctx, id, version)
+	}
+	v, err := j.cfg.MoxieDB.GetVersion(ctx, id, version)
+	if errors.Is(err, moxiedb.ErrNotFound) {
+		return datasetstore.Dataset{}, datasetstore.ErrDatasetNotFound
+	}
+	if err != nil {
+		return datasetstore.Dataset{}, err
+	}
+	info, err := j.cfg.Datasets.Lookup(ctx, id, v.Version)
+	if err != nil {
+		return datasetstore.Dataset{}, err
+	}
+	path, err := filepath.Rel(j.cfg.StorageRoot, filepath.Join(j.cfg.Datasets.Path(), info.Path))
+	if err != nil || !filepath.IsLocal(path) || filepath.ToSlash(path) != v.SnapshotPath || info.SHA256 != v.SnapshotSHA256 || info.Size != v.SnapshotBytes {
+		return datasetstore.Dataset{}, fmt.Errorf("%w: saved dataset integrity mismatch", datasetstore.ErrDatasetConflict)
+	}
+	return info.Dataset, nil
+}
+
+// saveDataset preserves verified Add idempotency while persisting publication
+// intent before touching files. Jobs call SQL directly, not datasets.Service.
+func (j *Job) saveDataset(ctx context.Context, id string, base int, addition datasetstore.DatasetAddition) (datasetstore.Dataset, error) {
+	if j.cfg.MoxieDB == nil {
+		return j.cfg.Datasets.Add(ctx, id, base, addition)
+	}
+	data, err := json.Marshal(addition)
+	if err != nil {
+		return datasetstore.Dataset{}, err
+	}
+	digest := sha256.Sum256(data)
+	operation := "add/" + addition.PublicationID
+	var saved datasetstore.Dataset
+	err = j.cfg.Datasets.WithLock(ctx, func(ctx context.Context) error {
+		previous, err := j.cfg.MoxieDB.GetPublication(ctx, operation)
+		switch {
+		case err == nil && (previous.InputDigest != hex.EncodeToString(digest[:]) || previous.DatasetID != id || previous.BaseVersion != base || previous.Kind != "add"):
+			return datasetstore.ErrDatasetConflict
+		case err == nil && previous.State == "committed":
+			saved, err = j.dataset(ctx, id, previous.TargetVersion)
+			return err
+		case err != nil && !errors.Is(err, moxiedb.ErrNotFound):
+			return err
+		}
+		latest, err := j.cfg.Datasets.Inspect(ctx, id, 0)
+		if err != nil {
+			return err
+		}
+		if latest.Operation != operation {
+			published, err := j.dataset(ctx, id, 0)
+			if err != nil {
+				return err
+			}
+			if published.Version != latest.Dataset.Version {
+				return fmt.Errorf("%w: another dataset publication requires reconciliation", datasetstore.ErrDatasetConflict)
+			}
+		}
+		pending, err := j.cfg.MoxieDB.PendingPublications(ctx)
+		if err != nil {
+			return err
+		}
+		for _, publication := range pending {
+			if publication.DatasetID == id && publication.ID != operation {
+				return fmt.Errorf("%w: another dataset publication requires reconciliation", datasetstore.ErrDatasetConflict)
+			}
+		}
+		if err := j.cfg.MoxieDB.BeginPublication(ctx, moxiedb.Publication{ID: operation, DatasetID: id, Kind: "add", BaseVersion: base, InputDigest: hex.EncodeToString(digest[:])}); err != nil {
+			return err
+		}
+		saved, err = j.cfg.Datasets.Add(ctx, id, base, addition)
+		if err != nil {
+			if errors.Is(err, tmprl.ErrInvalidArgument) || errors.Is(err, datasetstore.ErrDatasetConflict) || errors.Is(err, datasetstore.ErrDatasetNotFound) {
+				return errors.Join(err, j.cfg.MoxieDB.MarkPublication(ctx, operation, "conflict", "invalid_or_stale_input"))
+			}
+			return err
+		}
+		info, err := j.cfg.Datasets.Inspect(ctx, saved.ID, saved.Version)
+		if err != nil {
+			return err
+		}
+		dataset, version, documents, err := j.toDBSnapshot(info, operation)
+		if err != nil {
+			return err
+		}
+		if err := j.cfg.MoxieDB.CommitVersion(ctx, dataset, version, documents); err != nil {
+			return err
+		}
+		if err := j.cfg.Datasets.BuildIndex(ctx); err != nil {
+			return fmt.Errorf("dataset %s version %d is saved; index refresh failed: %w", saved.ID, saved.Version, err)
+		}
+		return nil
+	})
+	return saved, err
+}
+
+func (j *Job) toDBSnapshot(info datasetstore.SnapshotInfo, operation string) (moxiedb.Dataset, moxiedb.Version, []moxiedb.Document, error) {
+	d := info.Dataset
+	path, err := filepath.Rel(j.cfg.StorageRoot, filepath.Join(j.cfg.Datasets.Path(), info.Path))
+	if err != nil || !filepath.IsLocal(path) {
+		return moxiedb.Dataset{}, moxiedb.Version{}, nil, fmt.Errorf("dataset snapshot outside Moxie root")
+	}
+	dataset := moxiedb.Dataset{ID: d.ID, Name: d.Name, CurrentVersion: d.Version, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}
+	version := moxiedb.Version{DatasetID: d.ID, Version: d.Version, SnapshotPath: filepath.ToSlash(path), SnapshotSHA256: info.SHA256, SnapshotBytes: info.Size, RecordCount: int64(d.RecordCount), TrainingReady: d.TrainingReady, CreatedAt: d.UpdatedAt, PublicationID: operation}
+	documents := make([]moxiedb.Document, 0, len(info.Documents))
+	for i, c := range info.Documents {
+		documents = append(documents, moxiedb.Document{ID: c.Document.ID, Name: c.Document.Name, SourceSHA256: c.SHA256, Position: i, PageStart: c.Document.PageStart, PageEnd: c.Document.PageEnd, RecordCount: int64(c.Document.RecordCount)})
+	}
+	return dataset, version, documents, nil
+}
+
 func invalidInput(message string) error {
 	return temporal.NewNonRetryableApplicationError(message, "invalid-training", nil)
 }
 
+// Failure types the application reports to users; any other failure is shown
+// generically because its message may include private source text.
+const (
+	failureDocumentExists = "dataset-document-exists"
+	failureQuestionsExist = "dataset-questions-exist"
+	failureDatasetChanged = "dataset-changed"
+	failureNoExamples     = "preparation-no-examples"
+)
+
+// FailureReason returns the first known application failure type of a run.
+func FailureReason(types []string) string {
+	for _, t := range types {
+		switch t {
+		case failureDocumentExists, failureQuestionsExist, failureDatasetChanged, failureNoExamples:
+			return t
+		}
+	}
+	return ""
+}
+
 func stepError(err error) error {
-	if errors.Is(err, tmprl.ErrInvalidArgument) || errors.Is(err, uploads.ErrInvalidArgument) || errors.Is(err, uploads.ErrNotFound) || errors.Is(err, preparation.ErrInvalidArgument) || errors.Is(err, preparation.ErrDatasetConflict) || errors.Is(err, preparation.ErrDatasetNotFound) {
+	switch {
+	case errors.Is(err, datasetstore.ErrDocumentExists):
+		return temporal.NewNonRetryableApplicationError(err.Error(), failureDocumentExists, err)
+	case errors.Is(err, datasetstore.ErrQuestionsExist):
+		return temporal.NewNonRetryableApplicationError(err.Error(), failureQuestionsExist, err)
+	case errors.Is(err, datasetstore.ErrDatasetConflict), errors.Is(err, datasetstore.ErrDatasetNotFound):
+		return temporal.NewNonRetryableApplicationError(err.Error(), failureDatasetChanged, err)
+	}
+	if errors.Is(err, tmprl.ErrInvalidArgument) || errors.Is(err, uploads.ErrInvalidArgument) || errors.Is(err, uploads.ErrNotFound) || errors.Is(err, preparation.ErrInvalidArgument) || errors.Is(err, datasetstore.ErrDatasetConflict) || errors.Is(err, datasetstore.ErrDatasetNotFound) {
 		return temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
 	}
 	return err

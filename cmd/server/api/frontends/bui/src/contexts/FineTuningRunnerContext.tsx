@@ -15,6 +15,10 @@ export const TESTED_TRAINING_OPTIONS: TrainingOptions = {
 };
 
 const terminalStatuses = new Set(['completed', 'needs_improvement', 'failed', 'stopped']);
+const activeStatuses = ['queued', 'running', 'recovering', 'pause_requested', 'paused', 'waiting'];
+
+// preparationPath is where Prepare Dataset shows a run.
+export const preparationPath = (run: TrainingRun) => `/fine-tuning?${new URLSearchParams({ view: 'prepare', preparation: run.workflow_id, run: run.run_id })}`;
 
 export interface FineTuningActivity {
   kind: 'preparation' | 'training';
@@ -22,6 +26,7 @@ export interface FineTuningActivity {
   stage: string;
   completed: number;
   total: number;
+  paused?: boolean;
 }
 
 interface PreviewSubmission {
@@ -56,7 +61,7 @@ interface FineTuningRunnerValue {
   trainingActivity: FineTuningActivity | null;
   chooseInput: (file: File | null, kind: 'dataset' | 'document') => Promise<void>;
   cancelPreparation: () => void;
-  startRun: (training: TrainingOptions, preparation?: PreparationOptions) => Promise<boolean>;
+  startRun: (training: TrainingOptions, preparation?: PreparationOptions) => Promise<TrainingRun | null>;
   selectRun: (run: TrainingRun) => void;
   refreshRun: (run?: TrainingRun) => Promise<void>;
   previewSubmission: (run: TrainingRun) => PreviewSubmission | undefined;
@@ -68,6 +73,14 @@ interface FineTuningRunnerValue {
 }
 
 const FineTuningRunnerContext = createContext<FineTuningRunnerValue | null>(null);
+
+// retryDelay waits before the next attempt after a failed request, ending early on abort.
+export function retryDelay(signal: AbortSignal, ms = 5000) {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+  });
+}
 
 export function FineTuningRunnerProvider({ children }: { children: ReactNode }) {
   const [inputKind, setInputKind] = useState<'dataset' | 'document'>('dataset');
@@ -98,27 +111,49 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
 
   useEffect(() => () => uploadAbort.current?.abort(), []);
 
+  // A page load starts with no runs in memory. Adopt the newest in-progress runs so the
+  // sidebar and the one-preparation-at-a-time rule survive a reload or a new tab.
+  useEffect(() => {
+    const controller = new AbortController();
+    api.trainingRuns('', controller.signal, '', { statuses: activeStatuses })
+      .then((page) => {
+        const runs = page.runs ?? [];
+        const preparation = runs.find((run) => run.stages.some((stage) => stage.name === 'preparation'));
+        const training = runs.find((run) => !run.stages.some((stage) => stage.name === 'preparation'));
+        if (preparation) setPreparationRun((current) => current ?? preparation);
+        if (training) setTrainingRun((current) => current ?? training);
+      })
+      // Without the list, runs are found when the user opens them, as before.
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
   useEffect(() => {
     const identities: [string, string][] = JSON.parse(watchedRuns);
     if (identities.length === 0) return;
     const controller = new AbortController();
     setWatchError('');
     void (async () => {
-      try {
-        let revision = '';
-        while (!controller.signal.aborted) {
+      let revision = '';
+      while (!controller.signal.aborted) {
+        try {
           const page = await api.trainingRuns('', controller.signal, revision);
-          const updates = await Promise.all(identities.map(async ([workflowID, runID]) => page.runs.find((item) => item.workflow_id === workflowID && item.run_id === runID)
-            ?? await api.trainingRun(workflowID, runID, controller.signal)));
+          // List rows omit the preview and artifacts, so read each watched run in full.
+          const updates = await Promise.all(identities.map(([workflowID, runID]) => api.trainingRun(workflowID, runID, controller.signal)));
           if (controller.signal.aborted) return;
           const update = (selected: TrainingRun | null) => updates.find((run) => selected?.workflow_id === run.workflow_id && selected.run_id === run.run_id) ?? selected;
           setPreparationRun(update);
           setTrainingRun(update);
+          setWatchError('');
           if (updates.every((run) => terminalStatuses.has(run.status))) return;
           revision = page.revision;
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          // The server may be restarting; keep retrying until this run is no longer watched.
+          setWatchError(`Live updates paused: ${err instanceof Error ? err.message : 'Connection failed'}. Retrying automatically.`);
+          revision = '';
+          await retryDelay(controller.signal);
         }
-      } catch (err) {
-        if (!controller.signal.aborted) setWatchError(`Live updates paused: ${err instanceof Error ? err.message : 'Connection failed'}. Select Refresh to retry.`);
       }
     })();
     return () => controller.abort();
@@ -170,10 +205,10 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     }
   };
 
-  const startRun = async (training: TrainingOptions, preparation?: PreparationOptions): Promise<boolean> => {
-    if (!upload || uploading || submissionPending.current) return false;
-    if (inputKind === 'document' ? !!activePreparation : !!trainingJob) return false;
-    if (inputKind === 'document' && !preparation?.model) return false;
+  const startRun = async (training: TrainingOptions, preparation?: PreparationOptions): Promise<TrainingRun | null> => {
+    if (!upload || uploading || submissionPending.current) return null;
+    if (inputKind === 'document' ? !!activePreparation : !!trainingJob) return null;
+    if (inputKind === 'document' && !preparation?.model) return null;
     submissionPending.current = true;
     setSubmitting(true);
     setError('');
@@ -188,13 +223,16 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
           : { dataset_id: upload.id }),
       });
       delete runSubmissionIDs.current[submissionKey];
+      // The run owns the upload now; the form starts empty for the next one.
+      setUpload(null);
+      setPreparedFile(null);
       selectRun(run);
-      return true;
+      return run;
     } catch (err) {
       setError(err instanceof ApiError && err.status === 409
         ? `${err.message} Refresh datasets if the destination changed, or check Training history if this job was already submitted.`
         : err instanceof Error ? err.message : 'Job submission failed');
-      return false;
+      return null;
     } finally {
       submissionPending.current = false;
       setSubmitting(false);
@@ -318,7 +356,8 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       inputKind, preparedFile, upload, uploading, submitting, currentRun, preparationRun, trainingRun, error, watchError,
       preparationActivity: uploading ? { kind: 'preparation', title: inputKind === 'document' ? 'Uploading document…' : 'Uploading dataset…', stage: preparedFile?.name ?? '', completed: 0, total: 0 }
         : activePreparation?.stage === 'preparation' ? {
-          kind: 'preparation', title: activePreparation.status === 'waiting' ? 'Preparation waiting…' : 'Preparing dataset…',
+          kind: 'preparation', paused: activePreparation.control_action === 'pause',
+          title: activePreparation.control_action === 'pause' ? activePreparation.status === 'pause_requested' ? 'Pausing preparation…' : 'Preparation paused' : activePreparation.status === 'waiting' ? 'Preparation waiting…' : 'Preparing dataset…',
           stage: activePreparation.step || activePreparation.status,
           completed: activePreparation.progress?.completed ?? 0, total: activePreparation.progress?.total ?? 0,
         } : null,

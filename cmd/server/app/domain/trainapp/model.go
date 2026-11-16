@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
@@ -132,27 +134,100 @@ func (r Runs) Encode() ([]byte, string, error) {
 // Run is the public state of one training execution. Internal requests,
 // artifact paths, worker identities, and backend error messages are not exposed.
 type Run struct {
-	WorkflowID             string     `json:"workflow_id"`
-	PreparationOnly        bool       `json:"preparation_only"`
-	PreparedDatasetID      string     `json:"prepared_dataset_id,omitzero"`
-	PreparedDatasetVersion int        `json:"prepared_dataset_version,omitzero"`
-	RunID                  string     `json:"run_id"`
-	Status                 string     `json:"status"`
-	Stage                  string     `json:"stage,omitzero"`
-	Step                   string     `json:"step,omitzero"`
-	StateStale             bool       `json:"state_stale"`
-	StartedAt              time.Time  `json:"started_at"`
-	UpdatedAt              time.Time  `json:"updated_at,omitzero"`
-	ClosedAt               time.Time  `json:"closed_at,omitzero"`
-	Stages                 []Stage    `json:"stages"`
-	Progress               Progress   `json:"progress,omitzero"`
-	Checkpoint             Checkpoint `json:"checkpoint,omitzero"`
-	Preview                Preview    `json:"preview,omitzero"`
-	DatasetAvailable       bool       `json:"dataset_available"`
-	DatasetRecordCount     int        `json:"dataset_record_count"`
-	TrainingReady          bool       `json:"training_ready"`
-	EvaluationAvailable    bool       `json:"evaluation_available"`
-	AdapterAvailable       bool       `json:"adapter_available"`
+	JobID                  string          `json:"job_id,omitzero"`
+	AttemptID              string          `json:"attempt_id,omitzero"`
+	ObservationRevision    int64           `json:"observation_revision,omitzero"`
+	ControlRevision        int64           `json:"control_revision"`
+	ControlAction          string          `json:"control_action,omitzero"`
+	ObservedAt             time.Time       `json:"observed_at,omitzero"`
+	PendingActions         []PendingAction `json:"pending_actions,omitzero"`
+	WorkflowID             string          `json:"workflow_id"`
+	PreparationOnly        bool            `json:"preparation_only"`
+	PreparedDatasetID      string          `json:"prepared_dataset_id,omitzero"`
+	PreparedDatasetVersion int             `json:"prepared_dataset_version,omitzero"`
+	TargetDatasetID        string          `json:"target_dataset_id,omitzero"`
+	TargetDatasetName      string          `json:"target_dataset_name,omitzero"`
+	BaseVersion            int             `json:"base_version,omitzero"`
+	SourceDocument         string          `json:"source_document,omitzero"`
+	Settings               RunSettings     `json:"settings,omitzero"`
+	RunID                  string          `json:"run_id"`
+	Status                 string          `json:"status"`
+	Stage                  string          `json:"stage,omitzero"`
+	Step                   string          `json:"step,omitzero"`
+	StateStale             bool            `json:"state_stale"`
+	StartedAt              time.Time       `json:"started_at"`
+	UpdatedAt              time.Time       `json:"updated_at,omitzero"`
+	ClosedAt               time.Time       `json:"closed_at,omitzero"`
+	Stages                 []Stage         `json:"stages"`
+	Progress               Progress        `json:"progress,omitzero"`
+	Checkpoint             Checkpoint      `json:"checkpoint,omitzero"`
+	Preview                Preview         `json:"preview,omitzero"`
+	DatasetAvailable       bool            `json:"dataset_available"`
+	DatasetRecordCount     int             `json:"dataset_record_count"`
+	SkippedRecords         int             `json:"skipped_records,omitzero"`
+	FailureReason          string          `json:"failure_reason,omitzero"`
+	TrainingReady          bool            `json:"training_ready"`
+	EvaluationAvailable    bool            `json:"evaluation_available"`
+	AdapterAvailable       bool            `json:"adapter_available"`
+}
+
+// RunSettings echoes the preparation request. It is present only when the
+// live run is readable; the persisted catalog does not keep the request.
+type RunSettings struct {
+	Model          string `json:"model"`
+	Goal           string `json:"goal"`
+	PreviewRecords int    `json:"preview_records,omitzero"`
+	MaxQuestions   int    `json:"max_questions,omitzero"` // Zero is unlimited.
+	PageStart      int    `json:"page_start,omitzero"`
+	PageEnd        int    `json:"page_end,omitzero"`
+	Instructions   string `json:"instructions,omitzero"`
+}
+
+type PendingAction struct {
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
+	State string `json:"state"`
+}
+
+// PreparationControl is an immutable request against a workflow control revision,
+// not the independently advancing catalog observation revision.
+type PreparationControl struct {
+	RequestID        string `json:"request_id"`
+	ExpectedRevision int64  `json:"expected_revision"`
+}
+
+func (app *PreparationControl) Decode(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(app); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return fmt.Errorf("request body must contain one JSON object")
+	}
+	return nil
+}
+
+func toControlRequest(app PreparationControl, action string) (tmprl.ControlRequest, error) {
+	request := tmprl.ControlRequest{RequestID: app.RequestID, ExpectedRevision: app.ExpectedRevision, Action: action}
+	return request, request.Validate()
+}
+
+// ControlReceipt acknowledges command acceptance, never confirmed suspension.
+type ControlReceipt struct {
+	RequestID string `json:"request_id"`
+	Action    string `json:"action"`
+	Revision  int64  `json:"revision"`
+}
+
+func (app ControlReceipt) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toAppControlReceipt(receipt tmprl.ControlReceipt) ControlReceipt {
+	return ControlReceipt{RequestID: receipt.RequestID, Action: receipt.Action, Revision: receipt.Revision}
 }
 
 // Evaluation exposes persisted scores, not a new acceptance calculation.
@@ -246,7 +321,7 @@ func (d *NewDataset) Decode(data []byte) error {
 	return nil
 }
 
-func toAppDataset(d preparation.Dataset) Dataset {
+func toAppDataset(d datasetstore.Dataset) Dataset {
 	result := Dataset{ID: d.ID, Name: d.Name, Version: d.Version, RecordCount: d.RecordCount, TrainingReady: d.TrainingReady,
 		CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt, Versions: slices.Clone(d.Versions), Documents: make([]DatasetDocument, len(d.Documents))}
 	for i, document := range d.Documents {
@@ -384,19 +459,32 @@ func (r Run) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toAppRun(run tmprl.Run[training.Request, training.Artifacts]) Run {
+func toAppRun(run datasets.State) Run {
 	result := Run{
+		JobID: run.JobID, AttemptID: run.AttemptID, ObservationRevision: run.ObservationRevision, ObservedAt: run.ObservedAt,
+		ControlRevision: run.ControlRevision, ControlAction: run.ControlAction,
 		WorkflowID: run.WorkflowID, RunID: run.RunID, Status: string(run.Status),
 		PreparationOnly: run.Request.PreparationOnly,
 		Stage:           string(run.Stage), Step: run.Step, StateStale: run.StateStale,
 		StartedAt: run.StartedAt, UpdatedAt: run.UpdatedAt, ClosedAt: run.ClosedAt,
 		Stages:              make([]Stage, len(run.Stages)),
-		EvaluationAvailable: run.Artifacts.Training.Report != "",
-		AdapterAvailable: run.Status == tmprl.StatusCompleted && run.Artifacts.Training.Accepted &&
-			run.Artifacts.Training.Report != "" && run.Artifacts.Training.Adapter != "",
+		EvaluationAvailable: run.EvaluationAvailable, AdapterAvailable: run.AdapterAvailable,
+		DatasetAvailable: run.DatasetAvailable, DatasetRecordCount: run.DatasetRecordCount,
+		SkippedRecords: run.SkippedRecordCount, FailureReason: run.FailureReason,
+		TrainingReady:     run.TrainingReady,
+		PreparedDatasetID: run.PreparedDatasetID, PreparedDatasetVersion: run.PreparedDatasetVersion,
+		TargetDatasetID: run.TargetDatasetID, TargetDatasetName: run.TargetDatasetName,
+		BaseVersion: run.BaseVersion, SourceDocument: run.SourceDocument,
 	}
-	if prepared := run.Artifacts.Preparation; prepared != nil {
-		result.PreparedDatasetID, result.PreparedDatasetVersion = prepared.SavedDatasetID, prepared.SavedVersion
+	if prepare := run.Request.Prepare; prepare != nil {
+		result.Settings = RunSettings{
+			Model: prepare.Model, Goal: string(prepare.Goal), PreviewRecords: prepare.PreviewRecords,
+			MaxQuestions: prepare.MaxQuestions, PageStart: prepare.PageStart, PageEnd: prepare.PageEnd,
+			Instructions: prepare.Instructions,
+		}
+	}
+	for _, action := range run.PendingActions {
+		result.PendingActions = append(result.PendingActions, PendingAction{ID: action.ID, Kind: action.Kind, State: action.State})
 	}
 	for i, stage := range run.Stages {
 		result.Stages[i] = Stage{
@@ -416,23 +504,12 @@ func toAppRun(run tmprl.Run[training.Request, training.Artifacts]) Run {
 			Stage: string(run.Progress.Stage), Step: run.Progress.Step,
 			Completed: run.Progress.Completed, Total: run.Progress.Total,
 		}
-		if run.Status == tmprl.StatusRunning && !run.StateStale && run.Progress.Stage == run.Stage && run.Progress.Step == run.Step {
-			result.Progress.RemainingSeconds = int64(run.Progress.Remaining().Round(time.Second) / time.Second)
-		}
+		result.Progress.RemainingSeconds = run.RemainingSeconds
 	}
 	if run.Checkpoint != nil {
 		result.Checkpoint = Checkpoint{
 			ID: run.Checkpoint.ID, Name: run.Checkpoint.Name,
 			Stage: run.Checkpoint.Stage, Step: run.Checkpoint.Step,
-		}
-	}
-	if prepared := run.Artifacts.Preparation; prepared != nil {
-		result.DatasetAvailable = run.Request.Prepare != nil && prepared.DatasetID == run.Request.Prepare.DatasetID && prepared.RecordsPath != ""
-		result.DatasetRecordCount = prepared.RecordCount
-		result.TrainingReady = result.DatasetAvailable && prepared.TrainingReady
-		if prepared.SavedDatasetID != "" {
-			result.DatasetRecordCount = prepared.SavedRecordCount
-			result.TrainingReady = result.DatasetAvailable && prepared.SavedTrainingReady
 		}
 	}
 	if preview := run.Artifacts.Preview; preview != nil {

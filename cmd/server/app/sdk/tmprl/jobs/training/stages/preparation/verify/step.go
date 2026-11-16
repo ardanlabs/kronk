@@ -65,7 +65,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 	report()
 	for state.Verified < len(state.Records) {
-		if err := ctx.Err(); err != nil {
+		if err := checkpoint.SafePoint(ctx, input); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
 		end := min(state.Verified+5, len(state.Records))
@@ -124,6 +124,9 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
 		report()
+	}
+	if err := checkpoint.SafePoint(ctx, input); err != nil {
+		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}
 	if p.Input.Kind == preparation.PreparationFull && !slices.ContainsFunc(state.Records, func(r training.Record) bool { return !r.ValidationPrompt && !r.IndependentPrompt }) {
 		return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError("no training examples passed verification; rejection reasons are saved in the preparation checkpoint", "preparation-no-verified-examples", nil)

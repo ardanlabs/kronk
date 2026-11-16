@@ -140,6 +140,18 @@ func (j *Jobs[R, A]) enrichRun(state *Run[R, A], description *workflowservice.De
 	return nil
 }
 
+// failureTypes lists the application error types in a failure chain. Callers
+// classify failures by these fixed types instead of by message text.
+func failureTypes(failure *failurepb.Failure) []string {
+	var types []string
+	for ; failure != nil; failure = failure.GetCause() {
+		if info := failure.GetApplicationFailureInfo(); info != nil {
+			types = append(types, info.GetType())
+		}
+	}
+	return types
+}
+
 func failureMessage(failure *failurepb.Failure) string {
 	var messages []string
 	for failure != nil {

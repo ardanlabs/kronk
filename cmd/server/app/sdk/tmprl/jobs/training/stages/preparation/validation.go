@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
@@ -25,7 +26,7 @@ func ValidateRequest(ctx context.Context, store *uploads.Store, input Preparatio
 	}
 	input.DatasetID = strings.TrimSpace(input.DatasetID)
 	input.TargetDatasetID = strings.TrimSpace(input.TargetDatasetID)
-	if (input.TargetDatasetID == "") != (input.BaseVersion == 0) || input.BaseVersion < 0 || input.TargetDatasetID != "" && !validDatasetID(input.TargetDatasetID) {
+	if (input.TargetDatasetID == "") != (input.BaseVersion == 0) || input.BaseVersion < 0 || input.TargetDatasetID != "" && !datasetstore.ValidID(input.TargetDatasetID) {
 		return PreparationRequest{}, fmt.Errorf("%w: select a valid destination dataset and base version together", ErrInvalidArgument)
 	}
 	input.Model = strings.TrimSpace(input.Model)

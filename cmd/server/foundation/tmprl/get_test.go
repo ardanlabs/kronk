@@ -82,6 +82,30 @@ func TestJobsGetCheckpointFromHistory(t *testing.T) {
 	}
 }
 
+func TestJobsGetFailureTypes(t *testing.T) {
+	c := new(mocks.Client)
+	j := newSnapshotJobs(t, c)
+	e := tmprl.Execution{WorkflowID: "export-failed", RunID: "run-failed"}
+	info := snapshotInfo(t, "failed", enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, nil)
+	c.On("DescribeWorkflowExecution", mock.Anything, e.WorkflowID, e.RunID).Return(&workflowservice.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: info}, nil)
+	// An activity failure wraps the step's application error, which wraps a plain Go error.
+	failure := &failurepb.Failure{Message: "activity error", FailureInfo: &failurepb.Failure_ActivityFailureInfo{ActivityFailureInfo: &failurepb.ActivityFailureInfo{}},
+		Cause: &failurepb.Failure{Message: "already in dataset", FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{Type: "dataset-document-exists"}},
+			Cause: &failurepb.Failure{Message: "wrapped", FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{Type: "wrapError"}}}}}
+	it := mocks.NewHistoryEventIterator(t)
+	it.On("HasNext").Return(true).Once()
+	it.On("Next").Return(&historypb.HistoryEvent{
+		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED,
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionFailedEventAttributes{WorkflowExecutionFailedEventAttributes: &historypb.WorkflowExecutionFailedEventAttributes{Failure: failure}},
+	}, nil).Once()
+	it.On("HasNext").Return(false).Once()
+	c.On("GetWorkflowHistory", mock.Anything, e.WorkflowID, e.RunID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT).Return(it)
+	got, err := j.Get(t.Context(), e)
+	if err != nil || got.Error != "activity error: already in dataset: wrapped" || !reflect.DeepEqual(got.FailureTypes, []string{"dataset-document-exists", "wrapError"}) {
+		t.Fatalf("failure: got error %q types %q, %v", got.Error, got.FailureTypes, err)
+	}
+}
+
 func TestJobsGetPendingDiagnostics(t *testing.T) {
 	for _, test := range []struct {
 		name         string

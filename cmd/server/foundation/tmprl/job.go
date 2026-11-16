@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -14,9 +15,14 @@ import (
 
 const sessionHeartbeatTimeout = 5 * time.Second
 
+// errReleaseWorker ends a reservation without failing the job or consuming a
+// recovery attempt: an idle paused/review wait, or a step suspended for host
+// shutdown. Only opted-in control executions (see idleRelease) return it.
+var errReleaseWorker = errors.New("release idle job worker")
+
 // QueuedJob constructs the initial snapshot for a validated submitted plan.
 func QueuedJob[R, A any](input JobInput[R]) Run[R, A] {
-	state := Run[R, A]{Request: input.Request, Definition: input.Job, Status: StatusQueued}
+	state := Run[R, A]{Request: input.Request, Definition: input.Job, Status: StatusQueued, ControlStage: input.ControlStage}
 	for _, stage := range input.Job.Stages {
 		entry := StageState{Name: StageName(stage.Name), Status: StatusQueued}
 		for _, step := range stage.Steps {
@@ -71,6 +77,43 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 	defer cancelWork()
 	paused, reserved := false, false
 	var controlErr error
+	if input.ControlStage != "" {
+		if err := workflow.SetUpdateHandler(work, names.Control+".ordered", func(ctx workflow.Context, request ControlRequest) (ControlReceipt, error) {
+			if request.Validate() != nil || ctx.Err() != nil || state.Status.Terminal() ||
+				state.ControlRevision != request.ExpectedRevision ||
+				state.Stage != "" && string(state.Stage) != input.ControlStage ||
+				(request.Action == "pause") == paused {
+				return ControlReceipt{}, temporal.NewNonRetryableApplicationError(ErrControlConflict.Error(), "control-conflict", nil)
+			}
+			previous, wasPaused := state, paused
+			paused = request.Action == "pause"
+			state.ControlRevision++
+			state.ControlAction = request.Action
+			switch {
+			case state.Checkpoint != nil:
+				state.Status = StatusWaiting
+				if paused {
+					state.ControlAcknowledgedRevision = state.ControlRevision
+					state.ControlCheckpoint = state.Checkpoint.ID
+				}
+			case paused:
+				state.Status = StatusPauseRequested
+			case reserved:
+				state.Status = StatusRunning
+			case state.SessionAttempt > 1:
+				state.Status = StatusRecovering
+			default:
+				state.Status = StatusQueued
+			}
+			if err := PersistRun(ctx, names.Memo, &state); err != nil {
+				state, paused = previous, wasPaused
+				return ControlReceipt{}, err
+			}
+			return ControlReceipt{ControlRequest: request, Revision: state.ControlRevision}, nil
+		}); err != nil {
+			return Run[R, A]{}, err
+		}
+	}
 	checkpointEnabled := false
 	for _, stage := range input.Job.Stages {
 		checkpointEnabled = checkpointEnabled || stage.WaitAfter != ""
@@ -91,6 +134,10 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 			var command string
 			if !controls.Receive(ctx, &command) {
 				return
+			}
+			if input.ControlStage != "" {
+				log.Warn("unordered control ignored; use the ordered update protocol")
+				continue
 			}
 			switch command {
 			case "pause":
@@ -128,8 +175,14 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 			}
 		}
 	})
+	// Ordered-control executions release their worker while paused, in review,
+	// or after host shutdown. Only the first reservation is bounded by the queue
+	// timeout, and stage budgets count active time. Older histories replay with
+	// the reservation behavior they recorded.
+	idle := input.ControlStage != "" && workflow.GetVersion(work, "preparation-idle-release", workflow.DefaultVersion, 1) == 1
+	reservedOnce := false
 	stageIndex, stepIndex := 0, 0
-	for attempt := 1; attempt <= input.Job.SessionAttempts; attempt++ {
+	for attempt := 1; attempt <= input.Job.SessionAttempts; {
 		state.SessionAttempt = attempt
 		if attempt > 1 {
 			state.Status = StatusRecovering
@@ -139,8 +192,12 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 			return Run[R, A]{}, err
 		}
 		log.Info("job waiting for worker", "session_attempt", attempt)
+		queueTimeout := input.Job.QueueTimeout
+		if idle && reservedOnce {
+			queueTimeout = 0 // A started run waits for its worker without a limit.
+		}
 		session, err := workflow.CreateSession(work, &workflow.SessionOptions{
-			CreationTimeout: input.Job.QueueTimeout, ExecutionTimeout: input.Job.ReservationTimeout + input.Job.QueueTimeout, HeartbeatTimeout: sessionHeartbeatTimeout,
+			CreationTimeout: queueTimeout, ExecutionTimeout: input.Job.ReservationTimeout + input.Job.QueueTimeout, HeartbeatTimeout: sessionHeartbeatTimeout,
 		})
 		if err != nil {
 			if controlErr != nil {
@@ -148,7 +205,7 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 			}
 			return Run[R, A]{}, fmt.Errorf("reserving job worker: %w", err)
 		}
-		reserved = true
+		reserved, reservedOnce = true, true
 		si := workflow.GetSessionInfo(session)
 		state.WorkerHost, state.ReservationDeadline = si.HostName, workflow.Now(ctx).Add(input.Job.ReservationTimeout)
 		log.Info("job worker reserved", "session_id", si.SessionID, "worker_host", si.HostName, "session_attempt", attempt, "reservation_deadline", state.ReservationDeadline)
@@ -161,7 +218,7 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 				cancelExecution()
 			}
 		})
-		err = runJobStages(execution, input, names, &state, &paused, &stageIndex, &stepIndex)
+		err = runJobStages(execution, input, names, &state, &paused, idle, &stageIndex, &stepIndex)
 		// A crashed worker's step heartbeat can expire before its session
 		// heartbeat. Allow session failure detection before releasing it; closing
 		// the session immediately would suppress recovery of unfinished work.
@@ -194,6 +251,26 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 			state.Stage, state.Step = "", ""
 			return state, nil
 		}
+		if errors.Is(err, errReleaseWorker) {
+			if ctx.Err() != nil {
+				// Stop raced the release: close as stopped with the Stop's error.
+				return Run[R, A]{}, ctx.Err()
+			}
+			// Idle or drained: no work is in flight, so this does not consume a
+			// recovery attempt. Wait without a worker or a deadline.
+			state.WorkerHost, state.ReservationDeadline = "", time.Time{}
+			if stageIndex < len(state.Stages) {
+				state.Stages[stageIndex].Deadline = time.Time{}
+			}
+			if err := PersistRun(work, names.Memo, &state); err != nil {
+				return Run[R, A]{}, err
+			}
+			log.Info("job worker released while idle", "status", state.Status, "stage", state.Stage, "step", state.Step)
+			if err := workflow.Await(work, func() bool { return !paused && state.Checkpoint == nil }); err != nil {
+				return Run[R, A]{}, err
+			}
+			continue
+		}
 		if ctx.Err() != nil || !failed || attempt == input.Job.SessionAttempts {
 			return Run[R, A]{}, err
 		}
@@ -206,6 +283,7 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 			stage.Steps[stepIndex].Status, stage.Steps[stepIndex].LastError = StatusRecovering, state.Error
 		}
 		log.Warn("job worker lost", "stage", state.Stage, "step", state.Step, "session_attempt", attempt)
+		attempt++
 	}
 	return Run[R, A]{}, fmt.Errorf("job worker recovery exhausted")
 }
@@ -240,11 +318,11 @@ func acceptCheckpointDecision[R, A any](ctx workflow.Context, names Names, state
 	return decision, nil
 }
 
-func awaitCheckpoint[R, A any](ctx workflow.Context, names Names, state *Run[R, A], paused *bool, stage, step, name string) error {
+func awaitCheckpoint[R, A any](ctx workflow.Context, names Names, state *Run[R, A], paused *bool, idle bool, stage, step, name string) error {
 	id := state.RunID + "/" + stage + "/" + step + "/" + name
 	for _, accepted := range state.Decisions {
 		if accepted.CheckpointID == id {
-			return awaitJobResume(ctx, names, state, paused)
+			return awaitJobResume(ctx, names, state, paused, idle)
 		}
 	}
 	state.Checkpoint = &Checkpoint{ID: id, Name: name, Stage: stage, Step: step}
@@ -252,25 +330,43 @@ func awaitCheckpoint[R, A any](ctx workflow.Context, names Names, state *Run[R, 
 	if err := PersistRun(ctx, names.Memo, state); err != nil {
 		return err
 	}
+	if idle {
+		// Review can take any amount of time; wait for it without a worker.
+		// The accepted decision is found above after the next reservation.
+		return errReleaseWorker
+	}
 	if err := workflow.Await(ctx, func() bool { return state.Checkpoint == nil }); err != nil {
 		return err
 	}
-	return awaitJobResume(ctx, names, state, paused)
+	return awaitJobResume(ctx, names, state, paused, idle)
 }
 
-func awaitJobResume[R, A any](ctx workflow.Context, names Names, state *Run[R, A], paused *bool) error {
+// awaitJobResume acknowledges Pause. Idle-release executions return
+// errReleaseWorker so the caller waits for Continue without a worker.
+func awaitJobResume[R, A any](ctx workflow.Context, names Names, state *Run[R, A], paused *bool, idle bool) error {
 	if !*paused {
 		return nil
 	}
-	state.Status, state.Step = StatusPaused, ""
+	state.Status = StatusPaused
+	if state.ControlStage == "" {
+		state.Step = ""
+	} else {
+		state.ControlAcknowledgedRevision = state.ControlRevision
+		if state.ControlCheckpoint == "" {
+			state.ControlCheckpoint = string(state.Stage) + "/" + state.Step + ":step-boundary"
+		}
+	}
 	if err := PersistRun(ctx, names.Memo, state); err != nil {
 		return err
+	}
+	if idle {
+		return errReleaseWorker
 	}
 	workflow.GetLogger(ctx).Info("job paused; worker remains reserved", "stage", state.Stage, "reservation_deadline", state.ReservationDeadline)
 	return workflow.Await(ctx, func() bool { return !*paused })
 }
 
-func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names, state *Run[R, A], paused *bool, stageIndex, stepIndex *int) error {
+func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names, state *Run[R, A], paused *bool, idle bool, stageIndex, stepIndex *int) error {
 	for *stageIndex < len(input.Job.Stages) {
 		plan := input.Job.Stages[*stageIndex]
 		stage := &state.Stages[*stageIndex]
@@ -278,7 +374,7 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 		// A completed stage awaiting authorization must not restart its steps or
 		// its deadline when the worker session is replaced.
 		if plan.WaitAfter != "" && stage.Status == StatusCompleted {
-			if err := awaitCheckpoint(ctx, names, state, paused, plan.Name, "", plan.WaitAfter); err != nil {
+			if err := awaitCheckpoint(ctx, names, state, paused, idle, plan.Name, "", plan.WaitAfter); err != nil {
 				return err
 			}
 			(*stageIndex)++
@@ -286,11 +382,16 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 			continue
 		}
 		if stage.StartedAt.IsZero() {
-			if err := awaitJobResume(ctx, names, state, paused); err != nil {
+			if err := awaitJobResume(ctx, names, state, paused, idle); err != nil {
 				return err
 			}
 			stage.StartedAt = workflow.Now(ctx)
 			stage.Deadline = stage.StartedAt.Add(plan.Timeout)
+		}
+		resumed := workflow.Now(ctx)
+		if idle {
+			// Count only active time: project the remaining budget from now.
+			stage.Deadline = resumed.Add(plan.Timeout - stage.ActiveElapsed)
 		}
 		stage.Status = StatusRunning
 		stageCtx, cancel := workflow.WithCancel(ctx)
@@ -308,10 +409,18 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 		workflow.GetLogger(ctx).Info("job stage executing", "stage", stage.Name, "deadline", stage.Deadline, "next_step", *stepIndex)
 		var err error
 		if !expired {
-			err = runJobSteps(stageCtx, plan, names, state, stage, paused, stepIndex)
+			err = runJobSteps(stageCtx, plan, names, state, stage, paused, idle, stepIndex)
 		}
 		cancelTimer()
 		cancel()
+		if idle {
+			// Charge this reservation's active time on every exit, including a
+			// crash, so idle waits between reservations are the only uncounted time.
+			stage.ActiveElapsed += workflow.Now(ctx).Sub(resumed)
+			if errors.Is(err, errReleaseWorker) && !expired {
+				return err
+			}
+		}
 		if expired || !workflow.Now(ctx).Before(stage.Deadline) {
 			return temporal.NewNonRetryableApplicationError(fmt.Sprintf("stage %s exceeded its total deadline, including retries and pauses", stage.Name), "stage-expired", nil)
 		}
@@ -321,7 +430,7 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 		stage.Status, stage.ClosedAt = StatusCompleted, workflow.Now(ctx)
 		workflow.GetLogger(ctx).Info("job stage committed", "stage", stage.Name, "elapsed", stage.ClosedAt.Sub(stage.StartedAt))
 		if plan.WaitAfter != "" && !state.Status.Terminal() {
-			if err := awaitCheckpoint(ctx, names, state, paused, plan.Name, "", plan.WaitAfter); err != nil {
+			if err := awaitCheckpoint(ctx, names, state, paused, idle, plan.Name, "", plan.WaitAfter); err != nil {
 				return err
 			}
 		}
@@ -337,18 +446,18 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 	return nil
 }
 
-func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state *Run[R, A], stage *StageState, paused *bool, index *int) error {
+func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state *Run[R, A], stage *StageState, paused *bool, idle bool, index *int) error {
 	for *index < len(plan.Steps) {
 		policy := plan.Steps[*index]
 		step := &stage.Steps[*index]
 		if policy.WaitAfter != "" && step.Status == StatusCompleted {
-			if err := awaitCheckpoint(ctx, names, state, paused, plan.Name, policy.Name, policy.WaitAfter); err != nil {
+			if err := awaitCheckpoint(ctx, names, state, paused, idle, plan.Name, policy.Name, policy.WaitAfter); err != nil {
 				return err
 			}
 			(*index)++
 			continue
 		}
-		if err := awaitJobResume(ctx, names, state, paused); err != nil {
+		if err := awaitJobResume(ctx, names, state, paused, idle); err != nil {
 			return err
 		}
 		state.Status, state.Step, state.Error = StatusRunning, policy.Name, ""
@@ -356,21 +465,61 @@ func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state 
 		if step.StartedAt.IsZero() {
 			step.StartedAt = workflow.Now(ctx)
 		}
-		step.Attempt = 1
+		safePoints := state.ControlStage == plan.Name && workflow.GetVersion(ctx, "preparation-safe-points", workflow.DefaultVersion, 1) == 1
+		if !safePoints || step.Attempt == 0 {
+			step.Attempt = 1
+		}
+		resumeCheckpoint := ""
+		if safePoints && strings.HasPrefix(state.ControlCheckpoint, plan.Name+"/"+policy.Name+"/") {
+			resumeCheckpoint = state.ControlCheckpoint
+			// The dispatched request retains the expected checkpoint. A later
+			// session recovery must not compare newer work with this older digest.
+			state.ControlCheckpoint = ""
+		}
 		if err := PersistRun(ctx, names.Memo, state); err != nil {
 			return err
 		}
+		maximumAttempts := policy.Retry.MaximumAttempts
+		if safePoints {
+			maximumAttempts -= step.Attempt - 1
+		}
 		stepCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 			StartToCloseTimeout: policy.Timeout, HeartbeatTimeout: policy.HeartbeatTimeout, WaitForCancellation: true,
-			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: policy.Retry.MaximumAttempts, InitialInterval: policy.Retry.InitialInterval, BackoffCoefficient: policy.Retry.BackoffCoefficient, MaximumInterval: policy.Retry.MaximumInterval},
+			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: maximumAttempts, InitialInterval: policy.Retry.InitialInterval, BackoffCoefficient: policy.Retry.BackoffCoefficient, MaximumInterval: policy.Retry.MaximumInterval},
 		})
-		request := StepRequest[R, A]{Execution: state.Execution, Key: state.RunID + "/" + plan.Name + "/" + policy.Name, Stage: plan.Name, Step: policy.Name, Request: state.Request, Artifacts: state.Artifacts, Decisions: state.Decisions}
+		request := StepRequest[R, A]{Execution: state.Execution, Key: state.RunID + "/" + plan.Name + "/" + policy.Name, Stage: plan.Name, Step: policy.Name, Request: state.Request, Artifacts: state.Artifacts, Decisions: state.Decisions, SafePoints: safePoints, ResumeCheckpoint: resumeCheckpoint}
 		var output StepResult[A]
 		if err := workflow.ExecuteActivity(stepCtx, names.Activity, request).Get(ctx, &output); err != nil {
+			if suspended, ok := errors.AsType[*temporal.ApplicationError](err); safePoints && ctx.Err() == nil && ok && (suspended.Type() == "step-suspended" || idle && suspended.Type() == "step-drained") {
+				var reference string
+				var attempt int32
+				if detailsErr := suspended.Details(&reference, &attempt); detailsErr != nil || reference == "" || attempt < 1 || attempt > maximumAttempts {
+					return err
+				}
+				// A voluntary suspension is not a failure. Preserve all preceding
+				// failed attempts rather than refreshing their budget on Continue.
+				step.Attempt += attempt - 1
+				state.ControlCheckpoint = reference
+				if suspended.Type() == "step-drained" {
+					// Host shutdown. The next worker continues this saved
+					// checkpoint without a user Continue or a recovery attempt.
+					step.Status, step.LastError = StatusRecovering, "worker shut down at a saved checkpoint"
+					state.Status = StatusRecovering
+					return errReleaseWorker
+				}
+				if err := awaitJobResume(ctx, names, state, paused, idle); err != nil {
+					return err
+				}
+				continue // Same step, no whole-step commit and no review bypass.
+			}
 			return err
 		}
 		state.Artifacts = output.Artifacts
-		step.Status, step.Attempt, step.ClosedAt = StatusCompleted, output.Attempt, workflow.Now(ctx)
+		attempt := output.Attempt
+		if safePoints {
+			attempt += step.Attempt - 1
+		}
+		step.Status, step.Attempt, step.ClosedAt = StatusCompleted, attempt, workflow.Now(ctx)
 		workflow.GetLogger(ctx).Info("job step committed", "stage", plan.Name, "step", policy.Name, "attempt", output.Attempt, "elapsed", step.ClosedAt.Sub(step.StartedAt), "outcome", output.Status)
 		if output.Status != "" {
 			(*index)++
@@ -378,7 +527,7 @@ func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state 
 			return nil
 		}
 		if policy.WaitAfter != "" {
-			if err := awaitCheckpoint(ctx, names, state, paused, plan.Name, policy.Name, policy.WaitAfter); err != nil {
+			if err := awaitCheckpoint(ctx, names, state, paused, idle, plan.Name, policy.Name, policy.WaitAfter); err != nil {
 				return err
 			}
 		}

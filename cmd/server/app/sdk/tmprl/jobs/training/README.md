@@ -8,7 +8,9 @@ as a reference, not as a dependency or an alternative execution path in this job
 
 | Location | Responsibility |
 | --- | --- |
-| `training.go` | Job types and all Job methods: submission, validation, step registration, resources and artifact access |
+| `training.go` | Submission/review/control application API, execution-state interpretation, application errors, step registration, resources and artifact access |
+| `app/sdk/tmprl/datasets` | Application service: preparation runs, shared history, saved-output readiness and dataset management |
+| `app/sdk/tmprl/datasets/store` | Dataset identity, immutable versions, safe publication, concurrency guards and dataset-ID validation; no job coordination |
 | `input.go` | Nonretryable input and step error helpers |
 | `job.yaml` | Embedded ordered stages, steps, deadlines and retry policies |
 | `foundation/tmprl/uploads` | Generic confined upload storage, metadata and integrity checks |
@@ -23,6 +25,58 @@ progress and completed-step result commits. There is no application workflow,
 activity dispatcher, control implementation, or second completed-step cache.
 Preparation batch checkpoints and locked training splits are business state,
 not a replacement for foundation's completed-step commits.
+
+## SQL dataset publication boundary
+
+The host may supply `Config.MoxieDB` and its existing `Config.Datasets` file store.
+When configured, this job calls SQL-only `moxiedb` directly for verified dataset
+publication and exact published-version reads. It never imports the parent
+datasets service. The datasets service owns create/remove/import coordination;
+both use the file-only store and its cross-process publication lock.
+
+The host must initialize/reconcile datasets before starting this job's worker.
+SQL table installation belongs to `make tuning-up`, not `training.New` or worker
+startup. The job preserves the stable `add/<publication-id>` identity and input
+digest through file publication and transactional catalog commit. An activity
+retry after the file was published but SQL failed reuses that exact snapshot.
+Index repair happens after catalog commit. An unresolved competing publication
+blocks a new write instead of letting an uncataloged head become its base.
+
+Saved reusable-output downloads pin the saved dataset/version, check relative location,
+size and digest, and never fall back to a newer head, old scratch result or another
+file when the catalog/file is missing or corrupt. Omitting `Config.MoxieDB` retains
+the existing file-only behavior; configured SQL outages do not enable fallback.
+Legacy runs without a saved reusable dataset retain their confined scratch-output
+download contract.
+
+## Durable job catalog
+
+With `Config.MoxieDB`, `Start` records a stable namespace-scoped job, attempt and
+immutable submit intent before contacting Temporal. Retries with the same ID
+and input resolve the original execution; changed input conflicts. Resolve lost
+receipts with Describe/Get before retrying a submit. Workflow-ID reuse remains
+rejected by the existing runner. A request without an ID receives a new ID; it
+cannot deduplicate a later independently submitted HTTP request without that ID.
+
+Review, explicit Training authorization and Stop persist command intents before
+the external mutation. A lost receipt stays pending until reconciliation confirms
+acceptance or rejection. Acceptance of Stop is not terminal cancellation, and
+review never authorizes Training. Both stages remain in this job.
+
+The host starts `RunCatalog` after dataset initialization and joins it on shutdown
+before closing the client/database. It discovers existing history (retrying after
+outages), resolves pending commands, and refreshes active/unobserved executions
+every five seconds with bounded calls. Exact namespace/workflow/run links are
+immutable. Observations use revision CAS and source timestamps so delayed reads
+cannot replace newer state. SQL holds sanitized bounded status/readiness, not
+preview/source text, decisions, provider errors or private artifact paths. Durable
+review intent payloads are private command data and never appear in public reads.
+
+Temporal remains execution authority; SQL retains the last confirmed observation
+and pending requests. An outage marks that observation stale without advancing
+its observation time or inventing failure. Computation shutdown recovery is
+covered separately by milestone 3B.2/3B.3 below. The sample grid is not connected
+by this work.
 
 ## Host integration
 
@@ -56,9 +110,27 @@ There are no stage-specific provider subpackages or compatibility aliases.
 - Start a host-owned worker with `job.Jobs().NewWorker().Start()`; retain
   the worker and stop it before closing the borrowed Temporal client.
 - Submit validated requests with `job.Start(ctx, request)`.
-- Use `job.Jobs().Get`, `List`, `Wait`, `Pause`, `Resume`, `Stop`, `History`
-  and `Subscribe` directly. They use foundation's concrete execution/run types.
+- Use `job.Get` and `job.List` for execution observations, report/adapter availability
+  and ETA. Dataset-output identity/count/readiness is interpreted by datasets.
+- Request cooperative cancellation through `job.Stop`; an accepted request does
+  not claim that execution has already stopped or that committed outputs are gone.
+- Host infrastructure can still use `job.Jobs().Wait`, `Pause`, `Resume`, `History`
+  and `Subscribe`. Foundation owns their actual execution semantics.
+- `trainapp` receives the host-owned datasets service explicitly. Preparation and
+  shared run operations go through `datasets.Service`, which calls this job.
+  Training authorization/evaluation/adapter handlers retain their training API.
+  HTTP does not discover storage through the job or interpret Temporal errors.
+  Application errors preserve the original backend cause.
+- `main.go` retains the existing `.moxie` paths and injects one shared dataset store.
+  For existing non-HTTP callers, omitting `Config.Datasets` still constructs a
+  store under `Config.StorageRoot/preparation-datasets`.
 - Read deliverables with `job.Evaluation` and `job.OpenAdapter`.
+
+`datasets.Service` and this job share `datasets/store`, not each other's application
+service. This avoids an import cycle without callbacks, duplicated schemas or a
+second execution engine. Both services call SQL-only `moxiedb` directly for their
+respective metadata: datasets reads catalog history; this job writes execution
+links, observations, command intents and verified output publications.
 
 Select exactly one input: `Request.Prepare` for an imported document, or
 `Request.DatasetID` for prepared JSONL. Documents enter Preparation first; prepared
@@ -72,7 +144,7 @@ retain Extract → Preview → Generate → Verify, including Preview approval, 
 finish after Verify without reserving a worker for a later training decision.
 They do not require an approved training model or training hyperparameters.
 
-`preparation.DatasetStore` in `stages/preparation/dataset.go` owns named datasets
+`store.DatasetStore` in `app/sdk/tmprl/datasets/store/store.go` owns named datasets
 and immutable versions. Supply `Prepare.TargetDatasetID` and `Prepare.BaseVersion`
 on a preparation-only request to append that document's verified examples. Existing
 documents are not extracted or generated again. Additions merge concurrent updates;
@@ -149,7 +221,9 @@ Manual Pause remains independent of review: Continue while paused accepts the
 records but does not resume work. Waiting for Preview counts toward Preparation's
 24-hour budget. Waiting after completed Preparation does not restart its budget;
 both waits retain the worker and count toward the 168-hour reservation budget.
-These SDK controls still need application endpoints and BUI wiring.
+Preparation-only ordered Pause/Continue has application endpoints; live BUI
+controls remain a separate milestone. Review acceptance and Continue of a paused
+execution are different operations.
 
 Each leaf step has `Step.Name` and `Step.Execute` in `step.go`. To add an operation,
 implement the appropriate stage contract, register it in `training.go`, and add it
@@ -160,8 +234,110 @@ One reserved worker executes all steps serially. Additional workers can run
 other jobs. Workers recovering jobs on another machine must share the durable
 execution storage root and have access to the same uploads. Upload storage is
 accessed through `Store.Get` and `Store.Open`; application code does not depend on
-its directory layout. Pauses take effect between steps and count toward active
-deadlines; cancellation is cooperative. Incomplete provider work can repeat on retry.
+its directory layout. Legacy/combined/training pauses take effect between steps;
+cancellation is cooperative. Incomplete provider work can repeat on retry.
+
+## Preparation safe-point suspension (milestone 3B.2)
+
+New SQL-backed preparation-only runs opt into ordered controls. Their steps check
+controls before starting a unit and after saving completed work. An accepted
+Pause receipt means requested, not Paused. After the activity exits at a durable
+safe point, the runner acknowledges the control revision and workspace-relative
+checkpoint/hash in Temporal. Existing catalog observation persistence copies that
+bounded metadata into Moxiedb; SQL does not contain the computation checkpoint.
+No SQL schema or additional recovery engine is involved.
+
+Continue schedules the same unfinished step in the same execution. The first
+resumed activity verifies the acknowledged file/hash before running; a missing or
+changed checkpoint fails without resetting saved work. Subsequent activity retries
+may legitimately have newer committed progress and use the preparation owner's
+existing identity/cursor validation. Voluntary suspension does not consume an
+activity failure, but failures before it reduce the remaining retry budget.
+Generation's durable uncertain-request reservations are not cleared by Pause.
+
+Safe boundaries are committed generation batches (up to five passages), individual
+evaluation questions, committed verification batches (up to five records), and
+preview generation/verification checkpoints. Preview verification is one bounded
+call for at most five examples. Continue does not repeat those saved results,
+approve Preview, or authorize Training. Stop remains terminal cooperative
+cancellation, preserving saved files and any dataset version already published.
+
+Extraction recovers at whole-document boundaries, an approved decision: the
+completed conversion is saved and reused, and the run can suspend between it and
+the source-unit plan. **An interrupted Docling conversion runs again.** The
+installed docling-serve 1.38.1 local engine keeps task/partial progress in RAM
+and has no task Pause API, so a persisted task ID would not help. PDF page-range
+conversion is not planned.
+
+### Shutdown and idle time
+
+Checkpoints stay on disk in the run workspace; Moxiedb holds status and the
+acknowledged checkpoint reference; Temporal owns scheduling and control order.
+This follows Unsloth Studio's split (training checkpoints on disk, run status in
+its database).
+
+On SIGINT/SIGTERM the server calls `Jobs().Drain` before stopping the worker.
+A running preparation unit finishes and saves, then the step suspends at that
+checkpoint. The server waits up to 120 seconds, the window SageMaker and Unsloth
+give a training process to save; the systemd and launchd stop limits are 150
+seconds. A drain does not consume a worker-recovery attempt, and the next worker
+continues from the checkpoint without a user Continue. A unit still running when
+the 120 seconds expire runs again after restart. A crash still consumes one of
+the three recovery attempts.
+
+These runs return their worker while paused or awaiting Preview review, and after
+a drain. While idle there is no time limit: the run waits for Continue or a
+worker indefinitely. Only the first wait for a worker keeps the 24-hour queue
+limit. The 24-hour Preparation budget counts active time only (`ActiveElapsed`);
+`Deadline` projects the remaining budget during a reservation and is cleared
+while idle. A shutdown or restart never continues an acknowledged paused run.
+Training and legacy executions keep the reservation model described below.
+
+Host power loss is not covered: the operating system may not wait for the drain.
+Unsloth documents the same limit. Committed checkpoints survive; the unit in
+flight repeats.
+
+Checkpoint JSON writes sync the new file before atomic rename and sync its parent
+directory afterward, returning write/sync errors. This strengthens those writes;
+it does not prove all storage/volume/hardware power-loss behavior.
+
+## Preparation crash recovery proof (milestone 3B.3)
+
+`TestRecoveryCrashMatrix` (`recovery_test.go`) runs the worker in a child test
+process, holds it at a chosen point with file gates, kills it with SIGKILL, and
+starts a new worker process against the same uploads, workspace, PostgreSQL and
+Temporal. The parent test is client-only. Each case must finish with the expected
+record count, exactly one published dataset version, one review decision, no
+repeated prompt, and no failed workflow task in its history:
+
+| Killed while | Recovery proven |
+| --- | --- |
+| Docling conversion in flight | conversion runs again (exactly twice), nothing else repeats |
+| awaiting Preview review | same checkpoint and preview, no auto-approval, no new extraction |
+| generating, two batches saved, one in flight | saved batches kept, only the in-flight batch repeats |
+| verifying | no `result.json` and nothing published before recovery |
+| dataset file written, catalog row not committed | catalog still shows the earlier version; recovery publishes once, no pending publication left |
+| Stop accepted just before the crash | run ends Stopped, no further generation, saved progress kept |
+| repeated crashes | two kills, progress only moves forward, third session completes |
+
+Existing in-process tests cover the remaining rows: lost submission receipt
+(`TestCatalogSubmissionRecovery`), lost review receipt and catalog outage
+(`TestCatalogReviewAndObservationRecovery`), missing or changed checkpoint
+(foundation `TestJobsSafePointControls`), and idle downtime with no time limit
+(foundation `TestJobsDrain`). `datasets` `TestCatalogExactDatasetOutput` shows
+a restarted service rediscovers the exact result without a duplicate dataset and
+refuses a changed or missing saved output. Production verification rejects a
+replayed record ("repeats a prompt"), so recovery cannot publish duplicates.
+
+The history check matters because Temporal retries a nondeterministic replay
+until it happens to match, so a run can still finish. Before Temporal Go SDK
+v1.50.0, cancelling the lost worker's session cancelled the running step and the
+stage-deadline timer in random order, so a worker replaying a second crash could
+fail repeatedly. v1.50.0 cancels in creation order by default; do not downgrade
+below it or set `TEMPORAL_SDK_FLAG_9=0`.
+
+Limits: providers are deterministic stand-ins, services are isolated test
+containers, and a process kill is not host power loss.
 
 ## Verification
 

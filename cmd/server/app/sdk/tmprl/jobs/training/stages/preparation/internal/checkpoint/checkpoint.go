@@ -26,6 +26,19 @@ const File = "steps.json"
 // Version identifies the passage plan, multi-example recovery and omission policy.
 const Version = 4
 
+// SafePoint is called only where no work is in flight and File contains the
+// committed cursor/results. A suspension must propagate without wrapping it as
+// a computation failure. File-only callers retain their original behavior.
+func SafePoint(ctx context.Context, input preparation.StepContext) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if input.SafePoint != nil {
+		return input.SafePoint(ctx, File)
+	}
+	return nil
+}
+
 // GenerationDecision retains up to three candidates while a passage is repaired.
 // A completed empty result is a reported model-selected omission.
 type GenerationDecision struct {

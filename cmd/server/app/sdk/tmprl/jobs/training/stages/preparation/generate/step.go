@@ -105,7 +105,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 	report(tmprl.Progress{Completed: state.Next, Total: len(state.Units), Message: "Generating training examples"})
 	for state.Next < len(state.Units) {
-		if err := ctx.Err(); err != nil {
+		if err := checkpoint.SafePoint(ctx, input); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
 		if limit > 0 && len(state.Records) >= limit {
@@ -239,7 +239,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	if p.Input.Kind == preparation.PreparationFull && p.Input.Request.Goal == preparation.GoalQuestionAnswer && len(training) >= 20 {
 		report(tmprl.Progress{Completed: state.EvaluationNext, Total: 30, Message: "Generating evaluation questions"})
 		for state.EvaluationNext < 30 && (limit == 0 || len(state.Records) < limit) {
-			if err := ctx.Err(); err != nil {
+			if err := checkpoint.SafePoint(ctx, input); err != nil {
 				return tmprl.StepResult[preparation.Artifacts]{}, err
 			}
 			index := state.EvaluationNext
@@ -279,6 +279,9 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
+	}
+	if err := checkpoint.SafePoint(ctx, input); err != nil {
+		return tmprl.StepResult[preparation.Artifacts]{}, err
 	}
 	return tmprl.StepResult[preparation.Artifacts]{Artifacts: input.Artifacts}, nil
 }

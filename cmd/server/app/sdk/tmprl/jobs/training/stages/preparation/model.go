@@ -62,20 +62,21 @@ type Review struct {
 
 // PreparationResult identifies published records and preparation usage.
 type PreparationResult struct {
-	DatasetID          string            `json:"dataset_id"`
-	SavedDatasetID     string            `json:"saved_dataset_id,omitzero"`
-	SavedVersion       int               `json:"saved_version,omitzero"`
-	SavedRecordCount   int               `json:"saved_record_count,omitzero"`
-	SavedTrainingReady bool              `json:"saved_training_ready,omitzero"`
-	RecordsPath        string            `json:"records_path"`
-	ReportPath         string            `json:"report_path"`
-	RecordCount        int               `json:"record_count"`
-	Preview            []training.Record `json:"preview,omitzero"`
-	PromptTokens       int               `json:"prompt_tokens"`
-	CompletionTokens   int               `json:"completion_tokens"`
-	TrainingReady      bool              `json:"training_ready"`
-	Warnings           []string          `json:"warnings,omitzero"`
-	Exclusions         []SourceExclusion `json:"source_exclusions,omitzero"`
+	DatasetID           string            `json:"dataset_id"`
+	SavedDatasetID      string            `json:"saved_dataset_id,omitzero"`
+	SavedVersion        int               `json:"saved_version,omitzero"`
+	SavedRecordCount    int               `json:"saved_record_count,omitzero"`
+	SavedTrainingReady  bool              `json:"saved_training_ready,omitzero"`
+	SavedSkippedRecords int               `json:"saved_skipped_records,omitzero"` // Records not saved because the dataset already had their question.
+	RecordsPath         string            `json:"records_path"`
+	ReportPath          string            `json:"report_path"`
+	RecordCount         int               `json:"record_count"`
+	Preview             []training.Record `json:"preview,omitzero"`
+	PromptTokens        int               `json:"prompt_tokens"`
+	CompletionTokens    int               `json:"completion_tokens"`
+	TrainingReady       bool              `json:"training_ready"`
+	Warnings            []string          `json:"warnings,omitzero"`
+	Exclusions          []SourceExclusion `json:"source_exclusions,omitzero"`
 }
 
 // SourceUnit couples one whole focal block's targets with bounded source context.
@@ -128,6 +129,9 @@ type StepContext struct {
 	Review      *Review
 	ReviewID    string
 	Publish     func(tmprl.Progress)
+	// SafePoint checks ordered controls only after completed work is durable.
+	// The string is a workspace-relative checkpoint file, never an absolute path.
+	SafePoint func(context.Context, string) error
 }
 
 // PreparationContext supplies worker-local preparation dependencies.

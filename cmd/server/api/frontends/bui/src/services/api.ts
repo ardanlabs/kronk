@@ -62,6 +62,8 @@ import type {
   ContinueTrainingPreview,
   StartPreparedTraining,
   TrainingDecisionReceipt,
+  PreparationControl,
+  PreparationControlReceipt,
 } from '../types';
 
 export const SESSION_EXPIRED_EVENT = 'kronk:session-expired';
@@ -1357,10 +1359,12 @@ class ApiService {
     });
   }
 
-  async trainingRuns(nextPageToken = '', signal?: AbortSignal, since = ''): Promise<TrainingRunsResponse> {
+  async trainingRuns(nextPageToken = '', signal?: AbortSignal, since = '', filter: { mode?: string; statuses?: string[] } = {}): Promise<TrainingRunsResponse> {
     const query = new URLSearchParams();
     if (nextPageToken) query.set('next_page_token', nextPageToken);
     if (since) query.set('since', since);
+    if (filter.mode) query.set('mode', filter.mode);
+    for (const status of filter.statuses ?? []) query.append('status', status);
     return this.request<TrainingRunsResponse>(`/training/runs${query.size ? `?${query}` : ''}`, {
       signal,
       cache: 'no-store',
@@ -1377,6 +1381,22 @@ class ApiService {
   async stopTrainingRun(workflowID: string, runID: string): Promise<void> {
     await this.request<void>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/stop`, {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000),
+    });
+  }
+
+  async pausePreparation(workflowID: string, runID: string, control: PreparationControl): Promise<PreparationControlReceipt> {
+    return this.request<PreparationControlReceipt>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/preparation/pause`, {
+      method: 'POST',
+      body: JSON.stringify(control),
+      signal: AbortSignal.timeout(30_000),
+    });
+  }
+
+  async continuePreparation(workflowID: string, runID: string, control: PreparationControl): Promise<PreparationControlReceipt> {
+    return this.request<PreparationControlReceipt>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/preparation/continue`, {
+      method: 'POST',
+      body: JSON.stringify(control),
       signal: AbortSignal.timeout(30_000),
     });
   }
