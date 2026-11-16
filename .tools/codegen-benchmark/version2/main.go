@@ -203,19 +203,25 @@ func run(opts options) (runErr error) {
 }
 
 func runModel(root, runDir, host, prompt string, model benchmarkModel, opts options) (runErr error) {
+	modelDir := filepath.Join(runDir, modelDirName(model.ID))
+	dir := filepath.Join(modelDir, "workspace")
 	// Retain state only while the same agent is repairing its submissions.
 	defer func() {
-		runErr = errors.Join(runErr, os.RemoveAll(filepath.Join(runDir, modelDirName(model.ID), "workspace")))
+		runErr = errors.Join(runErr, os.RemoveAll(dir))
 	}()
 	fmt.Printf("\n[%s] warming model\n", model.ID)
 	warmCtx, cancelWarm := context.WithTimeout(context.Background(), opts.timeout)
 	modelErr := warmModel(warmCtx, host, model.ID)
 	cancelWarm()
 
+	var env []string
+	if modelErr == nil {
+		env, modelErr = prepareSession(root, dir, host, model, opts.steps)
+	}
 	if modelErr == nil {
 		modelErr = runSubmissions(prompt, opts.attempts, opts.feedback, func(attempt int, message string) (result, error) {
 			fmt.Printf("[%s] submission %d/%d\n", model.ID, attempt, opts.attempts)
-			item, err := runAttempt(root, runDir, host, message, model, attempt, opts)
+			item, err := runAttempt(modelDir, message, env, model, attempt, opts)
 			if err != nil {
 				return item, err
 			}
@@ -249,69 +255,46 @@ func runSubmissions(prompt string, limit int, feedback bool, submit func(int, st
 func graderFeedback(grade gradeResult) string {
 	var message strings.Builder
 	fmt.Fprintf(&message, "Your submission passed %d/%d checks and did not pass the benchmark. Repair the existing tictactoe/main.go in this workspace; do not start a new project. Preserve all original requirements and working behavior.\n\nFix these failures:\n", grade.Passed, grade.Total)
-	type repeatedDifference struct {
-		outputDifference
+	type repeatedFinding struct {
+		gradeFinding
 		count int
 	}
-	var groups []repeatedDifference
-	byEdit := make(map[[2]string]int)
-	scenarioFailures := make(map[string]string)
-	for _, evidence := range grade.Evidence {
-		if evidence.Passed || len(evidence.Differences) == 0 {
-			continue
+	var groups []repeatedFinding
+	byFinding := make(map[gradeFinding]int)
+	for _, finding := range grade.Findings {
+		key := finding
+		key.Example = ""
+		if finding.Kind != "check" {
+			key.Location = ""
 		}
-		scenarioFailures["scenario-"+evidence.Scenario] = evidence.Stopped
-		for _, difference := range evidence.Differences {
-			key := [2]string{difference.Expected, difference.Actual}
-			index, exists := byEdit[key]
-			if !exists {
-				index = len(groups)
-				byEdit[key] = index
-				groups = append(groups, repeatedDifference{outputDifference: difference})
-			}
-			groups[index].count++
+		if finding.Kind == "formatting" {
+			key.Step = 0
 		}
+		index, exists := byFinding[key]
+		if !exists {
+			index = len(groups)
+			byFinding[key] = index
+			groups = append(groups, repeatedFinding{gradeFinding: finding})
+		}
+		groups[index].count++
 	}
-	type repeatedFailure struct {
-		gradeCheck
-		count int
-	}
-	var failures []repeatedFailure
-	byScenarioFailure := make(map[string]int)
-	for _, check := range grade.Checks {
-		if check.Passed {
-			continue
+	message.WriteString("\nFix every occurrence, not only the example. Output excerpts preserve whitespace and ANSI codes as escaped bytes.\n")
+	for _, group := range groups {
+		label := group.Location
+		if group.Step > 0 {
+			label = fmt.Sprintf("%s, step %d", label, group.Step)
 		}
-		detail := check.Detail
-		if stopped, summarized := scenarioFailures[check.Name]; summarized {
-			if stopped == "" {
-				continue
-			}
-			detail = stopped
+		if group.count > 1 {
+			label = fmt.Sprintf("%s (%d occurrences; one example)", label, group.count)
 		}
-		check.Detail = detail
-		if strings.HasPrefix(check.Name, "scenario-") {
-			if index, exists := byScenarioFailure[detail]; exists {
-				failures[index].count++
-				continue
-			}
-			byScenarioFailure[detail] = len(failures)
+		fmt.Fprintf(&message, "\n- %s [%s]", label, group.Kind)
+		if group.Detail != "" {
+			fmt.Fprintf(&message, ": %s", group.Detail)
 		}
-		failures = append(failures, repeatedFailure{gradeCheck: check, count: 1})
-	}
-	for _, failure := range failures {
-		label := failure.Name
-		if failure.count > 1 {
-			label = fmt.Sprintf("%s (%d scenarios; one example)", label, failure.count)
+		if group.Example != "" {
+			fmt.Fprintf(&message, "\n  Expected %q, actual %q. Example: %s", truncate(group.Expected, 120), truncate(group.Actual, 120), group.Example)
 		}
-		fmt.Fprintf(&message, "\n- %s: %s\n", label, failure.Detail)
-	}
-	if len(groups) > 0 {
-		message.WriteString("\nDistinct formatting differences (escaped bytes; one example per edit). Fix every occurrence, not only the example:\n")
-		for _, group := range groups {
-			fmt.Fprintf(&message, "\n- Expected %q, actual %q (%d occurrences). Example: %s\n",
-				truncate(group.Expected, 120), truncate(group.Actual, 120), group.count, group.Example)
-		}
+		message.WriteByte('\n')
 	}
 	message.WriteString("\nChecks not reached because of an earlier failure will be evaluated after it is fixed. Fix the cause, not just the displayed examples. Format and build the code, then submit by finishing your response. The grader will evaluate it again. Do not add features or change the original requirements.\n")
 	return message.String()
@@ -437,36 +420,26 @@ func selectModels(configured []benchmarkModel, requested string) ([]benchmarkMod
 	return selected, nil
 }
 
-func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt int, opts options) (result, error) {
-	modelDir := filepath.Join(runDir, modelDirName(model.ID))
-	dir := filepath.Join(modelDir, "workspace")
-	var programDir string
-	var err error
-	if attempt == 1 {
-		programDir, err = prepareAttemptDirectory(dir)
-	} else {
-		programDir = filepath.Join(dir, "tictactoe")
+// prepareSession initializes the workspace and isolated OpenCode home once per
+// model. Submissions reuse both the returned environment and the agent history.
+func prepareSession(root, dir, host string, model benchmarkModel, steps int) ([]string, error) {
+	if _, err := prepareAttemptDirectory(dir); err != nil {
+		return nil, err
 	}
+	config, err := openCodeConfig(host, model, steps)
 	if err != nil {
-		return result{}, err
-	}
-
-	config, err := openCodeConfig(host, model, opts.steps)
-	if err != nil {
-		return result{}, err
+		return nil, err
 	}
 	configPath := filepath.Join(dir, "opencode-config.json")
 	if err := os.WriteFile(configPath, append(config, '\n'), 0o600); err != nil {
-		return result{}, fmt.Errorf("codegen benchmark: writing OpenCode config: %w", err)
+		return nil, fmt.Errorf("codegen benchmark: writing OpenCode config: %w", err)
 	}
-	// Install the isolated home and skill once; retain agent history for repairs.
-	if attempt == 1 {
-		_, err = prepareOpenCodeEnvironment(root, dir, config)
-	}
-	if err != nil {
-		return result{}, err
-	}
-	env := openCodeEnvironment(dir, config)
+	return prepareOpenCodeEnvironment(root, dir, config)
+}
+
+func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, attempt int, opts options) (result, error) {
+	dir := filepath.Join(modelDir, "workspace")
+	programDir := filepath.Join(dir, "tictactoe")
 	artifactDir := filepath.Join(modelDir, fmt.Sprintf("attempt-%02d", attempt))
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return result{}, err

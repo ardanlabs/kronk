@@ -331,26 +331,24 @@ func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 }
 
 func TestGraderFeedbackRepeatedScenarioFailures(t *testing.T) {
-	grade := gradeResult{
-		Passed: 1, Total: 7,
-		Checks: []gradeCheck{
-			{Name: "scenario-X-line-1", Detail: "step 1: expected digit 1, actual control byte"},
-			{Name: "scenario-O-line-1", Detail: "step 1: expected digit 1, actual control byte"},
-			{Name: "scenario-draw", Detail: "step 1: expected digit 1, actual control byte"},
-			{Name: "scenario-replay-score", Detail: "step 1: expected score 1, actual score 0"},
-			{Name: "go-build", Detail: "build failed"},
-			{Name: "go-vet", Detail: "build failed"},
-			{Name: "scenario-passed", Passed: true},
-		},
+	grade := gradeResult{Total: 7}
+	for _, name := range []string{"scenario-X-line-1", "scenario-O-line-1", "scenario-draw"} {
+		grade.add(name, false, "unexpected game state", gradeFinding{Kind: "interaction", Location: name,
+			Step: 1, Expected: "1", Actual: "\x01", Detail: "unexpected game state", Example: `expected "1", actual "\x01"`})
 	}
+	grade.add("scenario-replay-score", false, "unexpected score", gradeFinding{Kind: "interaction", Location: "scenario-replay-score",
+		Step: 1, Expected: "1", Actual: "0", Detail: "unexpected score", Example: `expected "Score: 1", actual "Score: 0"`})
+	grade.add("go-build", false, "build failed")
+	grade.add("go-vet", false, "build failed")
+	grade.add("scenario-passed", true, "")
 	feedback := graderFeedback(grade)
-	if strings.Count(feedback, "expected digit 1, actual control byte") != 1 ||
-		!strings.Contains(feedback, "scenario-X-line-1 (3 scenarios; one example)") {
+	if strings.Count(feedback, "unexpected game state") != 1 ||
+		!strings.Contains(feedback, "scenario-X-line-1, step 1 (3 occurrences; one example)") {
 		t.Fatalf("identical scenario failures were not consolidated: %s", feedback)
 	}
 	for _, want := range []string{
-		"1/7 checks", "scenario-replay-score: step 1: expected score 1, actual score 0",
-		"go-build: build failed", "go-vet: build failed",
+		"1/7 checks", "scenario-replay-score, step 1 [interaction]: unexpected score",
+		`Expected "1", actual "0"`, "go-build [check]: build failed", "go-vet [check]: build failed",
 	} {
 		if !strings.Contains(feedback, want) {
 			t.Errorf("feedback omitted %q: %s", want, feedback)
@@ -390,11 +388,12 @@ func TestRunSubmissions(t *testing.T) {
 				if attempt == 3 && (!strings.Contains(prompt, "second-failure") || strings.Contains(prompt, "first-failure")) {
 					t.Fatalf("feedback must use the latest grade: %q", prompt)
 				}
-				grade := gradeResult{Passed: 19, Total: 20, Checks: []gradeCheck{{Name: "already-passed", Passed: true}}}
+				grade := gradeResult{Passed: 18, Total: 20}
+				grade.add("already-passed", true, "")
 				if attempt == 1 {
-					grade.Checks = append(grade.Checks, gradeCheck{Name: "first-failure", Detail: "restore final board"})
+					grade.add("first-failure", false, "restore final board")
 				} else {
-					grade.Checks = append(grade.Checks, gradeCheck{Name: "second-failure", Detail: "preserve replay scores"})
+					grade.add("second-failure", false, "preserve replay scores")
 				}
 				if attempt == tc.passAt {
 					grade.Passed = 20
@@ -427,7 +426,7 @@ func TestSubmissionLimit(t *testing.T) {
 
 // This fake CLI never contacts a model; it checks actual process arguments,
 // retained workspace/home, and source snapshots across two submissions.
-func TestRunAttemptResumesWorkspace(t *testing.T) {
+func TestRunModelResumesWorkspace(t *testing.T) {
 	binDir := t.TempDir()
 	script := `#!/bin/sh
 set -eu
@@ -459,16 +458,18 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 	}
 	runDir := t.TempDir()
 	model := benchmarkModel{ID: "org/model/BENCHMARK", ContextWindow: 8192, OutputLimit: 1024}
-	for attempt := 1; attempt <= 2; attempt++ {
-		item, err := runAttempt(root, runDir, "http://unused.invalid", "feedback", model, attempt, options{steps: 5, timeout: time.Minute})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if item.OpenCode.ExitCode != 0 || item.OpenCode.Usage.Input != 17 || item.Grade.Passed != 1 {
-			t.Fatalf("submission %d: %+v", attempt, item)
-		}
-	}
 	modelDir := filepath.Join(runDir, modelDirName(model.ID))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	if err := runModel(root, runDir, server.URL, "original task", model,
+		options{attempts: 2, feedback: true, steps: 5, timeout: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(modelDir, "workspace")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("model workspace not cleaned up: %v", err)
+	}
 	first, err := os.ReadFile(filepath.Join(modelDir, "attempt-01", "program", "main.go"))
 	if err != nil || !strings.Contains(string(first), "first-version") {
 		t.Fatalf("first snapshot: %s %v", first, err)
@@ -481,7 +482,12 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 	if err != nil || len(loaded) != 1 || len(loaded[0].Attempts) != 2 {
 		t.Fatalf("saved submissions: %+v %v", loaded, err)
 	}
-	if loaded[0].Attempts[0].Repair != "" || loaded[0].Attempts[1].Repair != "feedback" {
+	for _, item := range loaded[0].Attempts {
+		if item.OpenCode.ExitCode != 0 || item.OpenCode.Usage.Input != 17 || item.Grade.Passed != 1 {
+			t.Fatalf("submission %d: %+v", item.Attempt, item)
+		}
+	}
+	if loaded[0].Attempts[0].Repair != "" || !strings.Contains(loaded[0].Attempts[1].Repair, "go-parse") {
 		t.Fatalf("saved repair messages: %+v", loaded[0].Attempts)
 	}
 	feedback := graderFeedback(loaded[0].Attempts[1].Grade)
@@ -501,7 +507,12 @@ func TestRunAttemptTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := benchmarkModel{ID: "org/model/BENCHMARK", ContextWindow: 8192, OutputLimit: 1024}
-	item, err := runAttempt(root, t.TempDir(), "http://unused.invalid", "prompt", model, 1, options{steps: 5, timeout: 100 * time.Millisecond})
+	modelDir := filepath.Join(t.TempDir(), modelDirName(model.ID))
+	env, err := prepareSession(root, filepath.Join(modelDir, "workspace"), "http://unused.invalid", model, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := runAttempt(modelDir, "prompt", env, model, 1, options{steps: 5, timeout: 100 * time.Millisecond})
 	if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 		t.Fatalf("timeout must fail the workflow: %v", err)
 	}

@@ -20,10 +20,15 @@ source. Repeated formatting edits are grouped across steps and scenarios, with a
 occurrence count and one example per distinct edit; every occurrence must be fixed.
 Examples show expected and actual output excerpts with the original whitespace
 and ANSI codes preserved as escaped text.
-Identical scenario-stopping diagnostics are also grouped, with a scenario count
-and one example. Different diagnostics remain separate.
-Detailed diagnostics remain in `result.json`. Later grades may expose additional
-failures that earlier errors prevented the grader from reaching. This is a repair
+Scenario-stopping findings are grouped only when the step, stop reason, and
+expected/actual differences match, with an occurrence count and one example.
+Different missing output is kept separate even when both scenarios time out.
+A preceding formatting defect never replaces the stopping finding's context.
+Feedback is deterministic: objective observations plus fixed repair instructions,
+not an AI diagnosis of the generated code.
+Detailed findings remain in `result.json`, under `grade.findings`, with their kind,
+location, interaction step, expected/actual differences and contextual example.
+Later grades may expose additional failures that earlier errors prevented the grader from reaching. This is a repair
 evaluation, not independent sampling.
 
 An OpenCode error event, nonzero exit, or timeout stops the workflow. Its events,
@@ -168,7 +173,8 @@ feedback) only as `repair_message` in `result.json` for repair submissions; the 
 task is referenced by the workload label. Attempts also preserve the JSON event
 stream, stderr, grader result, and one runnable source snapshot.
 Scenario inputs and expected/actual ANSI transcripts are stored only in
-`result.json`, under `grade.evidence`; failure diagnostics are also included there.
+`result.json`, under `grade.evidence`; structured failure diagnostics are stored
+once, under `grade.findings`.
 No duplicate source/transcript files or `.tar.gz` archives are generated.
 No grader source copy or separate `run.json` is generated. Run information is
 preserved in the plain-text report when it is regenerated. Old Markdown reports

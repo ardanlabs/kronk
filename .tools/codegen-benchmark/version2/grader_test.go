@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"go/format"
 	"os"
 	"path/filepath"
@@ -43,6 +42,9 @@ func TestAcceptanceCorrect(t *testing.T) {
 				t.Errorf("%s: %s", c.Name, c.Detail)
 			}
 		}
+	}
+	if len(r.Findings) != 0 {
+		t.Fatalf("passing program produced failure findings: %+v", r.Findings)
 	}
 	if len(r.Evidence) != 22 {
 		t.Fatalf("evidence: %d", len(r.Evidence))
@@ -94,7 +96,7 @@ func TestAcceptanceRegressions(t *testing.T) {
 			binary := fixtureBinary(t, strings.ReplaceAll(source, c.old, c.new))
 			for _, s := range acceptanceScenarios() {
 				if s.name == c.scenario {
-					e := executeScenario(context.Background(), binary, s)
+					e, _ := executeScenario(context.Background(), binary, s)
 					if e.Passed {
 						t.Fatal("broken fixture passed")
 					}
@@ -123,11 +125,6 @@ func TestAcceptanceFormattingFeedback(t *testing.T) {
 	if e.Passed || !strings.Contains(e.Actual, "Player X wins!\nPlay again? (y/n): ") {
 		t.Fatalf("formatting defects must fail without preventing gameplay: %s\n%q", e.Error, e.Actual)
 	}
-	for _, step := range []int{1, len(s.steps) - 1} {
-		if !strings.Contains(e.Error, fmt.Sprintf("step %d formatting mismatch", step)) {
-			t.Errorf("missing formatting failure at step %d: %s", step, e.Error)
-		}
-	}
 	feedback := graderFeedback(grade)
 	for _, want := range []string{
 		`Expected "\n", actual ""`, `Expected "", actual "\n"`, "Fix every occurrence",
@@ -141,8 +138,22 @@ func TestAcceptanceFormattingFeedback(t *testing.T) {
 	if strings.Count(feedback, "Example:") != 2 || len(feedback) > 2000 {
 		t.Fatalf("repeated formatting errors were not consolidated: %s", feedback)
 	}
-	if len(e.Differences) != len(s.steps) { // Each rendered board, plus the extra result newline.
-		t.Fatalf("detailed evidence lost independent edits: %+v", e.Differences)
+	count := 0
+	steps := make(map[int]bool)
+	for _, finding := range grade.Findings {
+		if finding.Location == "scenario-"+s.name {
+			if finding.Kind != "formatting" {
+				t.Fatalf("presentation defect reported as a stopped interaction: %+v", finding)
+			}
+			count++
+			steps[finding.Step] = true
+		}
+	}
+	if !steps[1] || !steps[len(s.steps)-1] {
+		t.Fatalf("missing initial or end-of-game formatting location: %+v", grade.Findings)
+	}
+	if count != len(s.steps) { // Each rendered board, plus the extra result newline.
+		t.Fatalf("detailed evidence lost independent edits: %+v", grade.Findings)
 	}
 }
 
@@ -156,7 +167,7 @@ func TestAcceptanceStopsOnUnexpectedState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := strings.Replace(fixtureSource(t), tc.old, tc.replacement, 1)
 			source = strings.Replace(source, `Draws: %d\n\n`, `Draws: %d\n`, 1)
-			e := executeScenario(t.Context(), fixtureBinary(t, source), acceptanceScenarios()[0])
+			e, _ := executeScenario(t.Context(), fixtureBinary(t, source), acceptanceScenarios()[0])
 			if e.Passed || !strings.Contains(e.Error, "unexpected game state or prompt") {
 				t.Fatalf("unexpected state must stop progression: %s", e.Error)
 			}
@@ -167,6 +178,46 @@ func TestAcceptanceStopsOnUnexpectedState(t *testing.T) {
 	}
 }
 
+// A formatting defect must not hide a missing prompt, and identical timeout
+// reasons must not merge interactions that were waiting for different output.
+func TestAcceptanceFeedbackPreservesStoppedContext(t *testing.T) {
+	const invalid = "Invalid move. Enter an empty position from 1 to 9.\n"
+	const prompt = "Player X's turn. Enter a number (1-9):"
+	grade := gradeResult{Total: 2}
+	for _, tc := range []struct {
+		name, output, missing string
+	}{
+		{"missing-prompt", `fmt.Println("Invalid move. Enter an empty position from 1 to 9.")`, prompt},
+		{"missing-message-and-prompt", "", invalid + prompt},
+	} {
+		source := strings.Replace(fixtureSource(t), `Draws: %d\n\n`, `Draws: %d\n`, 1)
+		source = strings.Replace(source, `fmt.Println("Invalid move. Enter an empty position from 1 to 9.")`,
+			tc.output+`; for { _, _ = stdin.ReadString('\n') }`, 1)
+		s := transcript(tc.name, "\n") // An empty move needs an error and repeat prompt.
+		e, findings := executeScenario(t.Context(), fixtureBinary(t, source), s)
+		if e.Passed || !strings.Contains(e.Error, "deadline exceeded") {
+			t.Fatalf("missing output must stop the scenario: %+v", e)
+		}
+		if len(findings) != 2 || findings[0].Kind != "formatting" {
+			t.Fatalf("lost preceding formatting defect: %+v", findings)
+		}
+		stopped := findings[1]
+		if stopped.Kind != "interaction" || stopped.Step != 2 || stopped.Expected != tc.missing || stopped.Actual != "" {
+			t.Fatalf("lost missing output context: %+v", stopped)
+		}
+		grade.add("scenario-"+s.name, e.Passed, e.Error, findings...)
+	}
+	feedback := graderFeedback(grade)
+	for _, want := range []string{"missing-prompt, step 2", "missing-message-and-prompt, step 2", prompt, "[formatting]"} {
+		if !strings.Contains(feedback, want) {
+			t.Errorf("feedback omitted %q: %s", want, feedback)
+		}
+	}
+	if strings.Count(feedback, "[interaction]") != 2 || strings.Count(feedback, "[formatting]") != 1 {
+		t.Fatalf("distinct timeouts merged or repeated formatting duplicated: %s", feedback)
+	}
+}
+
 func TestAcceptanceBoundedExecution(t *testing.T) {
 	for _, source := range []string{
 		`package main; import "fmt"; func main() { for { fmt.Print("unexpected output") } }`,
@@ -174,7 +225,7 @@ func TestAcceptanceBoundedExecution(t *testing.T) {
 	} {
 		binary := fixtureBinary(t, source)
 		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
-		e := executeScenario(ctx, binary, acceptanceScenarios()[0])
+		e, _ := executeScenario(ctx, binary, acceptanceScenarios()[0])
 		cancel()
 		if e.Passed || len(e.Actual) > 65539 || e.Error == "" {
 			t.Fatalf("unbounded execution: %+v", e)

@@ -154,7 +154,7 @@ fi
 		if err != nil {
 			t.Fatalf("saved program build: %v %s", err, output)
 		}
-		if e := executeScenario(t.Context(), binary, acceptanceScenarios()[0]); !e.Passed {
+		if e, _ := executeScenario(t.Context(), binary, acceptanceScenarios()[0]); !e.Passed {
 			t.Fatalf("saved program gameplay: %s", e.Error)
 		}
 		previous, previousReport = runDir, report
