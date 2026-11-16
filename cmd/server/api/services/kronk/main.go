@@ -634,7 +634,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	if err != nil {
 		return fmt.Errorf("initializing training uploads: %w", err)
 	}
-	datasetFiles, err := datasetstore.NewDatasetStore(filepath.Join(root, "preparation-datasets"))
+	datasetFiles, err := datasetstore.New(datasetstore.Config{Root: filepath.Join(root, "preparation-datasets")})
 	if err != nil {
 		return fmt.Errorf("initializing preparation datasets: %w", err)
 	}
@@ -677,9 +677,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 		trainingWorker = job.Jobs().NewWorker()
 		trainConfig.Job = job
 	}
-	trainConfig.Datasets = datasets.New(datasetFiles, trainConfig.Job, database)
-	trainConfig.Datasets.Namespace = cfg.Training.Namespace
-	trainConfig.Datasets.Uploads = store
+	trainConfig.Datasets = datasets.New(datasets.Config{
+		Files: datasetFiles, Job: trainConfig.Job, DB: database, Uploads: store, Namespace: cfg.Training.Namespace,
+	})
 	if err := trainConfig.Datasets.Initialize(ctx); err != nil {
 		return fmt.Errorf("initializing datasets: %w", err)
 	}

@@ -54,17 +54,6 @@ type Intent struct {
 	ErrorCode                        sql.NullString
 }
 
-// Pagination uses a default limit of 100, a maximum of 1000, and zero-based offset.
-type JobFilter struct {
-	Mode, TargetDatasetID string
-	Limit, Offset         int
-}
-
-type AttemptFilter struct {
-	JobID, ExecutionStatus string
-	Limit, Offset          int
-}
-
 // CatalogEntry combines immutable submission metadata, one attempt, and its
 // pending/needs_attention intents. Payloads remain internal storage data.
 type CatalogEntry struct {
@@ -81,6 +70,7 @@ type CatalogFilter struct {
 	Limit, Offset                    int
 }
 
+// page applies a default limit of 100, a maximum of 1000, and a zero-based offset.
 func page(limit, offset int) (int, error) {
 	if limit < 0 || limit > 1000 || offset < 0 {
 		return 0, ErrConflict
@@ -102,13 +92,11 @@ func nullableJSON(p json.RawMessage) any {
 
 const jobColumns = `job_id,mode,source_upload_id,target_dataset_id,base_dataset_version,created_at`
 const attemptColumns = `attempt_id,job_id,attempt_number,previous_attempt_id,temporal_namespace,workflow_id,run_id,observation_revision,execution_status,stage,step,source_updated_at,observed_at,state_stale,started_at,closed_at,result_dataset_id,result_dataset_version,observation,error_code,error_message`
-const intentColumns = `intent_id,job_id,attempt_id,kind,checkpoint_id,payload,payload_sha256,state,created_at,updated_at,error_code`
 
-func scanJob(s scanner) (Job, error) {
-	var j Job
-	err := s.Scan(&j.JobID, &j.Mode, &j.SourceUploadID, &j.TargetDatasetID, &j.BaseDatasetVersion, &j.CreatedAt)
-	return j, dbError(err)
-}
+// catalogColumns selects a job row joined with one of its attempts (j, a).
+var catalogColumns = `j.` + strings.ReplaceAll(jobColumns, ",", ",j.") + `,a.` + strings.ReplaceAll(attemptColumns, ",", ",a.")
+
+const intentColumns = `intent_id,job_id,attempt_id,kind,checkpoint_id,payload,payload_sha256,state,created_at,updated_at,error_code`
 
 func scanAttempt(s scanner) (Attempt, error) {
 	var a Attempt
@@ -148,8 +136,7 @@ func (db *DB) ListCatalog(ctx context.Context, f CatalogFilter) ([]CatalogEntry,
 	if err != nil {
 		return nil, err
 	}
-	columns := `j.` + strings.ReplaceAll(jobColumns, ",", ",j.") + `,a.` + strings.ReplaceAll(attemptColumns, ",", ",a.")
-	rows, err := db.sql.QueryContext(ctx, `SELECT `+columns+` FROM jobs j
+	rows, err := db.sql.QueryContext(ctx, `SELECT `+catalogColumns+` FROM jobs j
 		JOIN LATERAL (SELECT * FROM job_attempts WHERE job_id=j.job_id ORDER BY attempt_number DESC LIMIT 1) a ON true
 		WHERE a.temporal_namespace=$1 AND ($2='' OR j.mode=$2) AND ($3='' OR j.target_dataset_id=$3)
 		AND ($4 OR COALESCE(a.execution_status,'')=ANY($5::text[]))
@@ -184,8 +171,7 @@ func (db *DB) GetCatalogExecution(ctx context.Context, namespace, workflowID, ru
 	if namespace == "" || runID == "" {
 		return CatalogEntry{}, ErrConflict
 	}
-	columns := `j.` + strings.ReplaceAll(jobColumns, ",", ",j.") + `,a.` + strings.ReplaceAll(attemptColumns, ",", ",a.")
-	e, err := scanCatalog(db.sql.QueryRowContext(ctx, `SELECT `+columns+` FROM jobs j JOIN job_attempts a ON a.job_id=j.job_id WHERE a.temporal_namespace=$1 AND a.workflow_id=$2 AND a.run_id=$3`, namespace, workflowID, runID))
+	e, err := scanCatalog(db.sql.QueryRowContext(ctx, `SELECT `+catalogColumns+` FROM jobs j JOIN job_attempts a ON a.job_id=j.job_id WHERE a.temporal_namespace=$1 AND a.workflow_id=$2 AND a.run_id=$3`, namespace, workflowID, runID))
 	if err != nil {
 		return CatalogEntry{}, err
 	}
@@ -229,32 +215,6 @@ func (db *DB) CreateJob(ctx context.Context, j Job) error {
 	return changed(r, err)
 }
 
-func (db *DB) GetJob(ctx context.Context, id string) (Job, error) {
-	return scanJob(db.sql.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM jobs WHERE job_id=$1`, id))
-}
-
-// ListJobs orders newest first, breaking timestamp ties by job_id descending.
-func (db *DB) ListJobs(ctx context.Context, f JobFilter) ([]Job, error) {
-	limit, err := page(f.Limit, f.Offset)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := db.sql.QueryContext(ctx, `SELECT `+jobColumns+` FROM jobs WHERE ($1='' OR mode=$1) AND ($2='' OR target_dataset_id=$2) ORDER BY created_at DESC,job_id DESC LIMIT $3 OFFSET $4`, f.Mode, f.TargetDatasetID, limit, f.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := []Job{}
-	for rows.Next() {
-		j, err := scanJob(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, j)
-	}
-	return result, rows.Err()
-}
-
 // CreateAttempt binds identity/lineage, optionally with an already known run ID.
 // Observation inputs are ignored. Replaying a pre-run request after linkage is safe.
 func (db *DB) CreateAttempt(ctx context.Context, a Attempt) error {
@@ -283,33 +243,6 @@ func (db *DB) UpdateAttemptObservation(ctx context.Context, id string, expectedR
 	}
 	r, err := db.sql.ExecContext(ctx, `UPDATE job_attempts SET execution_status=$3,stage=$4,step=$5,source_updated_at=$6,observed_at=$7,state_stale=$8,started_at=$9,closed_at=$10,result_dataset_id=$11,result_dataset_version=$12,observation=$13,error_code=$14,error_message=$15,observation_revision=observation_revision+1 WHERE attempt_id=$1 AND observation_revision=$2`, id, expectedRevision, o.ExecutionStatus, o.Stage, o.Step, o.SourceUpdatedAt, o.ObservedAt, o.StateStale, o.StartedAt, o.ClosedAt, o.ResultDatasetID, o.ResultDatasetVersion, nullableJSON(o.Observation), o.ErrorCode, o.ErrorMessage)
 	return changed(r, err)
-}
-
-// ListAttempts orders a job's attempts by number descending. Across jobs it
-// orders by started_at descending (unknown starts last), then attempt_id descending.
-func (db *DB) ListAttempts(ctx context.Context, f AttemptFilter) ([]Attempt, error) {
-	limit, err := page(f.Limit, f.Offset)
-	if err != nil {
-		return nil, err
-	}
-	order := `started_at DESC NULLS LAST,attempt_id DESC`
-	if f.JobID != "" {
-		order = `attempt_number DESC,attempt_id DESC`
-	}
-	rows, err := db.sql.QueryContext(ctx, `SELECT `+attemptColumns+` FROM job_attempts WHERE ($1='' OR job_id=$1) AND ($2='' OR execution_status=$2) ORDER BY `+order+` LIMIT $3 OFFSET $4`, f.JobID, f.ExecutionStatus, limit, f.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := []Attempt{}
-	for rows.Next() {
-		a, err := scanAttempt(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, a)
-	}
-	return result, rows.Err()
 }
 
 // BeginIntent binds all command inputs; supplied state/timestamps are ignored.

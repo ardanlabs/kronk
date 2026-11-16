@@ -298,7 +298,7 @@ func (a *app) query(ctx context.Context, r *http.Request) web.Encoder {
 	}
 	var result Runs
 	for {
-		runs, next, err := a.datasets.ListCatalogRuns(waitCtx, options)
+		runs, next, err := a.datasets.ListRuns(waitCtx, options)
 		if err != nil {
 			if ctx.Err() == nil && waitCtx.Err() == context.DeadlineExceeded && result.Revision != "" {
 				return result

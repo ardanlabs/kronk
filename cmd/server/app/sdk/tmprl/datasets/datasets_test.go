@@ -21,11 +21,11 @@ import (
 )
 
 func TestDatasetManagementWithoutExecution(t *testing.T) {
-	files, err := store.NewDatasetStore(t.TempDir())
+	files, err := store.New(store.Config{Root: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := datasets.New(files, nil)
+	service := datasets.New(datasets.Config{Files: files})
 	if err := service.Initialize(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestDatasetManagementWithoutExecution(t *testing.T) {
 	if _, err := service.GetRun(t.Context(), tmprl.Execution{}); !errors.Is(err, training.ErrUnavailable) {
 		t.Fatalf("GetRun: %v", err)
 	}
-	if _, _, err := service.ListRuns(t.Context(), tmprl.ListOptions{PageSize: 25}); !errors.Is(err, training.ErrUnavailable) {
+	if _, _, err := service.ListRuns(t.Context(), datasets.RunFilter{PageSize: 25}); !errors.Is(err, training.ErrUnavailable) {
 		t.Fatalf("ListRuns: %v", err)
 	}
 	if _, err := service.ContinuePreview(t.Context(), tmprl.Execution{}, tmprl.Decision{}); !errors.Is(err, training.ErrUnavailable) {
@@ -81,7 +81,7 @@ func TestRunDatasetReadiness(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			service := datasets.New(job.Datasets(), job)
+			service := datasets.New(datasets.Config{Files: job.Datasets(), Job: job})
 			version := 0
 			if test.savedID != "" {
 				version = 4
@@ -114,7 +114,7 @@ func TestRunDatasetReadiness(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			page, token, err := service.ListRuns(t.Context(), tmprl.ListOptions{PageSize: 25})
+			page, token, err := service.ListRuns(t.Context(), datasets.RunFilter{PageSize: 25})
 			if err != nil || len(page) != 1 || string(token) != string([]byte{0, 255, 7}) {
 				t.Fatalf("page: %+v, %v, %v", page, token, err)
 			}

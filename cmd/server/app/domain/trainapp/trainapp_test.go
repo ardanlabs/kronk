@@ -74,8 +74,7 @@ func testAPI(t *testing.T, c *mocks.Client) (*web.App, *uploads.Store) {
 	}
 	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	service := datasets.New(job.Datasets(), job)
-	service.Uploads = store
+	service := datasets.New(datasets.Config{Files: job.Datasets(), Job: job, Uploads: store})
 	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: service, AuthorizationMode: auth.Open})
 	return api, store
 }
@@ -140,11 +139,11 @@ func httpCatalog(t *testing.T) *moxiedb.DB {
 
 func TestCatalogHTTPWithoutWorker(t *testing.T) {
 	db := httpCatalog(t)
-	files, err := datasetstore.NewDatasetStore(t.TempDir())
+	files, err := datasetstore.New(datasetstore.Config{Root: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := datasets.New(files, nil, db)
+	service := datasets.New(datasets.Config{Files: files, DB: db})
 	if err := service.Initialize(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -218,13 +217,13 @@ func TestCatalogHTTPWithoutWorker(t *testing.T) {
 
 func testPreparationDatasetRoutes(t *testing.T, db *moxiedb.DB) {
 	t.Helper()
-	store, err := datasetstore.NewDatasetStore(t.TempDir())
+	store, err := datasetstore.New(datasetstore.Config{Root: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	log := logger.New(io.Discard, logger.LevelInfo, "datasets-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	service := datasets.New(store, nil, db)
+	service := datasets.New(datasets.Config{Files: store, DB: db})
 	if err := service.Initialize(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +245,7 @@ func testPreparationDatasetRoutes(t *testing.T, db *moxiedb.DB) {
 		t.Fatalf("create: %+v, %v", dataset, err)
 	}
 	row := optimization.Record{Prompt: "When does the harbor open?", Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: "upload-a"}
-	if _, err := service.Add(t.Context(), dataset.ID, 1, datasetstore.DatasetAddition{PublicationID: "run-a", Source: uploads.File{ID: "upload-a", Name: "harbor.txt", SHA256: strings.Repeat("a", 64)}, Records: []optimization.Record{row}}); err != nil {
+	if _, err := service.Add(t.Context(), dataset.ID, 1, datasetstore.Addition{PublicationID: "run-a", Source: uploads.File{ID: "upload-a", Name: "harbor.txt", SHA256: strings.Repeat("a", 64)}, Records: []optimization.Record{row}}); err != nil {
 		t.Fatal(err)
 	}
 	path := "/v1/training/datasets/" + dataset.ID
@@ -1073,7 +1072,7 @@ func readyTrainingAPI(t *testing.T, c *mocks.Client) (*web.App, *tmprl.Run[train
 	}
 	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(job.Datasets(), job), AuthorizationMode: auth.Open})
+	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthorizationMode: auth.Open})
 	state := &tmprl.Run[training.Request, training.Artifacts]{
 		Status: tmprl.StatusWaiting, Stage: "preparation",
 		Checkpoint: &tmprl.Checkpoint{ID: "run-2/preparation//start-training", Name: "start-training", Stage: "preparation"},
@@ -1580,7 +1579,7 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 						}
 					})
 					api := web.NewApp(log.Info, mid.Errors(log))
-					trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(job.Datasets(), job), AuthClient: client, AuthorizationMode: mode})
+					trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthClient: client, AuthorizationMode: mode})
 					for _, method := range []string{http.MethodGet, http.MethodPost} {
 						path := statePath
 						if method == http.MethodPost {
@@ -1774,7 +1773,7 @@ func TestCreatePreparationRejectsDocumentInDataset(t *testing.T) {
 	}
 	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	service := datasets.New(job.Datasets(), job)
+	service := datasets.New(datasets.Config{Files: job.Datasets(), Job: job})
 	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: service, AuthorizationMode: auth.Open})
 	file, err := store.Put(t.Context(), uploads.Input{Name: "harbor.md"}, strings.NewReader("The harbor opens at dawn."))
 	if err != nil {
@@ -1785,7 +1784,7 @@ func TestCreatePreparationRejectsDocumentInDataset(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := optimization.Record{Prompt: "When does the harbor open?", Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: file.ID}
-	if dataset, err = service.Add(t.Context(), dataset.ID, dataset.Version, datasetstore.DatasetAddition{PublicationID: "run-a", Source: file, Records: []optimization.Record{row}}); err != nil {
+	if dataset, err = service.Add(t.Context(), dataset.ID, dataset.Version, datasetstore.Addition{PublicationID: "run-a", Source: file, Records: []optimization.Record{row}}); err != nil {
 		t.Fatal(err)
 	}
 	body := fmt.Sprintf(`{"preparation_only":true,"prepare":{"dataset_id":%q,"model":"catalog/qwen","goal":"question_answer","target_dataset_id":%q,"base_version":%d}}`, file.ID, dataset.ID, dataset.Version)
@@ -1956,7 +1955,7 @@ func TestPreparationControlsHTTP(t *testing.T) {
 	}}, nil)
 	log := logger.New(io.Discard, logger.LevelInfo, "controls-http-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	trainapp.Routes(api, trainapp.Config{Job: job, Datasets: datasets.New(job.Datasets(), job, db), AuthorizationMode: auth.Open})
+	trainapp.Routes(api, trainapp.Config{Job: job, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job, DB: db}), AuthorizationMode: auth.Open})
 	for _, test := range []struct {
 		action, command, id string
 		revision            int64
@@ -2051,7 +2050,7 @@ func TestListTrainingRuns(t *testing.T) {
 	log := logger.New(io.Discard, logger.LevelInfo, "datasets-runs-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
 	// Run reads must go through datasets, not require an HTTP-owned training job.
-	trainapp.Routes(api, trainapp.Config{Datasets: datasets.New(job.Datasets(), job), AuthorizationMode: auth.Open})
+	trainapp.Routes(api, trainapp.Config{Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthorizationMode: auth.Open})
 	state := tmprl.Run[training.Request, training.Artifacts]{
 		Status: tmprl.StatusPaused, Request: training.Request{Model: "/private/model"},
 		Stages: []tmprl.StageState{{Name: "training", Status: tmprl.StatusPaused, Steps: []tmprl.StepState{{Name: "train", Status: tmprl.StatusPaused, Attempt: 2}}}},

@@ -167,9 +167,6 @@ func fixture(t *testing.T, db *moxiedb.DB, n int, base int) (moxiedb.Dataset, mo
 func TestDatasets(t *testing.T) {
 	db, _ := testDB(t)
 	ctx := t.Context()
-	if ready, err := db.CatalogReady(ctx); err != nil || ready {
-		t.Fatalf("initial readiness %v %v", ready, err)
-	}
 	d, v, docs := fixture(t, db, 1, 0)
 	intent, err := db.GetPublication(ctx, "p1")
 	if err != nil || intent.TargetVersion != 0 || intent.SnapshotPath != "" || intent.SnapshotSHA256 != "" {
@@ -254,9 +251,6 @@ func TestDatasets(t *testing.T) {
 	if err := db.MarkCatalogReady(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if ready, err := db.CatalogReady(ctx); err != nil || !ready {
-		t.Fatalf("ready %v %v", ready, err)
-	}
 }
 
 func TestJobs(t *testing.T) {
@@ -291,25 +285,6 @@ func TestJobs(t *testing.T) {
 	invalid.BaseDatasetVersion = sql.NullInt64{Int64: 99, Valid: true}
 	if err := db.CreateJob(ctx, invalid); !errors.Is(err, moxiedb.ErrConflict) {
 		t.Fatalf("unknown target: %v", err)
-	}
-	gotJob, err := db.GetJob(ctx, j.JobID)
-	if err != nil || gotJob.TargetDatasetID.Valid || gotJob.CreatedAt.IsZero() {
-		t.Fatalf("nullable job: %+v %v", gotJob, err)
-	}
-	jobs, err := db.ListJobs(ctx, moxiedb.JobFilter{Limit: 1})
-	if err != nil || len(jobs) != 1 || jobs[0].JobID != training.JobID {
-		t.Fatalf("job ordering: %+v %v", jobs, err)
-	}
-	jobs, err = db.ListJobs(ctx, moxiedb.JobFilter{Limit: 1, Offset: 1})
-	if err != nil || len(jobs) != 1 || jobs[0].JobID != j.JobID {
-		t.Fatalf("job pagination: %+v %v", jobs, err)
-	}
-	jobs, err = db.ListJobs(ctx, moxiedb.JobFilter{Mode: "training", TargetDatasetID: d.ID})
-	if err != nil || len(jobs) != 1 || jobs[0].JobID != training.JobID {
-		t.Fatalf("job filter: %+v %v", jobs, err)
-	}
-	if _, err := db.ListJobs(ctx, moxiedb.JobFilter{Offset: -1}); !errors.Is(err, moxiedb.ErrConflict) {
-		t.Fatal(err)
 	}
 	a := moxiedb.Attempt{AttemptID: "a1", JobID: j.JobID, AttemptNumber: 1, TemporalNamespace: "ns", WorkflowID: "workflow"}
 	if err := db.CreateAttempt(ctx, a); err != nil {
@@ -415,18 +390,6 @@ func TestJobs(t *testing.T) {
 	}
 	if err := db.UpdateAttemptObservation(ctx, a2.AttemptID, 0, o); err != nil {
 		t.Fatal(err)
-	}
-	attempts, err := db.ListAttempts(ctx, moxiedb.AttemptFilter{JobID: j.JobID, Limit: 1})
-	if err != nil || len(attempts) != 1 || attempts[0].AttemptID != a2.AttemptID {
-		t.Fatalf("attempt ordering: %+v %v", attempts, err)
-	}
-	attempts, err = db.ListAttempts(ctx, moxiedb.AttemptFilter{JobID: j.JobID, Limit: 1, Offset: 1})
-	if err != nil || len(attempts) != 1 || attempts[0].AttemptID != a.AttemptID {
-		t.Fatalf("attempt pagination: %+v %v", attempts, err)
-	}
-	attempts, err = db.ListAttempts(ctx, moxiedb.AttemptFilter{ExecutionStatus: o.ExecutionStatus.String})
-	if err != nil || len(attempts) != 2 || attempts[0].AttemptID != a2.AttemptID {
-		t.Fatalf("status filter and tie-break: %+v %v", attempts, err)
 	}
 	if err := db.UpdateAttemptObservation(ctx, a.AttemptID, 1, moxiedb.AttemptObservation{Observation: []byte(`null`)}); err != nil {
 		t.Fatal(err)

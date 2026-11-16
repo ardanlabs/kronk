@@ -157,7 +157,7 @@ WHEN (NEW.kind IN ('pause','resume') AND NEW.state='accepted') EXECUTE FUNCTION 
 			if err := restarted.Reconcile(ctx); err != nil {
 				t.Fatal(err)
 			}
-			service := datasets.New(restarted.Datasets(), restarted, db)
+			service := datasets.New(datasets.Config{Files: restarted.Datasets(), Job: restarted, DB: db})
 			receipt, err := service.PreparationControl(ctx, run.Execution, pause)
 			if err != nil || receipt.Revision != 1 || receipt.ControlRequest != pause {
 				t.Fatalf("recovered receipt: %+v %v", receipt, err)
@@ -265,7 +265,7 @@ func TestCatalogPreparationSafePoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(w.Stop)
-	service := datasets.New(j.Datasets(), j, db)
+	service := datasets.New(datasets.Config{Files: j.Datasets(), Job: j, DB: db})
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -317,8 +317,7 @@ func TestCatalogPreparationSafePoint(t *testing.T) {
 	w.Stop()
 	// A catalog-only reader must retain the confirmed checkpoint while the
 	// worker/command facade is unavailable. It does not reconstruct the records.
-	reader := datasets.New(j.Datasets(), nil, db)
-	reader.Namespace = env.Namespace
+	reader := datasets.New(datasets.Config{Files: j.Datasets(), DB: db, Namespace: env.Namespace})
 	state, err := reader.GetRun(ctx, run.Execution)
 	if err != nil || state.Status != tmprl.StatusPaused || state.ControlAcknowledgedRevision != 1 || state.ControlCheckpoint == "" {
 		t.Fatalf("SQL lost safe-point observation: %+v, %v", state, err)
@@ -332,7 +331,7 @@ func TestCatalogPreparationSafePoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(w.Stop)
-	service = datasets.New(j.Datasets(), j, db)
+	service = datasets.New(datasets.Config{Files: j.Datasets(), Job: j, DB: db})
 	if _, err := service.PreparationControl(ctx, run.Execution, tmprl.ControlRequest{RequestID: "continue-generation", Action: "resume", ExpectedRevision: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +459,7 @@ func TestCatalogReviewAndObservationRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := datasets.New(j.Datasets(), j, db)
+	service := datasets.New(datasets.Config{Files: j.Datasets(), Job: j, DB: db})
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

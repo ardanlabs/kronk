@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FINE_TUNING_MODEL_ID, TESTED_TRAINING_OPTIONS, preparationPath, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
+import { FINE_TUNING_MODEL_ID, TESTED_TRAINING_OPTIONS, preparationPath, requestMessage, retryDelay, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
 import { useModelList } from '../contexts/ModelListContext';
 import { api, ApiError } from '../services/api';
 import type { CatalogModelResponse, PreparationDataset, PreparationOptions, TrainingOptions, TrainingRun } from '../types';
@@ -8,13 +8,14 @@ import { FieldLabel } from './ParamTooltips';
 import PreparationDatasetHistory from './PreparationDatasetHistory';
 import TrainingHistory from './TrainingHistory';
 import { StartPreparedTraining, TrainingJobState } from './TrainingRun';
-import PreparationRuns, { PreparationRunView } from './PreparationRuns';
+import PreparationRuns, { Badge, PreparationRunView } from './PreparationRuns';
 
 type View = 'prepare' | 'configure' | 'history';
 
 // Match the runner's upload lifetime, including navigation away from this page.
 // An uncertain create is never repeated; a confirmed destination is reused.
 const uploadDestinations = new Map<string, { id?: string; uncertain: boolean }>();
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 export default function FineTuning() {
   const [params] = useSearchParams();
@@ -33,8 +34,8 @@ export default function FineTuning() {
 function FineTuningWorkspace({ visible }: { visible: boolean }) {
   const { models, loading: modelsLoading, error: modelsError, loadModels } = useModelList();
   const {
-    inputKind, preparedFile, upload, uploading, submitting, trainingRun, preparationRun, error, watchError, trainingActivity,
-    chooseInput, cancelPreparation, startRun, selectRun, refreshRun,
+    inputKind, preparedFile, upload, uploading, submitting, trainingRun, preparationRun, error, watchError, trainingActivity, adopting, adoptionError,
+    chooseInput, cancelPreparation, clearError, startRun, selectRun, refreshRun,
   } = useFineTuningRunner();
   const [training, setTraining] = useState<TrainingOptions>(TESTED_TRAINING_OPTIONS);
   const [preparation, setPreparation] = useState<PreparationOptions>({ model: '', goal: 'question_answer', instructions: '', preview_records: 3 });
@@ -49,9 +50,10 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [inspectedPreparation, setInspectedPreparation] = useState<TrainingRun | null>(null);
   const [inspectionError, setInspectionError] = useState('');
-  const [runLoadError, setRunLoadError] = useState('');
+  const [runLoadError, setRunLoadError] = useState<{ text: string; missing: boolean } | null>(null);
+  const [runLoadAttempt, setRunLoadAttempt] = useState(0);
   const [trainingSetup, setTrainingSetup] = useState(false);
-  const [historyTab, setHistoryTab] = useState<'prepare' | 'training'>('prepare');
+  const [historyTab, setHistoryTab] = useState<'datasets' | 'training'>('datasets');
   const [datasets, setDatasets] = useState<PreparationDataset[]>([]);
   const [datasetID, setDatasetID] = useState('');
   const [datasetName, setDatasetName] = useState('');
@@ -82,10 +84,14 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   const showSourceSetup = !requestedKey;
   const preparationPending = !!preparationRun && !['completed', 'needs_improvement', 'failed', 'stopped'].includes(preparationRun.status);
   const preparationActive = preparationPending && preparationRun?.stage !== 'training';
+  // Starting waits until the page knows whether a preparation is already in progress.
+  const startBlocked = preparationPending || adopting;
   const trainingJob = (inspectedPreparation?.stage === 'training' ? inspectedPreparation : null) ?? trainingRun ?? (preparationRun?.stage === 'training' ? preparationRun : null);
   const showTrainingSetup = !trainingJob || trainingSetup;
   const matchingUpload = inputKind === (preparing ? 'document' : 'dataset');
   const pdfSource = matchingUpload && upload?.format === '.pdf';
+  // A start failure leaves the upload in place; an upload failure clears it.
+  const startError = preparing && matchingUpload && upload ? error : '';
   const modelInstalled = !!models?.data.some((model) => model.id === FINE_TUNING_MODEL_ID);
   const preparationModels = catalog.filter((model) => model.downloaded && model.validated
     && model.capabilities?.endpoint === 'chat_completion'
@@ -144,6 +150,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   if (pageStartError) readinessIssues.push({ message: pageStartError, field: 'fine-page-start' });
   if (pageEndError) readinessIssues.push({ message: pageEndError, field: 'fine-page-end' });
   if (preparationPending) readinessIssues.push({ message: 'Wait for the current preparation to finish.' });
+  else if (adopting) readinessIssues.push({ message: adoptionError ? `Could not check for a preparation in progress: ${adoptionError} Retrying automatically.` : 'Checking for a preparation in progress…' });
   if (busy && !uploading) readinessIssues.push({ message: 'Wait for the current operation to finish.' });
   const goToField = (id: string) => {
     const field = document.getElementById(id);
@@ -154,7 +161,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
 
   const start = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!ready || datasetPending.current || (preparing && preparationPending)) return;
+    if (!ready || datasetPending.current || startBlocked) return;
     datasetPending.current = true;
     setDatasetBusy(true);
     try {
@@ -213,19 +220,6 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     }
   };
 
-  const openPreparation = (id: string) => {
-    setInspectedPreparation(null);
-    setInspectionError('');
-    if (!id) {
-      void chooseInput(null, 'document');
-      setDatasetName('');
-    }
-    setDatasetID(id);
-    setRemoval(null);
-    setDatasetAttempt((value) => value + 1);
-    setView('prepare');
-  };
-
   const finished = (run: TrainingRun) => ['completed', 'needs_improvement', 'failed', 'stopped'].includes(run.status);
 
   // showRun makes a run the current one, so it is watched live. A finished run opened
@@ -261,20 +255,36 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   };
 
   // A reload or link names a run the page does not hold yet; load it.
+  // Other failures retry, as on Preparation runs.
   useEffect(() => {
-    setRunLoadError('');
+    setRunLoadError(null);
     if (!requestedKey) return;
     if (requestedKey === keyOf(preparationRun)) { setInspectedPreparation(null); return; }
     if (displayedPreparation) return;
     const controller = new AbortController();
-    api.trainingRun(requestedWorkflow!, requestedRun!, controller.signal)
-      .then((run) => { if (!controller.signal.aborted) showRun(run); })
-      .catch((err) => {
-        if (controller.signal.aborted) return;
-        setRunLoadError(err instanceof ApiError && err.status === 404 ? 'This preparation run is no longer available.' : err instanceof Error ? err.message : 'Could not load this preparation run.');
-      });
+    void (async () => {
+      while (!controller.signal.aborted) {
+        try {
+          const run = await api.trainingRun(requestedWorkflow!, requestedRun!, controller.signal);
+          if (!controller.signal.aborted) showRun(run);
+          return;
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          const missing = err instanceof ApiError && err.status === 404;
+          setRunLoadError({ text: missing ? 'This preparation run is no longer available.' : requestMessage(err, 'Could not load this preparation run.'), missing });
+          if (missing) return;
+          await retryDelay(controller.signal);
+        }
+      }
+    })();
     return () => controller.abort();
-  }, [requestedKey]);
+  }, [requestedKey, runLoadAttempt]);
+
+  // A finished run belongs on its details screen, including one that finishes while shown here.
+  const displayedFinished = !!displayedPreparation?.preparation_only && finished(displayedPreparation);
+  useEffect(() => {
+    if (displayedFinished && displayedPreparation) setSearchParams({ preparation: displayedPreparation.workflow_id, run: displayedPreparation.run_id }, { replace: true });
+  }, [displayedFinished, requestedKey]);
 
   const updateTraining = (key: keyof TrainingOptions, value: number) => {
     setTraining((current) => ({ ...current, [key]: value }));
@@ -297,20 +307,21 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
         ))}
       </nav>
 
-      {error && !(preparing && showSourceSetup && inputKind === 'document' && !upload) && <div className="fine-error" role="alert">{error}</div>}
+      {error && view === 'configure' && matchingUpload && <div className="fine-error" role="alert">{error}</div>}
       {modelsError && <div className="fine-error" role="alert">Could not load installed models: {modelsError}</div>}
-      {requestedKey && !displayedPreparation && (runLoadError
-        ? <div className="fine-error" role="alert">{runLoadError} <Link to="/fine-tuning">Return to preparation runs</Link></div>
+      {requestedKey && !displayedPreparation && (runLoadError?.missing
+        ? <div className="fine-error" role="alert">{runLoadError.text} <Link to="/fine-tuning">Return to preparation runs</Link></div>
+        : runLoadError ? <div className="prep-load-error" role="alert"><span>Could not load this run: {runLoadError.text} Retrying automatically.</span><button className="btn btn-secondary" type="button" onClick={() => setRunLoadAttempt((attempt) => attempt + 1)}>Try again</button></div>
         : <p className="prep-copy" role="status">Loading run…</p>)}
 
       {preparationRun && preparationActive && displayedPreparation !== preparationRun && (
         <section className="fine-panel fine-current-preparation" aria-label="Current preparation">
           <div className="fine-panel-heading">
-            <div><span>Preparation in progress</span><h3>Your preparation has not been canceled</h3></div>
-            <span className={`fine-status fine-status-${preparationRun.status}`}>{preparationRun.control_action === 'pause' ? 'paused' : preparationRun.status.replaceAll('_', ' ')}</span>
+            <div><span>Preparation in progress</span><h3>{preparationRun.target_dataset_name ?? preparationRun.source_document ?? 'Current preparation'}</h3></div>
+            <Badge run={preparationRun} />
           </div>
-          <p className="fine-panel-copy">Opening another dataset setup or browsing History does not cancel this run. You can configure another dataset, but must wait for the current preparation to finish before starting it.</p>
-          {preparationRun.status === 'waiting' && preparationRun.control_action !== 'pause' && <p className="fine-action-note">This run is waiting for your decision. Return to the process screen to continue.</p>}
+          <p className="fine-panel-copy">It keeps running while you are here. You can set up the next preparation now and start it when this one finishes.</p>
+          {preparationRun.status === 'waiting' && preparationRun.control_action !== 'pause' && <p className="fine-action-note">{preparationRun.checkpoint?.name === 'preview-review' ? 'Its preview is ready for your review.' : 'It is waiting for your decision.'} Open it to continue.</p>}
           {(preparationRun.state_stale || watchError) && <p className="fine-error" role="alert">{watchError || 'This status may be out of date.'} Open the current preparation and select Refresh to check its latest status.</p>}
           <div className="fine-actions"><button className="btn btn-primary" type="button" onClick={() => showPreparation(preparationRun)}>View current preparation</button></div>
         </section>
@@ -324,7 +335,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
           <section className="fine-panel fine-configure-intro" id="fine-source" tabIndex={-1}>
             <div className="fine-panel-heading">
               <div><span>{preparing ? 'Step 1' : 'Required'}</span><h3>{preparing ? 'Source document' : 'Choose Training Dataset'}</h3></div>
-              <span className={`fine-status ${matchingUpload && upload ? 'fine-status-completed' : 'fine-status-stopped'}`}>{matchingUpload && upload ? 'Uploaded' : preparing ? 'Document needed' : 'Dataset needed'}</span>
+              <span className={`fine-status ${matchingUpload && upload ? 'fine-status-completed' : 'fine-status-stopped'}`}>{matchingUpload && upload ? 'Uploaded' : matchingUpload && uploading ? 'Uploading…' : preparing ? 'Document needed' : 'Dataset needed'}</span>
             </div>
             <p className="fine-panel-copy">{preparing ? 'Choose a PDF, DOCX, Markdown, or text document to turn into grounded records.' : 'Choose a training-ready JSONL file. The training service validates its contents when you select Start.'}</p>
             <div className="form-group fine-file-field">
@@ -359,7 +370,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
                 )}
               </div>
             )}
-            {preparing && inputKind === 'document' && !upload && error && <p className="fine-error" role="alert">Could not upload {preparedFile?.name || 'this document'}: {error} Choose a document to try again.</p>}
+            {preparing && inputKind === 'document' && !upload && error && <p className="fine-error" role="alert">Could not upload {preparedFile?.name || 'this document'}: {error} Choose another document.</p>}
             {preparing && <p className="fine-action-note">PDF/DOCX need a server-side document extractor. Text and Markdown can be read directly.</p>}
             {preparing && pdfSource && <div className="form-group fine-source-scope">
               <FieldLabel htmlFor="fine-pdf-scope" tooltipKey="fineTuningPageStart">PDF pages</FieldLabel>
@@ -388,9 +399,9 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
               <div className="fine-preparation-options">
               <div className="form-group">
                 <FieldLabel htmlFor="fine-destination" tooltipKey="fineTuningDestination">Save records to</FieldLabel>
-                <select id="fine-destination" className="form-input" value={datasetID} disabled={busy || datasetLoading} aria-describedby="fine-destination-feedback" onChange={(event) => { setDatasetID(event.target.value); setRemoval(null); if (event.target.value) setCreationUncertain(false); }}>
+                <select id="fine-destination" className="form-input" value={datasetID} disabled={busy || datasetLoading} aria-describedby="fine-destination-feedback" onChange={(event) => { setDatasetID(event.target.value); setRemoval(null); if (event.target.value) setCreationUncertain(false); if (upload) clearError(); }}>
                   <option value="">Create a new dataset</option>
-                  {datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name} · {dataset.documents.length} documents · {dataset.record_count} records</option>)}
+                  {datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name} · {count(dataset.documents.length, 'document')} · {count(dataset.record_count, 'record')}</option>)}
                 </select>
                 <p id="fine-destination-feedback" className="fine-action-note">{datasetID && !selectedDataset && !datasetLoading ? 'This dataset is unavailable. Refresh datasets or choose another destination.' : 'Add this document to an existing dataset or create a new one.'}</p>
               </div>
@@ -405,7 +416,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
               {creationUncertain && <p className="fine-action-note" role="alert">Dataset creation could not be confirmed. Refresh datasets and select the dataset that was created before submitting again. A new dataset will not be created automatically.</p>}
               <div className="fine-actions"><button className="btn btn-secondary" type="button" disabled={busy || datasetLoading} onClick={() => { setRemoval(null); setDatasetAttempt((value) => value + 1); }}>Refresh datasets</button></div>
               {selectedDataset && <div className="fine-recipe-details">
-                <p className="fine-action-note"><strong>{selectedDataset.record_count} existing records stay as they are.</strong> Only the selected document will be prepared. Version {selectedDataset.version} is retained.</p>
+                <p className="fine-action-note"><strong>{selectedDataset.record_count} existing records stay as they are.</strong> Only the selected document is prepared, and its records are saved as a new version. Version {selectedDataset.version} stays available.</p>
                 <details className="fine-document-management"><summary>Manage existing documents ({selectedDataset.documents.length})</summary>
                   <p className="fine-action-note">Optional: remove documents and their records from a future dataset version. This is separate from preparing your new source.</p>
                   {selectedDataset.documents.map((doc) => <div className="fine-dataset-ready" key={doc.id}>
@@ -533,8 +544,9 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
           </>}
 
           {preparing && <section className="fine-panel fine-preview-readiness" id="fine-preview-readiness" tabIndex={-1} aria-label="Preview readiness">
-              <h3>{preparationPending ? 'Current preparation must finish first' : ready && !busy ? 'Ready to generate preview' : 'Before you generate preview'}</h3>
-              <p className="fine-action-note">Review generated examples first. Build dataset continues preparation after review; it does not start training.</p>
+              <h3>{preparationPending ? 'Current preparation must finish first' : startError ? 'Could not generate preview' : ready && !busy && !adopting ? 'Ready to generate preview' : 'Before you generate preview'}</h3>
+              {startError && <p className="fine-error" role="alert">{startError}</p>}
+              <p className="fine-action-note">Review generated examples first. Accept and build dataset continues preparation after review; it does not start training.</p>
               {readinessIssues.length > 0 && <ul className="fine-readiness">
                 {readinessIssues.map((issue) => <li key={issue.message}>{issue.field ? <button type="button" className="fine-readiness-link" onClick={() => goToField(issue.field!)}>{issue.message}</button> : issue.message}</li>)}
               </ul>}
@@ -542,13 +554,13 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
             {preparing && <p className="fine-action-note">New records are saved after verification. Existing records are unchanged. No training starts, and Gemma is not required.</p>}
           </div>
           {preparing ? <div className="fine-preview-action-bar" aria-label="Generate preview">
-              <div aria-live="polite"><strong>{ready && !busy && !preparationPending ? 'Ready to generate preview' : `${readinessIssues.length} ${readinessIssues.length === 1 ? 'requirement' : 'requirements'} remaining`}</strong>
-                {readinessIssues[0] && (readinessIssues[0].field ? <button className="fine-readiness-link" type="button" onClick={() => goToField(readinessIssues[0].field!)}>{readinessIssues[0].message}</button> : <span>{readinessIssues[0].message}</span>)}
+              <div aria-live="polite"><strong>{startError && !readinessIssues.length ? 'Could not generate preview' : ready && !busy && !startBlocked ? 'Ready to generate preview' : `${readinessIssues.length} ${readinessIssues.length === 1 ? 'requirement' : 'requirements'} remaining`}</strong>
+                {startError && !readinessIssues.length ? <span>{startError}</span> : readinessIssues[0] && (readinessIssues[0].field ? <button className="fine-readiness-link" type="button" onClick={() => goToField(readinessIssues[0].field!)}>{readinessIssues[0].message}</button> : <span>{readinessIssues[0].message}</span>)}
               </div>
-              <button className="btn btn-primary" type="submit" aria-describedby="fine-preview-readiness" disabled={!ready || busy || preparationPending}>{submitting ? 'Submitting…' : 'Generate preview'}</button>
+              <button className="btn btn-primary" type="submit" aria-describedby="fine-preview-readiness" disabled={!ready || busy || startBlocked}>{submitting ? 'Submitting…' : 'Generate preview'}</button>
             </div> : <section className="fine-panel fine-generation-summary">
             <div><h3>{ready ? 'Ready to Submit' : 'Complete the Training Configuration'}</h3><p>{matchingUpload && upload ? `${upload.name} will be submitted for Gemma 3 1B training.` : 'Choose a prepared JSONL dataset and install the Gemma 3 1B model.'}</p></div>
-            <button className="btn btn-primary" type="submit" disabled={!ready || busy || !!trainingActivity}>{submitting ? 'Submitting…' : 'Start Training'}</button>
+            <button className="btn btn-primary" type="submit" disabled={!ready || busy || !!trainingActivity || adopting}>{submitting ? 'Submitting…' : 'Start Training'}</button>
           </section>}
         </form>
         </div>
@@ -577,13 +589,10 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
       )}
       {view === 'history' && <>
         <div className="tabs" role="tablist" aria-label="History views">
-          <button className={`tab ${historyTab === 'prepare' ? 'active' : ''}`} role="tab" aria-selected={historyTab === 'prepare'} onClick={() => setHistoryTab('prepare')}>Prepare Dataset</button>
+          <button className={`tab ${historyTab === 'datasets' ? 'active' : ''}`} role="tab" aria-selected={historyTab === 'datasets'} onClick={() => setHistoryTab('datasets')}>Datasets</button>
           <button className={`tab ${historyTab === 'training' ? 'active' : ''}`} role="tab" aria-selected={historyTab === 'training'} onClick={() => setHistoryTab('training')}>Training</button>
         </div>
-        {historyTab === 'prepare' ? <>
-          <PreparationDatasetHistory onOpen={openPreparation} />
-          <TrainingHistory preparationOnly onSelect={(run) => finished(run) ? setSearchParams({ preparation: run.workflow_id, run: run.run_id }) : showPreparation(run)} />
-        </> : <TrainingHistory onSelect={(run) => {
+        {historyTab === 'datasets' ? <PreparationDatasetHistory /> : <TrainingHistory onSelect={(run) => {
           if (run.stages.some((stage) => stage.name === 'preparation') && run.stage !== 'training') {
             showPreparation(run);
           } else if (run.stages.some((stage) => stage.name === 'preparation')) {

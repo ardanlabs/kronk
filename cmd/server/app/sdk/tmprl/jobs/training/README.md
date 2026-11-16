@@ -144,7 +144,7 @@ retain Extract → Preview → Generate → Verify, including Preview approval, 
 finish after Verify without reserving a worker for a later training decision.
 They do not require an approved training model or training hyperparameters.
 
-`store.DatasetStore` in `app/sdk/tmprl/datasets/store/store.go` owns named datasets
+`store.Store` in `app/sdk/tmprl/datasets/store/store.go` owns named datasets
 and immutable versions. Supply `Prepare.TargetDatasetID` and `Prepare.BaseVersion`
 on a preparation-only request to append that document's verified examples. Existing
 documents are not extracted or generated again. Additions merge concurrent updates;

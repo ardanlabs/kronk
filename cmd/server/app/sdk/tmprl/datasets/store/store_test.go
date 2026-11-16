@@ -13,8 +13,8 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
 
-func documentAddition(id, hash string, prompts ...string) datasets.DatasetAddition {
-	addition := datasets.DatasetAddition{PublicationID: "run-" + id, Source: uploads.File{ID: id, Name: id + ".txt", SHA256: strings.Repeat(hash, 64)}}
+func documentAddition(id, hash string, prompts ...string) datasets.Addition {
+	addition := datasets.Addition{PublicationID: "run-" + id, Source: uploads.File{ID: id, Name: id + ".txt", SHA256: strings.Repeat(hash, 64)}}
 	for _, prompt := range prompts {
 		addition.Records = append(addition.Records, training.Record{Prompt: prompt, Target: "dawn", Evidence: "The harbor opens at dawn.", SourceDocument: id})
 	}
@@ -24,7 +24,7 @@ func documentAddition(id, hash string, prompts ...string) datasets.DatasetAdditi
 func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 	ctx := t.Context()
 	path := t.TempDir()
-	store, err := datasets.NewDatasetStore(path)
+	store, err := datasets.New(datasets.Config{Root: path})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 		t.Fatalf("remove: %+v, %v", removed, err)
 	}
 	// Reopening the store proves persistence rather than an in-memory cache.
-	store, err = datasets.NewDatasetStore(path)
+	store, err = datasets.New(datasets.Config{Root: path})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +119,11 @@ func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 
 func TestDatasetConcurrentPublishers(t *testing.T) {
 	path := t.TempDir()
-	first, err := datasets.NewDatasetStore(path)
+	first, err := datasets.New(datasets.Config{Root: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := datasets.NewDatasetStore(path)
+	second, err := datasets.New(datasets.Config{Root: path})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestDatasetConcurrentPublishers(t *testing.T) {
 	start := make(chan struct{})
 	failures := make(chan error, 2)
 	var group sync.WaitGroup
-	for i, store := range []*datasets.DatasetStore{first, second} {
+	for i, store := range []*datasets.Store{first, second} {
 		group.Go(func() {
 			<-start
 			addition := documentAddition("source-a", "a", "When does the harbor open?")
