@@ -3,11 +3,15 @@
 package malina_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"image"
 	"image/color"
+	"image/png"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -267,6 +271,68 @@ func TestMalinaUpscaleMetadata(t *testing.T) {
 	}
 	if info.Schema != "sdcpp.generation/v1" || info.Upscale.Factor != 4 {
 		t.Errorf("metadata: got %+v, want sdcpp.generation/v1 and factor 4", info)
+	}
+}
+
+func TestMalinaDetailMetadata(t *testing.T) {
+	mdls, err := malinamodels.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := mdls.LoadManifest(malinamodels.BundleADetailerFaceYOLOv8N)
+	if err != nil {
+		t.Skipf("ADetailer bundle is not installed: %v", err)
+	}
+	if err := malina.Init(malina.WithLibPath(malinalibs.Path(""))); err != nil {
+		t.Fatal(err)
+	}
+	handle, err := malina.New(
+		model.WithModelPath(manifest.Files[malinamodels.RoleModel.String()]),
+		model.WithADetailerPath(manifest.Files[malinamodels.RoleADetailer.String()]),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := handle.Unload(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	data, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "examples/samples/adetailer-face.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := model.NewDetailParams()
+	params.Image = input
+	params.Prompt = "a detailed portrait photo"
+	params.Steps = 1
+	params.Seed = 42
+	generated, err := handle.Detail(t.Context(), params)
+	if err != nil {
+		t.Fatalf("Detail(): %v", err)
+	}
+	var info struct {
+		Inpaint struct {
+			Strength float64 `json:"strength"`
+			Seed     string  `json:"seed"`
+		} `json:"inpaint_params"`
+	}
+	if err := json.Unmarshal([]byte(generated.GenerationInfo), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Inpaint.Strength != 0.75 || info.Inpaint.Seed != "42" {
+		t.Errorf("inpainting metadata: got %+v, want strength 0.75 and seed 42", info.Inpaint)
+	}
+	output, err := png.Decode(bytes.NewReader(generated.PNG))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.Bounds().Size() != input.Bounds().Size() {
+		t.Errorf("output size: got %v, want %v", output.Bounds().Size(), input.Bounds().Size())
 	}
 }
 

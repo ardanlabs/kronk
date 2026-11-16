@@ -117,11 +117,19 @@ Here are some of the known compatible versions:
 
 | kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.33.3 | 7157079 | b12435    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
+| 1.33.3 | 7157079 | b12435    | v1.1.5 | v1.9.5      | v1.2.3 | master-1106-532d2c1  |
 | 1.33.2 | 7600f25 | b12283    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
 | 1.33.1 | 18f0b31 | b11960    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
 | 1.33.0 | 4e61a12 | b11797    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
 | 1.32.9 | 1a800a2 | b11513    | v1.1.4 | v1.9.5      | v1.1.5 | master-929-3f8527a   |
+
+Malina v1.2.3 requires the opaque-options/tensor/result native API in
+`master-1106-532d2c1`, authenticated by manifest SHA-256
+`fdd518cfc0ace6f35853f767ef1aed7bb48ef7c543d61b100ff506ed33ec6a47`.
+It is ABI-incompatible with the struct-based runtime used by v1.2.2 and earlier
+in both directions. After upgrading, run `kronk malina libs --local` and restart.
+User-managed library paths must be rebuilt or replaced from the pinned revision;
+Kronk never upgrades those directories automatically.
 
 ## Documentation and Examples
 

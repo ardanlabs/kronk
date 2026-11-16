@@ -161,7 +161,7 @@ func (u *Upscaler) UpscaleWithInfo(ctx context.Context, input image.Image) ([]Up
 
 	var output []*sd.SDImage
 	err = withGeneration(ctx, context.Background(), func() error {
-		output, err = sd.Upscale(u.ctx, raw, uint32(u.factor))
+		output, err = sd.UpscaleImage(u.ctx, raw)
 		return err
 	})
 	if err != nil {
