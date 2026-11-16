@@ -411,7 +411,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage, error)</code>
               </pre>
-              <p className="doc-description">Detail detects faces and returns the final refined image.</p>
+              <p className="doc-description">Detail detects faces and returns the final refined image. Inpainting uses strength 0.75; ExtraArgs can override region settings such as inpaint dimensions.</p>
             </div>
 
             <div className="doc-section" id="method-model-generate">

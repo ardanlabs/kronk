@@ -371,7 +371,9 @@ func NewCannyParams() CannyParams {
 	return CannyParams{HighThreshold: 0.08, LowThreshold: 0.08, Weak: 0.8, Strong: 1}
 }
 
-// NewGenerateParams returns stable-diffusion.cpp generation defaults.
+// NewGenerateParams returns Kronk's image-generation defaults: 512×512 pixels,
+// 20 steps, CFG scale 7, a random seed, img2img strength 0.75, and ControlNet
+// strength 1.
 func NewGenerateParams() GenerateParams {
 	return GenerateParams{
 		Width:           512,
@@ -937,7 +939,8 @@ func (m *Model) runGeneration(ctx context.Context, progress func(GenerationProgr
 	})
 }
 
-// Detail detects faces and returns the final refined image.
+// Detail detects faces and returns the final refined image. Inpainting uses
+// strength 0.75; ExtraArgs can override region settings such as inpaint dimensions.
 func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage, error) {
 	if err := params.Validate(); err != nil {
 		return GeneratedImage{}, err
@@ -966,6 +969,9 @@ func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage
 	inpaint.Steps = int32(params.Steps)
 	inpaint.CFGScale = params.CFGScale
 	inpaint.Seed = params.Seed
+	// Malina leaves default-equal fields unset. ADetailer's native strength
+	// now defaults to 0.4, so explicitly retain Kronk's previous 0.75 strength.
+	inpaint.Options = sd.Options{"strength": float32(0.75)}
 
 	var images []*sd.SDImage
 	err = m.runGeneration(ctx, params.Progress, func() error {

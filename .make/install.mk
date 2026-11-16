@@ -97,13 +97,14 @@ install-speak-models: install-kronk ## Download published speech model bundles
 	@echo "Downloading these models does not verify Kronk speech runtime or pool support."
 	@echo
 
-# Use this to install the library and model required by the opt-in Malina tests.
+# Use the checkout CLI so an older kronk earlier on PATH cannot install
+# libraries incompatible with the bindings used by the opt-in Malina tests.
 install-test-malina: install-kronk ## Download Malina test fixtures
 	@echo ========== INSTALL STABLE DIFFUSION LIBRARIES ==========
-	kronk malina libs --local
+	go run ./cmd/kronk malina libs --local
 	@echo
 	@echo ========== INSTALL MALINA TEST MODEL ==========
-	kronk malina model pull --local "sd-1.5"
+	go run ./cmd/kronk malina model pull --local "sd-1.5"
 	@echo
 
 # Install the libraries and published fixtures for the opt-in decision suite.

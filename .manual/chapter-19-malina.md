@@ -92,12 +92,12 @@ arbitrary newer build is not accepted by default either. User-managed library
 paths are never upgraded automatically. Rebuild or replace those libraries
 from the pinned revision, especially when an upgrade changes the native ABI.
 
-Malina v1.2.1 requires native release `master-1088-32d516c`, authenticated by
-manifest SHA-256 `5f91839d47bc65edda35fafb9e6943db249c69c1d91f42f68d007c1eaa96770c`.
-Image-generation parameters grew from 552 to 560 bytes; v1.2.0 bindings with
-the new runtime can corrupt memory. Upgrade the bindings and native libraries
-together, then restart before generating. New bindings with the old runtime
-are not supported either.
+Malina v1.2.3 requires native release `master-1106-532d2c1`, authenticated by
+manifest SHA-256 `fdd518cfc0ace6f35853f767ef1aed7bb48ef7c543d61b100ff506ed33ec6a47`.
+This release replaces the struct-based native API used by v1.2.2 and earlier
+with opaque options, tensors, and results. Neither old bindings with new
+libraries nor new bindings with old libraries are compatible. Upgrade the
+bindings and native libraries together, then restart before generating.
 
 With default verification enabled, installation or verification failures stop
 server startup. Repair the managed bundle locally, then restart. A later native
@@ -335,10 +335,25 @@ or a curated, licensed model bundle. The catalog is intentionally bounded.
 SDK video results retain the effective frame rate, generated audio, and
 generation metadata; AVI encoding remains video-only.
 
-RelayVSR and SeedVR2 video upscaling remain unbound upstream and are not exposed
+Kronk's image defaults remain 512×512, 20 steps, CFG scale 7, a random seed,
+image-to-image strength 0.75, and ControlNet strength 1. ADetailer inpainting
+retains strength 0.75 rather than adopting the new native default of 0.4;
+`DetailParams.ExtraArgs` controls detector, mask, and region inpaint settings.
+Upscaling uses the loaded model's actual scale and retains native generation
+metadata through `UpscaleWithInfo`. Image pixels, video frames, audio samples,
+and generation metadata returned by the SDK remain valid after model unloading.
+
+RelayVSR and SeedVR2 video upscaling are not bound by Malina and are not exposed
 by Kronk. The existing upscaler supports ESRGAN-style image upscaling, not those
-video workflows. New upstream MiniMax-H3-Image and HyperFlow capabilities do not
-add curated Kronk bundles or establish verified server support.
+video workflows. Upstream MiniMax-H3-Image and HyperFlow capabilities do not add
+curated Kronk bundles or establish verified server support.
+
+Interleaved `<image:source>` prompt-image resolution is not exposed by Kronk's
+SDK or HTTP API. It is distinct from image-to-image editing and requires a
+compatible vision conditioner, additional model components, input limits, and
+an application-controlled image resolver. A prompt marker does not authorize
+Kronk to read a local file or fetch a URL. The curated bundles and memory
+estimates do not claim support for that additional workflow.
 
 Use the generated Malina SDK reference and `examples/malina*` for application
 development. Source-checkout targets include `make example-malina`,
