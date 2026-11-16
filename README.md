@@ -123,40 +123,6 @@ Here are some of the known compatible versions:
 | 1.33.0 | 4e61a12 | b11797    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
 | 1.32.9 | 1a800a2 | b11513    | v1.1.4 | v1.9.5      | v1.1.5 | master-929-3f8527a   |
 
-Windows x64 CUDA downloads with yzma `7600f25` are affected by a known
-[asset-name mismatch](https://github.com/hybridgroup/yzma/issues/486) for both
-llama.cpp b12223 and b12283. The downloader requests CUDA 13.4 archives, but
-these releases publish CUDA 13.5 archives. This does not affect the CPU,
-Vulkan, ROCm, or OpenVINO download paths.
-
-The current source pins llama.cpp to
-`b12435@sha256:90e888334bc6157745fce13c0948a1462c64e852b005aafa78500708caafcfeb`,
-paired with Yzma `v1.33.1-0.20261116110349-71570796dd03`.
-After upgrading Kronk, run `kronk libs --local` and restart to load the matching
-native libraries. User-managed native builds must be rebuilt or replaced with
-b12435; updating Yzma alone does not update those libraries. Update any explicit
-library version override to b12435 as well. The new bindings change native media
-initialization and speech-input layouts and are not compatible with the
-pre-upgrade b12359 bundle. This Yzma revision also resolves the Windows CUDA asset names to the
-published CUDA 13.5 archives.
-
-The exact authenticated Malina native pin is
-`master-1088-32d516c@sha256:5f91839d47bc65edda35fafb9e6943db249c69c1d91f42f68d007c1eaa96770c`.
-Run `kronk malina libs --local` after upgrading to replace an older managed
-bundle, then restart. User-managed native builds are never replaced; use a
-build of the pinned revision. Native ABI changes require rebuilding or
-replacing those libraries together with the bindings, not just updating Go
-dependencies.
-
-Malina v1.2.1 requires a coordinated native upgrade: image-generation parameters
-grew from 552 to 560 bytes. Old bindings with the new runtime can corrupt memory;
-new bindings with an old runtime are not a supported pair. Do not reuse an
-already-loaded library after updating the files: restart the process.
-Linux CPU/Vulkan bundles require glibc 2.43 or newer (Ubuntu 26.04). Standard Docker images
-use Ubuntu 26.04; the optional Jetson image retains its JetPack-compatible L4T
-base. See the [Malina manual](.manual/chapter-19-malina.md)
-for the published platform matrix and installation requirements.
-
 ## Documentation and Examples
 
 - [Manual](https://www.kronkai.com/manual)
