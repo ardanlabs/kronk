@@ -2,7 +2,9 @@ package model_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +14,73 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestGrammarLogprobsHTTP(t *testing.T) {
+	if testing.Short() {
+		t.Skip("model inference skipped in short mode")
+	}
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := mdls.FullPath("unsloth/Qwen3-0.6B-Q8_0")
+	if err != nil || len(path.ModelFiles) == 0 {
+		t.Skip("Qwen3-0.6B model not downloaded")
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	krn, err := kronk.New(model.WithModelFiles(path.ModelFiles),
+		model.WithContextWindow(2048), model.WithPrefillBatchSize(256),
+		model.WithNSeqMax(1), model.WithIncrementalCache(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := krn.Unload(context.Background()); err != nil {
+			t.Errorf("unload: %v", err)
+		}
+	})
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			w := httptest.NewRecorder()
+			_, err := krn.ChatStreamingHTTP(ctx, w, model.D{
+				"messages": model.Messages(model.TextMessage(model.RoleUser, "Reply with the single letter a.")),
+				"grammar":  `root ::= "a"`, "top_logprobs": 5,
+				"temperature": 0, "seed": uint32(42), "max_tokens": 8,
+				"enable_thinking": false, "stream": stream,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var logprobs []model.ContentLogprob
+			for line := range strings.SplitSeq(w.Body.String(), "\n") {
+				line = strings.TrimPrefix(line, "data: ")
+				if line == "" || line == "[DONE]" {
+					continue
+				}
+				var resp model.ChatResponse
+				if err := json.Unmarshal([]byte(line), &resp); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				for _, choice := range resp.Choices {
+					if choice.Logprobs != nil {
+						logprobs = append(logprobs, choice.Logprobs.Content...)
+					}
+				}
+			}
+			if len(logprobs) != 1 || logprobs[0].Token != "a" || logprobs[0].Logprob != 0 {
+				t.Fatalf("logprobs: got %+v, want one token a with logprob 0", logprobs)
+			}
+			alternatives := logprobs[0].TopLogprobs
+			if len(alternatives) != 1 || alternatives[0].Token != "a" || alternatives[0].Logprob != 0 {
+				t.Errorf("alternatives: got %+v, want only a with logprob 0", alternatives)
+			}
+		})
+	}
+}
 
 func TestLFM3TopologyAndToolCalls(t *testing.T) {
 	if testing.Short() {
