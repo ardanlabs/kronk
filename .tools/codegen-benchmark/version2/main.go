@@ -298,7 +298,7 @@ func graderFeedback(grade gradeResult) string {
 	}
 	var message strings.Builder
 	fmt.Fprintf(&message, "Your submission passed %d/%d checks. Failed: %d. Not reached: %d.\nFailed checks: %s\n", grade.Passed, grade.Total, len(failed), max(0, grade.Total-len(grade.Checks)), strings.Join(failed, ", "))
-	message.WriteString("\nObservations follow. Quoted strings preserve whitespace and ANSI escapes. Each scenario includes the input actually sent and its captured output transcript. Expected output ends at the stopped interaction, or at scenario completion.\n")
+	message.WriteString("\nObservations follow. Quoted strings preserve whitespace and ANSI escapes. Excerpts include up to 24 bytes of surrounding context; only matching sections between excerpts are omitted. Prefix/suffix omission flags identify excerpts that do not start/end at the transcript boundaries. E/A offsets are zero-based byte offsets in the full expected/actual transcripts. Every occurrence is listed; identical excerpt pairs share one quotation. Full inputs and transcripts remain in result.json.\n")
 	type repeatedFinding struct {
 		gradeFinding
 		count int
@@ -314,8 +314,14 @@ func graderFeedback(grade gradeResult) string {
 		}
 		groups[index].count++
 	}
-	for _, group := range groups {
-		fmt.Fprintf(&message, "\n- %s [%s]", group.Location, group.Kind)
+	type excerptGroup struct {
+		feedbackExcerpt
+		occurrences []string
+	}
+	var excerpts []excerptGroup
+	byExcerpt := make(map[feedbackExcerpt]int)
+	for i, group := range groups {
+		fmt.Fprintf(&message, "\n- Finding %d: %s [%s]", i+1, group.Location, group.Kind)
 		if group.Step > 0 {
 			fmt.Fprintf(&message, ", step %d", group.Step)
 		}
@@ -326,12 +332,95 @@ func graderFeedback(grade gradeResult) string {
 			fmt.Fprintf(&message, "\n  Diagnostic: %s", group.Detail)
 		}
 		if group.Kind != "check" {
-			fmt.Fprintf(&message, "\n  Input sent: %q\n  Expected: %q\n  Actual: %q", group.Input, group.Expected, group.Actual)
+			fmt.Fprintf(&message, "\n  Input sent: %q", group.Input)
+			for _, span := range feedbackRanges(group.Expected, group.Actual) {
+				excerpt := feedbackExcerpt{
+					expected: group.Expected[span.e0:span.e1], actual: group.Actual[span.a0:span.a1],
+					expectedPrefix: span.e0 > 0, expectedSuffix: span.e1 < len(group.Expected),
+					actualPrefix: span.a0 > 0, actualSuffix: span.a1 < len(group.Actual),
+				}
+				index, exists := byExcerpt[excerpt]
+				if !exists {
+					index = len(excerpts)
+					byExcerpt[excerpt] = index
+					excerpts = append(excerpts, excerptGroup{feedbackExcerpt: excerpt})
+				}
+				excerpts[index].occurrences = append(excerpts[index].occurrences, fmt.Sprintf("#%d E%d/A%d", i+1, span.e0, span.a0))
+			}
 		}
 		message.WriteByte('\n')
 	}
+	for i, excerpt := range excerpts {
+		fmt.Fprintf(&message, "\nExcerpt %d; occurrences: %s\n", i+1, strings.Join(excerpt.occurrences, ", "))
+		fmt.Fprintf(&message, "Expected: %q\n  Omitted prefix=%t suffix=%t\nActual: %q\n  Omitted prefix=%t suffix=%t\n",
+			excerpt.expected, excerpt.expectedPrefix, excerpt.expectedSuffix,
+			excerpt.actual, excerpt.actualPrefix, excerpt.actualSuffix)
+	}
 	message.WriteString("\nRepair tictactoe/main.go under the original requirements, then finish your response to resubmit.\n")
 	return message.String()
+}
+
+// Excerpt identity includes transcript boundaries, so a complete output is not
+// collapsed with the same bytes taken from the middle of another output.
+type feedbackExcerpt struct {
+	expected, actual               string
+	expectedPrefix, expectedSuffix bool
+	actualPrefix, actualSuffix     bool
+}
+
+type feedbackRange struct {
+	e0, e1, a0, a1 int
+}
+
+// feedbackRanges compares raw bytes, without normalizing or interpreting them.
+// Exact matching anchors resynchronize insertions/deletions. If no nearby anchor
+// exists, keep the whole unmatched region rather than discard any differences.
+func feedbackRanges(expected, actual string) []feedbackRange {
+	const contextBytes = 24
+	var spans []feedbackRange
+	e, a := 0, 0
+	for e < len(expected) || a < len(actual) {
+		for e < len(expected) && a < len(actual) && expected[e] == actual[a] {
+			e++
+			a++
+		}
+		if e == len(expected) && a == len(actual) {
+			break
+		}
+		e0, a0 := e, a
+		de, da := feedbackMatch(expected[e:], actual[a:])
+		e += de
+		a += da
+		span := feedbackRange{max(0, e0-contextBytes), min(len(expected), e+contextBytes), max(0, a0-contextBytes), min(len(actual), a+contextBytes)}
+		if n := len(spans); n > 0 && (span.e0 <= spans[n-1].e1 || span.a0 <= spans[n-1].a1) {
+			spans[n-1].e1 = span.e1
+			spans[n-1].a1 = span.a1
+			continue
+		}
+		spans = append(spans, span)
+	}
+	return spans
+}
+
+// Search a fixed byte window for an exact 16-byte anchor, preferring the least
+// total skipped bytes. These are alignment rules, not assumptions about errors.
+func feedbackMatch(expected, actual string) (int, int) {
+	const anchor, lookahead = 16, 256
+	e, a := len(expected), len(actual)
+	best := e + a + 1
+	for i := 0; i+anchor <= min(len(expected), lookahead+anchor); i++ {
+		j := strings.Index(actual[:min(len(actual), lookahead+anchor)], expected[i:i+anchor])
+		if j >= 0 && i+j < best {
+			e, a, best = i, j, i+j
+		}
+	}
+	if best == len(expected)+len(actual)+1 {
+		for e > 0 && a > 0 && expected[e-1] == actual[a-1] {
+			e--
+			a--
+		}
+	}
+	return e, a
 }
 
 func warmModel(ctx context.Context, host, modelID string) error {

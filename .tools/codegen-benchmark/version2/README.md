@@ -18,11 +18,17 @@ Finishing the OpenCode response constitutes submission.
 Feedback is enabled by default. Disabling feedback permits only the initial submission
 of each step; Step2 still requires a Step1 pass.
 The repair message lists failed checks and distinguishes them from checks not reached.
-It includes native diagnostics and, for each failed scenario, the inputs actually sent,
-expected output up to the stopped interaction or completion, the complete captured
-output transcript, and any execution/stop reason. Whitespace and ANSI escapes are
-quoted literally; no minimal edits, inferred causes, or suggested fixes are produced.
-Only identical observations, including their location, step and input, are collapsed.
+It includes native diagnostics, each failed scenario's inputs and execution/stop
+reason, and raw expected/actual excerpts around output differences. Each excerpt
+includes up to 24 unchanged bytes on either side; overlapping excerpts are merged.
+Matching sections outside excerpts are omitted explicitly, with transcript-boundary
+flags and zero-based expected/actual byte offsets. Whitespace and ANSI escapes are
+quoted literally; no inferred causes or suggested fixes are produced. Every differing
+region is retained; when compact alignment is unavailable, a larger unmatched region
+is shown rather than dropping differences. Identical excerpt pairs with identical
+boundary flags share one quotation, with every occurrence referenced to its finding
+and byte offsets. Scenario names, steps, and inputs remain distinct. Identical full
+observations retain their occurrence count. Complete evidence stays in `result.json`.
 The only instruction is to repair the existing program under the original requirements
 and finish the response to resubmit. This is a repair evaluation, not independent sampling.
 

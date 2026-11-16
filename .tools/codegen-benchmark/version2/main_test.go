@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -445,6 +446,67 @@ func TestGraderFeedbackPreservesLongEvidence(t *testing.T) {
 		if !strings.Contains(feedback, want) {
 			t.Fatalf("long evidence or diagnostics were lost: expected %d-byte field", len(want))
 		}
+	}
+}
+
+func TestGraderFeedbackExcerpts(t *testing.T) {
+	prefix, middle, suffix := strings.Repeat("p", 80), strings.Repeat("m", 120), strings.Repeat("s", 80)
+	for _, tc := range []struct {
+		name, expected, actual string
+		want                   []string
+		excerpts               int
+	}{
+		{"separated changes", prefix + "X" + middle + "Y" + suffix, prefix + "O" + middle + "Z" + suffix,
+			[]string{`Expected: "` + strings.Repeat("p", 24) + "X" + strings.Repeat("m", 24) + `"`,
+				`Actual: "` + strings.Repeat("m", 24) + "Z" + strings.Repeat("s", 24) + `"`,
+				"Omitted prefix=true suffix=true", "#1 E56/A56", "#1 E177/A177"}, 2},
+		{"overlapping context", prefix + "XnearY" + suffix, prefix + "OnearZ" + suffix,
+			[]string{`Expected: "` + strings.Repeat("p", 24) + "XnearY" + strings.Repeat("s", 24) + `"`,
+				`Actual: "` + strings.Repeat("p", 24) + "OnearZ" + strings.Repeat("s", 24) + `"`}, 1},
+		{"insertions and deletions", prefix + "\x1b[1;31mX \n" + middle + "\n" + suffix, prefix + "\x1b[31mX\n" + middle + " extra\t" + suffix,
+			[]string{`\x1b[1;31mX \n`, `\x1b[31mX\n`, ` extra\t`}, 2},
+		{"empty actual", "missing\n", "", []string{`Expected: "missing\n"`, `Actual: ""`, "Omitted prefix=false suffix=false"}, 1},
+		{"empty expected", "", "extra\n", []string{`Expected: ""`, `Actual: "extra\n"`}, 1},
+		{"unchanged execution output", "same", "same", []string{"Diagnostic: process exited with status 1"}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			grade := gradeResult{Total: 1}
+			grade.add("scenario-test", false, "", gradeFinding{Kind: "transcript", Location: "scenario-test",
+				Expected: tc.expected, Actual: tc.actual, Detail: "process exited with status 1"})
+			feedback := graderFeedback(grade)
+			for _, want := range tc.want {
+				if !strings.Contains(feedback, want) {
+					t.Errorf("feedback omitted %q: %s", want, feedback)
+				}
+			}
+			if got := strings.Count(feedback, "\nExcerpt "); got != tc.excerpts {
+				t.Errorf("got %d excerpts, want %d: %s", got, tc.excerpts, feedback)
+			}
+			if strings.Contains(feedback, prefix) || strings.Contains(feedback, middle) || strings.Contains(feedback, suffix) {
+				t.Fatalf("feedback repeated distant matching sections: %s", feedback)
+			}
+		})
+	}
+}
+
+func TestGraderFeedbackCollapsePreservesOccurrencesAndBoundaries(t *testing.T) {
+	expected := strings.Repeat("p", 24) + "X" + strings.Repeat("s", 24)
+	actual := strings.Repeat("p", 24) + "O" + strings.Repeat("s", 24)
+	grade := gradeResult{Total: 3}
+	for i, padding := range []string{"", "", "frame"} {
+		name := fmt.Sprintf("scenario-%d", i+1)
+		grade.add(name, false, "", gradeFinding{Kind: "transcript", Location: name,
+			Input: fmt.Sprintf("%d\n", i+1), Expected: padding + expected + padding, Actual: padding + actual + padding})
+	}
+	feedback := graderFeedback(grade)
+	for _, want := range []string{"#1 E0/A0, #2 E0/A0", "#3 E5/A5", "Omitted prefix=false suffix=false", "Omitted prefix=true suffix=true",
+		`Input sent: "1\n"`, `Input sent: "2\n"`, `Input sent: "3\n"`} {
+		if !strings.Contains(feedback, want) {
+			t.Errorf("feedback lost occurrence identity or boundary: missing %q in %s", want, feedback)
+		}
+	}
+	if strings.Count(feedback, "\nExcerpt ") != 2 || strings.Count(feedback, "Expected: ") != 2 {
+		t.Fatalf("identical excerpts were not collapsed, or differing boundaries were merged: %s", feedback)
 	}
 }
 
