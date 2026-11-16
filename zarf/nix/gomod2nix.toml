@@ -23,8 +23,8 @@ schema = 3
     version = "v1.32.1"
     hash = "sha256-odDBTEoJWPhfEFM1xcPEY6mVqCx0dMNXIvQU0Pts+Lk="
   [mod."cloud.google.com/go/storage"]
-    version = "v1.70.0"
-    hash = "sha256-U1gIDjsDJXWxM3b/y/QX+6QwNaXzhiZMLSVPavILzdY="
+    version = "v1.71.0"
+    hash = "sha256-WqFIHX4KkeDAXd/OrgOOfJaLSHCV84ZiZcnOgcvpxEg="
   [mod."github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"]
     version = "v0.62.0"
     hash = "sha256-txGALfEVycp2851NRof9BTWtiuJ8C7CgG6YcG6NXg7o="
@@ -203,8 +203,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.33.0"
-    hash = "sha256-mdGIfr7aK6D9YZCdzDlqj6UawO8sDSlYeLCv8UhdRTE="
+    version = "v1.33.1-0.20261116110349-71570796dd03"
+    hash = "sha256-aFxHeoMF5kzn0qO2zUMXcx4CrHh68WzgD+8F1nPDCB4="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -395,8 +395,8 @@ schema = 3
     version = "v0.16.0"
     hash = "sha256-OvekWcaTHMs5n3Img4EmYaORRgSmybBS+tObSnPqftY="
   [mod."google.golang.org/api"]
-    version = "v0.314.0"
-    hash = "sha256-iqFMcB6W8EDmzCgeqx3kVWpiUJoLlrnII5XJU9zO8MA="
+    version = "v0.315.0"
+    hash = "sha256-UOv/9KoWIlpperjawtM35RmsbqSAunNPa7lctHJxsv4="
   [mod."google.golang.org/genproto"]
     version = "v0.0.0-20261110000943-09e21b237f2c"
     hash = "sha256-V9VWVPhA7tejguIoxbicsD7jKNQSd4Ck53FJai+uig8="

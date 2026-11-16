@@ -8,8 +8,8 @@ require (
 	github.com/ardanlabs/bucky v1.1.6
 	github.com/ardanlabs/kronk v1.33.2
 	github.com/duckdb/duckdb-go/v2 v2.20000.0
-	github.com/gen2brain/malgo v0.11.27
-	github.com/hybridgroup/yzma v1.33.0
+	github.com/gen2brain/malgo v0.11.28
+	github.com/hybridgroup/yzma v1.33.1-0.20261116110349-71570796dd03
 	golang.org/x/image v0.48.0
 )
 
@@ -21,7 +21,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	cloud.google.com/go/iam v1.15.1 // indirect
 	cloud.google.com/go/monitoring v1.32.1 // indirect
-	cloud.google.com/go/storage v1.70.0 // indirect
+	cloud.google.com/go/storage v1.71.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.62.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
@@ -119,7 +119,7 @@ require (
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/api v0.314.0 // indirect
+	google.golang.org/api v0.315.0 // indirect
 	google.golang.org/genproto v0.0.0-20261110000943-09e21b237f2c // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261110000943-09e21b237f2c // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c // indirect
