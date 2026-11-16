@@ -18,6 +18,8 @@ Feedback is enabled by default. Disabling feedback runs only the initial submiss
 Feedback can include test expectations and output excerpts, but not the grader's
 source. Repeated formatting edits are grouped across steps and scenarios, with an
 occurrence count and one example per distinct edit; every occurrence must be fixed.
+Examples show expected and actual output excerpts with the original whitespace
+and ANSI codes preserved as escaped text.
 Identical scenario-stopping diagnostics are also grouped, with a scenario count
 and one example. Different diagnostics remain separate.
 Detailed diagnostics remain in `result.json`. Later grades may expose additional

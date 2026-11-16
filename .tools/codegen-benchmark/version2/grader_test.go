@@ -129,7 +129,11 @@ func TestAcceptanceFormattingFeedback(t *testing.T) {
 		}
 	}
 	feedback := graderFeedback(grade)
-	for _, want := range []string{`Expected "\n", actual ""`, `Expected "", actual "\n"`, "Fix every occurrence"} {
+	for _, want := range []string{
+		`Expected "\n", actual ""`, `Expected "", actual "\n"`, "Fix every occurrence",
+		`Draws: 0\n\n \x1b[37m1\x1b[0m`, `Draws: 0\n \x1b[37m1\x1b[0m`,
+		`\n\nPlayer X wins!\n`, `\n\n\nPlayer X wins!\n`,
+	} {
 		if !strings.Contains(feedback, want) {
 			t.Errorf("feedback omitted %q: %s", want, feedback)
 		}

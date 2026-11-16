@@ -508,18 +508,24 @@ func formattingDifferences(expected, actual string) []outputDifference {
 		}
 	}
 	var positions []int
-	for position, pair := range gaps {
-		if pair[0] != pair[1] {
-			positions = append(positions, position)
-		}
+	for position := range gaps {
+		positions = append(positions, position)
 	}
 	slices.Sort(positions)
-	state := terminalPresentation.ReplaceAllString(expected, "")
+	var removed [2]int
 	var differences []outputDifference
 	for _, position := range positions {
 		pair := gaps[position]
+		expectedStart, actualStart := position+removed[0], position+removed[1]
+		removed[0] += len(pair[0])
+		removed[1] += len(pair[1])
+		if pair[0] == pair[1] {
+			continue
+		}
 		difference := transcriptDifference(pair[0], pair[1])
-		difference.Example = fmt.Sprintf("between text %q and %q", state[max(0, position-30):position], state[position:min(len(state), position+30)])
+		difference.Example = fmt.Sprintf("expected %q, actual %q (ANSI escapes shown literally)",
+			expected[max(0, expectedStart-30):min(len(expected), expectedStart+100)],
+			actual[max(0, actualStart-30):min(len(actual), actualStart+100)])
 		differences = append(differences, difference)
 	}
 	return differences
