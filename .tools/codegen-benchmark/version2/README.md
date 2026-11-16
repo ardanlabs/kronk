@@ -7,21 +7,23 @@ toolchain, observe compiler failures, and repair its work before the harness
 grades `tictactoe/main.go`. The original benchmark is preserved in the parent
 directory. Historical reports copied into `reports/` are version 1 results.
 
-Version 2 allows at most **three total submissions** per model: the initial
-implementation and up to two repairs. Passing requires all **37 acceptance
-checks**, with expanded execution coverage of the unchanged task. On failure, the harness
-passes the failed check names and diagnostic details back to OpenCode and resumes
-the same session with `--continue`. It stops immediately on a passing grade or
-after the submission budget. Finishing the OpenCode response constitutes submission.
+Workload **v1** has two steps: **Step1 (basic game)** and **Step2 (Undo move)**.
+Each model first attempts the basic game, with up to **three submissions** (initial
+implementation plus two repairs). Passing all **37 checks** unlocks the undo
+extension, with its own three-submission budget. Both steps share the same program,
+workspace, and OpenCode session. A failed Step1 never advances to Step2. Each step
+stops when it passes or exhausts its budget, for at most six submissions per model.
+Finishing the OpenCode response constitutes submission.
 
-Feedback is enabled by default. Disabling feedback runs only the initial submission.
+Feedback is enabled by default. Disabling feedback permits only the initial submission
+of each step; Step2 still requires a Step1 pass.
 The repair message lists failed checks and distinguishes them from checks not reached.
 It includes native diagnostics and, for each failed scenario, the inputs actually sent,
 expected output up to the stopped interaction or completion, the complete captured
 output transcript, and any execution/stop reason. Whitespace and ANSI escapes are
 quoted literally; no minimal edits, inferred causes, or suggested fixes are produced.
 Only identical observations, including their location, step and input, are collapsed.
-The only instruction is to repair the existing program under the original requirements
+The only instruction is to repair the existing program under the current workload requirements
 and finish the response to resubmit. This is a repair evaluation, not independent sampling.
 
 There is no separate feedback file or extra repair-message size cap. Prompts are
@@ -53,7 +55,9 @@ execution is allowed.
 ## Deterministic acceptance
 
 The grader checks the submitted formatting, structure, build, vet, and helper
-behavior, then runs **22 interactive scenarios in a real pseudo-terminal**.
+behavior, then runs interactive scenarios in a real pseudo-terminal: **22 for Step1**
+(**37 total checks**) and **33 for Step2** (**48 total checks**). Step2 covers ordinary
+gameplay as well as undo.
 Input is delivered one line at a time only after the expected board, scores,
 messages, and prompt are recognizable. Whitespace and supported ANSI color/clear
 sequences are ignored only for deciding when to send the next input, allowing
@@ -69,9 +73,19 @@ replays preserving all three scores, and exit answers. Each scenario is bounded
 to three seconds and 64 KiB of output. A complete pass means these acceptance
 cases passed, not a proof against every possible program defect or terminal.
 Check percentages are diagnostic, not a percentage of playability. No Amp grader
-or screenshot review is involved. The benchmark loads `tic-tac-toe-v1.md` (base game).
-`tic-tac-toe-v2.md` preserves the complete base-game and undo task for future work;
-it is not loaded, and undo is not graded.
+or screenshot review is involved. The benchmark initially loads `tic-tac-toe-v1.md`.
+Only after it passes, the agent receives the `# Add One-Move Undo` section from
+`tic-tac-toe-v2.md`; the base-game prompt is not repeated. Step2 checks both players'
+undo, restored turns and cell numbers, invalid/repeated undo, replacement moves,
+score preservation, replay reset, and ordinary gameplay with the updated prompts.
+The existing exact-output requirements remain in force.
+
+Runnable references are `testdata/correct.go` (Step1) and `testdata/undo/main.go` (Step2).
+Play the undo reference from the project root with:
+
+```shell
+GOTOOLCHAIN=local go run ./.tools/codegen-benchmark/version2/testdata/undo
+```
 
 Before a model's attempts begin, the harness warms it with a one-token response
 to `hello model`. After all attempts for that model, it unloads the model before
@@ -106,7 +120,7 @@ the administrative model-unload endpoint.
 
 ## Run
 
-Run every eligible configured model with up to three submissions:
+Run every eligible configured model with up to three submissions per step:
 
 ```shell
 make benchmark-codegen-v2
@@ -135,8 +149,8 @@ The primary knobs are:
 | --- | --- | --- |
 | `CODEGEN_HOST` | `http://localhost:11435` | Running Kronk server |
 | `CODEGEN_MODEL` | `all` | One ID, comma-separated IDs, or every `/BENCHMARK` model |
-| `CODEGEN_V2_SUBMISSIONS` | `3` | Maximum total submissions per model, including the initial one |
-| `CODEGEN_V2_FEEDBACK` | `true` | Resume failures with grader feedback; false stops after one submission |
+| `CODEGEN_V2_SUBMISSIONS` | `3` | Maximum submissions per step, including its initial one |
+| `CODEGEN_V2_FEEDBACK` | `true` | Resume failures with grader feedback; false allows one submission per step |
 | `CODEGEN_STEPS` | `40` | Maximum OpenCode agent steps per submission |
 | `CODEGEN_TIMEOUT` | `30m` | Timeout per submission; also separately applied to warm-up and unload |
 
@@ -147,7 +161,7 @@ Outputs are retained beneath the gitignored
 runs/YYYY-MM-DD/run-HHMMSS.<unique>/
   report.txt               # compact plain-text entry to paste into history.txt
   <model>/attempt-01/
-    result.json            # grade, metrics, evidence, repair_message for attempts 2–3
+    result.json            # step label, grade, metrics, evidence, repair_message for repairs
     program/main.go        # submitted source, unchanged and runnable
     program/go.mod
     events.jsonl, opencode.stderr
@@ -170,16 +184,24 @@ values without querying a server; old reports without them show `not recorded`.
 History is maintained manually; the benchmark never updates it. The runner machine
 is the OpenCode/grader host, not a remote inference server.
 
-The prompt and acceptance checks together define workload `v1`. The canonical
-prompt is `tic-tac-toe-v1.md`; it is not copied into runs. The report's workload
-label also selects the prompt file. Supporting workload v2 will require an undo-aware
-grader before changing that label.
+The prompts and acceptance checks together define workload v1. The canonical
+prompt files remain `tic-tac-toe-v1.md` and `tic-tac-toe-v2.md` (the latter supplies
+only the undo extension); these filenames do not indicate different workload
+versions. Neither is copied into runs. Reports show `Workload: v1`, with separate
+rows for `Step1 (basic game)` and `Step2 (Undo move)`, each with its own outcome,
+submission count, checks, and agent time. Step2 is `Not reached` when Step1 fails.
+A Step2 failure does not erase the Step1 pass. Old results without step metadata
+remain basic-game-only when reports are regenerated.
+
+Attempt folders are numbered consecutively across both steps. Each `result.json`
+records its `step`; the report counts submissions within that step, so Step2
+submission 1 may be saved under `attempt-02` or `attempt-04`.
 
 Each model uses one temporary `workspace/` shared across its submissions so repairs
 retain the code and agent session. It is removed after that model finishes, including
 on error return. Each `attempt-XX` directory preserves its prompt (including repair
 feedback) only as `repair_message` in `result.json` for repair submissions; the initial
-task is referenced by the workload label. Attempts also preserve the JSON event
+task is referenced by the workload and step labels. Attempts also preserve the JSON event
 stream, stderr, grader result, and one runnable source snapshot.
 Scenario inputs and expected/actual ANSI transcripts are stored only in
 `result.json`, under `grade.evidence`; structured failure diagnostics are stored
@@ -205,8 +227,9 @@ as submitted, not silently fixed.
 Agent time includes all submissions but excludes setup, warm-up, and grading.
 Workflow completion is separate from passing acceptance checks. Detailed per-attempt
 metrics and diagnostics remain in `result.json`, not the summary report.
-A run can take up to three 30-minute agent invocations plus setup, grading,
-warm-up and unload.
+With the Make defaults, a model can take up to six 30-minute agent invocations
+plus setup, grading, warm-up and unload. `go run` without an explicit `-timeout`
+currently defaults to 10 minutes per invocation.
 
 Regenerate the latest run's report without invoking a model:
 

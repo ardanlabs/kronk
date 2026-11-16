@@ -363,8 +363,8 @@ func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 	plain := strings.Join(strings.Fields(report), " ")
 	for _, want := range []string{
 		"Workload: v1",
-		"org/model/BENCHMARK 2 Passed on submission 2 20/20 10s",
-		"org/failed/BENCHMARK 1 Not passed 19/20 0s",
+		"org/model/BENCHMARK Step1 (basic game) 2 Passed on submission 2 20/20 10s",
+		"org/failed/BENCHMARK Step1 (basic game) 1 Not passed 19/20 0s",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("report: missing %q in %s", want, report)
@@ -535,6 +535,9 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 		t.Fatal(err)
 	}
 	runDir := t.TempDir()
+	if err := generateReport(runDir, &runRecord{Workload: workloadVersion, Steps: basicGameStep + ", " + undoMoveStep, Started: time.Now(), Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
 	model := benchmarkModel{ID: "org/model/BENCHMARK", ContextWindow: 8192, OutputLimit: 1024}
 	modelDir := filepath.Join(runDir, modelDirName(model.ID))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -543,7 +546,10 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 	defer server.Close()
 	t.Setenv("CAPTURE_DIR", binDir)
 	prompt := "original task\n" + strings.Repeat("evidence with spaces, \"quotes\" and \\x1b[32m\n", 5000)
-	if err := runModel(root, runDir, server.URL, prompt, model,
+	if err := runModel(root, runDir, server.URL, []benchmarkStep{
+		{name: basicGameStep, prompt: prompt, grade: gradeProgram},
+		{name: undoMoveStep, prompt: "undo extension", grade: gradeUndoProgram},
+	}, model,
 		options{attempts: 2, feedback: true, steps: 5, timeout: time.Minute}); err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +569,7 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 		t.Fatalf("saved submissions: %+v %v", loaded, err)
 	}
 	for _, item := range loaded[0].Attempts {
-		if item.OpenCode.ExitCode != 0 || item.OpenCode.Usage.Input != 17 || item.Grade.Passed != 1 {
+		if item.Step != basicGameStep || item.OpenCode.ExitCode != 0 || item.OpenCode.Usage.Input != 17 || item.Grade.Passed != 1 {
 			t.Fatalf("submission %d: %+v", item.Attempt, item)
 		}
 	}
@@ -576,6 +582,10 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 		if err != nil || string(got) != want {
 			t.Fatalf("%s stdin changed: got %d bytes, want %d, error %v", name, len(got), len(want), err)
 		}
+	}
+	report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
+	if err != nil || !strings.Contains(strings.Join(strings.Fields(string(report)), " "), "Step2 (Undo move) 0 Not reached - 0s") {
+		t.Fatalf("Step1 failure must leave Step2 unattempted: %s %v", report, err)
 	}
 	feedback := graderFeedback(loaded[0].Attempts[1].Grade)
 	if !strings.Contains(feedback, "go-parse") || !strings.Contains(feedback, "1/37") {
@@ -599,7 +609,7 @@ func TestRunAttemptTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := runAttempt(modelDir, "prompt", env, model, 1, options{steps: 5, timeout: 100 * time.Millisecond})
+	item, err := runAttempt(modelDir, "prompt", env, model, 1, 1, benchmarkStep{name: basicGameStep, grade: gradeProgram}, options{steps: 5, timeout: 100 * time.Millisecond})
 	if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 		t.Fatalf("timeout must fail the workflow: %v", err)
 	}

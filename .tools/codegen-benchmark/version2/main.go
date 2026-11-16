@@ -30,7 +30,7 @@ const (
 	defaultHost          = "http://localhost:11435"
 	defaultAttempts      = 3
 	defaultSteps         = 40
-	defaultTimeout       = 30 * time.Minute
+	defaultTimeout       = 10 * time.Minute
 	modelBenchmarkSuffix = "/BENCHMARK"
 )
 
@@ -71,7 +71,19 @@ type agentResult struct {
 	Usage     tokenUsage    `json:"usage"`
 }
 
+const (
+	basicGameStep = "Step1 (basic game)"
+	undoMoveStep  = "Step2 (Undo move)"
+)
+
+type benchmarkStep struct {
+	name   string
+	prompt string
+	grade  func(context.Context, string) gradeResult
+}
+
 type result struct {
+	Step      string         `json:"step,omitempty"`
 	Model     benchmarkModel `json:"model"`
 	Attempt   int            `json:"attempt"`
 	OpenCode  agentResult    `json:"opencode"`
@@ -100,7 +112,7 @@ func parseFlags() (options, error) {
 	var opts options
 	flag.StringVar(&opts.host, "host", defaultHost, "running Kronk server URL")
 	flag.StringVar(&opts.model, "model", "all", "configured /BENCHMARK model ID, comma-separated IDs, or all")
-	flag.IntVar(&opts.attempts, "attempts", defaultAttempts, "maximum submissions per model (1-3, including the initial submission)")
+	flag.IntVar(&opts.attempts, "attempts", defaultAttempts, "maximum submissions per challenge step (1-3, including the initial submission)")
 	flag.BoolVar(&opts.feedback, "feedback", true, "return grader failures to the same agent for repair")
 	flag.IntVar(&opts.steps, "steps", defaultSteps, "maximum OpenCode agent steps per attempt")
 	flag.DurationVar(&opts.timeout, "timeout", defaultTimeout, "timeout per OpenCode attempt")
@@ -169,6 +181,18 @@ func run(opts options) (runErr error) {
 	if err != nil {
 		return err
 	}
+	fullPrompt, err := loadPrompt(filepath.Join(filepath.Dir(opts.promptFile), "tic-tac-toe-v2.md"))
+	if err != nil {
+		return err
+	}
+	_, undoPrompt, found := strings.Cut(fullPrompt, "\n# Add One-Move Undo\n")
+	if !found || strings.TrimSpace(undoPrompt) == "" {
+		return errors.New("codegen benchmark: v2 prompt is missing the undo extension")
+	}
+	stages := []benchmarkStep{
+		{name: basicGameStep, prompt: prompt, grade: gradeProgram},
+		{name: undoMoveStep, prompt: "# Add One-Move Undo\n" + undoPrompt, grade: gradeUndoProgram},
+	}
 
 	root, err := repositoryRoot()
 	if err != nil {
@@ -182,7 +206,7 @@ func run(opts options) (runErr error) {
 	if err != nil {
 		machine = "unknown"
 	}
-	record := runRecord{Started: time.Now(), Status: "running", Machine: fmt.Sprintf("%s (%s/%s)", machine, runtime.GOOS, runtime.GOARCH), KronkVersion: kronkVersion, LlamaVersion: llamaVersion}
+	record := runRecord{Workload: workloadVersion, Steps: basicGameStep + ", " + undoMoveStep, Started: time.Now(), Status: "running", Machine: fmt.Sprintf("%s (%s/%s)", machine, runtime.GOOS, runtime.GOARCH), KronkVersion: kronkVersion, LlamaVersion: llamaVersion}
 	if err := generateReport(runDir, &record); err != nil {
 		return err
 	}
@@ -195,9 +219,9 @@ func run(opts options) (runErr error) {
 		}
 		runErr = errors.Join(runErr, generateReport(runDir, &record))
 	}()
-	fmt.Printf("Code-generation benchmark v2\n- server: %s\n- models: %d\n- maximum submissions/model: %d\n- grader feedback: %t\n- output: %s\n", host, len(selected), opts.attempts, opts.feedback, runDir)
+	fmt.Printf("Code-generation benchmark v2\n- server: %s\n- models: %d\n- maximum submissions/challenge step: %d\n- grader feedback: %t\n- output: %s\n", host, len(selected), opts.attempts, opts.feedback, runDir)
 	for _, model := range selected {
-		if err := runModel(root, runDir, host, prompt, model, opts); err != nil {
+		if err := runModel(root, runDir, host, stages, model, opts); err != nil {
 			return err
 		}
 	}
@@ -206,7 +230,7 @@ func run(opts options) (runErr error) {
 	return nil
 }
 
-func runModel(root, runDir, host, prompt string, model benchmarkModel, opts options) (runErr error) {
+func runModel(root, runDir, host string, stages []benchmarkStep, model benchmarkModel, opts options) (runErr error) {
 	modelDir := filepath.Join(runDir, modelDirName(model.ID))
 	dir := filepath.Join(modelDir, "workspace")
 	// Retain state only while the same agent is repairing its submissions.
@@ -223,14 +247,23 @@ func runModel(root, runDir, host, prompt string, model benchmarkModel, opts opti
 		env, modelErr = prepareSession(root, dir, host, model, opts.steps)
 	}
 	if modelErr == nil {
-		modelErr = runSubmissions(prompt, opts.attempts, opts.feedback, func(attempt int, message string) (result, error) {
-			fmt.Printf("[%s] submission %d/%d\n", model.ID, attempt, opts.attempts)
-			item, err := runAttempt(modelDir, message, env, model, attempt, opts)
-			if err != nil {
-				return item, err
+		submission := 0
+		for _, task := range stages {
+			var last gradeResult
+			modelErr = runSubmissions(task.prompt, opts.attempts, opts.feedback, func(attempt int, message string) (result, error) {
+				submission++
+				fmt.Printf("[%s] %s, submission %d/%d\n", model.ID, task.name, attempt, opts.attempts)
+				item, err := runAttempt(modelDir, message, env, model, attempt, submission, task, opts)
+				last = item.Grade
+				if err != nil {
+					return item, err
+				}
+				return item, generateReport(runDir, nil)
+			})
+			if modelErr != nil || last.Total == 0 || last.Passed != last.Total {
+				break
 			}
-			return item, generateReport(runDir, nil)
-		})
+		}
 	}
 
 	fmt.Printf("[%s] unloading model\n", model.ID)
@@ -297,7 +330,7 @@ func graderFeedback(grade gradeResult) string {
 		}
 		message.WriteByte('\n')
 	}
-	message.WriteString("\nRepair tictactoe/main.go under the original requirements, then finish your response to resubmit.\n")
+	message.WriteString("\nRepair tictactoe/main.go under the current workload requirements, then finish your response to resubmit.\n")
 	return message.String()
 }
 
@@ -438,10 +471,12 @@ func prepareSession(root, dir, host string, model benchmarkModel, steps int) ([]
 	return prepareOpenCodeEnvironment(root, dir, config)
 }
 
-func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, attempt int, opts options) (result, error) {
+// attempt is local to the step; submission numbers snapshots across both
+// steps and determines whether OpenCode starts or continues the session.
+func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, attempt, submission int, task benchmarkStep, opts options) (result, error) {
 	dir := filepath.Join(modelDir, "workspace")
 	programDir := filepath.Join(dir, "tictactoe")
-	artifactDir := filepath.Join(modelDir, fmt.Sprintf("attempt-%02d", attempt))
+	artifactDir := filepath.Join(modelDir, fmt.Sprintf("attempt-%02d", submission))
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return result{}, err
 	}
@@ -456,7 +491,7 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 		"--model", "kronk/" + model.ID,
 		"--dir", dir,
 	}
-	if attempt == 1 {
+	if submission == 1 {
 		args = append(args, "--title", "tic-tac-toe benchmark v2")
 	} else {
 		args = append(args, "--continue")
@@ -482,7 +517,7 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 	cmd.Stderr = stderr
 	err = cmd.Run()
 	wallTime := time.Since(started)
-	fmt.Printf("[%s] agent finished; processing submission %d\n", model.ID, attempt)
+	fmt.Printf("[%s] %s, agent finished; processing submission %d\n", model.ID, task.name, attempt)
 	agentErr := err
 
 	source, readErr := os.ReadFile(filepath.Join(programDir, "main.go"))
@@ -522,11 +557,12 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 	}
 	var grade gradeResult
 	if agent.Error == "" {
-		grade = gradeProgram(context.Background(), string(source))
+		grade = task.grade(context.Background(), string(source))
 	}
 	item := result{
+		Step:     task.name,
 		Model:    model,
-		Attempt:  attempt,
+		Attempt:  submission,
 		OpenCode: agent,
 		Grade:    grade,
 	}
@@ -545,7 +581,7 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 	}
 
 	if agent.Error != "" {
-		return item, fmt.Errorf("codegen benchmark: OpenCode submission %d for %s: %s", attempt, model.ID, agent.Error)
+		return item, fmt.Errorf("codegen benchmark: OpenCode %s submission %d for %s: %s", task.name, attempt, model.ID, agent.Error)
 	}
 	fmt.Printf("score=%d/%d build=%t turns=%d tools=%d wall=%s\n",
 		grade.Passed, grade.Total, grade.PassedCheck("go-build"), agent.Turns, agent.ToolCalls, wallTime.Round(time.Second))

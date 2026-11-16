@@ -45,12 +45,29 @@ func TestSavedRunsAreRunnableAndRetained(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("BENCHMARK_FIXTURE", fixture)
+	undoSource, err := os.ReadFile("testdata/undo/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	undoFixture := filepath.Join(dir, "undo.go")
+	if err := os.WriteFile(undoFixture, undoSource, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BENCHMARK_UNDO_FIXTURE", undoFixture)
 	promptLog := filepath.Join(dir, "sent-prompt.txt")
 	t.Setenv("BENCHMARK_PROMPT_LOG", promptLog)
 	script := `#!/bin/sh
 set -eu
-cat > "$BENCHMARK_PROMPT_LOG"
-cp "$BENCHMARK_FIXTURE" tictactoe/main.go
+if [ -f "$HOME/v1-passed" ]; then
+  case " $* " in *' --continue '*) ;; *) exit 1 ;; esac
+  cat > "$BENCHMARK_PROMPT_LOG.undo"
+  cmp "$BENCHMARK_FIXTURE" tictactoe/main.go
+  cp "$BENCHMARK_UNDO_FIXTURE" tictactoe/main.go
+else
+  cat > "$BENCHMARK_PROMPT_LOG"
+  cp "$BENCHMARK_FIXTURE" tictactoe/main.go
+  touch "$HOME/v1-passed"
+fi
 if [ "${BENCHMARK_API_ERROR:-}" = yes ]; then
   printf '%s\n' '{"type":"error","error":{"name":"APIError","data":{"message":"input tokens [143702] exceed context window [131072]"}}}'
 elif [ "${BENCHMARK_BAD_EVENTS:-}" = yes ]; then
@@ -92,13 +109,20 @@ fi
 	}
 	var previous string
 	var previousReport []byte
-	for range 2 {
+	for _, feedback := range []bool{true, false} {
+		opts.feedback = feedback
 		if err := run(opts); err != nil {
 			t.Fatal(err)
 		}
 		sent, err := os.ReadFile(promptLog)
 		if err != nil || !strings.HasPrefix(string(sent), "# Tic-Tac-Toe — v1") || strings.Contains(string(sent), "Undo") || strings.Contains(string(sent), "writing-go") || !strings.Contains(string(sent), "Do not declare any struct types") || !strings.Contains(string(sent), "without a trailing space or newline") {
 			t.Fatalf("incorrect prompt sent to agent: %s %v", sent, err)
+		}
+		undoSent, err := os.ReadFile(promptLog + ".undo")
+		fullPrompt, promptErr := loadPrompt(filepath.Join(root, ".tools/codegen-benchmark/version2/tic-tac-toe-v2.md"))
+		_, extension, found := strings.Cut(fullPrompt, "\n# Add One-Move Undo\n")
+		if err != nil || promptErr != nil || !found || string(undoSent) != "# Add One-Move Undo\n"+extension {
+			t.Fatalf("incorrect undo extension sent: %s %v %v", undoSent, err, promptErr)
 		}
 		runDir, err := latestRun(opts.outputDir)
 		if err != nil || runDir == previous {
@@ -111,10 +135,15 @@ fi
 			}
 		}
 		models, err := loadResults(runDir)
-		if err != nil || len(models) != 1 || len(models[0].Attempts) != 1 {
-			t.Fatalf("passing submission should stop repairs: %+v %v", models, err)
+		if err != nil || len(models) != 1 || len(models[0].Attempts) != 2 {
+			t.Fatalf("passing each workload should stop its repairs: %+v %v", models, err)
 		}
 		item := models[0].Attempts[0]
+		undo := models[0].Attempts[1]
+		if item.Step != basicGameStep || undo.Step != undoMoveStep || undo.Attempt != 2 || undo.Repair != "" ||
+			undo.Grade.Passed != undo.Grade.Total || undo.SourceSHA != fmt.Sprintf("%x", sha256.Sum256(undoSource)) {
+			t.Fatalf("undo submission or step boundary was lost: %+v", undo)
+		}
 		if item.Grade.Passed != item.Grade.Total || item.SourceSHA != fmt.Sprintf("%x", sha256.Sum256([]byte(source))) {
 			t.Fatalf("saved grade/source mismatch: %+v", item)
 		}
@@ -134,7 +163,7 @@ fi
 			}
 		}
 		report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
-		if err != nil || !strings.Contains(string(report), "37/37") || !strings.Contains(string(report), "Workload: v1") ||
+		if err != nil || !strings.Contains(string(report), "37/37") || !strings.Contains(string(report), "Workload: v1\nSteps: Step1 (basic game), Step2 (Undo move)\n") ||
 			!strings.Contains(string(report), "Kronk version: 1.33.4+dev\nllama.cpp library: b12283\n") || strings.Contains(string(report), "b99999") {
 			t.Fatalf("report: %s %v", report, err)
 		}

@@ -92,7 +92,13 @@ func (gr *gradeResult) add(name string, passed bool, detail string, findings ...
 }
 
 func gradeProgram(parent context.Context, source string) gradeResult {
-	result := gradeResult{Total: 15 + len(acceptanceScenarios())}
+	return gradeProgramWith(parent, source, acceptanceScenarios(), graderUnitTests)
+}
+
+// Both workloads use the same checks and terminal progression policy; only the
+// helper input contract and the expected interaction transcripts differ.
+func gradeProgramWith(parent context.Context, source string, scenarios []scenario, unitTests string) gradeResult {
+	result := gradeResult{Total: 15 + len(scenarios)}
 	result.add("source-extracted", source != "", "no complete package main source found")
 	if source == "" {
 		return result
@@ -135,14 +141,14 @@ func gradeProgram(parent context.Context, source string) gradeResult {
 	vetOutput, err := runCommand(ctx, dir, "go", "vet", "./...")
 	result.add("go-vet", err == nil, commandDetail(ctx, err, vetOutput))
 
-	if err := os.WriteFile(filepath.Join(dir, "main_test.go"), []byte(graderUnitTests), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "main_test.go"), []byte(unitTests), 0644); err != nil {
 		result.add("logic-tests", false, err.Error())
 	} else {
 		testOutput, testErr := runCommand(ctx, dir, "go", "test", "-run", "TestGenerated", "-count=1")
 		result.add("logic-tests", testErr == nil, commandDetail(ctx, testErr, testOutput))
 	}
 
-	for _, scenario := range acceptanceScenarios() {
+	for _, scenario := range scenarios {
 		evidence, findings := executeScenario(parent, filepath.Join(dir, "tictactoe"), scenario)
 		result.Evidence = append(result.Evidence, evidence)
 		result.add("scenario-"+scenario.name, evidence.Passed, evidence.Error, findings...)

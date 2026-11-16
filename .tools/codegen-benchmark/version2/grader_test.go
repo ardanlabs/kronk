@@ -241,6 +241,111 @@ func TestCompilerDiagnosticsPreserved(t *testing.T) {
 	}
 }
 
+// The undo reference is exercised through the terminal, independently of its
+// implementation. Ordinary games reuse the v1 oracle with only the new prompts;
+// undo cases specify the extra screens and restored turns explicitly.
+func TestUndoReference(t *testing.T) {
+	source, err := os.ReadFile("testdata/undo/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary := fixtureBinary(t, string(source))
+	for _, s := range undoAcceptanceScenarios() {
+		t.Run(s.name, func(t *testing.T) {
+			e, _ := executeScenario(t.Context(), binary, s)
+			if !e.Passed {
+				t.Fatalf("%s\nexpected %q\nactual %q", e.Error, e.Expected, e.Actual)
+			}
+			if e.SentInput != s.input {
+				t.Fatalf("incomplete interaction: sent %q, want %q", e.SentInput, s.input)
+			}
+		})
+	}
+}
+
+func TestUndoGrade(t *testing.T) {
+	source, err := os.ReadFile("testdata/undo/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := gradeUndoProgram(t.Context(), string(source))
+	if r.Total != 48 || r.Passed != r.Total || len(r.Checks) != r.Total || len(r.Evidence) != 33 || len(r.Findings) != 0 {
+		t.Fatalf("undo reference grade: %+v", r)
+	}
+	for _, grade := range []gradeResult{gradeProgram(t.Context(), ""), gradeUndoProgram(t.Context(), "")} {
+		if grade.Passed != 0 || len(grade.Checks) != 1 || grade.Findings[0].Location != "source-extracted" {
+			t.Fatalf("empty source contract: %+v", grade)
+		}
+	}
+}
+
+// Mutations construct plausible broken programs; assertions observe only the
+// public helper and terminal contracts, not the candidate's private organization.
+func TestUndoRegressions(t *testing.T) {
+	b, err := os.ReadFile("testdata/undo/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(b)
+	const xUndo = "undo-X-and-reject-without-history"
+	const oUndo = "undo-O-and-reject-without-history"
+	for _, tc := range []struct{ name, old, replacement, scenario string }{
+		{"restore-player", "player = undonePlayer", "player = undonePlayer; if player == 'O' { player = 'X' }", oUndo},
+		{"keep-mark", "b[lastMove] = 0", "b[lastMove] = undonePlayer", xUndo},
+		{"wrong-cell", "b[lastMove] = 0", "b[0] = 0", xUndo},
+		{"repeat-undo", "lastMove = -1", "lastMove = 0", "undo-only-the-latest-move"},
+		{"first-cell", "if lastMove == -1 {", "if lastMove <= 0 {", "undo-replacement-in-the-same-cell"},
+		{"stale-latest", "lastMove = index", "if lastMove == -1 { lastMove = index }", "undo-only-the-latest-move"},
+		{"replacement-history", "lastMove = index", "if index != 0 { lastMove = index }", "undo-replacement-in-the-same-cell"},
+		{"replay-history", "for {\n\t\tvar b Board\n\t\tplayer := byte('X')\n\t\tlastMove := -1", "lastMove := -1; for {\n\t\tvar b Board\n\t\tplayer := byte('X')", "undo-state-resets-after-replay"},
+		{"zero-prefix", `line == "0"`, `strings.HasPrefix(line, "0")`, "invalid-input"},
+		{"trim", "line = strings.TrimSpace(line)", `line = strings.TrimSuffix(line, "\n")`, xUndo},
+		{"extra-board", "player = undonePlayer", "player = undonePlayer; renderBoard(&b, xWins, oWins, draws)", oUndo},
+		{"colors", `\033[37m`, "", xUndo},
+		{"prompt-space", "or 0 to undo the last move:", "or 0 to undo the last move: ", xUndo},
+		{"score-X", "player = undonePlayer", "player = undonePlayer; xWins = 0", xUndo + "-preserves-all-scores"},
+		{"score-O", "player = undonePlayer", "player = undonePlayer; oWins = 0", oUndo + "-preserves-all-scores"},
+		{"score-draw", "player = undonePlayer", "player = undonePlayer; draws = 0", oUndo + "-preserves-all-scores"},
+		{"helper-mutates-X", "return move(b, 'X')", "b[0] = 'X'; return move(b, 'X')", ""},
+		{"helper-mutates-O", "return move(b, 'O')", "b[0] = 'O'; return move(b, 'O')", ""},
+		{"wrong-sentinel-X", "return move(b, 'X')", "i := move(b, 'X'); if i == -1 { return 0 }; return i", ""},
+		{"wrong-sentinel-O", "return move(b, 'O')", "i := move(b, 'O'); if i == -1 { return 0 }; return i", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(source, tc.old) {
+				t.Fatal("mutation does not match fixture")
+			}
+			mutated := strings.Replace(source, tc.old, tc.replacement, 1)
+			if tc.scenario == "" {
+				r := gradeUndoProgram(t.Context(), mutated)
+				if !r.PassedCheck("go-build") || r.PassedCheck("logic-tests") {
+					t.Fatalf("broken helper must build and fail logic tests: %+v", r)
+				}
+				return
+			}
+			binary := fixtureBinary(t, mutated)
+			for _, s := range undoAcceptanceScenarios() {
+				if s.name != tc.scenario {
+					continue
+				}
+				e, findings := executeScenario(t.Context(), binary, s)
+				if e.Passed || len(findings) != 1 || findings[0].Actual != e.Actual || findings[0].Input != e.SentInput {
+					t.Fatalf("broken undo must retain failure evidence: %+v, %+v", e, findings)
+				}
+				if tc.name == "colors" || tc.name == "prompt-space" {
+					if e.SentInput != s.input || findings[0].Kind != "transcript" {
+						t.Fatalf("presentation must fail without stopping progression: %+v", e)
+					}
+				} else if findings[0].Kind != "interaction" || e.SentInput == s.input {
+					t.Fatalf("semantic mismatch must stop further input: %+v", e)
+				}
+				return
+			}
+			t.Fatal("unknown scenario")
+		})
+	}
+}
+
 func TestSubmittedFormatting(t *testing.T) {
 	source := fixtureSource(t)
 	formatted, err := format.Source([]byte(source))

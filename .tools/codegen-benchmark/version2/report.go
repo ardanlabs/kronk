@@ -19,6 +19,8 @@ type modelResults struct {
 }
 
 type runRecord struct {
+	Workload     string    `json:"workload,omitempty"`
+	Steps        string    `json:"steps,omitempty"`
 	Started      time.Time `json:"started"`
 	Finished     time.Time `json:"finished,omitzero"`
 	Status       string    `json:"status"`
@@ -28,7 +30,7 @@ type runRecord struct {
 	Error        string    `json:"error,omitempty"`
 }
 
-// Bump this label when the prompt or acceptance rules intentionally change.
+// Legacy results without a workload label belong to the original task.
 const workloadVersion = "v1"
 
 func loadRunRecord(runDir string) (runRecord, error) {
@@ -38,6 +40,10 @@ func loadRunRecord(runDir string) (runRecord, error) {
 		for line := range strings.SplitSeq(string(data), "\n") {
 			key, value, _ := strings.Cut(line, ": ")
 			switch key {
+			case "Workload":
+				record.Workload = value
+			case "Steps":
+				record.Steps = value
 			case "Started", "Finished":
 				stamp, err := time.Parse(time.RFC3339Nano, value)
 				if err != nil {
@@ -143,7 +149,10 @@ func loadResults(runDir string) ([]modelResults, error) {
 func renderReport(runDir string, models []modelResults, record runRecord) string {
 	var report strings.Builder
 	fmt.Fprintf(&report, "Run: %s\n", filepath.Base(filepath.Clean(runDir)))
-	fmt.Fprintf(&report, "Workload: %s\n", workloadVersion)
+	fmt.Fprintf(&report, "Workload: %s\n", cmp.Or(record.Workload, workloadVersion))
+	if record.Steps != "" {
+		fmt.Fprintf(&report, "Steps: %s\n", record.Steps)
+	}
 	fmt.Fprintf(&report, "Started: %s\n", record.Started.Format(time.RFC3339Nano))
 	if !record.Finished.IsZero() {
 		fmt.Fprintf(&report, "Finished: %s\nElapsed: %s\n", record.Finished.Format(time.RFC3339Nano), record.Finished.Sub(record.Started).Round(time.Second))
@@ -160,26 +169,36 @@ func renderReport(runDir string, models []modelResults, record runRecord) string
 	}
 	report.WriteByte('\n')
 	table := tabwriter.NewWriter(&report, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(table, "Model\tSubmissions\tOutcome\tChecks\tAgent time")
-	fmt.Fprintln(table, "-----\t-----------\t-------\t------\t----------")
+	fmt.Fprintln(table, "Model\tStep\tSubmissions\tOutcome\tChecks\tAgent time")
+	fmt.Fprintln(table, "-----\t----\t-----------\t-------\t------\t----------")
 	for _, model := range models {
-		final := model.Attempts[len(model.Attempts)-1]
-		status := "Not passed"
-		if final.OpenCode.Error != "" {
-			status = "Agent error"
-		}
-		var wall time.Duration
-		for _, attempt := range model.Attempts {
-			wall += attempt.OpenCode.WallTime
-			if attempt.Grade.Total > 0 && attempt.Grade.Passed == attempt.Grade.Total {
-				status = fmt.Sprintf("Passed on submission %d", attempt.Attempt)
+		for step := range strings.SplitSeq(cmp.Or(record.Steps, basicGameStep), ", ") {
+			var attempts []result
+			for _, attempt := range model.Attempts {
+				if cmp.Or(attempt.Step, basicGameStep) == step {
+					attempts = append(attempts, attempt)
+				}
 			}
+			status, checks := "Not reached", "-"
+			var wall time.Duration
+			if len(attempts) > 0 {
+				final := attempts[len(attempts)-1]
+				status, checks = "Not passed", "Not graded"
+				if final.OpenCode.Error != "" {
+					status = "Agent error"
+				}
+				if final.Grade.Total > 0 {
+					checks = fmt.Sprintf("%d/%d", final.Grade.Passed, final.Grade.Total)
+				}
+				for i, attempt := range attempts {
+					wall += attempt.OpenCode.WallTime
+					if attempt.Grade.Total > 0 && attempt.Grade.Passed == attempt.Grade.Total {
+						status = fmt.Sprintf("Passed on submission %d", i+1)
+					}
+				}
+			}
+			fmt.Fprintf(table, "%s\t%s\t%d\t%s\t%s\t%s\n", model.Model.ID, step, len(attempts), status, checks, wall.Round(time.Second))
 		}
-		checks := "Not graded"
-		if final.Grade.Total > 0 {
-			checks = fmt.Sprintf("%d/%d", final.Grade.Passed, final.Grade.Total)
-		}
-		fmt.Fprintf(table, "%s\t%d\t%s\t%s\t%s\n", model.Model.ID, len(model.Attempts), status, checks, wall.Round(time.Second))
 	}
 	_ = table.Flush()
 	return report.String()
