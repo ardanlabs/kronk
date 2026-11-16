@@ -95,7 +95,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			state.Result.Warnings = append(state.Result.Warnings, "Document question cap reached; remaining source coverage and evaluation questions may be omitted")
 		}
 		state.GenerationAttempts = 0
-		state.GenerationRejections, state.GenerationRejectedPrompt, state.GenerationRejectionReason = 0, "", ""
+		state.GenerationRejections, state.GenerationRejectedPrompt, state.GenerationRejectionReason, state.GenerationLastRejected = 0, "", "", false
 		state.GenerationDecisions = nil
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return err
@@ -159,13 +159,26 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			continue
 		}
 		if state.GenerationAttempts >= maxRequestAttempts {
-			var references []string
-			for _, unit := range pending {
-				references = append(references, unit.Reference)
+			// Only a last reply that failed validation excludes the unresolved
+			// passages. An interrupted request has an unknown outcome and stops the run.
+			if !state.GenerationLastRejected {
+				var references []string
+				for _, unit := range pending {
+					references = append(references, unit.Reference)
+				}
+				return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError(fmt.Sprintf("generation request budget exhausted at source index %d after a request with an unknown outcome; unresolved sources: %s; provisional candidates preserved", state.Next, strings.Join(references, ", ")), "preparation-request-budget-exhausted", nil)
 			}
-			return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError(fmt.Sprintf("generation request budget exhausted at source index %d; unresolved sources: %s; provisional candidates preserved; invalid responses are not source omissions", state.Next, strings.Join(references, ", ")), "preparation-request-budget-exhausted", nil)
+			// Passages that already resolved, and candidates already staged, are kept.
+			for _, i := range positions {
+				state.GenerationDecisions[i].Reason = "invalid model reply: " + state.GenerationRejectionReason
+			}
+			if err := commitBatch(end); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+			continue
 		}
 		state.GenerationAttempts++
+		state.GenerationLastRejected = false
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
@@ -180,6 +193,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 				state.GenerationRejections++
 				state.GenerationRejectionReason = rejected.reason
 				state.GenerationRejectedPrompt = ""
+				state.GenerationLastRejected = true
 				if saveErr := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); saveErr != nil {
 					return tmprl.StepResult[preparation.Artifacts]{}, saveErr
 				}

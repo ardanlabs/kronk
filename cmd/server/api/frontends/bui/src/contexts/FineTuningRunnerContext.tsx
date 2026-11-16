@@ -17,8 +17,8 @@ export const TESTED_TRAINING_OPTIONS: TrainingOptions = {
 const terminalStatuses = new Set(['completed', 'needs_improvement', 'failed', 'stopped']);
 const activeStatuses = ['queued', 'running', 'recovering', 'pause_requested', 'paused', 'waiting'];
 
-// preparationPath is where Prepare Dataset shows a run.
-export const preparationPath = (run: TrainingRun) => `/fine-tuning?${new URLSearchParams({ view: 'prepare', preparation: run.workflow_id, run: run.run_id })}`;
+// preparationPath is where the dashboard shows a run.
+export const preparationPath = (run: TrainingRun) => `/fine-tuning?${new URLSearchParams({ preparation: run.workflow_id, run: run.run_id })}`;
 
 export const preparationSteps: [string, string][] = [['extract', 'Extract document'], ['preview', 'Generate preview'], ['generate', 'Generate records'], ['verify', 'Verify records']];
 export const stepLabel = (name?: string) => preparationSteps.find(([key]) => key === name)?.[1] ?? 'Preparation';
@@ -57,11 +57,21 @@ interface StopSubmission {
   error: string;
 }
 
+// SourceDocument is a document chosen for preparation. It is uploading until
+// it has an upload or an error.
+export interface SourceDocument {
+  key: string;
+  file: File;
+  upload: TrainingUpload | null;
+  error: string;
+}
+
 interface FineTuningRunnerValue {
-  inputKind: 'dataset' | 'document';
   preparedFile: File | null;
   upload: TrainingUpload | null;
   uploading: boolean;
+  documents: SourceDocument[];
+  documentsUploading: boolean;
   submitting: boolean;
   currentRun: TrainingRun | null;
   preparationRun: TrainingRun | null;
@@ -73,10 +83,12 @@ interface FineTuningRunnerValue {
   adoptionError: string;
   preparationActivity: FineTuningActivity | null;
   trainingActivity: FineTuningActivity | null;
-  chooseInput: (file: File | null, kind: 'dataset' | 'document') => Promise<void>;
+  chooseInput: (file: File | null) => Promise<void>;
+  addDocuments: (files: File[]) => void;
+  removeDocument: (key: string) => void;
   cancelPreparation: () => void;
-  clearError: () => void;
-  startRun: (training: TrainingOptions, preparation?: PreparationOptions) => Promise<TrainingRun | null>;
+  startRun: (training: TrainingOptions) => Promise<TrainingRun | null>;
+  startPreparations: (training: TrainingOptions, prepare: (item: SourceDocument) => PreparationOptions) => Promise<TrainingRun[]>;
   selectRun: (run: TrainingRun) => void;
   refreshRun: (run?: TrainingRun) => Promise<void>;
   previewSubmission: (run: TrainingRun) => PreviewSubmission | undefined;
@@ -98,10 +110,11 @@ export function retryDelay(signal: AbortSignal, ms = 5000) {
 }
 
 export function FineTuningRunnerProvider({ children }: { children: ReactNode }) {
-  const [inputKind, setInputKind] = useState<'dataset' | 'document'>('dataset');
   const [preparedFile, setPreparedFile] = useState<File | null>(null);
   const [upload, setUpload] = useState<TrainingUpload | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [documents, setDocuments] = useState<SourceDocument[]>([]);
+  const documentsUploading = documents.some((item) => !item.upload && !item.error);
   const [submitting, setSubmitting] = useState(false);
   const [preparationRun, setPreparationRun] = useState<TrainingRun | null>(null);
   const [trainingRun, setTrainingRun] = useState<TrainingRun | null>(null);
@@ -113,6 +126,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const [adopting, setAdopting] = useState(true);
   const [adoptionError, setAdoptionError] = useState('');
   const uploadAbort = useRef<AbortController | null>(null);
+  const documentAborts = useRef(new Map<string, AbortController>());
   const submissionPending = useRef(false);
   const runSubmissionIDs = useRef<Record<string, string>>({});
   const previewRequests = useRef<Record<string, PreviewSubmission>>({});
@@ -126,7 +140,10 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const trainingJob = activeTraining ?? (activePreparation?.stage === 'training' ? activePreparation : null);
   const watchedRuns = JSON.stringify([activePreparation, activeTraining].filter((run) => run !== null).map((run) => [run.workflow_id, run.run_id]));
 
-  useEffect(() => () => uploadAbort.current?.abort(), []);
+  useEffect(() => () => {
+    uploadAbort.current?.abort();
+    for (const controller of documentAborts.current.values()) controller.abort();
+  }, []);
 
   // A page load starts with no runs in memory. Adopt the newest in-progress runs so the
   // sidebar and the one-preparation-at-a-time rule survive a reload or a new tab.
@@ -198,23 +215,30 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     }
   };
 
+  // cancelPreparation cancels uploads still in progress. Uploaded documents stay chosen.
   const cancelPreparation = () => {
     uploadAbort.current?.abort();
     uploadAbort.current = null;
     setUploading(false);
     setUpload(null);
     setPreparedFile(null);
+    for (const controller of documentAborts.current.values()) controller.abort();
+    documentAborts.current.clear();
+    setDocuments((current) => current.filter((item) => item.upload || item.error));
     setError('');
   };
 
-  const chooseInput = async (file: File | null, kind: 'dataset' | 'document') => {
-    cancelPreparation();
-    setInputKind(kind);
+  // chooseInput replaces the training-ready JSONL dataset.
+  const chooseInput = async (file: File | null) => {
+    uploadAbort.current?.abort();
+    uploadAbort.current = null;
+    setUpload(null);
+    setError('');
     setPreparedFile(file);
-    if (!file) return;
-    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
-    if (!(kind === 'dataset' ? ['jsonl'] : ['pdf', 'docx', 'md', 'txt']).includes(extension)) {
-      setError(kind === 'dataset' ? 'Only training-ready JSONL datasets are supported.' : 'Only PDF, DOCX, Markdown, and text documents are supported.');
+    if (!file) { setUploading(false); return; }
+    if (file.name.split('.').pop()?.toLowerCase() !== 'jsonl') {
+      setUploading(false);
+      setError('Only training-ready JSONL datasets are supported.');
       return;
     }
     const controller = new AbortController();
@@ -233,34 +257,92 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     }
   };
 
-  const startRun = async (training: TrainingOptions, preparation?: PreparationOptions): Promise<TrainingRun | null> => {
-    if (!upload || uploading || adopting || submissionPending.current) return null;
-    if (inputKind === 'document' ? !!activePreparation : !!trainingJob) return null;
-    if (inputKind === 'document' && !preparation?.model) return null;
+  // addDocuments uploads source documents for preparation, each on its own.
+  const addDocuments = (files: File[]) => {
+    const added = files.map((file) => ({ key: crypto.randomUUID(), file, upload: null, error: '' } as SourceDocument));
+    setDocuments((current) => [...current, ...added]);
+    const update = (key: string, change: Partial<SourceDocument>) => setDocuments((current) => current.map((item) => item.key === key ? { ...item, ...change } : item));
+    for (const item of added) {
+      if (!['pdf', 'docx', 'md', 'txt'].includes(item.file.name.split('.').pop()?.toLowerCase() ?? '')) {
+        update(item.key, { error: 'Only PDF, DOCX, Markdown, and text documents are supported.' });
+        continue;
+      }
+      const controller = new AbortController();
+      documentAborts.current.set(item.key, controller);
+      api.uploadTrainingDataset(item.file, controller.signal)
+        .then((result) => { if (!controller.signal.aborted) update(item.key, { upload: result }); })
+        .catch((err) => { if (!controller.signal.aborted) update(item.key, { error: err instanceof Error ? err.message : 'Upload failed' }); })
+        .finally(() => { if (documentAborts.current.get(item.key) === controller) documentAborts.current.delete(item.key); });
+    }
+  };
+
+  const removeDocument = (key: string) => {
+    documentAborts.current.get(key)?.abort();
+    documentAborts.current.delete(key);
+    setDocuments((current) => current.filter((item) => item.key !== key));
+  };
+
+  const failure = (err: unknown) => err instanceof ApiError && err.status === 409
+    ? `${sentence(err.message)} Refresh datasets if the destination changed, or check the dashboard if this run was already started.`
+    : requestMessage(err, 'The run could not be started.');
+
+  // start submits one run. A retry of the same upload reuses its submission ID, so
+  // an uncertain earlier request is not started twice.
+  const start = async (upload: TrainingUpload, request: (id: string) => Parameters<typeof api.startTrainingRun>[0]) => {
+    const submissionID = runSubmissionIDs.current[upload.id] ?? `training-${crypto.randomUUID()}`;
+    runSubmissionIDs.current[upload.id] = submissionID;
+    const run = await api.startTrainingRun(request(submissionID));
+    delete runSubmissionIDs.current[upload.id];
+    return run;
+  };
+
+  // startRun starts training on the training-ready JSONL dataset.
+  const startRun = async (training: TrainingOptions): Promise<TrainingRun | null> => {
+    if (!upload || uploading || adopting || submissionPending.current || trainingJob) return null;
     submissionPending.current = true;
     setSubmitting(true);
     setError('');
-    const submissionKey = `${inputKind}:${upload.id}`;
-    const submissionID = runSubmissionIDs.current[submissionKey] ?? `training-${crypto.randomUUID()}`;
-    runSubmissionIDs.current[submissionKey] = submissionID;
     try {
-      const run = await api.startTrainingRun({
-        id: submissionID, model: FINE_TUNING_MODEL_ID, training,
-        ...(inputKind === 'document' && preparation
-          ? { preparation_only: true, prepare: { ...preparation, dataset_id: upload.id } }
-          : { dataset_id: upload.id }),
-      });
-      delete runSubmissionIDs.current[submissionKey];
+      const run = await start(upload, (id) => ({ id, model: FINE_TUNING_MODEL_ID, training, dataset_id: upload.id }));
       // The run owns the upload now; the form starts empty for the next one.
       setUpload(null);
       setPreparedFile(null);
       selectRun(run);
       return run;
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 409
-        ? `${sentence(err.message)} Refresh datasets if the destination changed, or check Preparation runs if this run was already started.`
-        : requestMessage(err, 'The run could not be started.'));
+      setError(failure(err));
       return null;
+    } finally {
+      submissionPending.current = false;
+      setSubmitting(false);
+    }
+  };
+
+  // startPreparations starts one preparation run per uploaded document. Runs do not
+  // wait for each other: each save adds onto the dataset's newest version. Started
+  // documents leave the list; a document that could not start keeps its error.
+  const startPreparations = async (training: TrainingOptions, prepare: (item: SourceDocument) => PreparationOptions): Promise<TrainingRun[]> => {
+    const ready = documents.filter((item) => item.upload);
+    if (!ready.length || submissionPending.current) return [];
+    submissionPending.current = true;
+    setSubmitting(true);
+    setError('');
+    try {
+      const results = await Promise.all(ready.map(async (item) => {
+        try {
+          return { item, run: await start(item.upload!, (id) => ({ id, model: FINE_TUNING_MODEL_ID, training, preparation_only: true, prepare: { ...prepare(item), dataset_id: item.upload!.id } })) };
+        } catch (err) {
+          return { item, error: failure(err) };
+        }
+      }));
+      const started = new Set(results.filter((result) => result.run).map((result) => result.item.key));
+      setDocuments((current) => current.filter((item) => !started.has(item.key)).map((item) => {
+        const result = results.find((entry) => entry.item.key === item.key);
+        return result?.error ? { ...item, error: result.error } : item;
+      }));
+      const runs = results.flatMap((result) => result.run ? [result.run] : []);
+      if (runs[0]) selectRun(runs[0]);
+      return runs;
     } finally {
       submissionPending.current = false;
       setSubmitting(false);
@@ -381,8 +463,9 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
 
   return (
     <FineTuningRunnerContext.Provider value={{
-      inputKind, preparedFile, upload, uploading, submitting, currentRun, preparationRun, trainingRun, error, watchError, adopting, adoptionError,
-      preparationActivity: uploading ? { kind: 'preparation', title: inputKind === 'document' ? 'Uploading document…' : 'Uploading dataset…', stage: preparedFile?.name ?? '', completed: 0, total: 0 }
+      preparedFile, upload, uploading, documents, documentsUploading, submitting, currentRun, preparationRun, trainingRun, error, watchError, adopting, adoptionError,
+      preparationActivity: documentsUploading ? { kind: 'preparation', title: 'Uploading documents…', stage: documents.filter((item) => !item.upload && !item.error).map((item) => item.file.name).join(', '), completed: 0, total: 0 }
+        : uploading ? { kind: 'preparation', title: 'Uploading dataset…', stage: preparedFile?.name ?? '', completed: 0, total: 0 }
         : activePreparation?.stage === 'preparation' ? {
           kind: 'preparation', paused: activePreparation.control_action === 'pause',
           title: activePreparation.control_action === 'pause' ? activePreparation.status === 'pause_requested' ? 'Pausing preparation…' : 'Preparation paused'
@@ -396,7 +479,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
         stage: [trainingJob.stage, trainingJob.step].filter(Boolean).join(' / ') || trainingJob.status,
         completed: trainingJob.progress?.completed ?? 0, total: trainingJob.progress?.total ?? 0,
       } : null,
-      chooseInput, cancelPreparation, clearError: () => setError(''), startRun,
+      chooseInput, addDocuments, removeDocument, cancelPreparation, startRun, startPreparations,
       selectRun,
       refreshRun,
       previewSubmission: (run) => previewSubmissions[JSON.stringify([run.workflow_id, run.run_id])],

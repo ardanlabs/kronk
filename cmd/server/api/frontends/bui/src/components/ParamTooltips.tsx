@@ -21,7 +21,6 @@ export const PARAM_TOOLTIPS = {
   fineTuningInputKind: 'Start with a source document to prepare examples, or use an already prepared JSONL dataset to enter training directly.',
   fineTuningSource: 'A PDF, DOCX, Markdown, or text document containing the source material used to create grounded training examples. The server enforces the upload size limit.',
   fineTuningDataset: 'A training-ready JSONL file containing validated prompt, target, and evidence records. Use this directly when dataset preparation is already complete.',
-  fineTuningDestination: 'Create a named reusable dataset or add records from a new document to an existing dataset. Existing documents are not prepared again.',
   fineTuningDatasetName: 'Name for a reusable collection of prepared examples. Each update saves a new version while retaining previous versions.',
   fineTuningDatasetVersion: 'Saved dataset version to download as JSONL. Earlier versions remain available after documents are added or removed.',
   fineTuningGoal: 'The kind of behavior the prepared examples should teach: answering questions, assigning categories, predicting numbers, or generating text.',

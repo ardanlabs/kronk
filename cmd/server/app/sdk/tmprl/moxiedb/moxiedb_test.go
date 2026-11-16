@@ -519,6 +519,8 @@ func TestCatalog(t *testing.T) {
 		{"target before pagination", moxiedb.CatalogFilter{Namespace: "ns", TargetDatasetID: d.ID, Limit: 1}, "b"},
 		{"page one", moxiedb.CatalogFilter{Namespace: "ns", Limit: 2}, "d,c"},
 		{"page two", moxiedb.CatalogFilter{Namespace: "ns", Limit: 2, Offset: 2}, "b,a-new"},
+		{"oldest first", moxiedb.CatalogFilter{Namespace: "ns", Oldest: true}, "a-new,b,c,d"},
+		{"oldest page two after filter", moxiedb.CatalogFilter{Namespace: "ns", Mode: "preparation", Oldest: true, Limit: 1, Offset: 1}, "d"},
 		{"offset after filter", moxiedb.CatalogFilter{Namespace: "ns", Statuses: []string{"running", "paused"}, Limit: 1, Offset: 1}, "a-new"},
 		{"past end", moxiedb.CatalogFilter{Namespace: "ns", Offset: 4}, ""},
 		{"namespace isolation", moxiedb.CatalogFilter{Namespace: "elsewhere"}, "e"},

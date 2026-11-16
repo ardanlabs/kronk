@@ -1,0 +1,22 @@
+/* Links styled as buttons, such as + New dataset and Continue to training. */
+.prep-workspace a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+.dash-filter { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 4px 0 10px; font-size: 14px; }
+.dash-filter label { margin: 0; font-weight: 500; color: var(--color-gray-800); }
+.dash-filter select { width: auto; min-height: 36px; padding: 4px 8px; font-size: 14px; border: 1px solid var(--color-gray-300); border-radius: 6px; }
+.dash-sort-header { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+/* Keep a row's lines together: the name sits on the first line like the other cells. */
+.dash-table .prep-run-link { display: inline; min-height: 0; }
+.dash-pager { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; font-size: 13px; color: var(--color-gray-600); }
+.dash-eta { display: block; margin-top: 6px; font-size: 12px; color: var(--color-gray-700); }
+.dash-done-text { color: var(--color-success-dark); }
+
+/* A finished dataset is unmistakably done, and its next step is training. */
+.prep-next.dash-done { position: relative; border-color: var(--color-success-border); background: var(--color-success-bg); }
+.dash-done .fine-eyebrow { color: var(--color-success-dark); }
+.prep-next.dash-done { justify-content: flex-start; align-items: flex-start; }
+.dash-done > .dash-done-mark + div { flex: 1 1 300px; }
+.dash-done-mark { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; background: var(--color-success-dark); color: #fff; font-size: 20px; font-weight: 700; }
+.dash-done-next { flex-basis: 100%; padding-top: 14px; border-top: 1px solid var(--color-success-border); }
+.dash-done-next p { margin: 0 0 12px; font-size: 14px; }
+.dash-training-source { margin-bottom: 16px; }
+.dash-training-source h3 { margin: 4px 0 6px; }

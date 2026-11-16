@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
-import { preparationPath, preparationSteps as steps, requestMessage as message, retryDelay, sentence, stepLabel, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
+import { preparationSteps as steps, requestMessage as message, sentence, stepLabel } from '../contexts/FineTuningRunnerContext';
 import type { PreparationOptions, TrainingPreviewRecord, TrainingRun } from '../types';
 import { FieldLabel } from './ParamTooltips';
 import { duration } from './TrainingRun';
@@ -17,8 +17,8 @@ const statuses: Record<Display, { label: string; glyph: string }> = {
   waiting: { label: 'Waiting', glyph: '◐' }, failed: { label: 'Failed', glyph: '!' }, stopped: { label: 'Stopped', glyph: '■' }, completed: { label: 'Completed', glyph: '✓' },
 };
 const closed = ['completed', 'failed', 'stopped', 'needs_improvement'];
-const active = (run: TrainingRun) => !closed.includes(run.status);
-const reviewable = (run: TrainingRun) => run.status === 'waiting' && run.checkpoint?.name === 'preview-review';
+export const active = (run: TrainingRun) => !closed.includes(run.status);
+export const reviewable = (run: TrainingRun) => run.status === 'waiting' && run.checkpoint?.name === 'preview-review';
 function display(run: TrainingRun): Display {
   if (run.status === 'completed' || run.status === 'failed' || run.status === 'stopped') return run.status;
   if (run.status === 'needs_improvement') return 'completed';
@@ -28,40 +28,29 @@ function display(run: TrainingRun): Display {
   if (run.status === 'recovering' || run.status === 'running') return run.status;
   return 'queued';
 }
-// Filters run in SQL before paging, so each tab is a server-side status set.
-const filters: [string, string, string[]][] = [
-  ['all', 'All runs', []], ['active', 'In progress', ['queued', 'running', 'recovering', 'pause_requested', 'paused', 'waiting']],
-  ['review', 'Needs review', ['waiting']], ['finished', 'Closed', ['completed', 'failed', 'stopped']],
-];
-const runKey = (run: TrainingRun) => `${run.workflow_id}/${run.run_id}`;
-const date = (value?: string) => value ? new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
-function relative(value?: string) {
-  if (!value) return '—';
-  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(value)) / 60000));
-  const days = Math.round(minutes / 1440);
-  return minutes < 1 ? 'Just now' : minutes < 60 ? `${minutes} min ago` : minutes < 1440 ? `${Math.round(minutes / 60)} hr ago` : `${days} ${days === 1 ? 'day' : 'days'} ago`;
-}
-function version(run: TrainingRun) {
+export const runKey = (run: TrainingRun) => `${run.workflow_id}/${run.run_id}`;
+export const date = (value?: string) => value ? new Date(value).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+export function version(run: TrainingRun) {
   if (run.prepared_dataset_version) return `Saved as version ${run.prepared_dataset_version}`;
   if (!run.base_version) return active(run) ? 'Adds a new version' : 'Nothing saved';
   return active(run) ? `Builds on version ${run.base_version}` : `Nothing saved · version ${run.base_version} unchanged`;
 }
-const records = (count: number) => `${count} ${count === 1 ? 'record' : 'records'}`;
+export const records = (count: number) => `${count} ${count === 1 ? 'record' : 'records'}`;
 const examples = (count: number) => `${count} ${count === 1 ? 'example' : 'examples'}`;
-const datasetName = (run: TrainingRun) => run.target_dataset_name ?? run.target_dataset_id ?? 'Preparation run';
+export const datasetName = (run: TrainingRun) => run.target_dataset_name ?? run.target_dataset_id ?? 'Preparation run';
 // Known failure reasons from the server; other failures are described generically.
 const failureReasons: Record<NonNullable<TrainingRun['failure_reason']>, (dataset: string) => string> = {
   'dataset-document-exists': (dataset) => `This document and page range are already in ${dataset}.`,
   'dataset-questions-exist': (dataset) => `Every record repeats a question already in ${dataset}.`,
-  'dataset-changed': (dataset) => `${dataset} changed while this run was working: it was edited or removed, or another run saved to it first. Start a new preparation from Preparation runs.`,
+  'dataset-changed': (dataset) => `${dataset} changed while this run was working: it was edited or removed, or another run saved to it first. Start a new preparation from the dashboard.`,
   'preparation-no-examples': () => 'The model found nothing in this document it could turn into records.',
 };
-const failedStep = (run: TrainingRun) => run.stages[0]?.steps.find((step) => step.status === 'failed');
+export const failedStep = (run: TrainingRun) => run.stages[0]?.steps.find((step) => step.status === 'failed');
 export function Badge({ run }: { run: TrainingRun }) {
   const state = display(run);
   return <span className={`prep-badge prep-badge-${state}`}><span aria-hidden="true">{statuses[state].glyph}</span>{statuses[state].label}</span>;
 }
-function Progress({ run }: { run: TrainingRun }) {
+export function Progress({ run }: { run: TrainingRun }) {
   const progress = run.progress;
   if (!progress?.total) return null;
   const percent = Math.min(100, Math.floor(progress.completed / progress.total * 100));
@@ -87,178 +76,23 @@ function StepTiming({ run }: { run: TrainingRun }) {
     <div><span>Estimated step remaining</span><strong>{remaining ? `About ${duration(remaining)}` : progress?.total && progress.completed === progress.total ? 'Finishing up…' : 'Estimating as progress arrives…'}</strong></div>
   </div>;
 }
-function StepSummary({ run }: { run: TrainingRun }) {
-  const state = display(run);
-  if (state === 'queued') return <><span className="prep-main">Waiting for a worker</span><span className="prep-sub">Not started</span></>;
-  if (state === 'review') return <><span className="prep-main">Preview ready</span><span className="prep-sub">Your review is needed</span></>;
-  if (state === 'completed') return <><span className="prep-main">Finished</span><span className="prep-sub">{run.dataset_available ? `${records(run.dataset_record_count)} in version ${run.prepared_dataset_version}` : 'No saved version'}</span></>;
-  if (state === 'failed') return <><span className="prep-main">Failed during {stepLabel(failedStep(run)?.name ?? run.step).toLowerCase()}</span><span className="prep-sub">See run details</span></>;
-  if (state === 'stopped') return <><span className="prep-main">Stopped</span><span className="prep-sub">Cancelled · cannot resume</span></>;
-  return <><span className="prep-main">{stepLabel(run.step)}</span>{state === 'paused' ? <span className="prep-sub">Paused · saved progress kept</span> : state === 'recovering' ? <span className="prep-sub">Resuming from saved progress</span> : <Progress run={run} />}</>;
-}
-
-export default function PreparationRuns({ visible: workspaceVisible }: { visible: boolean }) {
-  const [params, setParams] = useSearchParams();
-  // While a preparation is in progress, Prepare Dataset shows it.
-  const { preparationRun } = useFineTuningRunner();
-  const current = preparationRun && active(preparationRun) && preparationRun.stage !== 'training' ? preparationRun : null;
-  const [filter, setFilter] = useState('all');
-  const [list, setList] = useState<{ runs: TrainingRun[]; next: string } | null>(null);
-  const [listError, setListError] = useState('');
-  const [listAttempt, setListAttempt] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [detail, setDetail] = useState<TrainingRun | null>(null);
-  const [detailError, setDetailError] = useState<{ key: string; text: string; missing: boolean } | null>(null);
-  const [detailAttempt, setDetailAttempt] = useState(0);
-  const heading = useRef<HTMLHeadingElement>(null);
-  const selectedKey = params.get('preparation') && params.get('run') ? `${params.get('preparation')}/${params.get('run')}` : '';
-  // Until details load, the table row stands in (without preview or settings).
-  const run = detail && runKey(detail) === selectedKey ? detail : list?.runs.find((item) => runKey(item) === selectedKey);
-  const missing = detailError?.key === selectedKey && detailError.missing;
-  const statusSet = filters.find(([key]) => key === filter)![2];
-
-  function navigate(target?: TrainingRun | 'new') {
-    // New preparations, and runs still in progress, use the Prepare Dataset tab.
-    if (target === 'new') setParams({ view: 'prepare' });
-    else if (target && active(target)) setParams({ view: 'prepare', preparation: target.workflow_id, run: target.run_id, ...(reviewable(target) && { review: '1' }) });
-    else setParams(target ? { preparation: target.workflow_id, run: target.run_id } : {});
-  }
-
-  // The first page long-polls: the server answers when the filtered page changes.
-  useEffect(() => {
-    if (!workspaceVisible) return;
-    const controller = new AbortController();
-    void (async () => {
-      let revision = '';
-      setListError('');
-      while (!controller.signal.aborted) {
-        try {
-          const page = await api.trainingRuns('', controller.signal, revision, { mode: 'preparation', statuses: statusSet });
-          if (controller.signal.aborted) return;
-          setListError('');
-          if (page.revision !== revision) {
-            revision = page.revision;
-            setList({ runs: page.runs ?? [], next: page.next_page_token ?? '' });
-          }
-        } catch (err) {
-          if (controller.signal.aborted) return;
-          // The server may be restarting; keep showing the last list and retry.
-          setListError(message(err, 'Could not load preparation runs.'));
-          revision = '';
-          await retryDelay(controller.signal);
-        }
-      }
-    })();
-    return () => controller.abort();
-  }, [filter, workspaceVisible, listAttempt]);
-
-  useEffect(() => {
-    if (!selectedKey || !workspaceVisible) return;
-    const [workflowID, runID] = [params.get('preparation')!, params.get('run')!];
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      try {
-        const next = await api.trainingRun(workflowID, runID, controller.signal);
-        if (controller.signal.aborted) return;
-        setDetail(next);
-        setDetailError(null);
-        if (active(next)) timer = setTimeout(load, 3000);
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        const missing = err instanceof ApiError && err.status === 404;
-        setDetailError({ key: selectedKey, text: message(err, 'Could not load this run.'), missing });
-        if (!missing) timer = setTimeout(load, 5000);
-      }
-    };
-    void load();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [selectedKey, workspaceVisible, detailAttempt]);
-
-  // A run still in progress lives in Prepare Dataset; an older link to its details goes there.
-  const runActive = !!run && active(run);
-  useEffect(() => {
-    if (workspaceVisible && run && runActive) setParams({ view: 'prepare', preparation: run.workflow_id, run: run.run_id }, { replace: true });
-  }, [workspaceVisible, selectedKey, runActive]);
-
-  useEffect(() => {
-    if (workspaceVisible) heading.current?.focus();
-  }, [selectedKey, workspaceVisible]);
-
-  function refresh() {
-    setListAttempt((attempt) => attempt + 1);
-    setDetailAttempt((attempt) => attempt + 1);
-  }
-  async function loadMore() {
-    if (!list?.next) return;
-    setLoadingMore(true);
-    try {
-      const page = await api.trainingRuns(list.next, undefined, '', { mode: 'preparation', statuses: statusSet });
-      setList((current) => current && { runs: [...current.runs, ...page.runs.filter((item) => !current.runs.some((known) => runKey(known) === runKey(item)))], next: page.next_page_token ?? '' });
-    } catch (err) {
-      setListError(message(err, 'Could not load more runs.'));
-    } finally {
-      setLoadingMore(false);
-    }
-  }
-
-  const visibleRuns = list?.runs ?? [];
-  const actionLabel = (item: TrainingRun) => reviewable(item) ? 'Review preview' : 'View details';
-
-  return <div className="fine-page prep-workspace">
-    <div className="page-header fine-page-header"><div><h2>Fine-Tuning</h2></div></div>
-    <nav className="tabs fine-tabs" aria-label="Fine-tuning views">
-      <Link className="tab active" aria-current="page" to="/fine-tuning">Preparation runs</Link>
-      <Link className="tab" to={current ? preparationPath(current) : '/fine-tuning?view=prepare'}>Prepare Dataset</Link>
-      <Link className="tab" to="/fine-tuning?view=configure">Configure Training</Link>
-      <Link className="tab" to="/fine-tuning?view=history">History</Link>
-    </nav>
-    {selectedKey && <button className="prep-back" onClick={() => navigate()}>← Preparation runs</button>}
-    <div className="page-header-with-action prep-heading">
-      <div><h2 ref={heading} tabIndex={-1}>{run ? datasetName(run) : selectedKey ? 'Preparation run' : 'Preparation runs'}</h2><p className="page-description">{run ? runMeta(run) : 'Each row is one run that turns a document into verified records for a dataset. Select a run to see its details.'}</p></div>
-      <div className="prep-actions">{run && <Badge run={run} />}<button className="btn btn-secondary" onClick={refresh}>Refresh</button>{!selectedKey && <button className="btn btn-primary" onClick={() => navigate('new')}>+ New preparation</button>}</div>
-    </div>
-    {!selectedKey && <>
-      <div className="tabs prep-filters" role="group" aria-label="Filter runs" aria-describedby="prep-filter-help">{filters.map(([key, label]) => <button key={key} className={`tab ${filter === key ? 'active' : ''}`} aria-pressed={filter === key} onClick={() => { if (key !== filter) { setList(null); setFilter(key); } }}>{label}</button>)}</div>
-      <p id="prep-filter-help" className="prep-copy prep-filter-help">In progress includes queued, running, paused, and waiting for review. Closed includes completed, failed, and stopped.</p>
-      {listError && <div className="prep-load-error" role="alert"><span>Could not load preparation runs: {listError} Retrying automatically.</span><button className="btn btn-secondary" onClick={() => setListAttempt((attempt) => attempt + 1)}>Try again</button></div>}
-      {!list && !listError && <p className="prep-copy" role="status">Loading preparation runs…</p>}
-      {list && <div className="catalog-table-wrap prep-table-wrap"><table className="catalog-table prep-table"><caption className="prep-sr-only">Preparation runs</caption><thead><tr>{['Dataset · run', 'Source document', 'Status', 'Step', 'Updated', 'Next action'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>
-        {visibleRuns.map((item) => <tr key={runKey(item)}>
-          <td><Link className="prep-run-link" to={active(item) ? preparationPath(item) : `?preparation=${encodeURIComponent(item.workflow_id)}&run=${encodeURIComponent(item.run_id)}`}>{datasetName(item)}</Link><span className="prep-sub prep-run-id">{item.workflow_id}</span><span className="prep-sub">{version(item)}</span></td>
-          <td data-label="Source document"><strong className="prep-main">{item.source_document ?? '—'}</strong></td>
-          <td data-label="Status"><Badge run={item} />{item.state_stale && active(item) && <span className="prep-sub prep-stale-tag">Last known status</span>}</td>
-          <td data-label="Step"><StepSummary run={item} /></td>
-          <td data-label="Updated"><span title={date(item.updated_at ?? item.started_at)}>{relative(item.updated_at ?? item.started_at)}</span><span className="prep-sub">Started {date(item.started_at)}</span></td>
-          <td className="prep-row-action"><button className={`btn ${reviewable(item) ? 'btn-primary' : 'btn-secondary'}`} aria-label={`${actionLabel(item)} · ${datasetName(item)} · ${item.workflow_id}`} onClick={() => navigate(item)}>{actionLabel(item)}</button></td>
-        </tr>)}
-        {!visibleRuns.length && <tr><td colSpan={6}><div className="empty-state">{filter === 'all' ? <><h3>No preparation runs yet</h3><p>Start one with New preparation.</p></> : <><h3>No runs match this filter</h3><p>Choose All runs to see every preparation run.</p></>}</div></td></tr>}
-      </tbody></table></div>}
-      {list?.next && <button className="btn btn-secondary prep-load-more" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? 'Loading…' : 'Load more runs'}</button>}
-    </>}
-    {selectedKey && current && runKey(current) !== selectedKey && <div className="prep-active-note"><strong>Another run is in progress.</strong> Opening other screens does not cancel it. <button className="prep-inline-link" onClick={() => navigate(current)}>View that run</button></div>}
-    {selectedKey && !run && (missing ? <section className="fine-panel"><h3>Run not found</h3><p>This preparation run does not exist or is no longer available.</p><button className="btn btn-secondary" onClick={() => navigate()}>Return to preparation runs</button></section>
-      : detailError?.key === selectedKey ? <div className="prep-load-error" role="alert"><span>Could not load this run: {detailError.text}{detailError.missing ? '' : ' Retrying automatically.'}</span><button className="btn btn-secondary" onClick={() => setDetailAttempt((attempt) => attempt + 1)}>Try again</button></div>
-      : <p className="prep-copy" role="status">Loading run…</p>)}
-    {run && <>
-      {detailError?.key === selectedKey && !missing && <p className="prep-warning" role="status">Could not refresh this run: {detailError.text} Retrying automatically. <button className="prep-inline-link" onClick={() => setDetailAttempt((attempt) => attempt + 1)}>Try again</button></p>}
-      <PreparationRunView key={selectedKey} run={run} visible={workspaceVisible} onRefresh={refresh} />
-    </>}
-  </div>;
-}
-
-// Shared by both tabs: retries reuse their request IDs, and unsent review edits follow the run.
+// Retries reuse their request IDs, and unsent review edits follow the run.
 const controlIDs = new Map<string, string>();
 const reviewIDs = new Map<string, string>();
 const reviewDrafts = new Map<string, TrainingPreviewRecord[]>();
 
-export const runMeta = (run: TrainingRun) => `${run.source_document ?? 'Source document'} · started ${date(run.started_at)} · ${version(run)}`;
+export const runMeta = (run: TrainingRun) => `${run.source_document ?? 'Source document'} · created ${date(run.started_at)} · ${version(run)}`;
+
+// remaining is the worker's estimate of the time left in the current step.
+export function remaining(run: TrainingRun) {
+  const progress = run.progress?.step === run.step ? run.progress : undefined;
+  const seconds = run.status === 'running' && !run.state_stale && progress?.remaining_seconds && progress.completed < progress.total ? progress.remaining_seconds : 0;
+  return seconds ? `About ${Math.max(1, Math.round(seconds / 60))} min left in this step` : '';
+}
 
 // PreparationRunView shows one preparation run with its controls and preview
-// review. Preparation runs and Prepare Dataset both render it.
-export function PreparationRunView({ run, visible, onRefresh, heading, openReview, onReviewOpened }: {
-  run: TrainingRun; visible: boolean; onRefresh: () => void; heading?: boolean; openReview?: boolean; onReviewOpened?: () => void;
-}) {
+// review. A finished dataset leads on to training or to adding documents.
+export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingRun; visible: boolean; onRefresh: () => void }) {
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
   const [busy, setBusy] = useState('');
@@ -276,9 +110,6 @@ export function PreparationRunView({ run, visible, onRefresh, heading, openRevie
   };
   const reviewOpen = review && !!run.preview;
   useEffect(() => {
-    if (openReview && run.preview) { setReview(true); onReviewOpened?.(); }
-  }, [openReview, !!run.preview]);
-  useEffect(() => {
     if (reviewOpen && visible) dialog.current?.showModal();
     else dialog.current?.close();
   }, [reviewOpen, visible]);
@@ -290,6 +121,8 @@ export function PreparationRunView({ run, visible, onRefresh, heading, openRevie
     shownState.current = state;
   }, [state]);
   const paused = run.control_action === 'pause';
+  const ready = state === 'completed' && !!run.prepared_dataset_id && !!run.prepared_dataset_version;
+  const eta = remaining(run);
   const settings = run.settings;
   const failed = failedStep(run);
 
@@ -364,15 +197,22 @@ export function PreparationRunView({ run, visible, onRefresh, heading, openRevie
   }
 
   return <>
-    {heading && <Link className="prep-back" to="/fine-tuning">← Preparation runs</Link>}
-    {heading && <div className="page-header-with-action prep-heading"><div><h3>{datasetName(run)}</h3><p className="page-description">{runMeta(run)}</p></div><div className="prep-actions"><Badge run={run} /><button className="btn btn-secondary" onClick={onRefresh}>Refresh</button></div></div>}
     <div className="prep-workspace prep-detail">
       {notice && <p className="prep-notice" role="status">{notice}</p>}
       {actionError && <p className="prep-field-error prep-action-error" role="alert">{actionError}</p>}
       {run.state_stale && active(run) && <p className="prep-warning" role="status">Showing the last saved status{run.observed_at ? ` from ${date(run.observed_at)}` : ''}. The preparation worker is not reporting right now. Pause, Continue, and Stop requests are kept and take effect when it reconnects.</p>}
-      <section className="fine-panel prep-next"><div><span className="fine-eyebrow">{active(run) ? 'Preparation status' : 'Run result'}</span><h3>{state === 'review' ? 'Preview ready for review' : state === 'paused' ? reviewable(run) ? 'Paused at preview review' : `Paused at ${stepLabel(run.step).toLowerCase()}` : state === 'pausing' ? 'Pausing after the current save' : state === 'running' || state === 'recovering' ? stepLabel(run.step) : state === 'queued' ? 'Waiting for a preparation worker' : state === 'completed' ? run.prepared_dataset_version ? `Saved to ${datasetName(run)} as version ${run.prepared_dataset_version}` : 'Finished without a saved version' : state === 'failed' ? `Failed during ${stepLabel(failed?.name ?? run.step).toLowerCase()}` : state === 'stopped' ? 'This run was cancelled' : 'Waiting'}</h3>
-        <p className="prep-copy">{state === 'review' ? 'Review and edit your preview before continuing full preparation. Training does not start.' : state === 'paused' ? reviewable(run) ? 'Saved progress is kept. You can still review the preview; after you accept it, the run stays paused until you select Continue.' : 'Saved progress is kept. Continue resumes from it, even after a restart.' : state === 'pausing' ? 'The current unit of work finishes and saves, then the run pauses.' : state === 'recovering' ? 'The worker was lost. The run resumes from its saved progress.' : state === 'running' ? 'This run keeps going while you browse other runs or set up a new one. Leaving this screen never stops it.' : state === 'queued' ? 'The run starts when a worker is free.' : state === 'completed' ? `${run.prepared_dataset_version ? `Version ${run.prepared_dataset_version} has ${records(run.dataset_record_count)}.` : 'No dataset version is available for this run.'}${run.skipped_records ? ` ${records(run.skipped_records)} skipped: the dataset already had ${run.skipped_records === 1 ? 'that question' : 'those questions'}.` : ''} Earlier dataset versions are unchanged.` : state === 'failed' ? run.failure_reason ? `${failureReasons[run.failure_reason](datasetName(run))} Nothing was saved. Earlier dataset versions are unchanged.` : `${failed && failed.attempt > 1 ? `It failed after ${failed.attempt} attempts. ` : ''}Nothing was saved. Earlier dataset versions are unchanged. Check the server logs for the cause.` : 'Nothing from this run was saved. Earlier dataset versions are unchanged.'}</p></div>
-        {state === 'completed' && run.prepared_dataset_id && !!run.prepared_dataset_version && <button className="btn btn-secondary" disabled={busy === 'download'} onClick={() => void download(run)}>{busy === 'download' ? 'Downloading…' : `Download version ${run.prepared_dataset_version}`}</button>}
+      <section className={`fine-panel prep-next${ready ? ' dash-done' : ''}`}>{ready && <span className="dash-done-mark" aria-hidden="true">✓</span>}<div><span className="fine-eyebrow">{ready ? 'Dataset ready' : active(run) ? 'Preparation status' : 'Run result'}</span><h3>{state === 'review' ? 'Preview ready for review' : state === 'paused' ? reviewable(run) ? 'Paused at preview review' : `Paused at ${stepLabel(run.step).toLowerCase()}` : state === 'pausing' ? 'Pausing after the current save' : state === 'running' || state === 'recovering' ? stepLabel(run.step) : state === 'queued' ? 'Waiting for a preparation worker' : state === 'completed' ? run.prepared_dataset_version ? `${datasetName(run)} version ${run.prepared_dataset_version} is ready` : 'Finished without a saved version' : state === 'failed' ? `Failed during ${stepLabel(failed?.name ?? run.step).toLowerCase()}` : state === 'stopped' ? 'This run was cancelled' : 'Waiting'}</h3>
+        <p className="prep-copy">{state === 'review' ? 'Review and edit your preview before continuing full preparation. Training does not start.' : state === 'paused' ? reviewable(run) ? 'Saved progress is kept. You can still review the preview; after you accept it, the run stays paused until you select Continue.' : 'Saved progress is kept. Continue resumes from it, even after a restart.' : state === 'pausing' ? 'The current unit of work finishes and saves, then the run pauses.' : state === 'recovering' ? 'The worker was lost. The run resumes from its saved progress.' : state === 'running' ? 'This run keeps going while you browse other runs or set up a new one. Leaving this screen never stops it.' : state === 'queued' ? 'The run starts when a worker is free.' : state === 'completed' ? `${run.prepared_dataset_version ? `Version ${run.prepared_dataset_version} has ${records(run.dataset_record_count)}.` : 'No dataset version is available for this run.'}${run.skipped_records ? ` ${records(run.skipped_records)} skipped: the dataset already had ${run.skipped_records === 1 ? 'that question' : 'those questions'}.` : ''} Earlier dataset versions are unchanged.` : state === 'failed' ? run.failure_reason ? `${failureReasons[run.failure_reason](datasetName(run))} Nothing was saved. Earlier dataset versions are unchanged.` : `${failed && failed.attempt > 1 ? `It failed after ${failed.attempt} attempts. ` : ''}Nothing was saved. Earlier dataset versions are unchanged. Check the server logs for the cause.` : 'Nothing from this run was saved. Earlier dataset versions are unchanged.'}</p>
+        {eta && <p className="prep-copy"><strong>{eta}.</strong></p>}</div>
+        {ready && <div className="dash-done-next">
+          <p><strong>Next: train a model with this dataset.</strong> {run.training_ready ? `Configure Training opens with version ${run.prepared_dataset_version} of ${datasetName(run)} selected.` : `Version ${run.prepared_dataset_version} has fewer than 50 records, the training minimum. Add documents to grow it first.`}</p>
+          <div className="prep-actions">
+            <Link className="btn btn-primary" to={`/fine-tuning?${new URLSearchParams({ view: 'configure', preparation: run.workflow_id, run: run.run_id })}`}>Continue to training →</Link>
+            <Link className="btn btn-secondary" to={`/fine-tuning?${new URLSearchParams({ view: 'prepare', dataset: run.prepared_dataset_id! })}`}>Add documents</Link>
+            <button className="btn btn-secondary" disabled={busy === 'download'} onClick={() => void download(run)}>{busy === 'download' ? 'Downloading…' : `Download version ${run.prepared_dataset_version}`}</button>
+          </div>
+        </div>}
+        {(state === 'failed' || state === 'stopped') && <div className="prep-actions"><Link className="btn btn-secondary" to="/fine-tuning">Back to dashboard</Link></div>}
         {active(run) && <div className="prep-stop">
           {paused ? <button className="btn btn-primary" disabled={!!busy} onClick={() => void control(run, 'resume')}>{busy === 'resume' ? 'Sending…' : 'Continue preparation'}</button>
             : <button className="btn btn-secondary" disabled={!!busy} onClick={() => void control(run, 'pause')}>{busy === 'pause' ? 'Sending…' : 'Pause'}</button>}
@@ -403,7 +243,7 @@ export function PreparationRunView({ run, visible, onRefresh, heading, openRevie
         <dl className="prep-facts">{([
           ['Dataset', datasetName(run)], ['Base version', run.base_version ? `Version ${run.base_version}` : '—'], ['Saved version', run.prepared_dataset_version ? `Version ${run.prepared_dataset_version}` : 'Nothing saved'], ['Source document', run.source_document ?? '—'],
           ...(settings ? [['Page range', settings.page_start ? `Pages ${settings.page_start}–${settings.page_end}` : 'Entire document'], ['Record limit', settings.max_questions || 'Unlimited'], ['Preparation model', settings.model], ['Goal', goalLabel(settings.goal)], ['Preview examples requested', settings.preview_records ?? '—'], ['Instructions', settings.instructions || 'None']] : []),
-          ['Started', date(run.started_at)], ['Updated', date(run.updated_at)], ['Run ID', `${run.workflow_id} · ${run.run_id}`],
+          ['Date created', date(run.started_at)], ['Updated', date(run.updated_at)], ['Run ID', `${run.workflow_id} · ${run.run_id}`],
         ] as [string, string | number][]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       </details>
     </div>

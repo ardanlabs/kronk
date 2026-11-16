@@ -23,7 +23,7 @@ export function PreparedDatasetResult({ id, version }: { id: string; version?: n
   </section>;
 }
 
-export function DatasetDownload({ dataset, initialVersion }: { dataset: PreparationDataset; initialVersion?: number }) {
+function DatasetDownload({ dataset, initialVersion }: { dataset: PreparationDataset; initialVersion?: number }) {
   const [version, setVersion] = useState(initialVersion ?? dataset.version);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -54,42 +54,4 @@ export function DatasetDownload({ dataset, initialVersion }: { dataset: Preparat
     <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => void download()}>{busy ? 'Downloading…' : 'Download Dataset'}</button>
     {error && <p className="fine-error" role="alert">{error}</p>}
   </div>;
-}
-
-export default function PreparationDatasetHistory() {
-  const [datasets, setDatasets] = useState<PreparationDataset[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    api.preparationDatasets(controller.signal).then((result) => { if (!controller.signal.aborted) setDatasets(result.datasets ?? []); })
-      .catch((err) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load datasets.'); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [attempt]);
-  return <section className="fine-panel fine-history" aria-label="Prepared datasets" aria-busy={loading}>
-    <div className="fine-panel-heading">
-      <div><span>Preparation</span><h3>Prepared datasets</h3></div>
-      <div className="fine-actions">
-        <button className="btn btn-secondary" type="button" disabled={loading} onClick={() => setAttempt((value) => value + 1)}>Refresh</button>
-      </div>
-    </div>
-    {loading && <p role="status">Loading datasets…</p>}
-    {error && <p className="fine-error" role="alert">{error} Select Refresh to retry.</p>}
-    {!loading && !error && datasets.length === 0 && <p>No prepared datasets yet. Start one from Preparation runs with + New preparation.</p>}
-    <div className="fine-dataset-collection">
-    {datasets.map((dataset) => <article className="fine-panel fine-dataset-card" key={`${dataset.id}:${dataset.version}`}>
-      <div className="fine-panel-heading">
-        <div><h3>{dataset.name}</h3><p className="fine-action-note">{dataset.documents.length} {dataset.documents.length === 1 ? 'document' : 'documents'} · {dataset.record_count} {dataset.record_count === 1 ? 'record' : 'records'} · Version {dataset.version}</p></div>
-        <span className={`fine-status ${dataset.training_ready ? 'fine-status-completed' : 'fine-status-waiting'}`}>{dataset.training_ready ? 'Training ready' : 'Not training ready'}</span>
-      </div>
-      <p className="fine-action-note">Updated {new Date(dataset.updated_at).toLocaleString()}</p>
-      <details className="fine-recipe-details"><summary>View existing documents</summary><ul>{dataset.documents.map((doc) => <li key={doc.id}>{doc.name} · {doc.record_count} {doc.record_count === 1 ? 'record' : 'records'}{doc.page_start > 0 ? ` · Pages ${doc.page_start}–${doc.page_end}` : ''}</li>)}</ul></details>
-      <DatasetDownload dataset={dataset} />
-    </article>)}
-    </div>
-  </section>;
 }

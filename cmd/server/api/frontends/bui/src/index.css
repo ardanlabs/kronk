@@ -1404,11 +1404,6 @@ tr.selected:hover td {
     padding: 24px;
 }
 
-.fine-current-preparation {
-    margin-bottom: 18px;
-    border-left: 4px solid var(--color-orange);
-}
-
 .fine-panel-heading,
 .fine-run-heading {
     display: flex;
@@ -2307,43 +2302,6 @@ tr.selected:hover td {
     margin-left: auto;
 }
 
-.fine-history-empty {
-    display: grid;
-    gap: 6px;
-    padding: 50px 20px;
-    place-items: center;
-    border: 1px dashed var(--color-gray-300);
-    border-radius: 8px;
-    color: var(--color-gray-600);
-    font-size: 13px;
-}
-
-.fine-history-table-wrap {
-    overflow-x: auto;
-}
-
-.fine-dataset-collection {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
-    gap: 18px;
-}
-
-.fine-dataset-card {
-    box-shadow: none;
-}
-
-.fine-dataset-card .fine-panel-heading {
-    flex-wrap: wrap;
-}
-
-.fine-dataset-card h3 {
-    overflow-wrap: anywhere;
-}
-
-.fine-dataset-card > .fine-actions {
-    margin-top: 16px;
-}
-
 .fine-dataset-download {
     display: flex;
     flex-wrap: wrap;
@@ -2359,37 +2317,6 @@ tr.selected:hover td {
 
 .fine-dataset-download .fine-error {
     flex-basis: 100%;
-}
-
-.fine-history-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-}
-
-.fine-history-table th,
-.fine-history-table td {
-    padding: 12px 10px;
-    border-bottom: 1px solid var(--color-gray-200);
-    text-align: left;
-    white-space: nowrap;
-}
-
-.fine-history-table th {
-    color: var(--color-gray-500);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.fine-history-table td:first-child {
-    min-width: 220px;
-}
-
-.fine-history-table td small {
-    display: block;
-    margin-top: 4px;
-    color: var(--color-gray-500);
 }
 
 .fine-run-link {
@@ -8867,6 +8794,27 @@ button.autotest-detail-log-header:focus-visible {
 .fine-preparation-options .form-group { min-width: 0; margin-bottom: 12px; }
 .fine-preparation-options .fine-preview-count > select { max-width: none; }
 .fine-source-scope { border-top: 1px solid var(--color-gray-200); padding-top: 16px; margin-top: 16px; }
+/* One card per source document: its file and its pages share one region. */
+.fine-doc-list { display: grid; gap: 10px; margin: 0 0 12px; padding: 0; list-style: none; }
+.fine-doc { padding: 12px 16px; border: 1px solid var(--color-gray-300); border-radius: 8px; }
+.fine-doc-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.fine-doc-head > div { display: grid; gap: 2px; min-width: 0; }
+.fine-doc-head strong { color: var(--color-gray-900); overflow-wrap: anywhere; }
+.fine-doc-state { font-size: 12px; color: var(--color-gray-600); }
+.fine-doc-stored { color: var(--color-success-dark); }
+.fine-doc-failed { color: var(--color-error); }
+.fine-doc-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-gray-200); font-size: 13px; }
+.fine-doc-pages-label { display: inline-flex; align-items: center; gap: 4px; font-weight: 500; color: var(--color-gray-800); }
+.fine-doc-muted { color: var(--color-gray-600); }
+.fine-doc-toggle { display: inline-flex; border: 1px solid var(--color-gray-300); border-radius: 6px; overflow: hidden; }
+.fine-doc-toggle label { position: relative; margin: 0; padding: 5px 12px; cursor: pointer; color: var(--color-gray-700); }
+.fine-doc-toggle label + label { border-left: 1px solid var(--color-gray-300); }
+.fine-doc-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.fine-doc-toggle label:has(input:checked) { background: var(--color-primary); color: #fff; }
+.fine-doc-toggle label:has(input:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.fine-doc-range { display: inline-flex; align-items: center; gap: 8px; color: var(--color-gray-600); }
+.fine-doc-range .form-input { width: 84px; min-height: 32px; padding: 4px 8px; }
+.fine-doc .fine-error { margin: 8px 0 0; }
 .fine-document-management { border-top: 1px solid var(--color-gray-200); padding-top: 12px; }
 .fine-preview-readiness h3 { margin: 0; font-size: 17px; color: var(--color-gray-900); }
 .main-content > div:not([hidden]):has(> .fine-preparing) { height: 100%; }

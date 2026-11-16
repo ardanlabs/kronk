@@ -68,6 +68,7 @@ type CatalogFilter struct {
 	Namespace, Mode, TargetDatasetID string
 	Statuses                         []string
 	Limit, Offset                    int
+	Oldest                           bool // Oldest lists jobs oldest first instead of newest first.
 }
 
 // page applies a default limit of 100, a maximum of 1000, and a zero-based offset.
@@ -126,7 +127,8 @@ func scanCatalog(s scanner) (CatalogEntry, error) {
 }
 
 // ListCatalog selects the highest-numbered attempt per job, then applies all
-// filters before ordering by job created_at DESC, job_id DESC and paginating.
+// filters before ordering by job created_at and job_id (newest first unless
+// Oldest) and paginating.
 // Jobs without attempts have no namespace and are not catalog entries.
 func (db *DB) ListCatalog(ctx context.Context, f CatalogFilter) ([]CatalogEntry, error) {
 	if f.Namespace == "" {
@@ -136,11 +138,15 @@ func (db *DB) ListCatalog(ctx context.Context, f CatalogFilter) ([]CatalogEntry,
 	if err != nil {
 		return nil, err
 	}
+	order := "j.created_at DESC,j.job_id DESC"
+	if f.Oldest {
+		order = "j.created_at,j.job_id"
+	}
 	rows, err := db.sql.QueryContext(ctx, `SELECT `+catalogColumns+` FROM jobs j
 		JOIN LATERAL (SELECT * FROM job_attempts WHERE job_id=j.job_id ORDER BY attempt_number DESC LIMIT 1) a ON true
 		WHERE a.temporal_namespace=$1 AND ($2='' OR j.mode=$2) AND ($3='' OR j.target_dataset_id=$3)
 		AND ($4 OR COALESCE(a.execution_status,'')=ANY($5::text[]))
-		ORDER BY j.created_at DESC,j.job_id DESC LIMIT $6 OFFSET $7`, f.Namespace, f.Mode, f.TargetDatasetID, len(f.Statuses) == 0, f.Statuses, limit, f.Offset)
+		ORDER BY `+order+` LIMIT $6 OFFSET $7`, f.Namespace, f.Mode, f.TargetDatasetID, len(f.Statuses) == 0, f.Statuses, limit, f.Offset)
 	if err != nil {
 		return nil, err
 	}

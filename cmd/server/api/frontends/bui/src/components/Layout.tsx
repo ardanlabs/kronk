@@ -327,11 +327,12 @@ export default function Layout({ children }: LayoutProps) {
   const {
     preparationActivity: fineTuningPreparation,
     trainingActivity: fineTuningTraining,
-    inputKind: fineTuningInputKind,
-    uploading: fineTuningUploading,
+    uploading: fineTuningDatasetUploading,
+    documentsUploading: fineTuningDocumentsUploading,
     cancelPreparation: stopFineTuningPreparation,
     preparationRun: fineTuningPreparationRun,
   } = useFineTuningRunner();
+  const fineTuningUploading = fineTuningDatasetUploading || fineTuningDocumentsUploading;
   const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
   const { authenticationRequired, logout } = useAuth();
@@ -704,7 +705,7 @@ export default function Layout({ children }: LayoutProps) {
             {fineTuningPreparation && (
               <div className="download-indicator">
                 <div className="download-indicator-link autotest-indicator-link">
-                  <Link to={fineTuningUploading ? `${routeMap['fine-tuning']}?view=${fineTuningInputKind === 'dataset' ? 'configure' : 'prepare'}` : fineTuningPreparationRun ? preparationPath(fineTuningPreparationRun) : `${routeMap['fine-tuning']}?view=prepare`} className="autotest-indicator-top">
+                  <Link to={fineTuningUploading ? `${routeMap['fine-tuning']}?view=${fineTuningDocumentsUploading ? 'prepare' : 'configure'}` : fineTuningPreparationRun ? preparationPath(fineTuningPreparationRun) : `${routeMap['fine-tuning']}?view=prepare`} className="autotest-indicator-top">
                     <div className="download-indicator-header">
                       {!fineTuningPreparation.paused && <span className="download-indicator-spinner" />}
                       <span className="download-indicator-title">{fineTuningPreparation.title}</span>
@@ -717,8 +718,8 @@ export default function Layout({ children }: LayoutProps) {
                     type="button"
                     className="autotest-indicator-stop"
                     onClick={stopFineTuningPreparation}
-                    aria-label={fineTuningInputKind === 'document' ? 'Cancel document upload' : 'Cancel dataset upload'}
-                    title={fineTuningInputKind === 'document' ? 'Cancel document upload' : 'Cancel dataset upload'}
+                    aria-label={fineTuningDocumentsUploading ? 'Cancel document uploads' : 'Cancel dataset upload'}
+                    title={fineTuningDocumentsUploading ? 'Cancel document uploads' : 'Cancel dataset upload'}
                   >
                     ■
                   </button>}
