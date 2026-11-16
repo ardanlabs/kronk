@@ -855,7 +855,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 				switch {
 				case snapshotOK:
 					e.model.imcPublishSession(job.imcSession)
-					job.imcReservationHeld = false
+					job.imcReservationHeld = e.model.imcStorageEnabled()
 				default:
 					if err := e.model.imcInvalidateReservedSession(job.ctx, job.imcSession); err != nil {
 						e.model.log(job.ctx, "start-slot", "status", "imc-session-invalidate-failed", "err", err)

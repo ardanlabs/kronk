@@ -48,6 +48,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	var elapsed time.Duration
 
 	defer func() {
+		if s.job.hasIMCReservation() {
+			e.model.imcReleaseReservation(s.job.imcSessionID)
+			s.job.imcReservationHeld = false
+		}
 		s.job.releaseIMCSystemCache(e.model)
 		if s.prefillSpan != nil {
 			s.prefillSpan.End()
@@ -230,8 +234,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		}
 		e.model.cacheMu.Unlock()
 	}
-	if s.job.hasIMCReservation() {
+	if s.job.hasIMCReservation() && !e.model.imcStorageEnabled() {
 		e.model.imcReleaseReservation(s.job.imcSessionID)
+		s.job.imcReservationHeld = false
 	}
 
 	outputTokens := s.reasonTokens + s.completionTokens
@@ -491,6 +496,15 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		finalChannel = ChannelAnswer
 	}
 
+	// Capture input separately before completed RAM history appends output.
+	var storageRequest json.RawMessage
+	if e.model.imcStorageEnabled() && s.job.hasIMCReservation() {
+		var encodeErr error
+		storageRequest, encodeErr = imcStorageRequest(s.job)
+		if encodeErr != nil {
+			e.model.log(ctx, "imc-storage", "status", "request-encode-failed", "err", encodeErr)
+		}
+	}
 	history, historyErr := prepareIMCCompletedHistory(s.job.imcRequest, ResponseMessage{
 		Role:      RoleAssistant,
 		Content:   s.finalContent.String(),
@@ -525,6 +539,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	}
 
 	e.model.imcRecordCompletedHistory(s.job.imcSession, s.job.imcUsageVersion, history)
+	e.model.imcSaveCompleted(ctx, s.job, storageRequest, s.finalContent.String())
 
 	s.span.SetAttributes(attribute.String("request_status", "ok"))
 	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)

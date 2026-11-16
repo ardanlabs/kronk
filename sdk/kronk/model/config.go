@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/imc"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
@@ -137,6 +138,9 @@ type AdapterConfig struct {
 //
 // ArtifactIntegrity contains expected artifact verification state keyed by
 // model file path. It is used to avoid repeating completed verification work.
+//
+// Storage optionally persists IMC sessions without replacing their working RAM
+// checkpoints. See StorageConfig for isolation, limits, and ownership.
 //
 // AdmissionTimeout limits how long a request waits for an admission permit.
 // The timeout applies only to admission, not request processing after a permit
@@ -399,6 +403,7 @@ type AdapterConfig struct {
 type Config struct {
 	Adapters                   []AdapterConfig
 	ArtifactIntegrity          map[string]ArtifactIntegrity
+	Storage                    StorageConfig
 	PtrAdmissionTimeout        *time.Duration
 	AutoTune                   bool
 	AutoTuned                  bool
@@ -636,6 +641,15 @@ func chatTemplateKwargsSummary(kwargs D) string {
 func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
+	}
+
+	if cfg.Storage.Store != nil {
+		if cfg.PtrIncrementalCache != nil && !cfg.IncrementalCache() {
+			return fmt.Errorf("validate-config: storage requires incremental caching")
+		}
+		if cfg.Storage.Timeout < 0 || cfg.Storage.MaxBytes < 0 {
+			return fmt.Errorf("validate-config: storage limits must not be negative")
+		}
 	}
 
 	if _, err := ParseKVCacheMode(cfg.KVCacheMode().String()); err != nil {
@@ -1312,6 +1326,24 @@ func (cfg Config) ExpertLayersOnGPU() int64 {
 
 // Option represents a functional option for configuring a Config.
 type Option func(*Config)
+
+// StorageConfig enables best-effort persistence of IMC sessions. The application
+// owns Store and manages its namespacing and access isolation. Storage isolation
+// does not partition RAM session matching within a model instance.
+// Timeout bounds each save or complete discovery/import attempt (default 5s).
+// MaxBytes bounds the combined uncompressed target, draft, and media payloads
+// on save and import (default 4 GiB). Zero values select these defaults.
+// Calls are synchronous and implementations must honor context cancellation;
+// slow saves delay the batch engine. There is no background retry queue.
+type StorageConfig struct {
+	Store    imc.Store
+	Timeout  time.Duration
+	MaxBytes int64
+}
+
+// WithStorage configures optional IMC persistence. RAM remains authoritative.
+// Model unload neither closes Store nor deletes its saved sessions.
+func WithStorage(v StorageConfig) Option { return func(c *Config) { c.Storage = v } }
 
 // NewConfig creates a Config with the provided functional options applied.
 func NewConfig(opts ...Option) Config {

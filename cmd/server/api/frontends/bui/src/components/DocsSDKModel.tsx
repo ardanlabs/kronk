@@ -433,6 +433,7 @@ export default function DocsSDKModel() {
                 <code>{`type Config struct {
 	Adapters                   []AdapterConfig
 	ArtifactIntegrity          map[string]ArtifactIntegrity
+	Storage                    StorageConfig
 	PtrAdmissionTimeout        *time.Duration
 	AutoTune                   bool
 	AutoTuned                  bool
@@ -498,6 +499,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">Config represents model level configuration. These values if configured incorrectly can cause the system to panic. The defaults are used when these values are set to 0.</p>
               <p className="doc-description">Adapters contains local llama.cpp-compatible LoRA adapter GGUF files to load with the model. Adapter scales are fixed for the lifetime of the model.</p>
               <p className="doc-description">ArtifactIntegrity contains expected artifact verification state keyed by model file path. It is used to avoid repeating completed verification work.</p>
+              <p className="doc-description">Storage optionally persists IMC sessions without replacing their working RAM checkpoints. See StorageConfig for isolation, limits, and ownership.</p>
               <p className="doc-description">AdmissionTimeout limits how long a request waits for an admission permit. The timeout applies only to admission, not request processing after a permit is acquired. When unset or set to 0, the default is 3 minutes.</p>
               <p className="doc-description">AutoTune, when true, asks kronk.New to run a hardware-aware analysis of the model (architecture, size, and available devices) and seed unset settings (context window, KV cache type, slots, flash attention, split mode, etc.) before loading. It is off by default for backwards compatibility, and any option the caller sets explicitly always wins over the analysis. It has no effect when using the low-level model package directly (only kronk.New applies it).</p>
               <p className="doc-description">AutoTuned records that an upstream owner such as the Kronk Model Server has already applied AutoTune. When AutoTune and AutoTuned are both true, kronk.New preserves the enabled state for diagnostics without repeating the hardware analysis.</p>
@@ -1351,6 +1353,18 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">StateMachineFlusher is implemented by state machines that may retain model output not yet returned by Classify.</p>
               <p className="doc-description">Flush drains that output at successful end-of-generation. It must not return content previously returned by Classify. Callers invoke Flush until it returns a zero Result so state machines can preserve multiple channel transitions retained from one decoded piece.</p>
+            </div>
+
+            <div className="doc-section" id="type-storageconfig">
+              <h4>StorageConfig</h4>
+              <pre className="code-block">
+                <code>{`type StorageConfig struct {
+	Store    imc.Store
+	Timeout  time.Duration
+	MaxBytes int64
+}`}</code>
+              </pre>
+              <p className="doc-description">StorageConfig enables best-effort persistence of IMC sessions. The application owns Store and manages its namespacing and access isolation. Storage isolation does not partition RAM session matching within a model instance. Timeout bounds each save or complete discovery/import attempt (default 5s). MaxBytes bounds the combined uncompressed target, draft, and media payloads on save and import (default 4 GiB). Zero values select these defaults. Calls are synchronous and implementations must honor context cancellation; slow saves delay the batch engine. There is no background retry queue.</p>
             </div>
 
             <div className="doc-section" id="type-streamingresponselogger">
@@ -3388,6 +3402,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-statemachine">StateMachine</a></li>
                 <li><a href="#type-statemachineflusher">StateMachineFlusher</a></li>
+                <li><a href="#type-storageconfig">StorageConfig</a></li>
                 <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
