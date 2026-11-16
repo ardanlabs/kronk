@@ -192,3 +192,93 @@ func TestClassicDraftSamplingTransitions(t *testing.T) {
 		}
 	}
 }
+
+func TestClassicDraftGeneratedSeedReplay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("model inference skipped in short mode")
+	}
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := mdls.FullPath("unsloth/Qwen3-1.7B-Q4_K_M")
+	if err != nil || len(target.ModelFiles) == 0 {
+		t.Skip("Qwen3-1.7B model not downloaded")
+	}
+	draft, err := mdls.FullPath("unsloth/Qwen3-0.6B-Q8_0")
+	if err != nil || len(draft.ModelFiles) == 0 {
+		t.Skip("Qwen3-0.6B draft model not downloaded")
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	var seedMu sync.Mutex
+	var seed uint32
+	var captured bool
+	log := func(_ context.Context, msg string, args ...any) {
+		if msg != "request-lifecycle" {
+			return
+		}
+		fields := make(map[string]any)
+		for i := 0; i+1 < len(args); i += 2 {
+			if key, ok := args[i].(string); ok {
+				fields[key] = args[i+1]
+			}
+		}
+		if fields["seed_source"] == "generated" {
+			seedMu.Lock()
+			seed, captured = fields["seed"].(uint32)
+			seedMu.Unlock()
+		}
+	}
+	krn, err := kronk.New(model.WithModelFiles(target.ModelFiles),
+		model.WithDraftModel(&model.DraftModelConfig{ModelFiles: draft.ModelFiles, NDraft: 4}),
+		model.WithSpeculationMode(model.SpeculationClassic), model.WithNSeqMax(1),
+		model.WithContextWindow(4096), model.WithPrefillBatchSize(256),
+		model.WithIncrementalCache(false), model.WithLog(log),
+		model.WithCacheTypeK(model.GGMLTypeQ8_0), model.WithCacheTypeV(model.GGMLTypeQ8_0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := krn.Unload(context.Background()); err != nil {
+			t.Errorf("unload: %v", err)
+		}
+	})
+	request := model.D{
+		"messages": model.Messages(model.TextMessage(model.RoleUser,
+			"Explain how vegetable gardens recover from drought. Give concrete examples.")),
+		"temperature": .7, "top_k": 40, "top_p": .9, "min_p": .05,
+		"max_tokens": 96, "enable_thinking": false,
+	}
+	var original string
+	for attempt := range 2 {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		resp, err := krn.Chat(ctx, request)
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(resp.Choices) != 1 || resp.Choices[0].Message == nil || resp.Choices[0].FinishReason() == model.FinishReasonError {
+			t.Fatalf("incomplete response: %+v", resp)
+		}
+		if resp.Usage == nil || resp.Usage.DraftTokens <= 4 {
+			t.Fatalf("expected multiple speculative rounds: usage=%+v", resp.Usage)
+		}
+		content := resp.Choices[0].Message.Content
+		if attempt == 0 {
+			original = content
+			seedMu.Lock()
+			replaySeed, ok := seed, captured
+			seedMu.Unlock()
+			if !ok {
+				t.Fatal("generated master seed not captured")
+			}
+			request["seed"] = replaySeed
+			continue
+		}
+		if content != original {
+			t.Errorf("seed %v replay: got %q, want %q", request["seed"], content, original)
+		}
+	}
+}

@@ -151,15 +151,12 @@ func (e *batchEngine) generateClassicDraft(s *slot, nDraft int) (classicengine.G
 	}
 
 	// Select sampler. Greedy uses the shared draft sampler (argmax).
-	// Non-greedy creates or reuses the per-slot draft sampler. Preserve the
-	// existing per-round reset for random requests, but let a seeded request's
-	// RNG stream advance across rounds instead of replaying its first draws.
+	// Non-greedy creates or reuses the per-request draft sampler, letting its
+	// RNG stream advance across rounds for both generated and explicit seeds.
 	sampler := draft.sampler
 	if !greedy {
 		if s.draftSampler == 0 {
 			s.draftSampler = buildDraftSampler(draft.vocab, draft.suppressTokens, s.job.params, s.samplingSeeds.draftDist)
-		} else if s.job.params.Seed == nil {
-			llama.SamplerReset(s.draftSampler)
 		}
 		sampler = s.draftSampler
 	}
@@ -304,8 +301,6 @@ func generateExtendedDraft(
 					})
 				}
 			}
-
-			llama.SamplerAccept(sampler, token)
 		}
 
 		if llama.VocabIsEOG(vocab, token) {

@@ -346,6 +346,11 @@ func getTopKLogprobs(vocab llama.Vocab, logprobs []float32, k int, buf []byte) [
 	heap.Init(&h)
 
 	for i, lp := range logprobs {
+		// Grammar and model suppression can leave fewer than k possible tokens.
+		if math.IsInf(float64(lp), 0) || math.IsNaN(float64(lp)) {
+			continue
+		}
+
 		if h.Len() < k {
 			heap.Push(&h, tokenLogprob{token: llama.Token(i), logprob: lp})
 			continue
