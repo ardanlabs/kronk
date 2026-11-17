@@ -80,10 +80,9 @@ test-gh-only: install-libraries install-test-gh-models ## Install GitHub fixture
 
 test-gh: test-gh-only lint vuln-check diff ## Run CI tests and static checks
 
-# Requires installed llama.cpp libraries and make install-speak-models fixtures.
-# Run packages serially without installing or replacing libraries during tests.
-.PHONY: test-speech
-test-speech: ## Run speech configuration, memory, and native lifecycle tests
+# Requires make install-speak-models fixtures.
+# Run packages serially after installing libraries, as with the main test suite.
+test-speech: install-libraries ## Run speech configuration, memory, and native lifecycle tests
 	@echo ========== RUN SPEECH TESTS ==========
 	unset KRONK_TEST_HOSTED KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \

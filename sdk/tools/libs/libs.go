@@ -28,7 +28,7 @@ const (
 	// defaultVersion is the pinned llama.cpp release used when no explicit
 	// version is provided and AllowUpgrade is false. The SHA-256 authenticates
 	// the release manifest, which contains the digests of every platform asset.
-	defaultVersion = "b12435@sha256:90e888334bc6157745fce13c0948a1462c64e852b005aafa78500708caafcfeb"
+	defaultVersion = "b12475@sha256:fc57cdb43d42efe8e86f9914690c548d6660702db35df124f98391fe034f7ba9"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
