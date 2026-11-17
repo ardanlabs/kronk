@@ -239,6 +239,16 @@ func (s *Store) load() (missing, reclaimed int, retErr error) {
 // replaces the conversation summary only after that file has been synced.
 // Failures before publication leave the previous snapshot intact. A failure
 // syncing the directory after publication has an uncertain commit outcome.
+//
+// A possible latency optimization is to copy the complete snapshot into owned
+// memory, then compress and publish it in a background worker after returning.
+// This trades compression and disk latency for copy latency and additional RAM.
+// Such a design requires revising imc.Store.Save's no-extra-copy and synchronous
+// publication guarantees first. It must copy every borrowed slice and JSON
+// document before returning, bound queued bytes, preserve revision ordering,
+// expose only published snapshots, report background failures, and drain accepted
+// saves on Close. Simply retaining snapshot or launching a goroutine is unsafe:
+// the caller may reuse its buffers as soon as Save returns.
 func (s *Store) Save(ctx context.Context, snapshot imc.Snapshot) (retErr error) {
 	start := time.Now()
 	var exists, published bool
