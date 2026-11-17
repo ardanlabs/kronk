@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/imc"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.opentelemetry.io/otel/attribute"
@@ -281,6 +282,8 @@ func resetSessionMetadata(s *imcSession) {
 	s.outputTokens = 0
 	s.samplingSeed = 0
 	s.hasSamplingSeed = false
+	s.stored = imc.Summary{}
+	s.storageConflict = false
 	s.lastUsed = time.Time{}
 	s.reserved = false
 }
@@ -428,10 +431,10 @@ func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, 
 }
 
 // imcPublishSession completes the publication started by imcCommitSession.
-// It clears the reserved flag, making the session visible to token-v2 planners.
-// Call this only AFTER the RAM checkpoint has been
-// committed for the same session, so the metadata and kvState bytes are
-// guaranteed consistent to concurrent readers.
+// RAM-only sessions become visible to planners immediately. Persistence-enabled
+// sessions retain the reservation through completion and Save so borrowed bytes
+// cannot change underneath storage. Call this only after the RAM checkpoint and
+// metadata have committed for the same prefix.
 func (m *Model) imcPublishSession(session *imcSession) {
 	if session == nil {
 		return
@@ -446,6 +449,6 @@ func (m *Model) imcPublishSession(session *imcSession) {
 	session.allocatedContext = max(session.allocatedContext, session.cache.totalTokensCached)
 	session.snapshotBytes = imcSnapshotBytes(session.kvState, session.draftKVState, session.pendingH)
 	session.highWaterContext = max(session.highWaterContext, session.cache.totalTokensCached)
-	session.reserved = false
+	session.reserved = m.imcStorageEnabled()
 	m.cacheMu.Unlock()
 }

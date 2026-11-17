@@ -20,6 +20,7 @@ import (
 	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/imc"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
@@ -84,6 +85,8 @@ type imcSession struct {
 	completedHistory D              // Owned request document with the finalized assistant message appended; not part of the KV prefix.
 	samplingSeed     uint32         // Concrete master sampling seed retained for this conversation.
 	hasSamplingSeed  bool           // True once samplingSeed has been generated or explicitly supplied.
+	stored           imc.Summary    // Durable conversation identity; independent of the resident pool index.
+	storageConflict  bool           // Stop saving this identity after a conflicting external writer.
 }
 
 // imcPrefix belongs to a resident session. Exact prefix
@@ -217,6 +220,7 @@ type Model struct {
 	cacheMu          sync.RWMutex
 	imcSessions      []*imcSession     // Resident checkpoint pool; buffers grow lazily in internal RAM.
 	imcSystemCaches  []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
+	imcCompatibility [32]byte          // Persistent checkpoint identity; zero disables storage after initialization failure.
 	addBOSToken      bool              // Whether to add BOS token (from model metadata)
 	pool             *contextPool      // Context pool for parallel embed/rerank
 	batchSeq         *batchSeqEngine   // Sequence-batch engine for supported embed/rerank models.
@@ -486,6 +490,15 @@ func NewModel(ctx context.Context, cfg Config) (_ *Model, err error) {
 	m.modelInfo = modelInfo
 	m.paramsResolved = true
 	m.addBOSToken = addBOSToken
+
+	if cfg.Storage.Store != nil {
+		identity, err := m.imcStorageCompatibility(ctx)
+		if err != nil {
+			m.log(ctx, "imc-storage", "status", "disabled", "err", err)
+		} else {
+			m.imcCompatibility = identity
+		}
+	}
 
 	// Initialize the runtime selected for this model. Supported embed/rerank
 	// models use the sequence-batch engine, other embed/rerank models use the

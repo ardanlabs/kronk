@@ -43,25 +43,27 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 
 	m.cacheMu.Lock()
 	hashes := m.imcCandidateHashes(target, nil)
+
+	matches := func(session *imcSession) bool {
+		return imcTextPrefixMatches(session, target, renderFingerprint, fingerprintOK)
+	}
+
 	var best *imcSession
 	var bestLen int
 	for _, session := range m.imcSessions {
-		cache := session.cache
 		if session.reserved {
 			continue
 		}
-		if cache.totalTokensCached == 0 {
-			continue
-		}
-		currentExact := len(cache.cachedTokens) == len(target)
-		currentFingerprintOK := !currentExact || exactRenderFingerprintMatches(cache.cachedRenderInputHash, renderFingerprint, fingerprintOK)
-		if !cache.hasMedia && len(cache.cachedTokens) > 0 && session.kvState != nil && session.kvState.Len() > 0 &&
-			session.matchesPrefixHash(hashes) && tokensHavePrefix(target, cache.cachedTokens) && currentFingerprintOK {
-			if len(cache.cachedTokens) > bestLen {
+		if session.matchesPrefixHash(hashes) && matches(session) {
+			if len(session.cache.cachedTokens) > bestLen {
 				best = session
-				bestLen = len(cache.cachedTokens)
+				bestLen = len(session.cache.cachedTokens)
 			}
 		}
+	}
+
+	if best == nil {
+		best = m.imcFindStoredSession(ctx, target, nil, matches)
 	}
 
 	// System is an immutable preload tier. Search it only when no Current
@@ -108,6 +110,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 		resetErr := resetSessionForRequest(ctx, selected, messageCount(d))
 		m.cacheMu.Lock()
 		resetSessionMetadata(selected)
+		m.imcNewStoredIdentity(selected)
 		selected.reserved = true
 		if resetErr != nil {
 			selected.reserved = false
@@ -161,6 +164,12 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 		"request_age", fmtDur(time.Since(requestStart)))
 
 	return result
+}
+
+func imcTextPrefixMatches(session *imcSession, target []llama.Token, fingerprint string, fingerprintOK bool) bool {
+	c := session.cache
+	return c.totalTokensCached > 0 && !c.hasMedia && len(c.cachedTokens) > 0 && session.kvState != nil && session.kvState.Len() > 0 &&
+		tokensHavePrefix(target, c.cachedTokens) && (len(c.cachedTokens) != len(target) || exactRenderFingerprintMatches(c.cachedRenderInputHash, fingerprint, fingerprintOK))
 }
 
 func commonTokenPrefixLen(a, b []llama.Token) int {

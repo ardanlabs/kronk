@@ -45,41 +45,27 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 
 	m.cacheMu.Lock()
 	hashes := m.imcCandidateHashes(nil, stable.units)
+
+	matches := func(session *imcSession) bool {
+		return imcMediaPrefixMatches(session, actual, stable, renderFingerprint, fingerprintOK)
+	}
+
 	var match *imcSession
 	for _, session := range m.imcSessions {
-		cache := session.cache
 		if session.reserved {
 			continue
 		}
-		if cache.totalTokensCached == 0 {
+
+		if !session.matchesPrefixHash(hashes) || !matches(session) {
 			continue
 		}
-		if session.kvState == nil || session.kvState.Len() == 0 {
-			continue
-		}
-		validMediaAnchor := validMediaAnchorSession(session)
-		hashMatch := session.matchesPrefixHash(hashes)
-		mediaAnchor := hashMatch && validMediaAnchor && stable.hasPrefix(cache.promptPlan)
-		textAnchor := hashMatch && validTextToMediaAnchorSession(session, stable)
-		if !mediaAnchor && !textAnchor {
-			continue
-		}
-		if mediaAnchor && stable.equal(cache.promptPlan) && !exactRenderFingerprintMatches(cache.cachedRenderInputHash, renderFingerprint, fingerprintOK) {
-			continue
-		}
-		extensionHasMedia := slices.ContainsFunc(stable.units[len(cache.promptPlan.units):], func(unit promptUnit) bool {
-			return unit.isMedia
-		})
-		if extensionHasMedia && (cache.useNonCausal || (cache.hasMedia && len(cache.mediaNativeChunks) == 0)) {
-			continue
-		}
-		actualTail, actualTextOnly := actual.textTail(stable)
-		if !actualTextOnly || len(actualTail) == 0 {
-			continue
-		}
-		if match == nil || cache.logicalPosition() > match.cache.logicalPosition() {
+		if match == nil || session.cache.logicalPosition() > match.cache.logicalPosition() {
 			match = session
 		}
+	}
+
+	if match == nil {
+		match = m.imcFindStoredSession(ctx, nil, stable.units, matches)
 	}
 
 	var selected *imcSession
@@ -143,6 +129,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		resetErr := resetSessionForRequest(ctx, selected, messageCount(d))
 		m.cacheMu.Lock()
 		resetSessionMetadata(selected)
+		m.imcNewStoredIdentity(selected)
 		selected.reserved = true
 		if resetErr != nil {
 			selected.reserved = false
@@ -200,6 +187,24 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		"extension_media", extensionMedia, "position_mode", "linear-or-mrope", "request_age", fmtDur(time.Since(requestStart)))
 
 	return result
+}
+
+func imcMediaPrefixMatches(session *imcSession, actual, stable promptPlan, fingerprint string, fingerprintOK bool) bool {
+	cache := session.cache
+	mediaAnchor := validMediaAnchorSession(session) && stable.hasPrefix(cache.promptPlan)
+	textAnchor := validTextToMediaAnchorSession(session, stable)
+	if !mediaAnchor && !textAnchor {
+		return false
+	}
+	if mediaAnchor && stable.equal(cache.promptPlan) && !exactRenderFingerprintMatches(cache.cachedRenderInputHash, fingerprint, fingerprintOK) {
+		return false
+	}
+	extensionHasMedia := slices.ContainsFunc(stable.units[len(cache.promptPlan.units):], func(unit promptUnit) bool { return unit.isMedia })
+	if extensionHasMedia && (cache.useNonCausal || (cache.hasMedia && len(cache.mediaNativeChunks) == 0)) {
+		return false
+	}
+	tail, textOnly := actual.textTail(stable)
+	return textOnly && len(tail) > 0
 }
 
 func validMediaAnchorSession(session *imcSession) bool {

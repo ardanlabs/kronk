@@ -22,7 +22,10 @@ example-bucky-diar: ## Run the bucky diar example
 	cd examples && go run ./bucky-diar/main.go
 
 example-chat: ## Run the chat example
-	cd examples && go run ./chat/main.go
+	cd examples && go run ./chat $(ARGS)
+
+example-imc-storage: ## Run the pluggable IMC storage example (ARGS: -phase save|restore -model /path/to/model.gguf -directory /tmp/imc-demo)
+	cd examples && go run ./imc-storage $(ARGS)
 
 example-concurrency: ## Run the concurrency example
 	cd examples && go run ./concurrency/main.go

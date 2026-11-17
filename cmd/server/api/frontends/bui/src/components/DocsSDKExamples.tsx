@@ -1473,368 +1473,151 @@ func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {
 }
 `;
 
-const chatExample = `// This example shows you how to create a simple chat application against an
-// inference model using kronk. Thanks to Kronk and yzma, reasoning and tool
-// calling is enabled.
-//
-// The first time you run this program the system will download and install
-// the model and libraries.
-//
-// Run the example like this from the root of the project:
-// $ make example-chat
-
+const chatExample = `// This example provides a terminal chat with tools, images, and saved IMC conversations.
+// Run the entire package: make example-chat (or go run ./chat from examples).
+// See README.md for controls, vision setup, and replacing the storage backend.
 package main
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
+	"log"
 	"os"
-	"strings"
+	"path/filepath"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/storage/disk"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// modelSource is the model to download. It may be a HuggingFace URL,
-// a canonical "provider/modelID", or a bare model id.
-var modelSource = "unsloth/Qwen3-0.6B-Q8_0"
+// Match the agent example, including its tool-capable vision model.
+const modelSource = "ornith-ai/Ornith-1.5-9B-Q4_K_M"
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Printf("\\nERROR: %s\\n", err)
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	mp, err := installSystem()
+func run() (retErr error) {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("run: unable to install system: %w", err)
-	}
-
-	krn, err := newKronk(mp)
-	if err != nil {
-		return fmt.Errorf("unable to init kronk: %w", err)
-	}
-
-	defer func() {
-		fmt.Println("\\nUnloading Kronk")
-		if err := krn.Unload(context.Background()); err != nil {
-			fmt.Printf("run: failed to unload model: %v", err)
-		}
-	}()
-
-	if err := chat(context.Background(), krn); err != nil {
 		return err
 	}
+	modelPath := flag.String("model", "", "path to an installed GGUF model")
+	source := flag.String("model-source", modelSource, "model to locate or download when -model is omitted")
+	projector := flag.String("projector", "", "matching vision projector GGUF; enables image attachments")
+	directory := flag.String("directory", filepath.Join(home, ".kronk", "examples", "chat"), "private snapshot directory")
+	logPath := flag.String("log", filepath.Join(home, ".kronk", "examples", "chat.log"), "storage and model diagnostic log file")
+	workspace := flag.String("workspace", ".", "directory accessible to file tools; writes require confirmation")
+	libPath := flag.String("lib-path", "", "optional llama.cpp library directory")
+	window := flag.Int("context", 65536, "model context window; keep unchanged when testing checkpoint reuse")
+	flag.Parse()
+	*logPath, err = filepath.Abs(*logPath)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(*workspace)
+	if err != nil {
+		return err
+	}
+	defer func() { retErr = errors.Join(retErr, root.Close()) }()
 
-	return nil
-}
+	if err := os.MkdirAll(filepath.Dir(*logPath), 0700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(*logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer func() { retErr = errors.Join(retErr, f.Close()) }()
+	logger := log.New(f, "", log.LstdFlags|log.LUTC|log.Lmicroseconds)
+	logFunc := func(_ context.Context, operation string, args ...any) {
+		logger.Printf("%s %v", operation, args)
+	}
 
-func installSystem() (models.Path, error) {
+	// Replace this constructor with your own imc.Store. The UI uses only that
+	// public contract. Both log callbacks write to the file, never to the TUI.
+	store, err := disk.New(*directory, disk.WithLog(logFunc))
+	if err != nil {
+		return err
+	}
+	defer func() { retErr = errors.Join(retErr, store.Close()) }()
+	// Clear only after acquiring the backend's directory lock, so a second
+	// app using the same snapshots cannot erase the active app's log.
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	logger.Printf("chat-start model_source=%q model_path=%q projector=%q context=%d workspace=%q storage=%q",
+		*source, *modelPath, *projector, *window, *workspace, *directory)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	defer cancel()
-
-	libs, err := libs.New(
-		libs.WithDetect(ctx, kronk.FmtLogger),
-		libs.WithValidation(true),
-	)
-	if err != nil {
-		return models.Path{}, err
+	if *libPath == "" {
+		manager, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger), libs.WithValidation(true))
+		if err != nil {
+			return err
+		}
+		if _, err := manager.Download(ctx, kronk.FmtLogger); err != nil {
+			return err
+		}
+		*libPath = manager.LibsPath()
 	}
-
-	if _, err := libs.Download(ctx, kronk.FmtLogger); err != nil {
-		return models.Path{}, fmt.Errorf("unable to install llama.cpp: %w", err)
+	if err := kronk.Init(kronk.WithLibPath(*libPath)); err != nil {
+		return err
 	}
-
-	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
-		return models.Path{}, fmt.Errorf("unable to init kronk: %w", err)
+	files := []string{*modelPath}
+	if *modelPath == "" {
+		manager, err := models.New()
+		if err != nil {
+			return err
+		}
+		paths, err := manager.Download(ctx, kronk.FmtLogger, *source)
+		if err != nil {
+			return err
+		}
+		files = paths.ModelFiles
+		if *projector == "" {
+			*projector = paths.ProjFile
+		}
 	}
-
-	mdls, err := models.New()
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to init models: %w", err)
-	}
-
-	fmt.Println("Downloading model:", modelSource)
-
-	mp, err := mdls.Download(ctx, kronk.FmtLogger, modelSource)
-	if err != nil {
-		return models.Path{}, fmt.Errorf("unable to install model: %w", err)
-	}
-
-	return mp, nil
-}
-
-func newKronk(mp models.Path) (*kronk.Kronk, error) {
-	fmt.Println("loading model...")
-
+	fmt.Println("Loading model. Diagnostic log:", *logPath)
 	krn, err := kronk.New(
-		model.WithModelFiles(mp.ModelFiles),
-		model.WithAutoTune(true),
-	)
+		model.WithLog(logFunc),
+		model.WithModelFiles(files), model.WithProjFile(*projector), model.WithAutoTune(true),
+		model.WithContextWindow(*window), model.WithNSeqMax(1),
+		model.WithIncrementalCache(true), model.WithCacheMinTokens(1),
+		model.WithSpeculationMode(model.SpeculationDisabled),
+		model.WithStorage(model.StorageConfig{Store: store}))
 	if err != nil {
-		return nil, fmt.Errorf("unable to create inference model: %w", err)
+		return err
 	}
+	// Unload before closing storage. The TUI drains each stream even on cancel.
+	defer func() { retErr = errors.Join(retErr, krn.Unload(context.Background())) }()
 
-	fmt.Print("- system info:\\n\\t")
-	for k, v := range krn.SystemInfo() {
-		fmt.Printf("%s:%v, ", k, v)
-	}
-	fmt.Println()
-
-	fmt.Println("- contextWindow  :", krn.ModelConfig().ContextWindow())
-	fmt.Printf("- k/v            : %s/%s\\n", krn.ModelConfig().CacheTypeK, krn.ModelConfig().CacheTypeV)
-	fmt.Println("- flashAttention :", krn.ModelConfig().FlashAttention())
-	fmt.Println("- prefill batch  :", krn.ModelConfig().PrefillBatchSize())
-	fmt.Println("- modelType      :", krn.ModelInfo().Type)
-	fmt.Println("- sequence type  :", krn.ModelInfo().SequenceProcessing)
-	fmt.Println("- architecture   :", krn.ModelInfo().Architecture)
-	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
-	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
-	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
-	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")
-	fmt.Println("- slotMemory     :", krn.ModelInfo().SlotMemory/(1024*1024), "MiB")
-	fmt.Println("- modelSize      :", krn.ModelInfo().Size/(1000*1000), "MB")
-	fmt.Println("- imc            :", krn.ModelConfig().IncrementalCache())
-	if n := krn.ModelConfig().PtrNGpuLayers; n != nil {
-		fmt.Println("- nGPULayers     :", *n)
-	} else {
-		fmt.Println("- nGPULayers     : all")
-	}
-	if sm := krn.ModelConfig().PtrSplitMode; sm != nil {
-		fmt.Println("- splitMode      :", sm)
-	} else {
-		fmt.Println("- splitMode      : auto")
-	}
-
-	return krn, nil
-}
-
-const systemPrompt = \`You are designed to help users answer questions, create
-content, and provide information in a helpful and accurate manner. Always follow
-the user's instructions carefully and respond with clear, concise, and
-well-structured answers.\`
-
-func chat(ctx context.Context, krn *kronk.Kronk) error {
-	conversation := []model.D{
-		{"role": "system", "content": systemPrompt},
-	}
-
-	scanner := bufio.NewScanner(os.Stdin)
-
-	for {
-		nextConversation, ok := promptUser(scanner, conversation)
-		if !ok {
-			return scanner.Err()
-		}
-		conversation = nextConversation
-
-		// Keep running model turns until the assistant responds without asking
-		// for another tool. Only then prompt the user again.
-		for {
-			content, toolCalls, usage, err := streamModelTurn(ctx, krn, conversation)
-			if err != nil {
-				return err
-			}
-
-			printUsage(krn, usage)
-
-			if len(toolCalls) == 0 {
-				conversation = appendAssistant(conversation, content)
-				break
-			}
-
-			conversation = appendToolCalls(conversation, toolCalls)
-			conversation = append(conversation, callTools(toolCalls)...)
-		}
-	}
-}
-
-func promptUser(scanner *bufio.Scanner, conversation []model.D) ([]model.D, bool) {
-	fmt.Print("\\nUSER> ")
-
-	if !scanner.Scan() {
-		return conversation, false
-	}
-
-	userInput := scanner.Text()
-	if userInput == "quit" {
-		return conversation, false
-	}
-
-	conversation = append(conversation, model.D{
-		"role":    "user",
-		"content": userInput,
-	})
-
-	return conversation, true
-}
-
-func toolDocuments() []model.D {
-	return model.DocumentArray(
-		model.D{
-			"type": "function",
-			"function": model.D{
-				"name":        "get_weather",
-				"description": "Get the current weather for a location",
-				"parameters": model.D{
-					"type": "object",
-					"properties": model.D{
-						"location": model.D{
-							"type":        "string",
-							"description": "The location to get the weather for, e.g. San Francisco, CA",
-						},
-					},
-					"required": []any{"location"},
-				},
-			},
-		},
-	)
-}
-
-func streamModelTurn(ctx context.Context, krn *kronk.Kronk, conversation []model.D) (string, []model.ResponseToolCall, *model.Usage, error) {
-	d := model.D{
-		"messages":   conversation,
-		"tools":      toolDocuments(),
-		"max_tokens": 2048,
-		"stream_options": model.D{
-			"include_usage": true,
-		},
-	}
-
-	fmt.Print("\\nMODEL> ")
-
-	callCtx, cancelCall := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancelCall()
-
-	ch, err := krn.ChatStreaming(callCtx, d)
-	if err != nil {
-		return "", nil, nil, fmt.Errorf("chat streaming: %w", err)
-	}
-
-	var content strings.Builder
-	var usage *model.Usage
-	var toolCalls []model.ResponseToolCall
-	reasoning := false
-
-	for resp := range ch {
-		if len(resp.Choices) == 0 {
-			usage = resp.Usage
-			continue
-		}
-
-		switch resp.Choices[0].FinishReason() {
-		case model.FinishReasonError:
-			return "", nil, usage, fmt.Errorf("error from model: %s", resp.Choices[0].Delta.Content)
-
-		case model.FinishReasonStop, model.FinishReasonLength:
-			continue
-
-		case model.FinishReasonTool:
-			toolCalls = resp.Choices[0].Message.ToolCalls
-			continue
-
-		default:
-			delta := resp.Choices[0].Delta
-			for _, tool := range delta.ToolCallDeltas {
-				if tool.Function.Name != "" {
-					fmt.Printf("\\n\\n\\u001b[92mExecuting %s...\\u001b[0m", tool.Function.Name)
-				}
-			}
-
-			switch {
-			case delta.Reasoning != "":
-				reasoning = true
-				fmt.Printf("\\u001b[91m%s\\u001b[0m", delta.Reasoning)
-
-			case delta.Content != "":
-				if reasoning {
-					reasoning = false
-					fmt.Print("\\n\\n")
-				}
-
-				fmt.Print(delta.Content)
-				content.WriteString(delta.Content)
+	app := newChat(krn, store, root, *projector != "")
+	app.logPath = *logPath
+	_, err = tea.NewProgram(app, tea.WithFilter(func(m tea.Model, msg tea.Msg) tea.Msg {
+		// Signals must take the same cancellation/drain path as Ctrl+Q;
+		// Bubble Tea otherwise handles these before Update sees them.
+		switch msg.(type) {
+		case tea.InterruptMsg:
+			return tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl}
+		case tea.QuitMsg:
+			if m.(*chat).busy {
+				return tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl}
 			}
 		}
-	}
-
-	if len(toolCalls) > 0 {
-		return "", toolCalls, usage, nil
-	}
-
-	return strings.TrimLeft(content.String(), "\\n"), nil, usage, nil
-}
-
-func appendToolCalls(conversation []model.D, toolCalls []model.ResponseToolCall) []model.D {
-	fmt.Print("\\n\\n")
-
-	var toolCallDocs []model.D
-	for _, toolCall := range toolCalls {
-		argsJSON, _ := json.Marshal(toolCall.Function.Arguments)
-		toolCallDocs = append(toolCallDocs, model.D{
-			"id":   toolCall.ID,
-			"type": "function",
-			"function": model.D{
-				"name":      toolCall.Function.Name,
-				"arguments": string(argsJSON),
-			},
-		})
-	}
-
-	return append(conversation, model.D{
-		"role":       "assistant",
-		"tool_calls": toolCallDocs,
-	})
-}
-
-func appendAssistant(conversation []model.D, content string) []model.D {
-	if content == "" {
-		return conversation
-	}
-
-	fmt.Print("\\n")
-	return append(conversation, model.D{"role": "assistant", "content": content})
-}
-
-func printUsage(krn *kronk.Kronk, usage *model.Usage) {
-	if usage == nil {
-		return
-	}
-
-	contextTokens := usage.PromptTokens + usage.CompletionTokens
-	contextWindow := krn.ModelConfig().ContextWindow()
-	percentage := (float64(contextTokens) / float64(contextWindow)) * 100
-	of := float32(contextWindow) / float32(1024)
-
-	fmt.Printf("\\n\\n\\u001b[90mInput: %d  Reasoning: %d  Completion: %d  Total: %d  Window: %d (%.0f%% of %.0fK) TPS: %.2f\\u001b[0m",
-		usage.PromptTokens, usage.CompletionTokensDetails.ReasoningTokens, usage.CompletionTokens, usage.TotalTokens, contextTokens, percentage, of, usage.TokensPerSecond)
-}
-
-func callTools(toolCalls []model.ResponseToolCall) []model.D {
-	results := make([]model.D, 0, len(toolCalls))
-
-	for _, toolCall := range toolCalls {
-		fmt.Printf("\\u001b[92m%s(%v)\\u001b[0m: \\u001b[90mok\\u001b[0m\\n",
-			toolCall.Function.Name, toolCall.Function.Arguments)
-
-		// This example hard-codes the tool execution and its result. The agent
-		// example replaces this with registered Tool implementations.
-		results = append(results, model.D{
-			"role":         "tool",
-			"name":         toolCall.Function.Name,
-			"tool_call_id": toolCall.ID,
-			"content":      \`{"temperature": "72°F", "condition": "sunny"}\`,
-		})
-	}
-
-	return results
+		return msg
+	})).Run()
+	return err
 }
 `;
 
@@ -3112,6 +2895,171 @@ Sentiment:\`
 	}
 
 	return nil
+}
+`;
+
+const imcStorageExample = `// This example supplies an IMC store, saves a conversation, and continues it
+// after a process restart. Replace the disk store with your own imc.Store.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/imc"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/storage/disk"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		os.Exit(1)
+	}
+}
+
+func run() (retErr error) {
+	phase := flag.String("phase", "save", "save a new conversation or restore the latest saved conversation")
+	modelPath := flag.String("model", "", "path to an installed text GGUF model")
+	directory := flag.String("directory", "imc-sessions", "private storage directory for this example")
+	libPath := flag.String("lib-path", "", "optional llama.cpp library directory")
+	flag.Parse()
+
+	if *modelPath == "" || (*phase != "save" && *phase != "restore") {
+		return errors.New("provide -model and -phase save|restore")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Replace this constructor with your own imc.Store implementation.
+	// The application owns storage: close it only after unloading the model.
+	// WithLog is optional and belongs to the disk backend, not imc.Store.
+	store, err := disk.New(*directory, disk.WithLog(kronk.FmtLogger))
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		retErr = errors.Join(retErr, store.Close())
+	}()
+
+	page, err := store.List(ctx, imc.ListQuery{Limit: 1})
+	if err != nil {
+		return err
+	}
+
+	request := model.D{
+		"messages": []model.D{
+			{"role": "system", "content": "You are a concise assistant. Follow the user's instructions exactly."},
+			{"role": "user", "content": "Remember this project code: 713. We are building a disk backed conversation cache."},
+			{"role": "assistant", "content": "I will remember project code 713."},
+			{"role": "user", "content": "What is our project code? Reply with only the number."},
+		},
+		"max_tokens": 128, "temperature": 0.0, "enable_thinking": false,
+	}
+
+	switch *phase {
+	case "save":
+		if len(page.Sessions) != 0 {
+			return errors.New("save needs an empty storage directory; use restore to continue existing history")
+		}
+
+	case "restore":
+		if len(page.Sessions) == 0 {
+			return errors.New("no saved conversation; run the save phase first")
+		}
+
+		request, err = continueConversation(ctx, store, page.Sessions[0].Ref)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := kronk.Init(kronk.WithLibPath(*libPath)); err != nil {
+		return err
+	}
+
+	krn, err := kronk.NewWithContext(ctx,
+		model.WithModelFiles([]string{*modelPath}),
+		model.WithContextWindow(2048), model.WithNSeqMax(1),
+		model.WithIncrementalCache(true), model.WithCacheMinTokens(1),
+		model.WithSpeculationMode(model.SpeculationDisabled),
+		model.WithStorage(model.StorageConfig{Store: store}))
+	if err != nil {
+		return err
+	}
+
+	defer func() { retErr = errors.Join(retErr, krn.Unload(context.Background())) }()
+
+	// IMC discovers and restores matching state automatically. The application
+	// supplies messages, not native checkpoints or a forced cache-session ID.
+	response, err := krn.Chat(ctx, request)
+	if err != nil {
+		return err
+	}
+
+	if len(response.Choices) == 0 || response.Choices[0].Message == nil || response.Usage == nil {
+		return errors.New("model returned no message or usage")
+	}
+
+	fmt.Printf("Assistant: %s\\nCached prompt tokens: %d\\n",
+		response.Choices[0].Message.Content, response.Usage.PromptTokensDetails.CachedTokens)
+
+	page, err = store.List(ctx, imc.ListQuery{Limit: 1})
+	if err != nil {
+		return err
+	}
+
+	if len(page.Sessions) == 0 {
+		fmt.Println("No snapshot saved; persistence is best effort. Check the storage logs.")
+		return nil
+	}
+
+	latest := page.Sessions[0].Ref
+
+	fmt.Printf("Latest saved session: %s\\nRevision: %d\\n", latest.Key.ID, latest.Revision)
+
+	return nil
+}
+
+// continueConversation reads history through the public contract. Reading
+// messages does not require allocating or interpreting native state payloads.
+func continueConversation(ctx context.Context, store imc.Store, ref imc.Ref) (request model.D, retErr error) {
+	handle, err := store.Open(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		retErr = errors.Join(retErr, handle.Close())
+	}()
+
+	record := handle.Record()
+
+	var conversation struct {
+		Messages []model.D \`json:"messages"\`
+	}
+
+	if err := json.Unmarshal(record.Request, &request); err != nil {
+		return nil, err
+	}
+
+	if err := json.Unmarshal(record.Request, &conversation); err != nil {
+		return nil, err
+	}
+
+	request["messages"] = append(conversation.Messages,
+		model.D{"role": "assistant", "content": record.AssistantText},
+		model.D{"role": "user", "content": "What is our project code? Reply with only the number."})
+
+	return request, nil
 }
 `;
 
@@ -6255,7 +6203,7 @@ export default function DocsSDKExamples() {
 
           <div className="card" id="example-chat">
             <h3>Chat</h3>
-            <p className="doc-description">This example shows you how to create a simple chat application against an</p>
+            <p className="doc-description">This example provides a terminal chat with tools, images, and saved IMC conversations.</p>
             <CodeBlock code={chatExample} language="go" />
           </div>
 
@@ -6293,6 +6241,12 @@ export default function DocsSDKExamples() {
             <h3>Grammar</h3>
             <p className="doc-description">This example shows how to use GBNF grammars to constrain model output.</p>
             <CodeBlock code={grammarExample} language="go" />
+          </div>
+
+          <div className="card" id="example-imc-storage">
+            <h3>Imc-Storage</h3>
+            <p className="doc-description">This example supplies an IMC store, saves a conversation, and continues it</p>
+            <CodeBlock code={imcStorageExample} language="go" />
           </div>
 
           <div className="card" id="example-malina">
@@ -6409,6 +6363,7 @@ export default function DocsSDKExamples() {
                 <li><a href="#example-decision-image">Decision (Image)</a></li>
                 <li><a href="#example-embedding">Embedding</a></li>
                 <li><a href="#example-grammar">Grammar</a></li>
+                <li><a href="#example-imc-storage">Imc-Storage</a></li>
                 <li><a href="#example-malina">Malina</a></li>
                 <li><a href="#example-malina-adetailer">Malina-Adetailer</a></li>
                 <li><a href="#example-malina-animatediff">Malina-Animatediff</a></li>
