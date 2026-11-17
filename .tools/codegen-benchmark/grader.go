@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -12,7 +14,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 const graderTimeout = 20 * time.Second
@@ -24,17 +29,39 @@ type gradeCheck struct {
 }
 
 type gradeResult struct {
-	Passed int          `json:"passed"`
-	Total  int          `json:"total"`
-	Checks []gradeCheck `json:"checks"`
+	Passed   int                 `json:"passed"`
+	Total    int                 `json:"total"`
+	Checks   []gradeCheck        `json:"checks"`
+	Evidence []executionEvidence `json:"evidence,omitempty"`
+	Findings []gradeFinding      `json:"findings,omitempty"`
+}
+
+// A finding records native check diagnostics or a failed scenario's transcript,
+// independently of its feedback presentation. Input is the prefix actually sent.
+type gradeFinding struct {
+	Kind     string `json:"kind"`
+	Location string `json:"location"`
+	Step     int    `json:"step,omitempty"`
+	Input    string `json:"input_sent,omitempty"`
+	Expected string `json:"expected"`
+	Actual   string `json:"actual"`
+	Detail   string `json:"detail,omitempty"`
+}
+
+type executionEvidence struct {
+	Scenario  string `json:"scenario"`
+	Input     string `json:"input"`
+	SentInput string `json:"input_sent"`
+	Expected  string `json:"expected_raw_output"`
+	Actual    string `json:"actual_raw_output"`
+	Error     string `json:"error,omitempty"`
+	Passed    bool   `json:"passed"`
 }
 
 type scenario struct {
-	name    string
-	input   string
-	want    []string
-	count   map[string]int
-	ordered []string
+	name  string
+	input string
+	steps []string
 }
 
 func (gr gradeResult) Percentage() float64 {
@@ -53,15 +80,26 @@ func (gr gradeResult) PassedCheck(name string) bool {
 	return false
 }
 
-func (gr *gradeResult) add(name string, passed bool, detail string) {
+func (gr *gradeResult) add(name string, passed bool, detail string, findings ...gradeFinding) {
+	gr.Checks = append(gr.Checks, gradeCheck{Name: name, Passed: passed, Detail: detail})
 	if passed {
 		gr.Passed++
+		return
 	}
-	gr.Checks = append(gr.Checks, gradeCheck{Name: name, Passed: passed, Detail: detail})
+	if len(findings) == 0 {
+		findings = []gradeFinding{{Kind: "check", Location: name, Detail: detail}}
+	}
+	gr.Findings = append(gr.Findings, findings...)
 }
 
 func gradeProgram(parent context.Context, source string) gradeResult {
-	result := gradeResult{Total: 20}
+	return gradeProgramWith(parent, source, acceptanceScenarios(), graderUnitTests)
+}
+
+// Both workloads use the same checks and terminal progression policy; only the
+// helper input contract and the expected interaction transcripts differ.
+func gradeProgramWith(parent context.Context, source string, scenarios []scenario, unitTests string) gradeResult {
+	result := gradeResult{Total: 15 + len(scenarios)}
 	result.add("source-extracted", source != "", "no complete package main source found")
 	if source == "" {
 		return result
@@ -75,11 +113,10 @@ func gradeProgram(parent context.Context, source string) gradeResult {
 	}
 
 	formatted, err := format.Source([]byte(source))
-	result.add("gofmt", err == nil, errorDetail(err))
+	result.add("gofmt", err == nil && bytes.Equal(formatted, []byte(source)), "submitted source must already be gofmt formatted")
 	if err != nil {
 		return result
 	}
-	source = string(formatted)
 
 	checks := inspectStructure(file)
 	for _, check := range checks {
@@ -105,17 +142,17 @@ func gradeProgram(parent context.Context, source string) gradeResult {
 	vetOutput, err := runCommand(ctx, dir, "go", "vet", "./...")
 	result.add("go-vet", err == nil, commandDetail(ctx, err, vetOutput))
 
-	if err := os.WriteFile(filepath.Join(dir, "main_test.go"), []byte(graderUnitTests), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "main_test.go"), []byte(unitTests), 0644); err != nil {
 		result.add("logic-tests", false, err.Error())
 	} else {
 		testOutput, testErr := runCommand(ctx, dir, "go", "test", "-run", "TestGenerated", "-count=1")
 		result.add("logic-tests", testErr == nil, commandDetail(ctx, testErr, testOutput))
 	}
 
-	for _, scenario := range scenarios() {
-		output, runErr := runProgram(parent, filepath.Join(dir, "tictactoe"), scenario.input)
-		passed, detail := assessScenario(output, runErr, scenario)
-		result.add("scenario-"+scenario.name, passed, detail)
+	for _, scenario := range scenarios {
+		evidence, findings := executeScenario(parent, filepath.Join(dir, "tictactoe"), scenario)
+		result.Evidence = append(result.Evidence, evidence)
+		result.add("scenario-"+scenario.name, evidence.Passed, evidence.Error, findings...)
 	}
 
 	return result
@@ -125,6 +162,17 @@ func inspectStructure(file *ast.File) []gradeCheck {
 	checks := []gradeCheck{
 		{Name: "type-board", Detail: "want type Board [9]byte"},
 		{Name: "shared-stdin", Detail: "want package-level stdin initialized with bufio.NewReader(os.Stdin)"},
+		{Name: "no-structs", Passed: true, Detail: "task forbids additional structs"},
+	}
+	for _, decl := range file.Decls {
+		if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.VAR {
+			for _, spec := range decl.Specs {
+				node := spec.(*ast.ValueSpec)
+				if len(node.Names) == 1 && node.Names[0].Name == "stdin" && len(node.Values) == 1 && isStdinReader(node.Values[0]) {
+					passCheck(checks, "shared-stdin")
+				}
+			}
+		}
 	}
 	required := map[string]string{
 		"renderBoard": "func renderBoard(b *Board, xWins, oWins, draws int)",
@@ -133,19 +181,21 @@ func inspectStructure(file *ast.File) []gradeCheck {
 		"playerX":     "func playerX(b *Board) int",
 		"playerO":     "func playerO(b *Board) int",
 	}
-	for name, signature := range required {
-		checks = append(checks, gradeCheck{Name: "function-" + name, Detail: "want " + signature})
+	for _, name := range []string{"renderBoard", "hasWinner", "boardFull", "playerX", "playerO"} {
+		checks = append(checks, gradeCheck{Name: "function-" + name, Detail: "want " + required[name]})
 	}
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch node := node.(type) {
 		case *ast.TypeSpec:
 			array, ok := node.Type.(*ast.ArrayType)
-			if node.Name.Name == "Board" && ok && integerLiteral(array.Len, "9") && identifier(array.Elt, "byte") {
+			if node.Name.Name == "Board" && !node.Assign.IsValid() && ok && integerLiteral(array.Len, "9") && identifier(array.Elt, "byte") {
 				passCheck(checks, "type-board")
 			}
-		case *ast.ValueSpec:
-			if len(node.Names) == 1 && node.Names[0].Name == "stdin" && len(node.Values) == 1 && isStdinReader(node.Values[0]) {
-				passCheck(checks, "shared-stdin")
+		case *ast.StructType:
+			for i := range checks {
+				if checks[i].Name == "no-structs" {
+					checks[i].Passed = false
+				}
 			}
 		case *ast.FuncDecl:
 			if signature, exists := required[node.Name.Name]; exists && exactFunctionSignature(node, node.Name.Name) {
@@ -160,6 +210,9 @@ func inspectStructure(file *ast.File) []gradeCheck {
 }
 
 func exactFunctionSignature(fn *ast.FuncDecl, name string) bool {
+	if fn.Recv != nil || fn.Type.TypeParams != nil {
+		return false
+	}
 	params := flattenFields(fn.Type.Params)
 	results := flattenFields(fn.Type.Results)
 
@@ -229,7 +282,7 @@ func prepareProgram(source string) (string, error) {
 	}
 
 	files := map[string]string{
-		"go.mod":  "module tictactoe\n",
+		"go.mod":  "module tictactoe\n\ngo 1.27.0\n",
 		"main.go": source,
 	}
 	for name, content := range files {
@@ -244,111 +297,31 @@ func prepareProgram(source string) (string, error) {
 func runCommand(ctx context.Context, dir, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local")
-	output, err := cmd.CombinedOutput()
-	return string(output), err
+	cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local", "GOPROXY=off", "GOSUMDB=off")
+	output := &boundedOutput{}
+	cmd.Stdout, cmd.Stderr = output, output
+	err := cmd.Run()
+	return output.String(), err
 }
 
-func runProgram(parent context.Context, binary, input string) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, graderTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, binary)
-	cmd.Stdin = strings.NewReader(input)
-	cmd.Env = append(os.Environ(), "TERM=dumb")
-	output, err := cmd.CombinedOutput()
-	if ctx.Err() != nil {
-		return string(output), ctx.Err()
-	}
-	return string(output), err
+type boundedOutput struct {
+	bytes.Buffer
+	truncated bool
 }
 
-func scenarios() []scenario {
-	initialBoard := "Score: X: 0 | O: 0 | Draws: 0\n\n 1 | 2 | 3\n-----------\n 4 | 5 | 6\n-----------\n 7 | 8 | 9\n\n"
-	return []scenario{
-		{
-			name:  "initial-board",
-			input: "1\n4\n2\n5\n3\nn\n",
-			want:  []string{initialBoard},
-		},
-		{
-			name:  "x-win",
-			input: "1\n4\n2\n5\n3\nn\n",
-			want:  []string{"Score: X: 1 | O: 0 | Draws: 0", "Player X wins!", "Play again? (y/n): "},
-			ordered: []string{
-				" X | X | X",
-				"Player X wins!",
-				"Play again? (y/n): ",
-			},
-		},
-		{
-			name:  "o-win",
-			input: "1\n2\n3\n5\n4\n8\nn\n",
-			want:  []string{"Score: X: 0 | O: 1 | Draws: 0", "Player O wins!"},
-			ordered: []string{
-				" 7 | O | 9",
-				"Player O wins!",
-				"Play again? (y/n): ",
-			},
-		},
-		{
-			name:  "draw",
-			input: "1\n2\n3\n5\n4\n6\n8\n7\n9\nn\n",
-			want:  []string{"Score: X: 0 | O: 0 | Draws: 1", "It's a draw."},
-			ordered: []string{
-				" O | X | X",
-				"It's a draw.",
-				"Play again? (y/n): ",
-			},
-		},
-		{
-			name:  "invalid-input",
-			input: "0\nword\n1\n1\n4\n2\n5\n3\nn\n",
-			count: map[string]int{"Invalid move. Enter an empty position from 1 to 9.": 3},
-		},
-		{
-			name:  "replay-score",
-			input: "1\n4\n2\n5\n3\ny\n1\n2\n3\n5\n4\n8\nn\n",
-			want:  []string{"Score: X: 1 | O: 1 | Draws: 0"},
-		},
-	}
+func (b *boundedOutput) Write(p []byte) (int, error) {
+	n := len(p)
+	remaining := max(0, 65536-b.Len())
+	_, _ = b.Buffer.Write(p[:min(n, remaining)])
+	b.truncated = b.truncated || n > remaining
+	return n, nil
 }
 
-func assessScenario(output string, runErr error, scenario scenario) (bool, string) {
-	clean := stripANSI(output)
-	if runErr != nil {
-		return false, fmt.Sprintf("run failed: %v; output: %s", runErr, truncate(clean, 600))
+func (b *boundedOutput) String() string {
+	if b.truncated {
+		return b.Buffer.String() + "\n[command output truncated at 65536 bytes]\n"
 	}
-	for _, want := range scenario.want {
-		if !strings.Contains(clean, want) {
-			return false, fmt.Sprintf("missing %q; output: %s", want, truncate(clean, 600))
-		}
-	}
-	for text, count := range scenario.count {
-		if got := strings.Count(clean, text); got != count {
-			return false, fmt.Sprintf("%q count: got %d, want %d; output: %s", text, got, count, truncate(clean, 600))
-		}
-	}
-	position := 0
-	previous := ""
-	for _, want := range scenario.ordered {
-		idx := strings.Index(clean[position:], want)
-		if idx < 0 {
-			if previous != "" && strings.Contains(clean[:position], want) {
-				return false, fmt.Sprintf("%q appeared before %q; want it after; output: %s", want, previous, truncate(clean, 600))
-			}
-			return false, fmt.Sprintf("ordered output missing %q; output: %s", want, truncate(clean, 600))
-		}
-		position += idx + len(want)
-		previous = want
-	}
-	return true, ""
-}
-
-var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
-
-func stripANSI(value string) string {
-	return ansiPattern.ReplaceAllString(value, "")
+	return b.Buffer.String()
 }
 
 func commandDetail(ctx context.Context, err error, output string) string {
@@ -356,9 +329,9 @@ func commandDetail(ctx context.Context, err error, output string) string {
 		return ""
 	}
 	if ctx.Err() != nil {
-		return ctx.Err().Error()
+		err = ctx.Err()
 	}
-	return truncate(strings.TrimSpace(output), 2000)
+	return err.Error() + "\n" + output
 }
 
 func errorDetail(err error) string {
@@ -368,47 +341,297 @@ func errorDetail(err error) string {
 	return err.Error()
 }
 
-func truncate(value string, size int) string {
-	if len(value) <= size {
-		return value
-	}
-	return value[:size] + "..."
-}
+// The oracle models only the frozen step-one contract, never candidate helpers.
+var winningLines = [][3]int{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}, {0, 3, 6}, {1, 4, 7}, {2, 5, 8}, {0, 4, 8}, {2, 4, 6}}
 
-const graderUnitTests = `package main
-
-import "testing"
-
-func TestGeneratedWinnerLines(t *testing.T) {
-	lines := [][3]int{
-		{0, 1, 2}, {3, 4, 5}, {6, 7, 8},
-		{0, 3, 6}, {1, 4, 7}, {2, 5, 8},
-		{0, 4, 8}, {2, 4, 6},
-	}
-	for _, line := range lines {
-		var board Board
-		for _, index := range line {
-			board[index] = 'X'
-		}
-		if !hasWinner(&board) {
-			t.Fatalf("hasWinner(%v): got false, want true", line)
+func oracleWinner(b [9]byte) bool {
+	for _, l := range winningLines {
+		if b[l[0]] != 0 && b[l[0]] == b[l[1]] && b[l[1]] == b[l[2]] {
+			return true
 		}
 	}
-
-	board := Board{'X', 'O', 'X', 'O', 'X', 'O', 'O', 'X'}
-	if hasWinner(&board) {
-		t.Fatal("hasWinner(non-winning board): got true, want false")
-	}
+	return false
 }
 
-func TestGeneratedBoardFull(t *testing.T) {
-	board := Board{'X', 'O', 'X', 'O', 'X', 'O', 'O', 'X', 'O'}
-	if !boardFull(&board) {
-		t.Fatal("boardFull(full board): got false, want true")
+func oracleBoard(b [9]byte, scores [3]int) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "\033[2J\033[H\nScore: X: %d | O: %d | Draws: %d\n\n", scores[0], scores[1], scores[2])
+	for i, cell := range b {
+		if i%3 == 0 {
+			out.WriteByte(' ')
+		} else {
+			out.WriteString(" \033[32m|\033[0m ")
+		}
+		switch cell {
+		case 'X':
+			out.WriteString("\033[1;31mX\033[0m")
+		case 'O':
+			out.WriteString("\033[1;32mO\033[0m")
+		default:
+			fmt.Fprintf(&out, "\033[37m%d\033[0m", i+1)
+		}
+		if i%3 == 2 {
+			out.WriteByte('\n')
+			if i != 8 {
+				out.WriteString("\033[32m-----------\033[0m\n")
+			}
+		}
 	}
-	board[4] = 0
-	if boardFull(&board) {
-		t.Fatal("boardFull(non-full board): got true, want false")
-	}
+	out.WriteByte('\n')
+	return out.String()
 }
-`
+
+func transcript(name, input string) scenario {
+	s := scenario{name: name, input: input}
+	var b [9]byte
+	var scores [3]int
+	player := byte('X')
+	prompt := func() string { return fmt.Sprintf("Player %c's turn. Enter a number (1-9):", player) }
+	s.steps = append(s.steps, oracleBoard(b, scores)+prompt())
+	finished := false
+	for line := range strings.SplitSeq(strings.TrimSuffix(input, "\n"), "\n") {
+		v := strings.TrimSpace(line)
+		if finished {
+			if strings.EqualFold(v, "y") {
+				b = [9]byte{}
+				player = 'X'
+				finished = false
+				s.steps = append(s.steps, oracleBoard(b, scores)+prompt())
+			} else {
+				s.steps = append(s.steps, "")
+			}
+			continue
+		}
+		if len(v) != 1 || v[0] < '1' || v[0] > '9' || b[v[0]-'1'] != 0 {
+			s.steps = append(s.steps, "Invalid move. Enter an empty position from 1 to 9.\n"+prompt())
+			continue
+		}
+		b[v[0]-'1'] = player
+		full := true
+		for _, c := range b {
+			if c == 0 {
+				full = false
+			}
+		}
+		result := ""
+		if oracleWinner(b) {
+			if player == 'X' {
+				scores[0]++
+			} else {
+				scores[1]++
+			}
+			result = fmt.Sprintf("Player %c wins!\n", player)
+		} else if full {
+			scores[2]++
+			result = "It's a draw.\n"
+		}
+		if result != "" {
+			finished = true
+			s.steps = append(s.steps, oracleBoard(b, scores)+result+"Play again? (y/n): ")
+		} else {
+			if player == 'X' {
+				player = 'O'
+			} else {
+				player = 'X'
+			}
+			s.steps = append(s.steps, oracleBoard(b, scores)+prompt())
+		}
+	}
+	return s
+}
+
+// Search legal gameplay for each player's line; stop at any earlier result.
+func lineGame(target [3]int, mark byte) string {
+	var search func([9]byte, byte, string) string
+	search = func(b [9]byte, p byte, moves string) string {
+		if oracleWinner(b) {
+			if b[target[0]] == mark && b[target[1]] == mark && b[target[2]] == mark {
+				return moves
+			}
+			return ""
+		}
+		for i, c := range b {
+			if c != 0 {
+				continue
+			}
+			next := b
+			next[i] = p
+			other := byte('X')
+			if p == 'X' {
+				other = 'O'
+			}
+			if found := search(next, other, moves+fmt.Sprintf("%d\n", i+1)); found != "" {
+				return found
+			}
+		}
+		return ""
+	}
+	return search([9]byte{}, 'X', "")
+}
+
+func acceptanceScenarios() []scenario {
+	var out []scenario
+	for _, p := range []byte{'X', 'O'} {
+		for i, l := range winningLines {
+			out = append(out, transcript(fmt.Sprintf("%c-line-%d", p, i+1), lineGame(l, p)+"n\n"))
+		}
+	}
+	draw := "1\n2\n3\n5\n4\n6\n8\n7\n9\n"
+	x := "1\n4\n2\n5\n3\n"
+	o := "1\n2\n3\n5\n4\n8\n"
+	out = append(out,
+		transcript("draw", draw+"n\n"),
+		transcript("last-move-win", "1\n2\n3\n4\n5\n6\n8\n7\n9\nn\n"),
+		transcript("invalid-input", "\n0\n10\n01\nword\n-1\n9x\n:\n９\n1 2\n  \n\t1 \r\n1\n0\n\n 4 \n4\n2\n5\n3\nn\n"),
+		transcript("replay-score", x+" y \n"+o+"Y\n"+draw+"n\n"),
+		transcript("other-exit", x+"yes\n"),
+		transcript("empty-exit", x+"\n"),
+	)
+	return out
+}
+
+// Only presentation is ignored when recognizing an interaction state. Keep all
+// board cells, scores, separators, messages and prompts, including their order.
+// The trailing escape alternative handles a CSI sequence split across PTY reads.
+var terminalPresentation = regexp.MustCompile(`\x1b\[(?:[0-9;]*m|2J|H)|\x1b(?:\[[0-9;]*)?$|[ \t\r\n]`)
+
+// A real terminal preserves the exact bytes specified by the task. Formatting
+// mismatches remain failures, but do not block later inputs when the complete
+// expected interaction state is recognizable. Semantic mismatches stop the run.
+func executeScenario(parent context.Context, binary string, s scenario) (executionEvidence, []gradeFinding) {
+	e := executionEvidence{Scenario: s.name, Input: s.input, Expected: strings.Join(s.steps, "")}
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", `stty -echo -onlcr -icrnl || exit; exec "$1"`, "grader", binary)
+	cmd.Dir = filepath.Dir(binary)
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.Env = append(os.Environ(), "TERM=xterm", "LC_ALL=C")
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
+	if err != nil {
+		e.Error = err.Error()
+		return e, []gradeFinding{{Kind: "execution", Location: "scenario-" + s.name, Detail: e.Error}}
+	}
+	defer f.Close()
+	defer func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }()
+	fd := int(f.Fd())
+	if err := syscall.SetNonblock(fd, true); err != nil {
+		cancel()
+		_ = cmd.Wait()
+		e.Error = err.Error()
+		return e, []gradeFinding{{Kind: "execution", Location: "scenario-" + s.name, Detail: e.Error}}
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	chunks := make(chan []byte, 8)
+	go func() {
+		defer close(chunks)
+		buf := make([]byte, 4096)
+		for {
+			n, err := syscall.Read(fd, buf)
+			if n > 0 {
+				select {
+				case chunks <- bytes.Clone(buf[:n]):
+				case <-ctx.Done():
+					return
+				}
+			}
+			if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Millisecond):
+					continue
+				}
+			}
+			if err != nil || n == 0 {
+				return
+			}
+		}
+	}()
+	var actual []byte
+	readUntil := func(want string) error {
+		state := terminalPresentation.ReplaceAllString(want, "")
+		for {
+			observed := terminalPresentation.ReplaceAllString(string(actual), "")
+			if !strings.HasPrefix(state, observed) {
+				return fmt.Errorf("unexpected game state or prompt; scenario stopped before sending further input")
+			}
+			if observed == state {
+				return nil
+			}
+			select {
+			case chunk, ok := <-chunks:
+				if !ok {
+					return fmt.Errorf("terminal closed before expected state")
+				}
+				actual = append(actual, chunk...)
+				if len(actual) > 65536 {
+					return fmt.Errorf("output limit exceeded")
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+	var stoppedStep int
+	var want, sent strings.Builder
+	inputs := strings.Split(strings.TrimSuffix(s.input, "\n"), "\n")
+	for i, step := range s.steps {
+		want.WriteString(step)
+		if err = readUntil(want.String()); err != nil {
+			stoppedStep = i + 1
+			err = fmt.Errorf("step %d: %w", stoppedStep, err)
+			break
+		}
+		if i < len(inputs) {
+			input := inputs[i] + "\n"
+			var n int
+			n, err = f.Write([]byte(input))
+			sent.WriteString(input[:n])
+			if err != nil {
+				break
+			}
+		}
+	}
+	if err != nil {
+		cancel()
+	}
+	// Drain through exit, rejecting duplicate boards, extra prompts and runaway output.
+	for chunk := range chunks {
+		if len(actual)+len(chunk) > 65536 {
+			err = fmt.Errorf("output limit exceeded")
+			cancel()
+			break
+		}
+		actual = append(actual, chunk...)
+	}
+	waitErr := <-waited
+	if err == nil {
+		err = waitErr
+	}
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	kind := "execution"
+	if err == nil && string(actual) != e.Expected {
+		err = fmt.Errorf("raw terminal transcript mismatch")
+		kind = "transcript"
+	}
+	if stoppedStep > 0 {
+		kind = "interaction"
+	}
+	e.SentInput = sent.String()
+	e.Actual = string(actual)
+	e.Error = errorDetail(err)
+	e.Passed = err == nil
+	if e.Passed {
+		return e, nil
+	}
+	// Report the complete captured transcript, not edits inferred from it or
+	// output fragments whose boundaries depend on how the PTY split its reads.
+	return e, []gradeFinding{{Kind: kind, Location: "scenario-" + s.name, Step: stoppedStep,
+		Input: e.SentInput, Expected: want.String(), Actual: e.Actual, Detail: e.Error}}
+}
+
+//go:embed testdata/grader_tests.go.txt
+var graderUnitTests string

@@ -7,7 +7,7 @@ import (
 
 func gradeUndoProgram(parent context.Context, source string) gradeResult {
 	// The ordinary player tests still cover every cell and buffered read-ahead.
-	// In v2, exactly "0" is valid; use "00" as the invalid zero input instead.
+	// With undo, exactly "0" is valid; use "00" as the invalid zero input instead.
 	tests := strings.Replace(graderUnitTests, `word\n0\n10`, `word\n00\n10`, 1) + undoPlayerTests
 	return gradeProgramWith(parent, source, undoAcceptanceScenarios(), tests)
 }

@@ -21,8 +21,8 @@ func TestUndoSubmissionsHaveIndependentBudget(t *testing.T) {
 		t.Run(outcome, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("BENCHMARK_CAPTURE_DIR", dir)
-			t.Setenv("BENCHMARK_V1", filepath.Join(root, ".tools/codegen-benchmark/version2/testdata/correct.go"))
-			t.Setenv("BENCHMARK_V2", filepath.Join(root, ".tools/codegen-benchmark/version2/testdata/undo/main.go"))
+			t.Setenv("BENCHMARK_BASIC", filepath.Join(root, ".tools/codegen-benchmark/testdata/correct.go"))
+			t.Setenv("BENCHMARK_UNDO", filepath.Join(root, ".tools/codegen-benchmark/testdata/undo/main.go"))
 			t.Setenv("BENCHMARK_UNDO_OUTCOME", outcome)
 			script := `#!/bin/sh
 set -eu
@@ -37,7 +37,7 @@ cat > "$BENCHMARK_CAPTURE_DIR/message-$n"
 case "$n" in
   1) grep -q 'original v1 task' "$BENCHMARK_CAPTURE_DIR/message-$n" ;;
   4) grep -q 'undo extension' "$BENCHMARK_CAPTURE_DIR/message-$n"
-     cmp "$BENCHMARK_V1" tictactoe/main.go ;;
+     cmp "$BENCHMARK_BASIC" tictactoe/main.go ;;
   *) grep -q 'go-parse' "$BENCHMARK_CAPTURE_DIR/message-$n" ;;
 esac
 if [ "$n" = 4 ] && [ "$BENCHMARK_UNDO_OUTCOME" = agent-error ]; then
@@ -45,9 +45,9 @@ if [ "$n" = 4 ] && [ "$BENCHMARK_UNDO_OUTCOME" = agent-error ]; then
   exit 0
 fi
 case "$n" in
-  3) cp "$BENCHMARK_V1" tictactoe/main.go ;;
+  3) cp "$BENCHMARK_BASIC" tictactoe/main.go ;;
   6) if [ "$BENCHMARK_UNDO_OUTCOME" = pass ]; then
-       cp "$BENCHMARK_V2" tictactoe/main.go
+       cp "$BENCHMARK_UNDO" tictactoe/main.go
      else
        printf 'package main\nfunc broken\n' > tictactoe/main.go
      fi ;;

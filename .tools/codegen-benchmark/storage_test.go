@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,26 +13,13 @@ import (
 	"time"
 )
 
-func TestRegenerateLegacyReportAsPlainText(t *testing.T) {
+func TestRegenerateReportRequiresSavedMetadata(t *testing.T) {
 	dir := t.TempDir()
-	const legacy = "## Run metadata\n\n```json\n" + `{"started":"2026-11-13T13:30:46-05:00","finished":"2026-11-13T13:35:33-05:00","status":"completed","machine":"original-host (darwin/arm64)"}` + "\n```\n"
-	if err := os.WriteFile(filepath.Join(dir, "report.md"), []byte(legacy), 0o644); err != nil {
-		t.Fatal(err)
+	if err := run(options{report: true, reportDir: dir}); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing report metadata: %v", err)
 	}
-	if err := run(options{report: true, reportDir: dir}); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "report.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"Started: 2026-11-13T13:30:46-05:00", "Elapsed: 4m47s", "Runner machine: original-host (darwin/arm64)", "Workflow: completed", "Kronk version: not recorded", "llama.cpp library: not recorded"} {
-		if !strings.Contains(string(data), want) {
-			t.Errorf("regenerated report missing %q: %s", want, data)
-		}
-	}
-	if data, err := os.ReadFile(filepath.Join(dir, "report.md")); err != nil || string(data) != legacy {
-		t.Fatalf("regeneration changed legacy report: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "report.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("regeneration created a report without saved metadata: %v", err)
 	}
 }
 
@@ -105,7 +93,7 @@ fi
 		t.Fatal(err)
 	}
 	opts := options{host: server.URL, model: "all", configFile: config,
-		promptFile: filepath.Join(root, ".tools/codegen-benchmark/version2/tic-tac-toe-v2.md"),
+		promptFile: filepath.Join(root, ".tools/codegen-benchmark/tic-tac-toe.md"),
 		outputDir:  filepath.Join(dir, "runs"), attempts: 3, feedback: true, steps: 5, timeout: time.Minute}
 	historyPath := filepath.Join(dir, "history.txt")
 	const history = "Previously recorded run\n"
@@ -124,7 +112,7 @@ fi
 			t.Fatalf("incorrect prompt sent to agent: %s %v", sent, err)
 		}
 		undoSent, err := os.ReadFile(promptLog + ".undo")
-		fullPrompt, promptErr := loadPrompt(filepath.Join(root, ".tools/codegen-benchmark/version2/tic-tac-toe-v2.md"))
+		fullPrompt, promptErr := loadPrompt(filepath.Join(root, ".tools/codegen-benchmark/tic-tac-toe.md"))
 		_, extension, found := strings.Cut(fullPrompt, "\n# Add One-Move Undo\n")
 		if err != nil || promptErr != nil || !found || string(undoSent) != "# Add One-Move Undo\n"+extension {
 			t.Fatalf("incorrect undo extension sent: %s %v %v", undoSent, err, promptErr)

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"text/tabwriter"
 	"time"
 )
 
@@ -15,14 +17,72 @@ type modelResults struct {
 	Attempts []result
 }
 
-func generateReport(runDir string) error {
+type runRecord struct {
+	Workload     string
+	Steps        string
+	Started      time.Time
+	Finished     time.Time
+	Status       string
+	Machine      string
+	KronkVersion string
+	LlamaVersion string
+	Error        string
+}
+
+const workloadVersion = "v1"
+
+func loadRunRecord(runDir string) (runRecord, error) {
+	data, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
+	if err != nil {
+		return runRecord{}, err
+	}
+	var record runRecord
+	for line := range strings.SplitSeq(string(data), "\n") {
+		key, value, _ := strings.Cut(line, ": ")
+		switch key {
+		case "Workload":
+			record.Workload = value
+		case "Steps":
+			record.Steps = value
+		case "Started", "Finished":
+			stamp, err := time.Parse(time.RFC3339Nano, value)
+			if err != nil {
+				return runRecord{}, fmt.Errorf("codegen benchmark: reading report timestamp: %w", err)
+			}
+			if key == "Started" {
+				record.Started = stamp
+			} else {
+				record.Finished = stamp
+			}
+		case "Workflow":
+			record.Status = value
+		case "Runner machine":
+			record.Machine = value
+		case "Kronk version":
+			record.KronkVersion = value
+		case "llama.cpp library":
+			record.LlamaVersion = value
+		case "Error":
+			record.Error = value
+		}
+	}
+	return record, nil
+}
+
+func generateReport(runDir string, record *runRecord) error {
+	if record == nil {
+		saved, err := loadRunRecord(runDir)
+		if err != nil {
+			return err
+		}
+		record = &saved
+	}
 	models, err := loadResults(runDir)
 	if err != nil {
 		return err
 	}
-	report := renderReport(runDir, models)
-	path := filepath.Join(runDir, "report.md")
-	if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
+	path := filepath.Join(runDir, "report.txt")
+	if err := os.WriteFile(path, []byte(renderReport(runDir, models, *record)), 0o644); err != nil {
 		return fmt.Errorf("codegen benchmark: writing report: %w", err)
 	}
 	fmt.Printf("Report written to %s\n", path)
@@ -34,10 +94,6 @@ func loadResults(runDir string) ([]modelResults, error) {
 	if err != nil {
 		return nil, fmt.Errorf("codegen benchmark: finding results: %w", err)
 	}
-	if len(paths) == 0 {
-		return nil, fmt.Errorf("codegen benchmark: no results found in %s", runDir)
-	}
-
 	byModel := make(map[string][]result)
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
@@ -50,7 +106,6 @@ func loadResults(runDir string) ([]modelResults, error) {
 		}
 		byModel[item.Model.ID] = append(byModel[item.Model.ID], item)
 	}
-
 	models := make([]modelResults, 0, len(byModel))
 	for _, attempts := range byModel {
 		slices.SortFunc(attempts, func(a, b result) int { return a.Attempt - b.Attempt })
@@ -60,108 +115,85 @@ func loadResults(runDir string) ([]modelResults, error) {
 	return models, nil
 }
 
-func renderReport(runDir string, models []modelResults) string {
+func renderReport(runDir string, models []modelResults, record runRecord) string {
 	var report strings.Builder
-	fmt.Fprintf(&report, "# OpenCode code-generation benchmark\n\n")
-	fmt.Fprintf(&report, "Run: `%s`  \n", filepath.Base(filepath.Clean(runDir)))
-	fmt.Fprintf(&report, "Generated: %s  \n", time.Now().Format(time.RFC3339))
-	fmt.Fprintf(&report, "Models: %d\n\n", len(models))
-
-	report.WriteString("## Summary\n\n")
-	report.WriteString("`Checks passed` is the aggregate grader score. `Perfect attempts` is the percentage of attempts that passed every check; it does not indicate whether the program built or ran.\n\n")
-	report.WriteString("| Model | Attempts | Checks passed | Buildable attempts | Perfect attempts | Agent completed |\n")
-	report.WriteString("| --- | ---: | ---: | ---: | ---: | ---: |\n")
+	fmt.Fprintf(&report, "Run: %s\n", filepath.Base(filepath.Clean(runDir)))
+	fmt.Fprintf(&report, "Workload: %s\n", cmp.Or(record.Workload, workloadVersion))
+	if record.Steps != "" {
+		fmt.Fprintf(&report, "Steps: %s\n", record.Steps)
+	}
+	fmt.Fprintf(&report, "Started: %s\n", record.Started.Format(time.RFC3339Nano))
+	if !record.Finished.IsZero() {
+		fmt.Fprintf(&report, "Finished: %s\nElapsed: %s\n", record.Finished.Format(time.RFC3339Nano), record.Finished.Sub(record.Started).Round(time.Second))
+	}
+	fmt.Fprintf(&report, "Runner machine: %s\n", record.Machine)
+	fmt.Fprintf(&report, "Kronk version: %s\nllama.cpp library: %s\n", cmp.Or(record.KronkVersion, "not recorded"), cmp.Or(record.LlamaVersion, "not recorded"))
+	fmt.Fprintf(&report, "Workflow: %s\n", record.Status)
+	if record.Error != "" {
+		fmt.Fprintf(&report, "Error: %s\n", strings.Join(strings.Fields(record.Error), " "))
+	}
+	if len(models) == 0 {
+		report.WriteString("\nNo completed submissions.\n")
+		return report.String()
+	}
+	report.WriteByte('\n')
+	table := tabwriter.NewWriter(&report, 0, 4, 2, ' ', 0)
+	steps := strings.Split(cmp.Or(record.Steps, basicGameStep), ", ")
+	titles := map[string]string{
+		basicGameStep: "Step 1 (Basic game)",
+		undoMoveStep:  "Step 2 (Undo move)",
+	}
+	fmt.Fprint(table, "Model")
+	for _, step := range steps {
+		fmt.Fprintf(table, "\t%s", cmp.Or(titles[step], step))
+	}
+	fmt.Fprintln(table)
+	fmt.Fprint(table, "-----")
+	for _, step := range steps {
+		fmt.Fprintf(table, "\t%s", strings.Repeat("-", len(cmp.Or(titles[step], step))))
+	}
+	fmt.Fprintln(table)
 	for _, model := range models {
-		var passed, total, buildable, fullyPassed, agentSuccess int
-		for _, attempt := range model.Attempts {
-			passed += attempt.Grade.Passed
-			total += attempt.Grade.Total
-			if attempt.Grade.PassedCheck("go-build") {
-				buildable++
+		fmt.Fprint(table, model.Model.ID)
+		for _, step := range steps {
+			var attempts []result
+			for _, attempt := range model.Attempts {
+				if cmp.Or(attempt.Step, basicGameStep) == step {
+					attempts = append(attempts, attempt)
+				}
 			}
-			if attempt.Grade.Passed == attempt.Grade.Total {
-				fullyPassed++
+			summary := "Not reached"
+			if len(attempts) > 0 {
+				final := attempts[len(attempts)-1]
+				status, checks := "Failed", "Not graded"
+				if final.OpenCode.Error != "" {
+					status = "Agent error"
+				}
+				if final.Grade.Total > 0 {
+					checks = fmt.Sprintf("%d/%d", final.Grade.Passed, final.Grade.Total)
+				}
+				var wall time.Duration
+				var generated int
+				var usageReported bool
+				for _, attempt := range attempts {
+					wall += attempt.OpenCode.WallTime
+					usage := attempt.OpenCode.Usage
+					generated += usage.Output + usage.Reasoning
+					usageReported = usageReported || usage != (tokenUsage{})
+					if attempt.Grade.Total > 0 && attempt.Grade.Passed == attempt.Grade.Total {
+						status = "Passed"
+					}
+				}
+				tokenSummary := "generated-toks: not reported"
+				if usageReported {
+					tokenSummary = fmt.Sprintf("generated-toks: %d", generated)
+				}
+				summary = fmt.Sprintf("%s (attempts %d, checks %s, time %s, %s)", status, len(attempts), checks, wall.Round(time.Second), tokenSummary)
 			}
-			if attempt.OpenCode.ExitCode == 0 {
-				agentSuccess++
-			}
+			fmt.Fprintf(table, "\t%s", summary)
 		}
-		fmt.Fprintf(&report, "| `%s` | %d | %.2f%% | %.2f%% | %.2f%% | %.2f%% |\n",
-			model.Model.ID,
-			len(model.Attempts),
-			percentage(passed, total),
-			percentage(buildable, len(model.Attempts)),
-			percentage(fullyPassed, len(model.Attempts)),
-			percentage(agentSuccess, len(model.Attempts)),
-		)
+		fmt.Fprintln(table)
 	}
-
-	report.WriteString("\n## Agent work\n\n")
-	report.WriteString("Token columns sum the usage from each agent turn's final OpenCode usage event.\n\n")
-	report.WriteString("| Model | Wall/attempt | Turns/attempt | Tools/attempt | Input tokens | Output tokens | Reasoning tokens | Cache read |\n")
-	report.WriteString("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
-	for _, model := range models {
-		var wall time.Duration
-		var turns, tools int
-		var usage tokenUsage
-		for _, attempt := range model.Attempts {
-			wall += attempt.OpenCode.WallTime
-			turns += attempt.OpenCode.Turns
-			tools += attempt.OpenCode.ToolCalls
-			usage.Input += attempt.OpenCode.Usage.Input
-			usage.Output += attempt.OpenCode.Usage.Output
-			usage.Reasoning += attempt.OpenCode.Usage.Reasoning
-			usage.CacheRead += attempt.OpenCode.Usage.CacheRead
-		}
-		count := len(model.Attempts)
-		fmt.Fprintf(&report, "| `%s` | %.2f s | %.1f | %.1f | %.0f | %.0f | %.0f | %.0f |\n",
-			model.Model.ID,
-			wall.Seconds()/float64(count),
-			float64(turns)/float64(count),
-			float64(tools)/float64(count),
-			float64(usage.Input)/float64(count),
-			float64(usage.Output)/float64(count),
-			float64(usage.Reasoning)/float64(count),
-			float64(usage.CacheRead)/float64(count),
-		)
-	}
-
-	report.WriteString("\n## Configuration\n\n")
-	report.WriteString("| Model | Context | Output limit |\n")
-	report.WriteString("| --- | ---: | ---: |\n")
-	for _, model := range models {
-		fmt.Fprintf(&report, "| `%s` | %d | %d |\n", model.Model.ID, model.Model.ContextWindow, model.Model.OutputLimit)
-	}
-
-	report.WriteString("\n## Attempts\n")
-	for _, model := range models {
-		fmt.Fprintf(&report, "\n### `%s`\n", model.Model.ID)
-		for _, attempt := range model.Attempts {
-			fmt.Fprintf(&report, "\n#### Attempt %d\n\n", attempt.Attempt)
-			fmt.Fprintf(&report, "- Score: %d/%d (%.2f%%)\n", attempt.Grade.Passed, attempt.Grade.Total, attempt.Grade.Percentage())
-			fmt.Fprintf(&report, "- OpenCode: exit %d, %d turns, %d tool calls, %s\n",
-				attempt.OpenCode.ExitCode, attempt.OpenCode.Turns, attempt.OpenCode.ToolCalls, attempt.OpenCode.WallTime.Round(time.Second))
-			if attempt.OpenCode.Error != "" {
-				fmt.Fprintf(&report, "- OpenCode error: `%s`\n", strings.ReplaceAll(attempt.OpenCode.Error, "`", "'"))
-			}
-			writeFailures(&report, attempt.Grade)
-		}
-	}
+	_ = table.Flush()
 	return report.String()
-}
-
-func writeFailures(report *strings.Builder, grade gradeResult) {
-	for _, check := range grade.Checks {
-		if check.Passed {
-			continue
-		}
-		fmt.Fprintf(report, "\n**Failure — `%s`**\n\n```text\n%s\n```\n", check.Name, check.Detail)
-	}
-}
-
-func percentage(passed, total int) float64 {
-	if total == 0 {
-		return 0
-	}
-	return 100 * float64(passed) / float64(total)
 }

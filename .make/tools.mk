@@ -278,44 +278,27 @@ test-adversarial: ## Run adversarial probes and print the triage prompt
 # ==============================================================================
 
 # OpenCode coding-agent benchmark against a separately managed Kronk server.
-# Eligible models come exclusively from /AGENT entries in zarf/kms/model_config.yaml.
+# Eligible models use /BENCHMARK entries in zarf/kms/tools_model_config.yaml.
+# Start its server with make server-for-tools.
 CODEGEN_HOST ?= http://localhost:11435
 CODEGEN_MODEL ?= all
-CODEGEN_ATTEMPTS ?= 1
 CODEGEN_STEPS ?= 40
 CODEGEN_TIMEOUT ?= 10m
+CODEGEN_SUBMISSIONS ?= 3
+CODEGEN_FEEDBACK ?= true
+CODEGEN_RUN ?=
 
-benchmark-codegen: ## Run the OpenCode coding benchmark
+benchmark-codegen:
 	go run ./.tools/codegen-benchmark \
 		-host "$(CODEGEN_HOST)" \
 		-model "$(CODEGEN_MODEL)" \
-		-attempts "$(CODEGEN_ATTEMPTS)" \
+		-attempts "$(CODEGEN_SUBMISSIONS)" \
+		-feedback=$(CODEGEN_FEEDBACK) \
 		-steps "$(CODEGEN_STEPS)" \
 		-timeout "$(CODEGEN_TIMEOUT)"
 
-benchmark-codegen-list: ## List coding benchmark models
+benchmark-codegen-list:
 	go run ./.tools/codegen-benchmark -list
 
-benchmark-codegen-report: ## Show the coding benchmark report
-	go run ./.tools/codegen-benchmark -report
-
-# Version 2 uses /BENCHMARK entries in zarf/kms/tools_model_config.yaml.
-# Start its server with make server-for-tools; the original benchmark stays unchanged.
-CODEGEN_V2_SUBMISSIONS ?= 3
-CODEGEN_V2_FEEDBACK ?= true
-CODEGEN_V2_RUN ?=
-
-benchmark-codegen-v2:
-	go run ./.tools/codegen-benchmark/version2 \
-		-host "$(CODEGEN_HOST)" \
-		-model "$(CODEGEN_MODEL)" \
-		-attempts "$(CODEGEN_V2_SUBMISSIONS)" \
-		-feedback=$(CODEGEN_V2_FEEDBACK) \
-		-steps "$(CODEGEN_STEPS)" \
-		-timeout "$(CODEGEN_TIMEOUT)"
-
-benchmark-codegen-v2-list:
-	go run ./.tools/codegen-benchmark/version2 -list
-
-benchmark-codegen-v2-report:
-	go run ./.tools/codegen-benchmark/version2 -report -run "$(CODEGEN_V2_RUN)"
+benchmark-codegen-report:
+	go run ./.tools/codegen-benchmark -report -run "$(CODEGEN_RUN)"

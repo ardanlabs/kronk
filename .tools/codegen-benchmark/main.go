@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -22,16 +23,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 )
 
 const (
-	defaultHost      = "http://localhost:11435"
-	defaultAttempts  = 1
-	defaultSteps     = 40
-	defaultTimeout   = 30 * time.Minute
-	promptSeparator  = "\n================================================================================\n"
-	modelAgentSuffix = "/AGENT"
+	defaultHost          = "http://localhost:11435"
+	defaultAttempts      = 3
+	defaultSteps         = 40
+	defaultTimeout       = 10 * time.Minute
+	modelBenchmarkSuffix = "/BENCHMARK"
 )
 
 type options struct {
@@ -40,11 +40,13 @@ type options struct {
 	configFile string
 	promptFile string
 	outputDir  string
+	reportDir  string
 	attempts   int
 	steps      int
 	timeout    time.Duration
 	list       bool
 	report     bool
+	feedback   bool
 }
 
 type benchmarkModel struct {
@@ -69,12 +71,25 @@ type agentResult struct {
 	Usage     tokenUsage    `json:"usage"`
 }
 
+const (
+	basicGameStep = "Step1 (basic game)"
+	undoMoveStep  = "Step2 (Undo move)"
+)
+
+type benchmarkStep struct {
+	name   string
+	prompt string
+	grade  func(context.Context, string) gradeResult
+}
+
 type result struct {
+	Step      string         `json:"step,omitempty"`
 	Model     benchmarkModel `json:"model"`
 	Attempt   int            `json:"attempt"`
 	OpenCode  agentResult    `json:"opencode"`
 	Grade     gradeResult    `json:"grade"`
-	Workspace string         `json:"workspace"`
+	SourceSHA string         `json:"source_sha256,omitempty"`
+	Repair    string         `json:"repair_message,omitempty"`
 }
 
 func main() {
@@ -96,25 +111,35 @@ func parseFlags() (options, error) {
 	}
 	var opts options
 	flag.StringVar(&opts.host, "host", defaultHost, "running Kronk server URL")
-	flag.StringVar(&opts.model, "model", "all", "configured /AGENT model ID, comma-separated IDs, or all")
-	flag.IntVar(&opts.attempts, "attempts", defaultAttempts, "fresh OpenCode attempts per model")
+	flag.StringVar(&opts.model, "model", "all", "configured /BENCHMARK model ID, comma-separated IDs, or all")
+	flag.IntVar(&opts.attempts, "attempts", defaultAttempts, "maximum submissions per challenge step (1-3, including the initial submission)")
+	flag.BoolVar(&opts.feedback, "feedback", true, "return grader failures to the same agent for repair")
 	flag.IntVar(&opts.steps, "steps", defaultSteps, "maximum OpenCode agent steps per attempt")
 	flag.DurationVar(&opts.timeout, "timeout", defaultTimeout, "timeout per OpenCode attempt")
 	flag.BoolVar(&opts.list, "list", false, "list eligible models and exit")
-	flag.BoolVar(&opts.report, "report", false, "regenerate the report from the current output directory")
+	flag.BoolVar(&opts.report, "report", false, "regenerate the report for the latest saved run")
+	flag.StringVar(&opts.reportDir, "run", "", "saved run directory to use with -report (defaults to latest)")
 	flag.Parse()
-	opts.configFile = filepath.Join(root, "zarf", "kms", "model_config.yaml")
-	opts.promptFile = filepath.Join(root, "examples", "talks", "tic-tac-toe.md")
-	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "output")
+	opts.configFile = filepath.Join(root, "zarf", "kms", "tools_model_config.yaml")
+	opts.promptFile = filepath.Join(root, ".tools", "codegen-benchmark", "tic-tac-toe.md")
+	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "runs")
 	return opts, nil
 }
 
-func run(opts options) error {
+func run(opts options) (runErr error) {
 	if opts.report {
-		return generateReport(opts.outputDir)
+		dir := opts.reportDir
+		if dir == "" {
+			var err error
+			dir, err = latestRun(opts.outputDir)
+			if err != nil {
+				return err
+			}
+		}
+		return generateReport(dir, nil)
 	}
-	if opts.attempts < 1 {
-		return errors.New("codegen benchmark: attempts must be at least 1")
+	if opts.attempts < 1 || opts.attempts > defaultAttempts {
+		return errors.New("codegen benchmark: submissions must be between 1 and 3")
 	}
 	if opts.steps < 1 {
 		return errors.New("codegen benchmark: steps must be at least 1")
@@ -138,10 +163,6 @@ func run(opts options) error {
 	if err != nil {
 		return err
 	}
-	runDir, err := prepareRunDir(opts.outputDir)
-	if err != nil {
-		return err
-	}
 	host, err := normalizeHost(opts.host)
 	if err != nil {
 		return err
@@ -152,44 +173,90 @@ func run(opts options) error {
 	if err := verifyServer(context.Background(), host, selected); err != nil {
 		return err
 	}
-	prompt, err := loadPrompt(opts.promptFile)
+	kronkVersion, llamaVersion, err := serverVersions(context.Background(), host)
 	if err != nil {
 		return err
+	}
+	fullPrompt, err := loadPrompt(opts.promptFile)
+	if err != nil {
+		return err
+	}
+	prompt, undoPrompt, found := strings.Cut(fullPrompt, "\n\n================================================================================\n\n# Add One-Move Undo\n")
+	if !found || strings.TrimSpace(undoPrompt) == "" {
+		return errors.New("codegen benchmark: prompt is missing the undo extension")
+	}
+	stages := []benchmarkStep{
+		{name: basicGameStep, prompt: prompt, grade: gradeProgram},
+		{name: undoMoveStep, prompt: "# Add One-Move Undo\n" + undoPrompt, grade: gradeUndoProgram},
 	}
 
 	root, err := repositoryRoot()
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "prompt.md"), []byte(prompt+"\n"), 0o644); err != nil {
-		return fmt.Errorf("codegen benchmark: writing prompt: %w", err)
+	runDir, err := prepareRunDir(opts.outputDir)
+	if err != nil {
+		return err
 	}
-
-	fmt.Printf("Code-generation benchmark\n- server: %s\n- models: %d\n- attempts/model: %d\n- output: %s\n", host, len(selected), opts.attempts, runDir)
+	machine, err := os.Hostname()
+	if err != nil {
+		machine = "unknown"
+	}
+	record := runRecord{Workload: workloadVersion, Steps: basicGameStep + ", " + undoMoveStep, Started: time.Now(), Status: "running", Machine: fmt.Sprintf("%s (%s/%s)", machine, runtime.GOOS, runtime.GOARCH), KronkVersion: kronkVersion, LlamaVersion: llamaVersion}
+	if err := generateReport(runDir, &record); err != nil {
+		return err
+	}
+	defer func() {
+		record.Finished = time.Now()
+		record.Status = "completed"
+		if runErr != nil {
+			record.Status = "failed"
+			record.Error = runErr.Error()
+		}
+		runErr = errors.Join(runErr, generateReport(runDir, &record))
+	}()
+	fmt.Printf("Code-generation benchmark\n- server: %s\n- models: %d\n- maximum submissions/challenge step: %d\n- grader feedback: %t\n- output: %s\n", host, len(selected), opts.attempts, opts.feedback, runDir)
 	for _, model := range selected {
-		if err := runModel(root, runDir, host, prompt, model, opts); err != nil {
+		if err := runModel(root, runDir, host, stages, model, opts); err != nil {
 			return err
 		}
 	}
 
-	if err := generateReport(runDir); err != nil {
-		return err
-	}
 	fmt.Printf("\nResults written to %s\n", runDir)
 	return nil
 }
 
-func runModel(root, runDir, host, prompt string, model benchmarkModel, opts options) error {
+func runModel(root, runDir, host string, stages []benchmarkStep, model benchmarkModel, opts options) (runErr error) {
+	modelDir := filepath.Join(runDir, modelDirName(model.ID))
+	dir := filepath.Join(modelDir, "workspace")
+	// Retain state only while the same agent is repairing its submissions.
+	defer func() {
+		runErr = errors.Join(runErr, os.RemoveAll(dir))
+	}()
 	fmt.Printf("\n[%s] warming model\n", model.ID)
 	warmCtx, cancelWarm := context.WithTimeout(context.Background(), opts.timeout)
 	modelErr := warmModel(warmCtx, host, model.ID)
 	cancelWarm()
 
+	var env []string
 	if modelErr == nil {
-		for attempt := 1; attempt <= opts.attempts; attempt++ {
-			fmt.Printf("[%s] attempt %d/%d\n", model.ID, attempt, opts.attempts)
-			if err := runAttempt(root, runDir, host, prompt, model, attempt, opts); err != nil {
-				modelErr = err
+		env, modelErr = prepareSession(root, dir, host, model, opts.steps)
+	}
+	if modelErr == nil {
+		submission := 0
+		for _, task := range stages {
+			var last gradeResult
+			modelErr = runSubmissions(task.prompt, opts.attempts, opts.feedback, func(attempt int, message string) (result, error) {
+				submission++
+				fmt.Printf("[%s] %s, submission %d/%d\n", model.ID, task.name, attempt, opts.attempts)
+				item, err := runAttempt(modelDir, message, env, model, attempt, submission, task, opts)
+				last = item.Grade
+				if err != nil {
+					return item, err
+				}
+				return item, generateReport(runDir, nil)
+			})
+			if modelErr != nil || last.Total == 0 || last.Passed != last.Total {
 				break
 			}
 		}
@@ -200,6 +267,156 @@ func runModel(root, runDir, host, prompt string, model benchmarkModel, opts opti
 	unloadErr := unloadModel(unloadCtx, host, model.ID)
 	cancelUnload()
 	return errors.Join(modelErr, unloadErr)
+}
+
+// runSubmissions owns the feedback loop; each callback resumes the same workspace
+// and session. Agent errors stop this model; failed grades allow repairs.
+func runSubmissions(prompt string, limit int, feedback bool, submit func(int, string) (result, error)) error {
+	for attempt := 1; attempt <= limit; attempt++ {
+		item, err := submit(attempt, prompt)
+		if err != nil {
+			return err
+		}
+		if item.OpenCode.Error != "" || item.Grade.Passed == item.Grade.Total || !feedback || attempt == limit {
+			return nil
+		}
+		prompt = graderFeedback(item.Grade)
+	}
+	return nil
+}
+
+func graderFeedback(grade gradeResult) string {
+	var failed []string
+	for _, check := range grade.Checks {
+		if !check.Passed {
+			failed = append(failed, check.Name)
+		}
+	}
+	var message strings.Builder
+	fmt.Fprintf(&message, "Your submission passed %d/%d checks. Failed: %d. Not reached: %d.\nFailed checks: %s\n", grade.Passed, grade.Total, len(failed), max(0, grade.Total-len(grade.Checks)), strings.Join(failed, ", "))
+	message.WriteString("\nObservations follow. Quoted strings preserve whitespace and ANSI escapes. Excerpts include up to 24 bytes of surrounding context; only matching sections between excerpts are omitted. Prefix/suffix omission flags identify excerpts that do not start/end at the transcript boundaries. E/A offsets are zero-based byte offsets in the full expected/actual transcripts. Every occurrence is listed; identical excerpt pairs share one quotation. Full inputs and transcripts remain in result.json.\n")
+	type repeatedFinding struct {
+		gradeFinding
+		count int
+	}
+	var groups []repeatedFinding
+	byFinding := make(map[gradeFinding]int)
+	for _, finding := range grade.Findings {
+		index, exists := byFinding[finding]
+		if !exists {
+			index = len(groups)
+			byFinding[finding] = index
+			groups = append(groups, repeatedFinding{gradeFinding: finding})
+		}
+		groups[index].count++
+	}
+	type excerptGroup struct {
+		feedbackExcerpt
+		occurrences []string
+	}
+	var excerpts []excerptGroup
+	byExcerpt := make(map[feedbackExcerpt]int)
+	for i, group := range groups {
+		fmt.Fprintf(&message, "\n- Finding %d: %s [%s]", i+1, group.Location, group.Kind)
+		if group.Step > 0 {
+			fmt.Fprintf(&message, ", step %d", group.Step)
+		}
+		if group.count > 1 {
+			fmt.Fprintf(&message, " (%d identical observations)", group.count)
+		}
+		if group.Detail != "" {
+			fmt.Fprintf(&message, "\n  Diagnostic: %s", group.Detail)
+		}
+		if group.Kind != "check" {
+			fmt.Fprintf(&message, "\n  Input sent: %q", group.Input)
+			for _, span := range feedbackRanges(group.Expected, group.Actual) {
+				excerpt := feedbackExcerpt{
+					expected: group.Expected[span.e0:span.e1], actual: group.Actual[span.a0:span.a1],
+					expectedPrefix: span.e0 > 0, expectedSuffix: span.e1 < len(group.Expected),
+					actualPrefix: span.a0 > 0, actualSuffix: span.a1 < len(group.Actual),
+				}
+				index, exists := byExcerpt[excerpt]
+				if !exists {
+					index = len(excerpts)
+					byExcerpt[excerpt] = index
+					excerpts = append(excerpts, excerptGroup{feedbackExcerpt: excerpt})
+				}
+				excerpts[index].occurrences = append(excerpts[index].occurrences, fmt.Sprintf("#%d E%d/A%d", i+1, span.e0, span.a0))
+			}
+		}
+		message.WriteByte('\n')
+	}
+	for i, excerpt := range excerpts {
+		fmt.Fprintf(&message, "\nExcerpt %d; occurrences: %s\n", i+1, strings.Join(excerpt.occurrences, ", "))
+		fmt.Fprintf(&message, "Expected: %q\n  Omitted prefix=%t suffix=%t\nActual: %q\n  Omitted prefix=%t suffix=%t\n",
+			excerpt.expected, excerpt.expectedPrefix, excerpt.expectedSuffix,
+			excerpt.actual, excerpt.actualPrefix, excerpt.actualSuffix)
+	}
+	message.WriteString("\nRepair tictactoe/main.go under the original requirements, then finish your response to resubmit.\n")
+	return message.String()
+}
+
+// Excerpt identity includes transcript boundaries, so a complete output is not
+// collapsed with the same bytes taken from the middle of another output.
+type feedbackExcerpt struct {
+	expected, actual               string
+	expectedPrefix, expectedSuffix bool
+	actualPrefix, actualSuffix     bool
+}
+
+type feedbackRange struct {
+	e0, e1, a0, a1 int
+}
+
+// feedbackRanges compares raw bytes, without normalizing or interpreting them.
+// Exact matching anchors resynchronize insertions/deletions. If no nearby anchor
+// exists, keep the whole unmatched region rather than discard any differences.
+func feedbackRanges(expected, actual string) []feedbackRange {
+	const contextBytes = 24
+	var spans []feedbackRange
+	e, a := 0, 0
+	for e < len(expected) || a < len(actual) {
+		for e < len(expected) && a < len(actual) && expected[e] == actual[a] {
+			e++
+			a++
+		}
+		if e == len(expected) && a == len(actual) {
+			break
+		}
+		e0, a0 := e, a
+		de, da := feedbackMatch(expected[e:], actual[a:])
+		e += de
+		a += da
+		span := feedbackRange{max(0, e0-contextBytes), min(len(expected), e+contextBytes), max(0, a0-contextBytes), min(len(actual), a+contextBytes)}
+		if n := len(spans); n > 0 && (span.e0 <= spans[n-1].e1 || span.a0 <= spans[n-1].a1) {
+			spans[n-1].e1 = span.e1
+			spans[n-1].a1 = span.a1
+			continue
+		}
+		spans = append(spans, span)
+	}
+	return spans
+}
+
+// Search a fixed byte window for an exact 16-byte anchor, preferring the least
+// total skipped bytes. These are alignment rules, not assumptions about errors.
+func feedbackMatch(expected, actual string) (int, int) {
+	const anchor, lookahead = 16, 256
+	e, a := len(expected), len(actual)
+	best := e + a + 1
+	for i := 0; i+anchor <= min(len(expected), lookahead+anchor); i++ {
+		j := strings.Index(actual[:min(len(actual), lookahead+anchor)], expected[i:i+anchor])
+		if j >= 0 && i+j < best {
+			e, a, best = i, j, i+j
+		}
+	}
+	if best == len(expected)+len(actual)+1 {
+		for e > 0 && a > 0 && expected[e-1] == actual[a-1] {
+			e--
+			a--
+		}
+	}
+	return e, a
 }
 
 func warmModel(ctx context.Context, host, modelID string) error {
@@ -264,14 +481,15 @@ func postJSON(ctx context.Context, host, path string, payload any) (int, string,
 }
 
 func loadModels(path string) ([]benchmarkModel, error) {
-	configs, err := models.LoadModelConfig(path)
+	doc, err := modelconfig.Load(path)
 	if err != nil {
 		return nil, fmt.Errorf("codegen benchmark: loading %s: %w", path, err)
 	}
+	configs := doc.Models
 
 	eligible := make([]benchmarkModel, 0, len(configs))
 	for id, cfg := range configs {
-		if !strings.HasSuffix(id, modelAgentSuffix) {
+		if !strings.HasSuffix(id, modelBenchmarkSuffix) {
 			continue
 		}
 		resolved := cfg.ToKronkConfig()
@@ -286,7 +504,7 @@ func loadModels(path string) ([]benchmarkModel, error) {
 	}
 	slices.SortFunc(eligible, func(a, b benchmarkModel) int { return strings.Compare(a.ID, b.ID) })
 	if len(eligible) == 0 {
-		return nil, fmt.Errorf("codegen benchmark: %s contains no models ending in %s", path, modelAgentSuffix)
+		return nil, fmt.Errorf("codegen benchmark: %s contains no models ending in %s", path, modelBenchmarkSuffix)
 	}
 	return eligible, nil
 }
@@ -306,8 +524,8 @@ func selectModels(configured []benchmarkModel, requested string) ([]benchmarkMod
 	seen := make(map[string]bool)
 	for id := range strings.SplitSeq(requested, ",") {
 		id = strings.TrimSpace(id)
-		if !strings.HasSuffix(id, modelAgentSuffix) {
-			return nil, fmt.Errorf("codegen benchmark: model %q must end in %s", id, modelAgentSuffix)
+		if !strings.HasSuffix(id, modelBenchmarkSuffix) {
+			return nil, fmt.Errorf("codegen benchmark: model %q must end in %s", id, modelBenchmarkSuffix)
 		}
 		model, exists := byID[id]
 		if !exists {
@@ -321,94 +539,139 @@ func selectModels(configured []benchmarkModel, requested string) ([]benchmarkMod
 	return selected, nil
 }
 
-func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt int, opts options) error {
-	dir := filepath.Join(runDir, modelDirName(model.ID), fmt.Sprintf("attempt-%02d", attempt))
-	programDir, err := prepareAttemptDirectory(dir)
-	if err != nil {
-		return err
+// prepareSession initializes the workspace and isolated OpenCode home once per
+// model. Submissions reuse both the returned environment and the agent history.
+func prepareSession(root, dir, host string, model benchmarkModel, steps int) ([]string, error) {
+	if _, err := prepareAttemptDirectory(dir); err != nil {
+		return nil, err
 	}
-
-	config, err := openCodeConfig(host, model, opts.steps)
+	config, err := openCodeConfig(host, model, steps)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	configPath := filepath.Join(dir, "opencode-config.json")
 	if err := os.WriteFile(configPath, append(config, '\n'), 0o600); err != nil {
-		return fmt.Errorf("codegen benchmark: writing OpenCode config: %w", err)
+		return nil, fmt.Errorf("codegen benchmark: writing OpenCode config: %w", err)
 	}
-	env, err := prepareOpenCodeEnvironment(root, dir, config)
-	if err != nil {
-		return err
-	}
+	return prepareOpenCodeEnvironment(root, dir, config)
+}
 
+// attempt is local to the step; submission numbers snapshots across both
+// steps and determines whether OpenCode starts or continues the session.
+func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, attempt, submission int, task benchmarkStep, opts options) (result, error) {
+	dir := filepath.Join(modelDir, "workspace")
+	programDir := filepath.Join(dir, "tictactoe")
+	artifactDir := filepath.Join(modelDir, fmt.Sprintf("attempt-%02d", submission))
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		return result{}, err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), opts.timeout)
 	defer cancel()
 	started := time.Now()
-	cmd := exec.CommandContext(ctx, "opencode", "run",
+	args := []string{"run",
 		"--format", "json",
+		"--thinking",
 		"--pure",
 		"--agent", "benchmark",
-		"--model", "kronk/"+model.ID,
+		"--model", "kronk/" + model.ID,
 		"--dir", dir,
-		"--title", fmt.Sprintf("tic-tac-toe benchmark %d", attempt),
-		prompt,
-	)
+	}
+	if submission == 1 {
+		args = append(args, "--title", "tic-tac-toe benchmark")
+	} else {
+		args = append(args, "--continue")
+	}
+	cmd := exec.CommandContext(ctx, "opencode", args...)
 	cmd.Dir = dir
 	cmd.Env = env
+	// OpenCode reads piped input as the message, avoiding OS argument-size limits.
+	cmd.Stdin = strings.NewReader(prompt)
 
 	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	events, err := os.Create(filepath.Join(artifactDir, "events.jsonl"))
+	if err != nil {
+		return result{}, err
+	}
+	defer events.Close()
+	stderr, err := os.Create(filepath.Join(artifactDir, "opencode.stderr"))
+	if err != nil {
+		return result{}, err
+	}
+	defer stderr.Close()
+	cmd.Stdout = io.MultiWriter(events, &stdout)
+	cmd.Stderr = stderr
 	err = cmd.Run()
 	wallTime := time.Since(started)
-	fmt.Printf("[%s] agent finished; grading attempt %d\n", model.ID, attempt)
-	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), stdout.Bytes(), 0o644); err != nil {
-		return fmt.Errorf("codegen benchmark: writing OpenCode events: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "opencode.stderr"), stderr.Bytes(), 0o644); err != nil {
-		return fmt.Errorf("codegen benchmark: writing OpenCode stderr: %w", err)
-	}
+	fmt.Printf("[%s] %s, agent finished; processing submission %d\n", model.ID, task.name, attempt)
+	agentErr := err
 
+	source, readErr := os.ReadFile(filepath.Join(programDir, "main.go"))
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return result{}, fmt.Errorf("codegen benchmark: reading generated main.go: %w", readErr)
+	}
+	if readErr == nil {
+		snapshot := filepath.Join(artifactDir, "program")
+		if err := os.MkdirAll(snapshot, 0o755); err != nil {
+			return result{}, err
+		}
+		if err := os.WriteFile(filepath.Join(snapshot, "main.go"), source, 0o644); err != nil {
+			return result{}, err
+		}
+		// Match the isolated module actually used by the grader, not agent edits.
+		if err := os.WriteFile(filepath.Join(snapshot, "go.mod"), []byte("module tictactoe\n\ngo 1.27.0\n"), 0o644); err != nil {
+			return result{}, err
+		}
+	}
+	// Preserve the submission even if the CLI's event stream cannot be decoded.
 	agent, parseErr := parseAgentResult(stdout.Bytes())
 	if parseErr != nil {
-		return fmt.Errorf("codegen benchmark: parsing OpenCode events: %w", parseErr)
+		return result{}, fmt.Errorf("codegen benchmark: parsing OpenCode events: %w", parseErr)
 	}
 	agent.WallTime = wallTime
-	if err != nil {
+	if agentErr != nil {
 		agent.ExitCode = 1
-		agent.Error = err.Error()
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		if agent.Error == "" {
+			agent.Error = agentErr.Error()
+		}
+		if exitErr, ok := errors.AsType[*exec.ExitError](agentErr); ok {
 			agent.ExitCode = exitErr.ExitCode()
 		}
 		if ctx.Err() != nil {
 			agent.Error = ctx.Err().Error()
 		}
 	}
-
-	source, readErr := os.ReadFile(filepath.Join(programDir, "main.go"))
-	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return fmt.Errorf("codegen benchmark: reading generated main.go: %w", readErr)
+	var grade gradeResult
+	if agent.Error == "" {
+		grade = task.grade(context.Background(), string(source))
 	}
-	grade := gradeProgram(context.Background(), string(source))
 	item := result{
-		Model:     model,
-		Attempt:   attempt,
-		OpenCode:  agent,
-		Grade:     grade,
-		Workspace: ".",
+		Step:     task.name,
+		Model:    model,
+		Attempt:  submission,
+		OpenCode: agent,
+		Grade:    grade,
+	}
+	if attempt > 1 {
+		item.Repair = prompt
+	}
+	if readErr == nil {
+		item.SourceSHA = fmt.Sprintf("%x", sha256.Sum256(source))
 	}
 	data, err := json.MarshalIndent(item, "", "  ")
 	if err != nil {
-		return fmt.Errorf("codegen benchmark: encoding result: %w", err)
+		return result{}, fmt.Errorf("codegen benchmark: encoding result: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "result.json"), append(data, '\n'), 0o644); err != nil {
-		return fmt.Errorf("codegen benchmark: writing result: %w", err)
+	if err := os.WriteFile(filepath.Join(artifactDir, "result.json"), append(data, '\n'), 0o644); err != nil {
+		return result{}, fmt.Errorf("codegen benchmark: writing result: %w", err)
 	}
 
+	if agent.Error != "" {
+		fmt.Fprintf(os.Stderr, "codegen benchmark: OpenCode %s submission %d for %s: %s\n", task.name, attempt, model.ID, agent.Error)
+		return item, nil
+	}
 	fmt.Printf("score=%d/%d build=%t turns=%d tools=%d wall=%s\n",
 		grade.Passed, grade.Total, grade.PassedCheck("go-build"), agent.Turns, agent.ToolCalls, wallTime.Round(time.Second))
-	return nil
+	return item, nil
 }
 
 func prepareAttemptDirectory(dir string) (string, error) {
@@ -424,7 +687,7 @@ func prepareAttemptDirectory(dir string) (string, error) {
 	if err := os.MkdirAll(programDir, 0o755); err != nil {
 		return "", fmt.Errorf("codegen benchmark: creating program directory: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(programDir, "go.mod"), []byte("module tictactoe\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(programDir, "go.mod"), []byte("module tictactoe\n\ngo 1.27.0\n"), 0o644); err != nil {
 		return "", fmt.Errorf("codegen benchmark: writing go.mod: %w", err)
 	}
 	return programDir, nil
@@ -510,11 +773,27 @@ func openCodeConfig(host string, model benchmarkModel, steps int) ([]byte, error
 
 func prepareOpenCodeEnvironment(root, attemptDir string, config []byte) ([]string, error) {
 	openCodeRoot := filepath.Join(attemptDir, "opencode")
-	configHome := filepath.Join(openCodeRoot, "config")
-	configDir := filepath.Join(configHome, "opencode")
+	for _, name := range []string{"home", "config", "data", "cache", "state", "tmp"} {
+		dir := filepath.Join(openCodeRoot, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("codegen benchmark: creating OpenCode directory: %w", err)
+		}
+	}
+
+	skillSource := filepath.Join(root, ".agents", "default", "skills", "use-modern-go")
+	skillDestination := filepath.Join(openCodeRoot, "config", "opencode", "skills", "use-modern-go")
+	if err := os.CopyFS(skillDestination, os.DirFS(skillSource)); err != nil {
+		return nil, fmt.Errorf("codegen benchmark: installing use-modern-go skill: %w", err)
+	}
+
+	return openCodeEnvironment(attemptDir, config), nil
+}
+
+func openCodeEnvironment(attemptDir string, config []byte) []string {
+	openCodeRoot := filepath.Join(attemptDir, "opencode")
 	overrides := []string{
 		"HOME=" + filepath.Join(openCodeRoot, "home"),
-		"XDG_CONFIG_HOME=" + configHome,
+		"XDG_CONFIG_HOME=" + filepath.Join(openCodeRoot, "config"),
 		"XDG_DATA_HOME=" + filepath.Join(openCodeRoot, "data"),
 		"XDG_CACHE_HOME=" + filepath.Join(openCodeRoot, "cache"),
 		"XDG_STATE_HOME=" + filepath.Join(openCodeRoot, "state"),
@@ -524,19 +803,6 @@ func prepareOpenCodeEnvironment(root, attemptDir string, config []byte) ([]strin
 		"OPENCODE_DISABLE_PROJECT_CONFIG=1",
 		"OPENCODE_DISABLE_MODELS_FETCH=1",
 	}
-	for _, value := range overrides[:6] {
-		_, dir, _ := strings.Cut(value, "=")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("codegen benchmark: creating OpenCode directory: %w", err)
-		}
-	}
-
-	skillSource := filepath.Join(root, ".agents", "default", "skills", "use-modern-go")
-	skillDestination := filepath.Join(configDir, "skills", "use-modern-go")
-	if err := os.CopyFS(skillDestination, os.DirFS(skillSource)); err != nil {
-		return nil, fmt.Errorf("codegen benchmark: installing use-modern-go skill: %w", err)
-	}
-
 	replaced := make(map[string]bool, len(overrides))
 	for _, value := range overrides {
 		key, _, _ := strings.Cut(value, "=")
@@ -550,7 +816,7 @@ func prepareOpenCodeEnvironment(root, attemptDir string, config []byte) ([]strin
 		}
 		env = append(env, value)
 	}
-	return append(env, overrides...), nil
+	return append(env, overrides...)
 }
 
 func parseAgentResult(data []byte) (agentResult, error) {
@@ -559,7 +825,13 @@ func parseAgentResult(data []byte) (agentResult, error) {
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
 		var event struct {
-			Type string `json:"type"`
+			Type  string `json:"type"`
+			Error struct {
+				Name string `json:"name"`
+				Data struct {
+					Message string `json:"message"`
+				} `json:"data"`
+			} `json:"error"`
 			Part struct {
 				Type   string `json:"type"`
 				Tool   string `json:"tool"`
@@ -575,6 +847,18 @@ func parseAgentResult(data []byte) (agentResult, error) {
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			return agentResult{}, fmt.Errorf("decoding event: %w", err)
+		}
+		if event.Type == "error" {
+			detail := event.Error.Data.Message
+			if detail == "" {
+				detail = event.Error.Name
+			}
+			if detail == "" {
+				detail = "OpenCode error event (see events.jsonl)"
+			}
+			if result.Error == "" {
+				result.Error = detail
+			}
 		}
 		if event.Type == "step_finish" || event.Part.Type == "step-finish" || event.Part.Type == "step_finish" {
 			result.Turns++
@@ -639,16 +923,59 @@ func verifyServer(parent context.Context, host string, selected []benchmarkModel
 	return nil
 }
 
+// Read provenance from the inference server, never the benchmark's checkout.
+func serverVersions(parent context.Context, host string) (string, string, error) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	versions := make([]string, 0, 2)
+	for _, path := range []string{"/v1/liveness", "/v1/kronk/libs"} {
+		requestURL, err := url.JoinPath(host, path)
+		if err != nil {
+			return "", "", fmt.Errorf("codegen benchmark: building version URL: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return "", "", err
+		}
+		if token := strings.TrimSpace(os.Getenv("KRONK_TOKEN")); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		var metadata struct {
+			Build   string `json:"build"`
+			Current string `json:"current"`
+		}
+		err = func() error {
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("returned %s", resp.Status)
+			}
+			return json.NewDecoder(io.LimitReader(resp.Body, 8*1024)).Decode(&metadata)
+		}()
+		if err != nil {
+			return "", "", fmt.Errorf("codegen benchmark: reading server version from %s: %w", path, err)
+		}
+		version := metadata.Build
+		if path == "/v1/kronk/libs" {
+			version = metadata.Current
+		}
+		if strings.TrimSpace(version) == "" {
+			return "", "", fmt.Errorf("codegen benchmark: missing server version from %s", path)
+		}
+		versions = append(versions, version)
+	}
+	return versions[0], versions[1], nil
+}
+
 func loadPrompt(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("codegen benchmark: reading prompt %s: %w", path, err)
 	}
-	base, _, ok := strings.Cut(string(data), promptSeparator)
-	if !ok {
-		return "", fmt.Errorf("codegen benchmark: prompt separator is missing from %s", path)
-	}
-	return strings.TrimSpace(base), nil
+	return strings.TrimSpace(string(data)), nil
 }
 
 func normalizeHost(host string) (string, error) {
@@ -665,13 +992,12 @@ func normalizeHost(host string) (string, error) {
 }
 
 func prepareRunDir(dir string) (string, error) {
-	if err := os.RemoveAll(dir); err != nil {
-		return "", fmt.Errorf("codegen benchmark: clearing output directory: %w", err)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	now := time.Now()
+	dateDir := filepath.Join(dir, now.Format("2006-01-02"))
+	if err := os.MkdirAll(dateDir, 0o755); err != nil {
 		return "", fmt.Errorf("codegen benchmark: creating output directory: %w", err)
 	}
-	return dir, nil
+	return os.MkdirTemp(dateDir, "run-"+now.Format("150405.000000000")+"-")
 }
 
 func repositoryRoot() (string, error) {
