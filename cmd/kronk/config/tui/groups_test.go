@@ -69,7 +69,11 @@ func TestEscClearsTheSearchInOnePress(t *testing.T) {
 	a := groupedApp()
 	a.group, a.groupAsked = string(source.GroupChat), true
 	a.open(stepPick)
+	if a.fieldUsesEsc() {
+		t.Fatal("open: the search is open before / is pressed")
+	}
 
+	a.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
 	a.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
 	if !a.fieldUsesEsc() {
 		t.Fatal("typing: the search is not open")

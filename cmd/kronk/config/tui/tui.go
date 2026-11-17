@@ -41,7 +41,6 @@ const (
 const (
 	actSave  = "save"
 	actOther = "other"
-	actOne   = "one"
 	actQuit  = "quit"
 	actFix   = "fix:" // followed by the index in app.fixes
 )
@@ -152,27 +151,12 @@ type app struct {
 	otherPath string
 	saveErr   error // the last save failed; the review offers another file
 
-	jump jump
 	list list
 
 	savedPath string
 	backup    string
 	pull      pull
 	done      buttons // All done's buttons
-}
-
-// jump is changing one answer on its own, picked in the review or in the
-// answers list.
-type jump struct {
-	// to is the question to change. Once it is answered the review comes
-	// back, unless the answer opened questions that were not asked before
-	// (seen lists those that were).
-	to   string
-	seen map[string]bool
-
-	// back is the question that was on screen when the answers list opened
-	// from the questions; after the change the questions resume there.
-	back string
 }
 
 // list is the answers list while it has the keys (ctrl+o).
@@ -317,7 +301,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.list.open {
 				return a.listKey(msg)
 			}
-			if msg.String() == keyAnswers && (a.step == stepQuestions || a.step == stepReview) {
+			if msg.String() == keyAnswers && listSteps(a.step) {
 				return a.openList()
 			}
 			if msg.String() == "esc" && !a.fieldUsesEsc() {
@@ -412,21 +396,6 @@ func (a *app) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m, cmd := form.Update(msg)
 	if f, ok := m.(*huh.Form); ok {
 		form = f
-	}
-
-	if a.step == stepQuestions && a.jump.to != "" && form.State == huh.StateNormal {
-		done, cancel := a.jumpDone()
-		switch {
-		case cancel:
-			a.jump = jump{}
-		case done:
-			// Skip the questions already asked, to the next one the new
-			// answer opened, if any.
-			if next := a.nextNew(); next != "" {
-				return a, tea.Batch(append([]tea.Cmd{cmd}, skipTo(form, next, a.maxGroups())...)...)
-			}
-			return a.endJump()
-		}
 	}
 
 	switch form.State {

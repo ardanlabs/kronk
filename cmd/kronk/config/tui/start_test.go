@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -88,5 +90,62 @@ func TestValidFile(t *testing.T) {
 	}
 	if err := validPick(fileOther); err != nil {
 		t.Errorf("another file is checked when its path is entered: %v", err)
+	}
+}
+
+func TestAnotherMachineGetsItsOwnFile(t *testing.T) {
+	a := newApp(context.Background(), nil, true)
+	a.serverFile = "/srv/model_config.yaml"
+	cwdFile := filepath.Join(t.TempDir(), "model_config.prod.yaml")
+	a.files = []string{a.serverFile, cwdFile}
+	a.start = newStart(a.serverFile)
+
+	if got := a.start.path(); got != a.serverFile {
+		t.Fatalf("this machine: path = %q, want the server's file", got)
+	}
+
+	a.start.target = targetAnother
+	if got := a.start.path(); got == a.serverFile {
+		t.Fatalf("another machine: path = %q, want a file other than the server's", got)
+	}
+
+	for _, o := range a.anotherFileOptions() {
+		if o.Value == a.serverFile {
+			t.Fatal("another machine: the server's file is offered")
+		}
+	}
+
+	a.start.fileAnother = cwdFile
+	if got := a.start.path(); got != cwdFile {
+		t.Fatalf("another machine: path = %q, want %q", got, cwdFile)
+	}
+}
+
+func TestStartRowsFollowTheAnswers(t *testing.T) {
+	a := newApp(context.Background(), nil, true)
+	a.start = newStart("/srv/model_config.yaml")
+	a.step = stepStart
+
+	keys := func() []string {
+		var out []string
+		for _, r := range a.answerRows() {
+			out = append(out, r.key)
+		}
+		return out
+	}
+
+	if got, want := keys(), []string{keyTarget, keyFile, keyWhat}; !slices.Equal(got, want) {
+		t.Fatalf("this machine: rows = %v, want %v", got, want)
+	}
+
+	a.start.target, a.start.gpus = targetAnother, "2"
+	want := []string{keyTarget, keyFileAnother, keyWhat, keyGPUs, keyGPUType, keyVRAM, keyRAM}
+	if got := keys(); !slices.Equal(got, want) {
+		t.Fatalf("another machine: rows = %v, want %v", got, want)
+	}
+
+	a.start.what = whatServer
+	if got, want := keys(), []string{keyTarget, keyFileAnother, keyWhat}; !slices.Equal(got, want) {
+		t.Fatalf("server settings: rows = %v, want %v; no hardware", got, want)
 	}
 }

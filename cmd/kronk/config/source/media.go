@@ -26,7 +26,7 @@ func (s *Source) mediaChoices(doc modelconfig.Document) (installed []Choice, cat
 		for _, f := range files {
 			_, inFile := doc.BuckyModels[f.ID]
 			seen[f.ID] = true
-			installed = append(installed, Choice{ID: f.ID, Kind: KindAudioModel, Installed: true, Validated: true, InFile: inFile, Size: f.Size})
+			installed = append(installed, Choice{ID: f.ID, Kind: KindAudioModel, Installed: true, InFile: inFile, Size: f.Size})
 		}
 	}
 	for name, entry := range buckymodels.Catalog() {
@@ -48,7 +48,7 @@ func (s *Source) mediaChoices(doc modelconfig.Document) (installed []Choice, cat
 				for _, n := range mp.FileSizes {
 					size += n
 				}
-				installed = append(installed, Choice{ID: name, Kind: KindImageModel, Installed: true, Validated: true, InFile: inFile, Size: size})
+				installed = append(installed, Choice{ID: name, Kind: KindImageModel, Installed: true, InFile: inFile, Size: size})
 				continue
 			}
 		}

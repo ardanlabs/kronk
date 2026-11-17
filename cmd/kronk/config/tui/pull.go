@@ -127,53 +127,59 @@ func (a *app) pullKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// downloadView shows the file being downloaded and its progress.
+// downloadView shows the download in a box like the install offer's: what
+// is downloading, the file and its progress, with the key help under it.
 func (a *app) downloadView() string {
 	p := a.pull.last
+	box := a.st.box.BorderForeground(a.st.heading.GetForeground()).Padding(1, 2)
 
+	// The bar fills the box, leaving room for the percentage.
 	width := 50
 	if w := a.contentWidth(); w > 0 {
-		width = min(w, 70)
+		width = min(max(w-box.GetHorizontalFrameSize()-5, 10), 60)
 	}
-	var frac float64
-	if p.TotalBytes > 0 {
-		frac = min(max(float64(p.CurrentBytes)/float64(p.TotalBytes), 0), 1)
-	}
-	filled := int(frac * float64(width))
-	bar := a.st.heading.Render(strings.Repeat("█", filled)) + a.st.muted.Render(strings.Repeat("░", width-filled)) +
-		fmt.Sprintf(" %3.0f%%", frac*100)
 
-	file := "Downloading " + a.choice.ID
-	if p.Src != "" {
-		file = "Downloading " + path.Base(p.Src)
+	lines := []string{
+		a.spin.View() + " " + a.st.heading.Render("Downloading "+a.choice.ID),
+		a.st.muted.Render("The configuration is saved. The server can load the model once it is here."),
+		"",
 	}
 
 	stats := time.Since(a.pull.start).Truncate(time.Second).String()
-
-	// The whisper download reports no progress: the size and the time
-	// show it is working.
-	if !source.PullReportsProgress(a.choice) {
+	switch {
+	case !source.PullReportsProgress(a.choice):
+		// The whisper download reports no progress: the size and the time
+		// show it is working.
 		if a.choice.Size > 0 {
 			stats = source.FormatBytes(uint64(a.choice.Size)) + " · " + stats
 		}
-		return lipgloss.JoinVertical(lipgloss.Left,
-			a.spin.View()+" "+a.st.heading.Render(file),
-			a.st.muted.Render(stats),
-			"",
-			a.st.help.Render("esc cancels the download"),
-		)
+		lines = append(lines, a.st.value.Render(stats))
+
+	default:
+		var frac float64
+		if p.TotalBytes > 0 {
+			frac = min(max(float64(p.CurrentBytes)/float64(p.TotalBytes), 0), 1)
+			stats = fmt.Sprintf("%s of %s · %.0f MB/s · %s",
+				source.FormatBytes(uint64(max(p.CurrentBytes, 0))), source.FormatBytes(uint64(p.TotalBytes)), p.MBPerSec, stats)
+		}
+		filled := int(frac * float64(width))
+		bar := a.st.heading.Render(strings.Repeat("█", filled)) + a.st.muted.Render(strings.Repeat("░", width-filled)) +
+			a.st.value.Render(fmt.Sprintf(" %3.0f%%", frac*100))
+
+		if p.Src != "" {
+			lines = append(lines, a.st.label.Render("File  ")+a.st.value.Render(path.Base(p.Src)), "")
+		}
+		lines = append(lines, bar, a.st.muted.Render(stats))
 	}
 
-	if p.TotalBytes > 0 {
-		stats = fmt.Sprintf("%s of %s · %.0f MB/s · %s",
-			source.FormatBytes(uint64(max(p.CurrentBytes, 0))), source.FormatBytes(uint64(p.TotalBytes)), p.MBPerSec, stats)
+	content := strings.Join(lines, "\n")
+	if w := a.contentWidth(); w > 0 && lipgloss.Width(box.Render(content)) > w {
+		box = box.Width(w)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		a.spin.View()+" "+a.st.heading.Render(file),
-		bar,
-		a.st.muted.Render(stats),
+		box.Render(content),
 		"",
-		a.st.help.Render("esc cancels the download"),
+		a.wrap(a.st.help.Render("esc cancels the download")),
 	)
 }

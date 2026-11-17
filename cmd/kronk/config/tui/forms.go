@@ -32,34 +32,26 @@ func (a *app) newPickForm() *huh.Form {
 		opts = append(opts, huh.NewOption(a.pickLabel(rows[i], w), c.ID))
 	}
 
-	// The question is in pickHeading. huh shows the search text where the
-	// title goes, so the title is only seen when the search is closed. The
-	// blank description puts an empty line under the search.
+	// The question is in pickHeading; / is listed in the key help. huh shows
+	// the search where the title goes, and only for a field with a title: the
+	// empty one keeps that line, blank until / opens the search.
 	sel := huh.NewSelect[string]().
-		Title("Press / to search").
-		Description(" ").
+		TitleFunc(func() string { return "" }, nil).
 		Options(opts...).
 		Height(16).
 		Value(&a.picked)
 	sel.WithTheme(a.searchTheme())
 
-	// Open the search the way the / key does. Filtering(true) would turn it
-	// on without the esc binding that closes it, so esc would leave the step.
-	form := a.newForm(huh.NewGroup(sel))
-	form.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
-	return form
+	return a.newForm(huh.NewGroup(sel))
 }
 
 // searchTheme is the form theme for the picker's list: a space after the
-// search's / prompt, and its blank description is one line, without the
-// usual blank line after it. A select keeps the first theme it gets, so the
-// form's theme doesn't replace it.
+// search's / prompt. A select keeps the first theme it gets, so the form's
+// theme doesn't replace it.
 func (a *app) searchTheme() huh.Theme {
 	return huh.ThemeFunc(func(bool) *huh.Styles {
 		st := *a.colors.form()
 		st.Focused.TextInput.Prompt = st.Focused.TextInput.Prompt.PaddingRight(1)
-		st.Focused.Description = st.Focused.Description.MarginBottom(0)
-		st.Blurred.Description = st.Focused.Description
 		return &st
 	})
 }
@@ -81,10 +73,7 @@ func (a *app) clearSearch(esc tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // It has the focused field's border, so it reads as part of the list.
 func (a *app) pickHeading() string {
 	st := a.theme.Theme(false)
-	hint := "Type to search. Installed models first, then the catalog."
-	return st.Focused.Base.Render(a.groupLine() + "\n" +
-		st.Focused.Title.Render(a.pickQuestion()) + "\n" +
-		st.Focused.Description.Render(hint))
+	return st.Focused.Base.Render(a.groupLine() + "\n" + st.Focused.Title.Render(a.pickQuestion()))
 }
 
 // backKeyMap shows esc as the "back" key in the form help. Esc is handled by
@@ -136,7 +125,6 @@ const maxFormWidth = 100
 type pickRow struct {
 	idText, sourceText, kindText, sizeText string
 	notes                                  []string
-	notValidated                           bool
 }
 
 // pickWidths is the widest value of each picker column.
@@ -146,9 +134,11 @@ type pickWidths struct {
 
 func newPickRow(c source.Choice) pickRow {
 	r := pickRow{idText: c.ID, sourceText: "catalog", kindText: string(c.Group()), sizeText: "-"}
-	if c.Installed {
+	switch {
+	case c.Installed:
 		r.sourceText = "installed"
-		r.notValidated = !c.Validated
+	case c.Incomplete:
+		r.sourceText = "incomplete"
 	}
 	if c.Size > 0 {
 		r.sizeText = source.FormatBytes(uint64(c.Size))
@@ -163,7 +153,16 @@ func newPickRow(c source.Choice) pickRow {
 // pickLabel pads each column before styling it, so ANSI codes don't break
 // the alignment.
 func (a *app) pickLabel(r pickRow, w pickWidths) string {
-	label := fmt.Sprintf("%-*s  %s", w.id, r.idText, a.st.muted.Render(fmt.Sprintf("%-*s", w.source, r.sourceText)))
+	// Installed is green, ready to use; an incomplete download stands out:
+	// it needs pulling again.
+	src := a.st.muted
+	switch r.sourceText {
+	case "installed":
+		src = a.st.ok
+	case "incomplete":
+		src = a.st.warn
+	}
+	label := fmt.Sprintf("%-*s  %s", w.id, r.idText, src.Render(fmt.Sprintf("%-*s", w.source, r.sourceText)))
 
 	// The kind of model only tells something in All models: a group's list
 	// has one kind, named in the heading.
@@ -173,9 +172,6 @@ func (a *app) pickLabel(r pickRow, w pickWidths) string {
 	label += "  " + a.st.muted.Render(fmt.Sprintf("%*s", w.size, r.sizeText))
 	if len(r.notes) > 0 {
 		label += "  " + a.st.muted.Render(strings.Join(r.notes, " · "))
-	}
-	if r.notValidated {
-		label += "  " + a.st.warn.Render("not validated")
 	}
 
 	return label
@@ -396,14 +392,11 @@ func (a *app) newSectionsForm() *huh.Form {
 	return a.newForm(huh.NewGroup(sel))
 }
 
-// reviewOptions are the review's actions. When the answers don't fit, the
-// fixes come first, then keep: save anyway.
+// reviewOptions are the review's actions; ctrl+o changes answers. When the
+// answers don't fit, the fixes come first, then keep: save anyway.
 func (a *app) reviewOptions() []huh.Option[string] {
 	if len(a.problems) > 0 {
-		return []huh.Option[string]{
-			huh.NewOption("Change one answer…", actOne),
-			huh.NewOption("Quit without saving", actQuit),
-		}
+		return []huh.Option[string]{huh.NewOption("Quit without saving", actQuit)}
 	}
 
 	var opts []huh.Option[string]
@@ -418,7 +411,6 @@ func (a *app) reviewOptions() []huh.Option[string] {
 	return append(opts,
 		huh.NewOption(save, actSave),
 		huh.NewOption("Save to another file…", actOther),
-		huh.NewOption("Change one answer…", actOne),
 		huh.NewOption("Quit without saving", actQuit),
 	)
 }
@@ -427,9 +419,9 @@ func (a *app) reviewOptions() []huh.Option[string] {
 // it, title, description and the blank line after it, the options and a
 // wrapped save path, then the blank line and the key help.
 func (a *app) reviewFormHeight() int {
-	options := 2 // change one answer, quit
+	options := 1 // quit
 	if len(a.problems) == 0 {
-		options = len(a.fixes) + 4
+		options = len(a.fixes) + 3
 	}
 	return options + 8
 }
@@ -440,11 +432,11 @@ func (a *app) notFitting() bool {
 }
 
 func (a *app) newReviewForm() *huh.Form {
-	title, desc := "Save this entry?", "Or change answers before saving."
+	title, desc := "Save this entry?", "Or change answers first: ctrl+o lists them."
 	switch {
 	case len(a.problems) > 0:
 		// Without a save option the file path below is never asked.
-		title, desc = "Fix the answers above before saving.", "Kronk would refuse them when it loads the model."
+		title, desc = "Fix the answers above before saving.", "Kronk would refuse them when it loads the model. ctrl+o lists the answers to change them."
 	case a.notFitting():
 		title, desc = "It doesn't fit in memory.", "Pick a change that fits, or keep the answers and save."
 	case a.server:
@@ -460,7 +452,7 @@ func (a *app) newReviewForm() *huh.Form {
 
 	path := huh.NewInput().
 		Title("File path").
-		Description("For another machine: copy it there, or point KRONK_POOL_MODEL_CONFIG_FILE at it.").
+		Description("An existing file, or a new one to create.").
 		Placeholder("./model_config.yaml").
 		Validate(validFile).
 		Value(&a.otherPath)

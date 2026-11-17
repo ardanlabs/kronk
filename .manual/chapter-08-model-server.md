@@ -412,28 +412,42 @@ and names the key it writes. In a terminal at least 120 columns wide, an
 answers column on the right lists every question asked so far and the ones
 still ahead, with the answer to each; defaults are marked `(default)`. At any
 size, `ctrl+o` opens that list full screen. Enter on an answer opens that
-question; once it is answered, the questions resume where they were. Esc
-closes the list.
+question, and the questions go on from there to the review, as usual. During
+the questions, the list ends with a **Review and save** button: it goes
+straight to the review, and the questions not reached keep their answers (the
+values in the file, or the defaults). A question that still needs an answer
+opens first. Esc closes the list.
 
 #### Start
 
-1. **Config file.** The file the server reads comes first
+1. **This machine or another one.** It decides the files offered next and,
+   for a model, the hardware the questions and the memory check use.
+2. **Config file.** For this machine, the file the server reads comes first
    (`KRONK_POOL_MODEL_CONFIG_FILE`, otherwise
    `<base-path>/models/model_config.yaml`), then `model_config*.yaml` files in
-   the current directory. Any other path, including a new file, also works.
-2. **A model or the server settings.**
-3. **This machine or another one** (models only). This machine's GPUs, GPU
-   memory, and RAM are detected through llama.cpp, so its libraries must be
-   installed. For another machine, enter its GPU count, GPU type, memory per
-   GPU, and RAM; the libraries are not needed.
-4. **The model.** First the kind of model: chat, embeddings, rerank,
+   the current directory. For another machine, the file to copy there:
+   `model_config.yaml` in the current directory (new when it doesn't exist
+   yet), then the other `model_config*.yaml` files there; the file this
+   machine's server reads is not offered. Any other path, including a new
+   file, also works.
+3. **A model or the server settings.**
+4. **The hardware** (models only). This machine's GPUs, GPU memory, and RAM
+   are detected through llama.cpp, so its libraries must be installed. For
+   another machine, enter its GPU count, GPU type, memory per GPU, and RAM;
+   the libraries are not needed.
+
+These first questions have the same answers list as the model questions:
+beside them in a wide terminal, and full screen with `ctrl+o`, where Enter on
+an answer goes back to that question.
+5. **The model.** First the kind of model: chat, embeddings, rerank,
    decision, audio (whisper) or image, each with its number of models, or
-   **All models** to search every kind. Then the models of that kind; type to
-   search. Installed models come first, then the catalog. A catalog chat model is
-   configured from its GGUF header alone, which is fetched and cached; any
-   catalog model is offered for download after saving. When a chat
-   model already has entries in the file, pick the one to change or add a
-   variant (`model/NAME`).
+   **All models** to search every kind. Then the models of that kind; press
+   `/` to search. Installed models come first, then the catalog. A model whose
+   download never finished is listed as `incomplete` and treated as a catalog
+   model. A catalog chat model is configured from its GGUF header alone, which
+   is fetched and cached; any catalog or incomplete model is offered for
+   download after saving. When a chat model already has entries in the file,
+   pick the one to change or add a variant (`model/NAME`).
 
 A box then shows the model's architecture, the machine, and what AutoTune picks
 for the model on that hardware. When AutoTune's pick may not fit the target GPU,
@@ -497,10 +511,10 @@ file. The admin password is typed in clear and written as its SHA-256.
 #### Review and save
 
 The review shows the changes and the entry or `kms` section exactly as it will
-be written. **Change one answer** (or `ctrl+o`) opens the same list; the
-picked question opens, and the review comes back once it is answered, after
-any questions the new answer adds. Esc goes back to the last question, and esc
-again walks back through them. For a chat model the review also:
+be written. To change an answer, `ctrl+o` opens the same list; the questions
+go on from the picked one, and **Review and save** in the list comes back to
+the review without walking through the rest. Esc goes back to the last
+question, and esc again walks back through them. For a chat model the review also:
 
 - runs the memory check with the answers on the chosen hardware. When the
   answers do not fit, it offers the fixes that do fit, each with the memory it
@@ -520,17 +534,18 @@ there with `KRONK_POOL_MODEL_CONFIG_FILE`.
 
 When the model is not installed yet, the tool then shows its pull command
 (`kronk model pull --local <id>`, or the `kronk bucky` / `kronk malina`
-command for audio and image models) with two buttons: **Copy pull command**,
+command for audio and image models) with two buttons: **Copy command**,
 and **Install now**, the default, which downloads it with progress (Esc
-cancels). Esc skips both. A config for another machine only offers the copy,
-to run there. The configuration is saved first, so a cancelled or failed
-download keeps it.
+cancels). Esc skips both and goes to **All done!**, where Esc comes back
+here while the model is still not downloaded (`q` quits). A config for
+another machine only offers the copy, to run there. The configuration is saved
+first, so a cancelled or failed download keeps it.
 
 **All done!** then sums up the file, its backup, the entry written (or that
 Kronk's defaults apply when there was nothing to write), where the model is
 installed or the command still to run, and how the server picks up the file.
 **Configure another model** starts over with the same file and machine;
-**Exit**, the default, quits.
+**Exit configuration tool**, the default, quits, as does `q`.
 
 ## 8.6 Catalog Operations
 

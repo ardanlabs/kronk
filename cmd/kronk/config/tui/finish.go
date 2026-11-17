@@ -34,7 +34,9 @@ func (b *buttons) key(msg tea.KeyPressMsg) (pressed int, ok bool) {
 	return 0, false
 }
 
-func (a *app) buttonsView(b buttons) string {
+// buttonsView draws the buttons in a row, or one per line when the row is
+// wider than width (0: no limit).
+func (a *app) buttonsView(b buttons, width int) string {
 	st := a.theme.Theme(false)
 	parts := make([]string, len(b.labels))
 	for i, l := range b.labels {
@@ -47,25 +49,24 @@ func (a *app) buttonsView(b buttons) string {
 
 	// Too narrow for a row: one button per line.
 	row := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	if w := a.contentWidth(); w > 0 && lipgloss.Width(row) > w {
+	if width > 0 && lipgloss.Width(row) > width {
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}
 	return row
 }
 
 // titledBox draws content in a rounded box with title set in its top border.
-// It fits its content, and wraps it when the screen is narrower.
-func (a *app) titledBox(title string, content string) string {
+// It fits its content, and wraps it when wider than width (0: no limit).
+func (a *app) titledBox(title string, content string, width int) string {
 	style := a.st.box.BorderTop(false)
 	body := style.Render(content)
-	if w := a.contentWidth(); w > 0 && lipgloss.Width(body) > w {
-		body = style.Width(w).Render(content)
+	if width > 0 && lipgloss.Width(body) > width {
+		body = style.Width(width).Render(content)
 	}
-	width := lipgloss.Width(body)
 
 	border := lipgloss.NewStyle().Foreground(a.st.box.GetBorderLeftForeground())
 	label := " " + title + " "
-	fill := max(width-lipgloss.Width(label)-3, 0)
+	fill := max(lipgloss.Width(body)-lipgloss.Width(label)-3, 0)
 	top := border.Render("╭─") + a.st.label.Render(label) + border.Render(strings.Repeat("─", fill)+"╮")
 
 	return top + "\n" + body
@@ -77,7 +78,7 @@ func (a *app) titledBox(title string, content string) string {
 // Install offer buttons.
 const (
 	btnInstall = "Install now"
-	btnCopy    = "Copy pull command"
+	btnCopy    = "Copy command"
 )
 
 // offerPull opens the install offer for a saved model that isn't installed.
@@ -85,7 +86,7 @@ const (
 func (a *app) offerPull() (tea.Model, tea.Cmd) {
 	a.step = stepOffer
 	a.pull.offer = buttons{labels: []string{btnCopy, btnInstall}, at: 1}
-	if a.facts.Other != nil {
+	if a.forAnother() {
 		a.pull.offer = buttons{labels: []string{btnCopy}}
 	}
 	return a, nil
@@ -124,16 +125,22 @@ func (a *app) offerView() string {
 		size = " It's " + source.FormatBytes(uint64(a.choice.Size)) + "."
 	}
 
-	// The text wraps at the screen width; the box and the buttons fit
-	// themselves.
 	lines := []string{
 		a.st.ok.Render("✓ ") + a.st.muted.Render("Saved to "+shortPath(a.savedPath)),
 		"",
 	}
-	if a.facts.Other != nil {
+	if a.forAnother() {
+		who := "that machine"
+		if a.facts.Other != nil {
+			who = strings.TrimPrefix(a.facts.Other.String(), "another machine: ")
+		}
 		lines = append(lines,
 			name+" is not installed on this machine.",
-			"If "+strings.TrimPrefix(a.facts.Other.String(), "another machine: ")+" doesn't have it, run the pull command there.")
+			"If "+who+" doesn't have it, run the pull command there.")
+	} else if a.choice.Incomplete {
+		lines = append(lines,
+			name+" is incomplete: its download never finished.",
+			"Do you want to download it again now?"+size+" The server can't load it until it is.")
 	} else {
 		lines = append(lines,
 			name+" is not installed yet.",
@@ -147,15 +154,47 @@ func (a *app) offerView() string {
 		lines = append(lines, "", a.st.warn.Render(a.pull.note))
 	}
 
+	box := a.st.box.BorderForeground(a.st.heading.GetForeground()).Padding(1, 2)
+	pull := func(width int) string {
+		return a.titledBox("Pull command", a.st.value.Render(source.PullCommand(a.choice)), width)
+	}
+	return a.buttonBox(box, func(width int) string {
+		return a.wrapTo(strings.Join(lines, "\n"), width) + "\n\n" + pull(width)
+	}, a.pull.offer, "esc skip")
+}
+
+// buttonBox draws the content in box with the buttons centered under it, and
+// the key help under the box. The box fits the content and the buttons, and
+// wraps only when the screen is narrower: content gets the width it may take
+// (0: no limit).
+func (a *app) buttonBox(box lipgloss.Style, content func(width int) string, b buttons, extra string) string {
+	frame := box.GetHorizontalFrameSize()
+	room := 0
+	if w := a.contentWidth(); w > 0 {
+		room = max(w-frame, 1)
+	}
+
+	text := content(room)
+	row := a.buttonsView(b, room)
+	inner := max(lipgloss.Width(text), lipgloss.Width(row))
+	if room > 0 && inner > room {
+		box = box.Width(room + frame)
+		inner = room
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Left,
-		a.wrap(strings.Join(lines, "\n")),
+		box.Render(text+"\n\n"+lipgloss.PlaceHorizontal(inner, lipgloss.Center, row)),
 		"",
-		a.titledBox("Pull command", a.st.value.Render(source.PullCommand(a.choice))),
-		"",
-		a.buttonsView(a.pull.offer),
-		"",
-		a.wrap(a.st.help.Render(a.buttonsHelp(a.pull.offer, "esc skip"))),
+		a.wrap(a.st.help.Render(a.buttonsHelp(b, extra))),
 	)
+}
+
+// wrapTo breaks text at width (0: no limit).
+func (a *app) wrapTo(s string, width int) string {
+	if width > 0 && lipgloss.Width(s) > width {
+		return lipgloss.NewStyle().Width(width).Render(s)
+	}
+	return s
 }
 
 func (a *app) buttonsHelp(b buttons, extra string) string {
@@ -170,7 +209,7 @@ func (a *app) buttonsHelp(b buttons, extra string) string {
 // All done
 
 // All done buttons.
-const btnExit = "Exit"
+const btnExit = "Exit configuration tool"
 
 // doneLabelWidth is the width of All done's labels; values line up after it.
 const doneLabelWidth = 7
@@ -192,7 +231,12 @@ func (a *app) finish() (tea.Model, tea.Cmd) {
 
 func (a *app) doneKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c", "esc", "q":
+	case "esc":
+		if a.canReoffer() {
+			return a.offerPull()
+		}
+		return a, tea.Quit
+	case "ctrl+c", "q":
 		return a, tea.Quit
 	}
 
@@ -257,9 +301,13 @@ func (a *app) doneView() string {
 
 	lines = append(lines, "")
 	switch {
-	case a.facts.Other != nil:
+	case a.forAnother():
+		machine := "another machine"
+		if a.facts.Other != nil {
+			machine = a.facts.Other.String()
+		}
 		lines = append(lines,
-			"This config is for "+a.facts.Other.String()+".",
+			"This config is for "+machine+".",
 			"Copy it there as ~/.kronk/models/model_config.yaml, or start that server with:",
 			a.st.value.Render("  KRONK_POOL_MODEL_CONFIG_FILE=<path> kronk server start"))
 	case a.savedPath == a.serverFile:
@@ -273,19 +321,23 @@ func (a *app) doneView() string {
 			a.st.value.Render("  KRONK_POOL_MODEL_CONFIG_FILE="+a.savedPath+" kronk server start"))
 	}
 
-	// The box fits its text, and wraps only when the screen is narrower.
-	box := a.st.box.BorderForeground(a.st.ok.GetForeground()).Padding(1, 2)
-	if w := a.contentWidth(); w > 0 && lipgloss.Width(box.Render(strings.Join(lines, "\n"))) > w {
-		box = box.Width(w)
+	extra := "esc exit"
+	if a.canReoffer() {
+		extra = "esc back to install · q exit"
 	}
+	box := a.st.box.BorderForeground(a.st.ok.GetForeground()).Padding(1, 2)
+	return a.buttonBox(box, func(int) string { return strings.Join(lines, "\n") }, a.done, extra)
+}
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		box.Render(strings.Join(lines, "\n")),
-		"",
-		a.buttonsView(a.done),
-		"",
-		a.wrap(a.st.help.Render(a.buttonsHelp(a.done, "esc exit"))),
-	)
+// forAnother reports whether the config is for another machine.
+func (a *app) forAnother() bool {
+	return a.start != nil && a.start.forAnother()
+}
+
+// canReoffer reports whether All done can go back to the install offer: the
+// saved model is still not downloaded.
+func (a *app) canReoffer() bool {
+	return a.needsPull() && !a.pull.pulled
 }
 
 // modelLines tell where the model is, or what to run to install it.
@@ -293,7 +345,7 @@ func (a *app) modelLines(row func(label, value string) string) []string {
 	cmd := padRight("", doneLabelWidth+1) + a.st.value.Render(source.PullCommand(a.choice))
 
 	switch {
-	case a.facts.Other != nil:
+	case a.forAnother():
 		return []string{row("Model", "on that machine, if it isn't there, run:"), cmd}
 	case a.pull.pulled && a.pull.dir != "":
 		return []string{row("Model", "downloaded to "+shortPath(a.pull.dir))}

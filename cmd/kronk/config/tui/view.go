@@ -33,7 +33,7 @@ func (a *app) View() tea.View {
 		b.WriteString(a.offerView())
 
 	case stepDownloading:
-		b.WriteString(a.wrap(a.downloadView()))
+		b.WriteString(a.downloadView())
 
 	case stepDone:
 		b.WriteString(a.doneView())
@@ -130,7 +130,10 @@ func (a *app) factsView() string {
 	r := f.Analysis.Recommended
 
 	origin := "installed"
-	if !a.choice.Installed {
+	switch {
+	case a.choice.Incomplete:
+		origin = "incomplete download, read from the catalog"
+	case !a.choice.Installed:
 		origin = "catalog, not downloaded"
 	}
 

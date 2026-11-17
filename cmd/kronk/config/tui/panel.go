@@ -22,20 +22,50 @@ import (
 // panelMinWidth is the narrowest terminal that shows the answers column.
 const panelMinWidth = 120
 
-// answerRow is one line of the answers column.
+// answerRow is one line of the answers column. key is the form field it
+// opens; label names it when the key doesn't read well.
 type answerRow struct {
 	group     string
 	key       string
+	label     string
 	value     string
 	isDefault bool
 }
 
+// name is the row's name in the column.
+func (r answerRow) name() string {
+	if r.label != "" {
+		return r.label
+	}
+	return shortKey(r.key)
+}
+
+// listSteps are the steps that list their answers: the start form, the
+// questions and the review.
+func listSteps(s step) bool {
+	return s == stepStart || s == stepQuestions || s == stepReview
+}
+
+// rowReview is the open list's last row in the questions. It goes to the
+// review, keeping the answers given and those not reached yet.
+const rowReview = "\x00review"
+
+// listRows are the rows of the open list: the answers, then in the
+// questions the row that goes to the review.
+func (a *app) listRows() []answerRow {
+	rows := a.answerRows()
+	if a.step == stepQuestions {
+		rows = append(rows, answerRow{key: rowReview})
+	}
+	return rows
+}
+
 // showPanel reports whether the answers column is on screen.
 func (a *app) showPanel() bool {
-	if a.width < panelMinWidth || a.ans == nil || a.list.open {
+	if a.width < panelMinWidth || a.list.open || !listSteps(a.step) {
 		return false
 	}
-	return a.step == stepQuestions || a.step == stepReview
+	return a.step == stepStart || a.ans != nil
 }
 
 // panelWidth is the width of the answers column, border included.
@@ -52,8 +82,16 @@ func (a *app) formWidth() int {
 	return a.width
 }
 
-// answerRows returns the questions asked, in order, with their answers.
+// answerRows returns the questions asked, in order, with their answers: the
+// start form's, or the model's or server's.
 func (a *app) answerRows() []answerRow {
+	switch {
+	case a.step == stepStart:
+		return a.startRows()
+	case a.ans == nil:
+		return nil
+	}
+
 	var rows []answerRow
 	for _, q := range a.qs {
 		if !a.ans.Applies(a.facts, q) {
@@ -115,17 +153,24 @@ func (a *app) panelView(width, height int) string {
 	inner := width - 4 // border and padding
 	rows := a.answerRows()
 
+	// In the questions, the open list has a button under the answers that
+	// goes to the review. It stays in view when the answers scroll.
+	review := a.list.open && a.step == stepQuestions
+	onReview := review && a.list.at == len(rows)
+
+	// The cursor is on an answer, or on the button (no answer marked).
 	cursor := ""
 	switch {
+	case onReview:
 	case a.list.open && a.list.at < len(rows):
 		cursor = rows[a.list.at].key
-	case a.step == stepQuestions:
-		cursor = focusedKey(a.currentForm())
+	default:
+		cursor = a.cursorKey()
 	}
 
 	keyWidth := 0
 	for _, r := range rows {
-		keyWidth = max(keyWidth, len(shortKey(r.key)))
+		keyWidth = max(keyWidth, len(r.name()))
 	}
 	keyWidth = min(keyWidth, inner/2)
 
@@ -158,7 +203,7 @@ func (a *app) panelView(width, height int) string {
 			at = len(lines)
 			marker = a.st.heading.Render("› ")
 		}
-		key := truncate(shortKey(r.key), keyWidth)
+		key := truncate(r.name(), keyWidth)
 		value := truncate(r.value, inner-keyWidth-3)
 		keyStyle, style := a.st.label, a.st.value
 		switch {
@@ -174,10 +219,19 @@ func (a *app) panelView(width, height int) string {
 	// Border, heading and the blank line under it; the open list also has
 	// its key help at the bottom.
 	room := height - 4
-	var help string
+	var help, button string
 	if a.list.open {
 		help = a.listHelp(inner)
 		room -= lipgloss.Height(help) + 1
+	}
+	if review {
+		st := a.theme.Theme(false).Focused
+		style := st.BlurredButton
+		if onReview {
+			style, at = st.FocusedButton, len(lines)
+		}
+		button = style.Render("Review and save →") + a.st.muted.Render("  the questions left keep their answers")
+		room -= lipgloss.Height(button) + 1
 	}
 	room = max(room, 3)
 
@@ -197,6 +251,9 @@ func (a *app) panelView(width, height int) string {
 	}
 
 	lines = append([]string{a.st.heading.Render("Answers"), ""}, lines...)
+	if button != "" {
+		lines = append(lines, "", button)
+	}
 	if help != "" {
 		lines = append(lines, "", help)
 	}
@@ -219,24 +276,38 @@ func (a *app) listHelp(width int) string {
 // openList gives the keys to the answers list, with the cursor on the
 // question on screen.
 func (a *app) openList() (tea.Model, tea.Cmd) {
-	rows := a.answerRows()
+	rows := a.listRows()
 	if len(rows) == 0 {
 		return a, nil
 	}
 
 	a.list.open = true
 	a.list.at = min(a.list.at, len(rows)-1)
-	if a.step == stepQuestions {
-		if i := slices.IndexFunc(rows, func(r answerRow) bool { return r.key == focusedKey(a.currentForm()) }); i >= 0 {
+	if key := a.cursorKey(); key != "" {
+		if i := slices.IndexFunc(rows, func(r answerRow) bool { return r.key == key }); i >= 0 {
 			a.list.at = i
 		}
 	}
 	return a, nil
 }
 
+// cursorKey is the row of the question on screen: the start form's field
+// key, or the question's key. Empty in the review.
+func (a *app) cursorKey() string {
+	switch a.step {
+	case stepStart:
+		if f := a.currentForm().GetFocusedField(); f != nil {
+			return f.GetKey()
+		}
+	case stepQuestions:
+		return focusedKey(a.currentForm())
+	}
+	return ""
+}
+
 // listKey handles a key while the answers list is open.
 func (a *app) listKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	rows := a.answerRows()
+	rows := a.listRows()
 	page := max(a.height/2, 1)
 
 	switch msg.String() {
@@ -258,7 +329,11 @@ func (a *app) listKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		a.list.at = len(rows) - 1
 	case "enter":
 		a.list.open = false
-		if a.list.at >= 0 && a.list.at < len(rows) {
+		switch {
+		case a.list.at < 0 || a.list.at >= len(rows):
+		case rows[a.list.at].key == rowReview:
+			return a.skipToReview()
+		default:
 			return a.answerPicked(rows[a.list.at].key)
 		}
 	}
@@ -266,19 +341,17 @@ func (a *app) listKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// answerPicked opens the question picked in the answers list. From the
-// review, the review comes back once it is answered; from the questions,
-// they resume at the question that was on screen.
+// answerPicked opens the question picked in the answers list, from the start
+// form, the questions or the review. The questions go on from there and end
+// with the review, as always; the list's Review and save skips the rest.
 func (a *app) answerPicked(key string) (tea.Model, tea.Cmd) {
-	if a.step == stepQuestions && a.jump.to == "" {
-		current := focusedKey(a.currentForm())
-		if current == "" || current == key {
-			return a, nil
-		}
-		a.jump.back = current
+	if a.cursorKey() == key {
+		return a, nil
 	}
-
-	return a.editOne(key)
+	if a.step == stepStart {
+		return a.openAt(stepStart, key)
+	}
+	return a.openAt(stepQuestions, key)
 }
 
 // withAnswersKey adds ctrl+o to a field's key help. huh shows the focused

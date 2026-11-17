@@ -40,10 +40,29 @@ func TestSavedCatalogModelOffersDownload(t *testing.T) {
 	if a.step != stepDone || a.pull.copied || a.pull.pulled {
 		t.Fatalf("esc: step = %v; want All done, model not installed", a.step)
 	}
+
+	// Esc on All done comes back to the offer while the model isn't
+	// downloaded.
+	a.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if a.step != stepOffer {
+		t.Fatalf("esc on All done: step = %v; want the install offer again", a.step)
+	}
+}
+
+func TestEscQuitsAllDoneWhenInstalled(t *testing.T) {
+	a := savedApp(source.Choice{ID: "a/b", Installed: true})
+	a.Update(savedMsg{path: a.path})
+
+	_, cmd := a.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if a.step != stepDone || cmd == nil {
+		t.Fatalf("esc: step = %v, cmd = %v; want quit from All done", a.step, cmd)
+	}
 }
 
 func TestAnotherMachineOnlyGetsTheCommand(t *testing.T) {
 	a := savedApp(source.Choice{ID: "a/b"})
+	a.start = newStart(a.path)
+	a.start.target = targetAnother
 	a.facts.Other = &source.Machine{RAM: 64 << 30}
 	a.Update(savedMsg{path: a.path})
 	if a.step != stepOffer || len(a.pull.offer.labels) != 1 || a.pull.offer.labels[0] != btnCopy {

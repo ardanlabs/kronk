@@ -10,7 +10,6 @@ import (
 // Go brand colors (go.dev/s/brandbook).
 var (
 	goLightBlue = lipgloss.Color("#5DC9E2")
-	goAqua      = lipgloss.Color("#00A29C")
 	goFuchsia   = lipgloss.Color("#CE3262")
 	goYellow    = lipgloss.Color("#FDDD00")
 	white       = lipgloss.Color("#FFFFFF")
@@ -18,19 +17,26 @@ var (
 
 // Darker or lighter shades of the brand colors, the nearest ones that read
 // well: at least 4.5:1 contrast (WCAG AA) for text, 3:1 for borders. The
-// brand colors themselves are too light on white (Go blue 2.6:1, aqua 3.2:1)
+// brand colors themselves are too light on white (Go blue 2.6:1)
 // and Go fuchsia too dark on black (3.4:1).
 var (
 	blueOnWhite    = lipgloss.Color("#00728E") // 5.5:1 on white
-	aquaOnWhite    = lipgloss.Color("#00837E") // 4.6:1 on white
 	fuchsiaOnBlack = lipgloss.Color("#D85B81") // 4.6:1 on #1E1E1E
 	buttonBlue     = lipgloss.Color("#0080A0") // white text on it: 4.6:1
+)
+
+// Green for success (installed, saved, added). Go's brand has no green, and
+// its aqua reads as blue next to the accent.
+var (
+	greenOnWhite = lipgloss.Color("#1A7F37") // 5.1:1 on white
+	greenOnBlack = lipgloss.Color("#3FB950") // 6.6:1 on #1E1E1E
 )
 
 // palette holds the colors used by the screens and the form theme for the
 // current terminal background.
 type palette struct {
 	accent color.Color
+	strong color.Color // questions and the row under the cursor
 	text   color.Color
 	muted  color.Color
 	faint  color.Color
@@ -44,10 +50,11 @@ func newPalette(isDark bool) palette {
 
 	return palette{
 		accent: ld(blueOnWhite, goLightBlue),                     // 5.5:1, 8.7:1
+		strong: ld(lipgloss.Color("0"), white),                   // 21:1, 16:1
 		text:   ld(lipgloss.Color("235"), lipgloss.Color("252")), // 15:1, 11:1
 		muted:  ld(lipgloss.Color("241"), lipgloss.Color("246")), // 6.1:1, 5.5:1
 		faint:  ld(lipgloss.Color("246"), lipgloss.Color("242")), // borders: 3.0:1, 3.2:1
-		ok:     ld(aquaOnWhite, goAqua),                          // 4.6:1, 5.3:1
+		ok:     ld(greenOnWhite, greenOnBlack),                   // 5.1:1, 6.6:1
 		warn:   ld(lipgloss.Color("#9A6700"), goYellow),          // 4.9:1, 12:1
 		bad:    ld(goFuchsia, fuchsiaOnBlack),                    // 4.9:1, 4.6:1
 	}
@@ -81,7 +88,7 @@ func newStyles(isDark bool) styles {
 		label:    lipgloss.NewStyle().Foreground(p.muted),
 		value:    lipgloss.NewStyle().Foreground(p.text),
 		muted:    lipgloss.NewStyle().Foreground(p.muted),
-		selected: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.LightDark(isDark)(lipgloss.Color("0"), white)),
+		selected: lipgloss.NewStyle().Bold(true).Foreground(p.strong),
 		added:    lipgloss.NewStyle().Foreground(p.ok),
 		removed:  lipgloss.NewStyle().Foreground(p.bad),
 		ok:       lipgloss.NewStyle().Foreground(p.ok),
@@ -100,8 +107,10 @@ func formTheme(isDark bool) *huh.Styles {
 
 	t.Focused.Base = t.Focused.Base.BorderForeground(p.muted)
 	t.Focused.Card = t.Focused.Base
-	t.Focused.Title = t.Focused.Title.Foreground(p.accent).Bold(true)
-	t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(p.accent).Bold(true).MarginBottom(1)
+	// Questions are in bold white (black on a light background); blue marks
+	// the cursor, the selection and the headings around them.
+	t.Focused.Title = t.Focused.Title.Foreground(p.strong).Bold(true)
+	t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(p.strong).Bold(true).MarginBottom(1)
 	// A blank line after the description sets the answers apart, on every
 	// screen.
 	t.Focused.Description = t.Focused.Description.Foreground(p.text).MarginBottom(1)

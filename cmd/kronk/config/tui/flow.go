@@ -95,15 +95,6 @@ func focusedKey(form *huh.Form) string {
 func (a *app) back() (tea.Model, tea.Cmd) {
 	form := a.currentForm()
 
-	// Changing one answer from the review: esc goes back to the review,
-	// unless the answer on screen is not valid yet.
-	if a.step == stepQuestions && a.jump.to != "" {
-		key := focusedKey(form)
-		if q, ok := a.ans.ByKey[key]; ok && q.Validate(a.ans.Value(key)) == nil {
-			return a.endJump()
-		}
-	}
-
 	// In the review, esc from the file path or the answer list goes back
 	// to the menu, even when the path is still empty.
 	if a.step == stepReview {
@@ -174,8 +165,8 @@ func (a *app) fieldUsesEsc() bool {
 // backToPick shows the picker again with err above it. Used when a model
 // can't be read, so the user can pick another one.
 func (a *app) backToPick(err error) (tea.Model, tea.Cmd) {
-	if a.choice.Installed && !a.choice.Validated {
-		err = fmt.Errorf("%w\nThe model files look incomplete. Pull it again: kronk model pull --local %s", err, a.choice.ID)
+	if a.choice.Incomplete {
+		err = fmt.Errorf("%w\nIts download never finished. Pull it again: %s", err, source.PullCommand(a.choice))
 	}
 
 	a.formErr = err
@@ -321,7 +312,6 @@ func (a *app) startQuestions(f source.Facts) (tea.Model, tea.Cmd) {
 }
 
 func (a *app) questionsDone() (tea.Model, tea.Cmd) {
-	a.jump = jump{}
 	changes, err := questions.Diff(a.qs, a.facts, a.ans, a.existing)
 	if err != nil {
 		return a.fail(err)
@@ -368,7 +358,7 @@ func (a *app) startReview() (tea.Model, tea.Cmd) {
 	a.action = actSave
 	switch {
 	case len(a.problems) > 0:
-		a.action = actOne
+		a.action = actQuit
 	case a.saveErr != nil:
 		// Keep the path typed before, so it can be corrected.
 		a.action = actOther
@@ -418,72 +408,20 @@ func (a *app) openQuestions() (tea.Model, tea.Cmd) {
 	return a.openAt(stepQuestions, first)
 }
 
-func (a *app) editOne(key string) (tea.Model, tea.Cmd) {
-	a.jump.to = key
-	a.jump.seen = map[string]bool{}
-	for _, r := range a.answerRows() {
-		a.jump.seen[r.key] = true
-	}
-
-	return a.openAt(stepQuestions, key)
-}
-
-// endJump ends changing one answer: back to the review, or to the question
-// the answers list was opened on.
-func (a *app) endJump() (tea.Model, tea.Cmd) {
-	back := a.jump.back
-	a.jump = jump{}
-	if back == "" {
-		return a.questionsDone()
-	}
-
-	// The question may be hidden now; resume at the next one asked.
-	from := false
+// skipToReview ends the questions early. The questions not reached keep
+// their answers: the file's values or the defaults. A question asked that
+// still needs an answer opens first.
+func (a *app) skipToReview() (tea.Model, tea.Cmd) {
 	for _, q := range a.qs {
-		from = from || q.Key == back
-		if from && a.ans.Applies(a.facts, q) {
+		if !a.ans.Applies(a.facts, q) {
+			continue
+		}
+		v := a.ans.Value(q.Key)
+		if (q.Required && v == "") || q.Validate(v) != nil {
 			return a.openAt(stepQuestions, q.Key)
 		}
 	}
 	return a.questionsDone()
-}
-
-// nextNew returns the first question from the one on screen on that is
-// asked now but was not when the review sent the user to change one answer.
-func (a *app) nextNew() string {
-	key := focusedKey(a.forms[stepQuestions])
-	if key == "" {
-		return ""
-	}
-
-	from := false
-	for _, q := range a.qs {
-		from = from || q.Key == key
-		if from && !a.jump.seen[q.Key] && a.ans.Applies(a.facts, q) {
-			return q.Key
-		}
-	}
-	return ""
-}
-
-// jumpDone reports whether the question picked in the review is answered:
-// the form moved on to a question that was already asked. cancel reports
-// that it moved back before it instead, so the questions go on from there.
-func (a *app) jumpDone() (done bool, cancel bool) {
-	key := focusedKey(a.forms[stepQuestions])
-	if key == "" || key == a.jump.to {
-		return false, false
-	}
-
-	for _, q := range a.qs {
-		switch q.Key {
-		case key:
-			return false, true // reached before the picked question
-		case a.jump.to:
-			return a.jump.seen[key], false
-		}
-	}
-	return false, false
 }
 
 func (a *app) reviewDone() (tea.Model, tea.Cmd) {
@@ -495,15 +433,7 @@ func (a *app) reviewDone() (tea.Model, tea.Cmd) {
 		return a.questionsDone()
 	}
 
-	switch a.action {
-	case actOne:
-		// The submitted review can't be reopened; a new one waits under
-		// the list.
-		m, cmd := a.open(stepReview)
-		a.openList()
-		return m, cmd
-
-	case actQuit:
+	if a.action == actQuit {
 		return a, tea.Quit
 	}
 

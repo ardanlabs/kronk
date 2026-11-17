@@ -105,7 +105,7 @@ func (s *Source) Choices(doc modelconfig.Document) ([]Choice, error) {
 	}
 
 	seen := make(map[string]bool)
-	var installed []Choice
+	var installed, incomplete []Choice
 	for _, f := range files {
 		id := f.ID
 		if f.OwnedBy != "" {
@@ -117,23 +117,41 @@ func (s *Source) Choices(doc modelconfig.Document) ([]Choice, error) {
 		seen[id] = true
 
 		inFile := len(EntriesFor(doc, id)) > 0
-		installed = append(installed, Choice{ID: id, Installed: true, InFile: inFile, Size: f.Size, Validated: f.Validated, Endpoint: endpoint(id), Tokenizer: f.TokenizerFingerprint})
+		c := Choice{ID: id, Installed: true, InFile: inFile, Size: f.Size, Endpoint: endpoint(id), Tokenizer: f.TokenizerFingerprint}
+		if !f.Validated {
+			// The size is the catalog's, below: the files on disk are short.
+			c.Installed, c.Incomplete, c.Size, c.Tokenizer = false, true, 0, ""
+			incomplete = append(incomplete, c)
+			continue
+		}
+		installed = append(installed, c)
+	}
+	incompleteIdx := make(map[string]int, len(incomplete))
+	for i, c := range incomplete {
+		incompleteIdx[c.ID] = i
 	}
 
 	var catalog []Choice
 	for id, entry := range cat.Models {
-		if seen[id] {
-			continue
-		}
-
 		size := entry.MMProjSize + entry.MTPSize
 		for _, n := range entry.FileSizes {
 			size += n
 		}
 
+		if i, ok := incompleteIdx[id]; ok {
+			incomplete[i].Size = size
+			continue
+		}
+		if seen[id] {
+			continue
+		}
+
 		inFile := len(EntriesFor(doc, id)) > 0
 		catalog = append(catalog, Choice{ID: id, InFile: inFile, Size: size, Endpoint: endpoint(id)})
 	}
+
+	// An incomplete model is listed with the catalog: it is not installed.
+	catalog = append(catalog, incomplete...)
 
 	byID := func(a, b Choice) int { return strings.Compare(a.ID, b.ID) }
 	slices.SortFunc(installed, byID)

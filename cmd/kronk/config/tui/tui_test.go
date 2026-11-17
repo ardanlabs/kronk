@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/ardanlabs/kronk/cmd/kronk/config/questions"
 	"github.com/ardanlabs/kronk/cmd/kronk/config/source"
 )
@@ -39,7 +40,7 @@ func TestSaveErrorReturnsToReview(t *testing.T) {
 
 func TestBadMediaAnswersAreProblems(t *testing.T) {
 	a := newApp(context.Background(), nil, true)
-	a.choice = source.Choice{ID: "whisper", Kind: source.KindAudioModel, Installed: true, Validated: true}
+	a.choice = source.Choice{ID: "whisper", Kind: source.KindAudioModel, Installed: true}
 	a.facts = source.Facts{ID: a.choice.ID}
 	a.qs = questions.Audio()
 	a.ans = questions.NewAnswers(a.qs)
@@ -60,5 +61,27 @@ func TestCatalogFactsErrorReturnsToPick(t *testing.T) {
 
 	if a.step != stepPick || a.formErr == nil || a.formErr.Error() != "timeout" {
 		t.Fatalf("step = %v, err = %v; want the picker with the error alone", a.step, a.formErr)
+	}
+}
+
+func TestListSkipsToTheReview(t *testing.T) {
+	a := newApp(context.Background(), nil, true)
+	a.choice = source.Choice{ID: "whisper", Kind: source.KindAudioModel, Installed: true}
+	a.facts = source.Facts{ID: a.choice.ID}
+	a.qs = questions.Audio()
+	a.ans = questions.NewAnswers(a.qs)
+	a.openQuestions()
+
+	a.openList()
+	rows := a.listRows()
+	if rows[len(rows)-1].key != rowReview {
+		t.Fatalf("last row = %q, want the review row", rows[len(rows)-1].key)
+	}
+
+	a.listKey(tea.KeyPressMsg{Code: tea.KeyEnd})
+	a.listKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if a.step != stepReview || a.list.open {
+		t.Fatalf("step = %v, list open = %v; want the review", a.step, a.list.open)
 	}
 }

@@ -9,11 +9,13 @@ var Cmd = &cobra.Command{
 	Short: "Create or edit model and server settings in model_config.yaml (interactive)",
 	Long: `Create or edit model and server settings in model_config.yaml (interactive)
 
-Pick the config file, then configure a model or the server settings (kms:).
+Say whether the config is for this machine or another one, pick the config
+file, then configure a model or the server settings (kms:). A config for
+another machine goes to a file to copy there, not to the file this machine's
+server reads.
 
-For a model, say whether the config is for this machine or another one. This
-machine's hardware is detected; for another machine, enter its GPUs, GPU
-memory and RAM. Search and pick an installed or catalog model (chat, audio or
+For a model, this machine's hardware is detected; for another machine, enter
+its GPUs, GPU memory and RAM. Search and pick an installed or catalog model (chat, audio or
 image), pick the entry or a new variant, see what AutoTune picks for it on that
 hardware, answer the questions, review the entry with a memory check and save
 it. Only the settings the model can use are asked: a model that doesn't

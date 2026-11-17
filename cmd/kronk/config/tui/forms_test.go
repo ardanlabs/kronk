@@ -42,3 +42,19 @@ func TestKindColumnOnlyInAllModels(t *testing.T) {
 		t.Fatalf("group line = %q", line)
 	}
 }
+
+func TestPickRowSource(t *testing.T) {
+	tests := map[string]struct {
+		c    source.Choice
+		want string
+	}{
+		"installed":  {source.Choice{ID: "a/b", Installed: true}, "installed"},
+		"catalog":    {source.Choice{ID: "a/b"}, "catalog"},
+		"incomplete": {source.Choice{ID: "a/b", Incomplete: true}, "incomplete"},
+	}
+	for name, tt := range tests {
+		if got := newPickRow(tt.c).sourceText; got != tt.want {
+			t.Errorf("%s: source = %q, want %q", name, got, tt.want)
+		}
+	}
+}

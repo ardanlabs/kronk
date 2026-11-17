@@ -41,9 +41,10 @@ type Choice struct {
 	InFile    bool
 	Size      int64
 
-	// Validated is false for an installed model whose files were never
-	// checked, which includes downloads that stopped early.
-	Validated bool
+	// Incomplete is set for a model whose download never finished: its files
+	// are on disk but were never verified. It is not installed: it is
+	// configured from the catalog and offered for download again.
+	Incomplete bool
 
 	// Endpoint is what the model does when it doesn't generate text
 	// (embeddings, rerank, decision): from the catalog, or the local GGUF
