@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -130,17 +131,17 @@ func TestOpenCodeAcceptsConfig(t *testing.T) {
 	}
 }
 
-func TestPrepareAttemptDirectoryCreatesRepositoryBoundary(t *testing.T) {
+func TestPrepareWorkspaceCreatesRepositoryBoundary(t *testing.T) {
 	outer := t.TempDir()
 	cmd := exec.Command("git", "init", "--quiet", outer)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("initialize outer repository: %v\n%s", err, output)
 	}
-	dir := filepath.Join(outer, "output", "attempt-01")
+	dir := filepath.Join(outer, "runs", "model", "workspace")
 
-	programDir, err := prepareAttemptDirectory(dir)
+	programDir, err := prepareWorkspace(dir)
 	if err != nil {
-		t.Fatalf("prepareAttemptDirectory: %v", err)
+		t.Fatalf("prepareWorkspace: %v", err)
 	}
 	if got, want := programDir, filepath.Join(dir, "tictactoe"); got != want {
 		t.Errorf("program directory: got %q, want %q", got, want)
@@ -162,7 +163,7 @@ func TestPrepareAttemptDirectoryCreatesRepositoryBoundary(t *testing.T) {
 	}
 	want, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		t.Fatalf("resolve attempt directory: %v", err)
+		t.Fatalf("resolve workspace directory: %v", err)
 	}
 	if got != want {
 		t.Errorf("git root: got %q, want %q", got, want)
@@ -272,6 +273,47 @@ func TestWarmAndUnloadModel(t *testing.T) {
 	}
 }
 
+func TestRunModelUnloadFailures(t *testing.T) {
+	root, err := repositoryRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		wantErr bool
+	}{
+		{"temporarily busy", http.StatusBadRequest, `{"error":{"code":"failed_precondition"}}`, false},
+		{"persistently busy", http.StatusBadRequest, `{"error":{"code":"failed_precondition"}}`, true},
+		{"invalid request", http.StatusBadRequest, `{"error":{"code":"invalid_argument"}}`, true},
+		{"malformed error", http.StatusBadRequest, `not JSON`, true},
+		{"server failure", http.StatusInternalServerError, `{"error":{"code":"failed_precondition"}}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/kronk/models/unload" {
+					if calls.Add(1) > 1 && tc.name == "temporarily busy" {
+						return
+					}
+					w.WriteHeader(tc.status)
+					fmt.Fprint(w, tc.body)
+				}
+			}))
+			defer server.Close()
+			err := runModel(root, t.TempDir(), server.URL, nil,
+				benchmarkModel{ID: "org/model/BENCHMARK"}, options{timeout: 2 * time.Second})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("unload result: %v, want error: %t", err, tc.wantErr)
+			}
+			if tc.name == "persistently busy" && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("unload did not respect its deadline: %v", err)
+			}
+		})
+	}
+}
+
 func TestServerVersions(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -353,17 +395,17 @@ func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 	report := renderReport("run", []modelResults{{
 		Model: benchmarkModel{ID: "org/model/BENCHMARK"},
 		Attempts: []result{
-			{Attempt: 1, Grade: gradeResult{Passed: 12, Total: 20}, OpenCode: agentResult{WallTime: 3 * time.Second, Turns: 2, ToolCalls: 4, Usage: tokenUsage{Input: 100, Output: 30, Reasoning: 7, CacheRead: 40}}},
-			{Attempt: 2, Grade: gradeResult{Passed: 20, Total: 20, Checks: []gradeCheck{{Name: "go-build", Passed: true}}}, OpenCode: agentResult{WallTime: 7 * time.Second, Turns: 5, ToolCalls: 6, Usage: tokenUsage{Input: 200, Output: 50, Reasoning: 11, CacheRead: 80}}},
+			{Step: basicGameStep, Attempt: 1, Grade: gradeResult{Passed: 12, Total: 20}, OpenCode: agentResult{WallTime: 3 * time.Second, Turns: 2, ToolCalls: 4, Usage: tokenUsage{Input: 100, Output: 30, Reasoning: 7, CacheRead: 40}}},
+			{Step: basicGameStep, Attempt: 2, Grade: gradeResult{Passed: 20, Total: 20, Checks: []gradeCheck{{Name: "go-build", Passed: true}}}, OpenCode: agentResult{WallTime: 7 * time.Second, Turns: 5, ToolCalls: 6, Usage: tokenUsage{Input: 200, Output: 50, Reasoning: 11, CacheRead: 80}}},
 			{Step: undoMoveStep, Attempt: 3, Grade: gradeResult{Passed: 7, Total: 9}, OpenCode: agentResult{WallTime: 11 * time.Second, Usage: tokenUsage{Input: 13, Output: 17, Reasoning: 19, CacheRead: 23}}},
 		},
 	}, {
 		Model:    benchmarkModel{ID: "org/failed/BENCHMARK"},
-		Attempts: []result{{Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}}},
+		Attempts: []result{{Step: basicGameStep, Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}}},
 	}, {
 		Model:    benchmarkModel{ID: "org/no-generation/BENCHMARK"},
-		Attempts: []result{{Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}, OpenCode: agentResult{Usage: tokenUsage{Input: 29, CacheRead: 31}}}},
-	}}, runRecord{Steps: basicGameStep + ", " + undoMoveStep})
+		Attempts: []result{{Step: basicGameStep, Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}, OpenCode: agentResult{Usage: tokenUsage{Input: 29, CacheRead: 31}}}},
+	}}, runRecord{Workload: workloadVersion, Steps: basicGameStep + ", " + undoMoveStep})
 
 	plain := strings.Join(strings.Fields(report), " ")
 	for _, want := range []string{

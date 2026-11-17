@@ -77,6 +77,9 @@ func generateReport(runDir string, record *runRecord) error {
 		}
 		record = &saved
 	}
+	if record.Workload == "" || record.Steps == "" {
+		return fmt.Errorf("tic-tac-toe benchmark: report requires workload and step labels")
+	}
 	models, err := loadResults(runDir)
 	if err != nil {
 		return err
@@ -104,6 +107,9 @@ func loadResults(runDir string) ([]modelResults, error) {
 		if err := json.Unmarshal(data, &item); err != nil {
 			return nil, fmt.Errorf("tic-tac-toe benchmark: decoding %s: %w", path, err)
 		}
+		if item.Step == "" {
+			return nil, fmt.Errorf("tic-tac-toe benchmark: missing step label in %s", path)
+		}
 		byModel[item.Model.ID] = append(byModel[item.Model.ID], item)
 	}
 	models := make([]modelResults, 0, len(byModel))
@@ -118,10 +124,8 @@ func loadResults(runDir string) ([]modelResults, error) {
 func renderReport(runDir string, models []modelResults, record runRecord) string {
 	var report strings.Builder
 	fmt.Fprintf(&report, "Run: %s\n", filepath.Base(filepath.Clean(runDir)))
-	fmt.Fprintf(&report, "Workload: %s\n", cmp.Or(record.Workload, workloadVersion))
-	if record.Steps != "" {
-		fmt.Fprintf(&report, "Steps: %s\n", record.Steps)
-	}
+	fmt.Fprintf(&report, "Workload: %s\n", record.Workload)
+	fmt.Fprintf(&report, "Steps: %s\n", record.Steps)
 	fmt.Fprintf(&report, "Started: %s\n", record.Started.Format(time.RFC3339Nano))
 	if !record.Finished.IsZero() {
 		fmt.Fprintf(&report, "Finished: %s\nElapsed: %s\n", record.Finished.Format(time.RFC3339Nano), record.Finished.Sub(record.Started).Round(time.Second))
@@ -138,7 +142,7 @@ func renderReport(runDir string, models []modelResults, record runRecord) string
 	}
 	report.WriteByte('\n')
 	table := tabwriter.NewWriter(&report, 0, 4, 2, ' ', 0)
-	steps := strings.Split(cmp.Or(record.Steps, basicGameStep), ", ")
+	steps := strings.Split(record.Steps, ", ")
 	titles := map[string]string{
 		basicGameStep: "Step 1 (Basic game)",
 		undoMoveStep:  "Step 2 (Undo move)",
@@ -158,7 +162,7 @@ func renderReport(runDir string, models []modelResults, record runRecord) string
 		for _, step := range steps {
 			var attempts []result
 			for _, attempt := range model.Attempts {
-				if cmp.Or(attempt.Step, basicGameStep) == step {
+				if attempt.Step == step {
 					attempts = append(attempts, attempt)
 				}
 			}

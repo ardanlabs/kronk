@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -20,6 +23,41 @@ func TestRegenerateReportRequiresSavedMetadata(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "report.txt")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("regeneration created a report without saved metadata: %v", err)
+	}
+}
+
+func TestRegenerateReportRejectsMissingLabels(t *testing.T) {
+	for _, missing := range []string{"workload", "steps", "attempt step"} {
+		t.Run(missing, func(t *testing.T) {
+			dir := t.TempDir()
+			record := runRecord{Workload: workloadVersion, Steps: basicGameStep + ", " + undoMoveStep, Status: "running"}
+			switch missing {
+			case "workload":
+				record.Workload = ""
+			case "steps":
+				record.Steps = ""
+			case "attempt step":
+				attempt := filepath.Join(dir, "model", "attempt-01")
+				if err := os.MkdirAll(attempt, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(attempt, "result.json"), []byte(`{"model":{"id":"org/model/BENCHMARK"},"attempt":1}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			report := renderReport(dir, nil, record)
+			path := filepath.Join(dir, "report.txt")
+			if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := run(options{report: true, reportDir: dir}); err == nil || !strings.Contains(err.Error(), "label") {
+				t.Fatalf("missing %s must prevent regeneration: %v", missing, err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != report {
+				t.Fatalf("failed regeneration changed saved report: %v", err)
+			}
+		})
 	}
 }
 
@@ -46,7 +84,7 @@ func TestSavedRunsAreRunnableAndRetained(t *testing.T) {
 	t.Setenv("BENCHMARK_PROMPT_LOG", promptLog)
 	script := `#!/bin/sh
 set -eu
-if [ -f "$HOME/v1-passed" ]; then
+if [ -f "$HOME/step1-passed" ]; then
   case " $* " in *' --continue '*) ;; *) exit 1 ;; esac
   cat > "$BENCHMARK_PROMPT_LOG.undo"
   cmp "$BENCHMARK_FIXTURE" tictactoe/main.go
@@ -54,10 +92,11 @@ if [ -f "$HOME/v1-passed" ]; then
 else
   cat > "$BENCHMARK_PROMPT_LOG"
   cp "$BENCHMARK_FIXTURE" tictactoe/main.go
-  touch "$HOME/v1-passed"
+  touch "$HOME/step1-passed"
 fi
 case " $* " in
   *' --model kronk/org/model/BENCHMARK '*)
+    if [ "${BENCHMARK_TIMEOUT:-}" = yes ]; then exec sleep 20; fi
     if [ "${BENCHMARK_API_ERROR:-}" = yes ]; then
       printf '%s\n' '{"type":"error","error":{"name":"APIError","data":{"message":"input tokens [143702] exceed context window [131072]"}}}'
       exit 0
@@ -77,14 +116,28 @@ fi
 	if err := os.WriteFile(config, []byte("version: 2\nmodels:\n  org/model/BENCHMARK:\n    context-window: 8192\n    sampling-parameters:\n      max_tokens: 1024\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	var busyUnloads atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/v1/chat/completions":
+			if busyUnloads.Load()%2 != 0 {
+				t.Error("next model warmed before the previous model was unloaded")
+			}
 		case "/v1/models":
 			fmt.Fprint(w, `{"data":[{"id":"org/model/BENCHMARK"},{"id":"org/next/BENCHMARK"}]}`)
 		case "/v1/liveness":
 			fmt.Fprint(w, `{"build":"1.33.4+dev"}`)
 		case "/v1/kronk/libs":
 			fmt.Fprint(w, `{"current":"b12283","latest":"b99999"}`)
+		case "/v1/kronk/models/unload":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+			}
+			if os.Getenv("BENCHMARK_BUSY_UNLOAD") == "yes" && strings.Contains(string(body), "org/model/BENCHMARK") && busyUnloads.Add(1)%2 == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"error":{"message":"model has 1 active stream(s); cannot unload","type":"invalid_request_error","code":"failed_precondition"}}`)
+			}
 		}
 	}))
 	defer server.Close()
@@ -131,7 +184,7 @@ fi
 		}
 		models, err := loadResults(runDir)
 		if err != nil || len(models) != 1 || len(models[0].Attempts) != 2 {
-			t.Fatalf("passing each workload should stop its repairs: %+v %v", models, err)
+			t.Fatalf("passing each step should stop its repairs: %+v %v", models, err)
 		}
 		item := models[0].Attempts[0]
 		undo := models[0].Attempts[1]
@@ -212,52 +265,68 @@ fi
 	if err != nil || !strings.Contains(string(report), "No completed submissions.") || strings.Contains(string(report), "37/37") {
 		t.Fatalf("failed report: %s %v", report, err)
 	}
-	// A context overflow stops only the affected model, even when OpenCode exits
-	// zero. Keep its ungraded source and continue through both steps of the next model.
+	// Context overflow and timeout stop only the affected model, even if unload
+	// is refused while a stream remains active. Preserve its ungraded submission
+	// and continue through both steps of the next model.
 	t.Setenv("BENCHMARK_BAD_EVENTS", "")
 	t.Setenv("BENCHMARK_API_ERROR", "yes")
 	if err := os.WriteFile(config, []byte("version: 2\nmodels:\n  org/model/BENCHMARK:\n    context-window: 8192\n    sampling-parameters:\n      max_tokens: 1024\n  org/next/BENCHMARK:\n    context-window: 8192\n    sampling-parameters:\n      max_tokens: 1024\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(opts); err != nil {
-		t.Fatalf("model API failure stopped the workflow: %v", err)
-	}
-	runDir, err = latestRun(opts.outputDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	models, err := loadResults(runDir)
-	if err != nil || len(models) != 2 || len(models[0].Attempts) != 1 || len(models[1].Attempts) != 2 {
-		t.Fatalf("API error should stop only the affected model: %+v %v", models, err)
-	}
-	if models[1].Model.ID != "org/next/BENCHMARK" {
-		t.Fatalf("next model was not evaluated: %+v", models[1].Model)
-	}
-	for _, item := range models[1].Attempts {
-		if item.OpenCode.Error != "" || item.Grade.Total == 0 || item.Grade.Passed != item.Grade.Total {
-			t.Fatalf("next model did not complete both steps: %+v", item)
+	t.Setenv("BENCHMARK_BUSY_UNLOAD", "yes")
+	for _, failure := range []string{"api-error", "timeout"} {
+		t.Setenv("BENCHMARK_API_ERROR", "yes")
+		t.Setenv("BENCHMARK_TIMEOUT", "")
+		opts.timeout = time.Minute
+		if failure == "timeout" {
+			t.Setenv("BENCHMARK_API_ERROR", "")
+			t.Setenv("BENCHMARK_TIMEOUT", "yes")
+			opts.timeout = 2 * time.Second
 		}
-	}
-	failed := models[0].Attempts[0]
-	if failed.OpenCode.ExitCode != 0 || !strings.Contains(failed.OpenCode.Error, "exceed context window") || failed.Grade.Total != 0 {
-		t.Fatalf("API failure was lost or graded: %+v", failed)
-	}
-	program = filepath.Join(runDir, modelDirName(failed.Model.ID), "attempt-01", "program", "main.go")
-	if data, err := os.ReadFile(program); err != nil || string(data) != source {
-		t.Fatalf("API failure lost source snapshot: %v", err)
-	}
-	if err := run(options{report: true, reportDir: runDir}); err != nil {
-		t.Fatal(err)
-	}
-	report, err = os.ReadFile(filepath.Join(runDir, "report.txt"))
-	for _, want := range []string{"Workflow: completed", "Agent error", "Not graded", "Not reached", "37/37", "48/48"} {
-		if err != nil || !strings.Contains(string(report), want) {
-			t.Errorf("mixed outcome report missing %q: %s %v", want, report, err)
+		if err := run(opts); err != nil {
+			t.Fatalf("model %s with busy unload stopped the workflow: %v", failure, err)
 		}
-	}
-	for line := range strings.SplitSeq(string(report), "\n") {
-		if strings.HasPrefix(line, failed.Model.ID+" ") && (strings.Contains(line, "Passed") || strings.Contains(line, "37/37")) {
-			t.Fatalf("API failure received a passing grade: %s", line)
+		runDir, err = latestRun(opts.outputDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		models, err := loadResults(runDir)
+		if err != nil || len(models) != 2 || len(models[0].Attempts) != 1 || len(models[1].Attempts) != 2 {
+			t.Fatalf("API error should stop only the affected model: %+v %v", models, err)
+		}
+		if models[1].Model.ID != "org/next/BENCHMARK" {
+			t.Fatalf("next model was not evaluated: %+v", models[1].Model)
+		}
+		for _, item := range models[1].Attempts {
+			if item.OpenCode.Error != "" || item.Grade.Total == 0 || item.Grade.Passed != item.Grade.Total {
+				t.Fatalf("next model did not complete both steps: %+v", item)
+			}
+		}
+		failed := models[0].Attempts[0]
+		wantError := "exceed context window"
+		if failure == "timeout" {
+			wantError = context.DeadlineExceeded.Error()
+		}
+		if !strings.Contains(failed.OpenCode.Error, wantError) || failed.Grade.Total != 0 {
+			t.Fatalf("%s failure was lost or graded: %+v", failure, failed)
+		}
+		program = filepath.Join(runDir, modelDirName(failed.Model.ID), "attempt-01", "program", "main.go")
+		if data, err := os.ReadFile(program); err != nil || string(data) != source {
+			t.Fatalf("model failure lost source snapshot: %v", err)
+		}
+		if err := run(options{report: true, reportDir: runDir}); err != nil {
+			t.Fatal(err)
+		}
+		report, err = os.ReadFile(filepath.Join(runDir, "report.txt"))
+		for _, want := range []string{"Workflow: completed", "Agent error", "Not graded", "Not reached", "37/37", "48/48"} {
+			if err != nil || !strings.Contains(string(report), want) {
+				t.Errorf("mixed outcome report missing %q: %s %v", want, report, err)
+			}
+		}
+		for line := range strings.SplitSeq(string(report), "\n") {
+			if strings.HasPrefix(line, failed.Model.ID+" ") && (strings.Contains(line, "Passed") || strings.Contains(line, "37/37")) {
+				t.Fatalf("model failure received a passing grade: %s", line)
+			}
 		}
 	}
 	if data, err := os.ReadFile(historyPath); err != nil || string(data) != history {

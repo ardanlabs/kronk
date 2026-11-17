@@ -64,13 +64,6 @@ type scenario struct {
 	steps []string
 }
 
-func (gr gradeResult) Percentage() float64 {
-	if gr.Total == 0 {
-		return 0
-	}
-	return 100 * float64(gr.Passed) / float64(gr.Total)
-}
-
 func (gr gradeResult) PassedCheck(name string) bool {
 	for _, check := range gr.Checks {
 		if check.Name == name {
@@ -96,7 +89,7 @@ func gradeProgram(parent context.Context, source string) gradeResult {
 	return gradeProgramWith(parent, source, acceptanceScenarios(), graderUnitTests)
 }
 
-// Both workloads use the same checks and terminal progression policy; only the
+// Both challenge steps use the same checks and terminal progression policy; only the
 // helper input contract and the expected interaction transcripts differ.
 func gradeProgramWith(parent context.Context, source string, scenarios []scenario, unitTests string) gradeResult {
 	result := gradeResult{Total: 15 + len(scenarios)}

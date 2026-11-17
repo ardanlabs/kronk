@@ -29,7 +29,7 @@ func TestGeneratedUndoSentinel(t *testing.T) {
 }
 `
 
-// Ordinary games reuse the frozen v1 oracle with updated prompts. Undo screens
+// Ordinary games reuse the frozen step-one oracle with updated prompts. Undo screens
 // are explicit observations, not a second implementation of the game loop.
 func undoAcceptanceScenarios() []scenario {
 	const xPrompt = "Player X's turn. Enter a number (1-9), or 0 to undo the last move:"

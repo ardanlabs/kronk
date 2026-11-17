@@ -283,7 +283,7 @@ test-adversarial: ## Run adversarial probes and print the triage prompt
 TICTACTOE_HOST ?= http://localhost:11435
 TICTACTOE_MODEL ?= all
 TICTACTOE_STEPS ?= 40
-TICTACTOE_TIMEOUT ?= 10m
+TICTACTOE_TIMEOUT ?= 15m
 TICTACTOE_SUBMISSIONS ?= 3
 TICTACTOE_FEEDBACK ?= true
 TICTACTOE_RUN ?=

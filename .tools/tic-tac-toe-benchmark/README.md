@@ -41,18 +41,18 @@ and does not guarantee enough remaining input space. Detailed findings and captu
 evidence remain in the existing `result.json`. Later grades may expose additional
 failures that earlier errors prevented the grader from reaching.
 
-An OpenCode error event, nonzero exit, or timeout stops the workflow. Its events,
-error and available source snapshot are retained, but that attempt is not graded.
-The report shows `Workflow: failed`, `Agent error`, and `Not graded`, rather than
-regrading the previous source as another submission. Recoverable tool-call errors
-are not treated as OpenCode execution failures.
+An OpenCode error event, nonzero exit, or timeout stops only that model's evaluation.
+Its events, error and available source snapshot are retained, but that attempt is not
+graded. The report shows `Agent error` and `Not graded`, rather than regrading the
+previous source as another submission. Recoverable tool-call errors are not treated
+as OpenCode execution failures.
 
 The harness creates a fresh nested Git repository and isolated OpenCode home for
 each model, shared across submissions. The repository boundary prevents OpenCode
 from treating the surrounding Kronk checkout as its workspace. It installs only the repository's
 `use-modern-go` skill, disables project configuration, plugins, MCP, web access, and
 subagents, disables OpenCode's Git-backed workspace snapshots, and denies
-filesystem access outside the attempt directory through OpenCode's file tools.
+filesystem access outside the model's workspace through OpenCode's file tools.
 The structural tests and scripted game inputs live outside the agent workspace.
 This is workspace/configuration isolation, not an OS security sandbox; shell
 execution is allowed.
@@ -160,7 +160,7 @@ The primary knobs are:
 | `TICTACTOE_SUBMISSIONS` | `3` | Maximum submissions per step, including its initial one |
 | `TICTACTOE_FEEDBACK` | `true` | Resume failures with grader feedback; false allows one submission per step |
 | `TICTACTOE_STEPS` | `40` | Maximum OpenCode agent steps per submission |
-| `TICTACTOE_TIMEOUT` | `30m` | Timeout per submission; also separately applied to warm-up and unload |
+| `TICTACTOE_TIMEOUT` | `15m` | Timeout per submission; also separately applied to warm-up and unload |
 
 Outputs are retained beneath the gitignored
 `.tools/tic-tac-toe-benchmark/runs/`, grouped by local date and unique run:
@@ -208,8 +208,11 @@ Step2 is `Not reached` when Step1 fails.
 OpenCode errors, including context-window overflow and submission timeouts, stop
 that model's evaluation and are reported as `Agent error`; the benchmark unloads
 the model and continues with the next selected model. A completed workflow does
-not mean every model passed. Setup, artifact/report writing, and unload failures
-still stop the benchmark.
+not mean every model passed. If unload is refused because streams are still active,
+the benchmark waits and retries once per second, within a separate `TICTACTOE_TIMEOUT`
+budget. The next model starts only after unload succeeds (or the server reports the
+model is already absent). Setup, artifact/report writing, other unload failures,
+and expiration of the unload timeout still stop the benchmark.
 A Step2 failure does not erase the Step1 pass.
 
 Attempt folders are numbered consecutively across both steps. Each `result.json`
@@ -228,7 +231,9 @@ once, under `grade.findings`.
 No duplicate source/transcript files or `.tar.gz` archives are generated.
 No grader source copy or separate `run.json` is generated. Run information is
 preserved in the plain-text `report.txt` when it is regenerated. Regeneration
-requires that report; older Markdown reports and `run.json` metadata are not supported.
+requires that report's workload and step labels, and a step label in every
+`result.json`; missing labels are errors, not inferred as Step1. Older Markdown
+reports and `run.json` metadata are not supported.
 
 The report is refreshed after each completed submission and on normal or error
 return. Logs and prompts may contain
@@ -244,9 +249,8 @@ as submitted, not silently fixed.
 Agent time includes all submissions but excludes setup, warm-up, and grading.
 Workflow completion is separate from passing acceptance checks. Detailed per-attempt
 metrics and diagnostics remain in `result.json`, not the summary report.
-With the Make defaults, a model can take up to six 30-minute agent invocations
-plus setup, grading, warm-up and unload. `go run` without an explicit `-timeout`
-currently defaults to 10 minutes per invocation.
+With the Make and Go defaults, a model can take up to six 15-minute agent
+invocations plus setup, grading, warm-up and unload.
 
 Regenerate the latest run's report without invoking a model:
 

@@ -242,7 +242,7 @@ func TestCompilerDiagnosticsPreserved(t *testing.T) {
 }
 
 // The undo reference is exercised through the terminal, independently of its
-// implementation. Ordinary games reuse the v1 oracle with only the new prompts;
+// implementation. Ordinary games reuse the step-one oracle with only the new prompts;
 // undo cases specify the extra screens and restored turns explicitly.
 func TestUndoReference(t *testing.T) {
 	source, err := os.ReadFile("game_references/example_step2/main.go")

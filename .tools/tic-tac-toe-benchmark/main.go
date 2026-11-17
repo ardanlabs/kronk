@@ -30,7 +30,7 @@ const (
 	defaultHost          = "http://localhost:11435"
 	defaultAttempts      = 3
 	defaultSteps         = 40
-	defaultTimeout       = 10 * time.Minute
+	defaultTimeout       = 15 * time.Minute
 	modelBenchmarkSuffix = "/BENCHMARK"
 )
 
@@ -82,7 +82,7 @@ type benchmarkStep struct {
 }
 
 type result struct {
-	Step      string         `json:"step,omitempty"`
+	Step      string         `json:"step"`
 	Model     benchmarkModel `json:"model"`
 	Attempt   int            `json:"attempt"`
 	OpenCode  agentResult    `json:"opencode"`
@@ -437,15 +437,32 @@ func warmModel(ctx context.Context, host, modelID string) error {
 	return nil
 }
 
+// Unload can briefly race stream cleanup after the agent is stopped. Wait for
+// active streams to finish, but never continue to another model without unloading.
 func unloadModel(ctx context.Context, host, modelID string) error {
-	status, body, err := postJSON(ctx, host, "/v1/kronk/models/unload", map[string]string{"id": modelID})
-	if err != nil {
-		return fmt.Errorf("tic-tac-toe benchmark: unloading model %s: %w", modelID, err)
+	for {
+		status, body, err := postJSON(ctx, host, "/v1/kronk/models/unload", map[string]string{"id": modelID})
+		if err != nil {
+			return fmt.Errorf("tic-tac-toe benchmark: unloading model %s: %w", modelID, err)
+		}
+		if status == http.StatusOK || status == http.StatusNotFound {
+			return nil
+		}
+		err = fmt.Errorf("tic-tac-toe benchmark: unloading model %s returned %s: %s", modelID, http.StatusText(status), body)
+		var response struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if status != http.StatusBadRequest || json.Unmarshal([]byte(body), &response) != nil || response.Error.Code != "failed_precondition" {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %w", err, ctx.Err())
+		case <-time.After(time.Second):
+		}
 	}
-	if status != http.StatusOK && status != http.StatusNotFound {
-		return fmt.Errorf("tic-tac-toe benchmark: unloading model %s returned %s: %s", modelID, http.StatusText(status), body)
-	}
-	return nil
 }
 
 func postJSON(ctx context.Context, host, path string, payload any) (int, string, error) {
@@ -540,16 +557,12 @@ func selectModels(configured []benchmarkModel, requested string) ([]benchmarkMod
 // prepareSession initializes the workspace and isolated OpenCode home once per
 // model. Submissions reuse both the returned environment and the agent history.
 func prepareSession(root, dir, host string, model benchmarkModel, steps int) ([]string, error) {
-	if _, err := prepareAttemptDirectory(dir); err != nil {
+	if _, err := prepareWorkspace(dir); err != nil {
 		return nil, err
 	}
 	config, err := openCodeConfig(host, model, steps)
 	if err != nil {
 		return nil, err
-	}
-	configPath := filepath.Join(dir, "opencode-config.json")
-	if err := os.WriteFile(configPath, append(config, '\n'), 0o600); err != nil {
-		return nil, fmt.Errorf("tic-tac-toe benchmark: writing OpenCode config: %w", err)
 	}
 	return prepareOpenCodeEnvironment(root, dir, config)
 }
@@ -672,13 +685,13 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 	return item, nil
 }
 
-func prepareAttemptDirectory(dir string) (string, error) {
+func prepareWorkspace(dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("tic-tac-toe benchmark: creating attempt directory: %w", err)
+		return "", fmt.Errorf("tic-tac-toe benchmark: creating workspace directory: %w", err)
 	}
 	cmd := exec.Command("git", "init", "--quiet", dir)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("tic-tac-toe benchmark: initializing attempt repository: %w: %s", err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("tic-tac-toe benchmark: initializing workspace repository: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	programDir := filepath.Join(dir, "tictactoe")
@@ -769,8 +782,8 @@ func openCodeConfig(host string, model benchmarkModel, steps int) ([]byte, error
 	return data, nil
 }
 
-func prepareOpenCodeEnvironment(root, attemptDir string, config []byte) ([]string, error) {
-	openCodeRoot := filepath.Join(attemptDir, "opencode")
+func prepareOpenCodeEnvironment(root, workspaceDir string, config []byte) ([]string, error) {
+	openCodeRoot := filepath.Join(workspaceDir, "opencode")
 	for _, name := range []string{"home", "config", "data", "cache", "state", "tmp"} {
 		dir := filepath.Join(openCodeRoot, name)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -784,11 +797,11 @@ func prepareOpenCodeEnvironment(root, attemptDir string, config []byte) ([]strin
 		return nil, fmt.Errorf("tic-tac-toe benchmark: installing use-modern-go skill: %w", err)
 	}
 
-	return openCodeEnvironment(attemptDir, config), nil
+	return openCodeEnvironment(workspaceDir, config), nil
 }
 
-func openCodeEnvironment(attemptDir string, config []byte) []string {
-	openCodeRoot := filepath.Join(attemptDir, "opencode")
+func openCodeEnvironment(workspaceDir string, config []byte) []string {
+	openCodeRoot := filepath.Join(workspaceDir, "opencode")
 	overrides := []string{
 		"HOME=" + filepath.Join(openCodeRoot, "home"),
 		"XDG_CONFIG_HOME=" + filepath.Join(openCodeRoot, "config"),
@@ -1008,5 +1021,5 @@ func repositoryRoot() (string, error) {
 
 func modelDirName(id string) string {
 	replacer := strings.NewReplacer("/", "__", "\\", "__", ":", "_")
-	return strings.TrimSuffix(replacer.Replace(id), "__AGENT")
+	return replacer.Replace(id)
 }

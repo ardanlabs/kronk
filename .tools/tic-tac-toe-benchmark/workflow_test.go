@@ -115,7 +115,7 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 			}
 			for _, want := range []string{"Workload: v1", "Step 1 (Basic game) Step 2 (Undo move)", "Passed (attempts 3, checks 37/37,", wantUndo} {
 				if !strings.Contains(plain, want) {
-					t.Fatalf("report conflated workload outcomes: missing %q in %s", want, report)
+					t.Fatalf("report conflated step outcomes: missing %q in %s", want, report)
 				}
 			}
 		})
