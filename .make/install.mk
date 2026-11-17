@@ -32,15 +32,16 @@ install-kronk: ## Install the Kronk CLI
 
 # Use this to install or update llama.cpp, whisper.cpp, and
 # stable-diffusion.cpp to the pinned version.
+# Run the checkout CLI so another kronk earlier on PATH cannot select old pins.
 install-libraries: install-kronk ## Install native inference libraries
 	@echo "========== INSTALL LLAMA LIBRARIES (pinned) =========="
-	kronk libs --local
+	go run ./cmd/kronk libs --local
 	@echo
 	@echo "========== INSTALL WHISPER LIBRARIES (pinned) =========="
-	kronk bucky libs --local
+	go run ./cmd/kronk bucky libs --local
 	@echo
 	@echo "========== INSTALL STABLE DIFFUSION LIBRARIES (pinned) =========="
-	kronk malina libs --local
+	go run ./cmd/kronk malina libs --local
 	@echo
 
 # Use this to install the test models.
