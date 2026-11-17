@@ -17,7 +17,7 @@ func latestRun(runsDir string) (string, error) {
 		return err != nil || !info.IsDir()
 	})
 	if len(paths) == 0 {
-		return "", errors.New("codegen benchmark: no saved runs; specify -run for a saved run directory")
+		return "", errors.New("tic-tac-toe benchmark: no saved runs; specify -run for a saved run directory")
 	}
 	slices.Sort(paths)
 	return paths[len(paths)-1], nil

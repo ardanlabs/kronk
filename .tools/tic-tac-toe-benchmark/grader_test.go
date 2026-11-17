@@ -13,7 +13,7 @@ import (
 
 func fixtureSource(t *testing.T) string {
 	t.Helper()
-	b, err := os.ReadFile("testdata/correct.go")
+	b, err := os.ReadFile("game_references/example_step1/main.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestCompilerDiagnosticsPreserved(t *testing.T) {
 // implementation. Ordinary games reuse the v1 oracle with only the new prompts;
 // undo cases specify the extra screens and restored turns explicitly.
 func TestUndoReference(t *testing.T) {
-	source, err := os.ReadFile("testdata/undo/main.go")
+	source, err := os.ReadFile("game_references/example_step2/main.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestUndoReference(t *testing.T) {
 }
 
 func TestUndoGrade(t *testing.T) {
-	source, err := os.ReadFile("testdata/undo/main.go")
+	source, err := os.ReadFile("game_references/example_step2/main.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestUndoGrade(t *testing.T) {
 // Mutations construct plausible broken programs; assertions observe only the
 // public helper and terminal contracts, not the candidate's private organization.
 func TestUndoRegressions(t *testing.T) {
-	b, err := os.ReadFile("testdata/undo/main.go")
+	b, err := os.ReadFile("game_references/example_step2/main.go")
 	if err != nil {
 		t.Fatal(err)
 	}

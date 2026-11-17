@@ -1,4 +1,4 @@
-# OpenCode code-generation benchmark
+# OpenCode tic-tac-toe benchmark
 
 This harness measures how the `/BENCHMARK` models configured in
 `zarf/kms/tools_model_config.yaml` complete the tic-tac-toe task through OpenCode's
@@ -78,19 +78,22 @@ replays preserving all three scores, and exit answers. Each scenario is bounded
 to three seconds and 64 KiB of output. A complete pass means these acceptance
 cases passed, not a proof against every possible program defect or terminal.
 Check percentages are diagnostic, not a percentage of playability. No Amp grader
-or screenshot review is involved. Both steps come from `tic-tac-toe.md`.
-Initially the agent receives only the basic-game section before the separator.
-Only after it passes, the agent receives the `# Add One-Move Undo` section;
+or screenshot review is involved. The agent first receives `game_references/prompt_step1.md` (basic game).
+Only after it passes, the agent receives `game_references/prompt_step2.md` (undo move);
 the base-game prompt is not repeated. Step2 checks both players'
 undo, restored turns and cell numbers, invalid/repeated undo, replacement moves,
 score preservation, replay reset, and ordinary gameplay with the updated prompts.
 The existing exact-output requirements remain in force.
 
-Runnable references are `testdata/correct.go` (Step1) and `testdata/undo/main.go` (Step2).
-Play the undo reference from the project root with:
+Runnable references are `game_references/example_step1/main.go` (basic game) and
+`game_references/example_step2/main.go` (undo). Play either reference from the project root:
 
 ```shell
-GOTOOLCHAIN=local go run ./.tools/codegen-benchmark/testdata/undo
+# Step 1: basic game
+GOTOOLCHAIN=local go run ./.tools/tic-tac-toe-benchmark/game_references/example_step1
+
+# Step 2: undo move
+GOTOOLCHAIN=local go run ./.tools/tic-tac-toe-benchmark/game_references/example_step2
 ```
 
 Before a model's attempts begin, the harness warms it with a one-token response
@@ -128,39 +131,39 @@ the administrative model-unload endpoint.
 Run every eligible configured model with up to three submissions per step:
 
 ```shell
-make benchmark-codegen
+make benchmark-tic-tac-toe
 ```
 
 Select one model or reduce the submission budget (only 1–3 are accepted):
 
 ```shell
-make benchmark-codegen \
-    CODEGEN_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK \
-    CODEGEN_SUBMISSIONS=2
+make benchmark-tic-tac-toe \
+    TICTACTOE_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK \
+    TICTACTOE_SUBMISSIONS=2
 
 # Evaluate without grader-assisted repairs:
-make benchmark-codegen CODEGEN_FEEDBACK=false
+make benchmark-tic-tac-toe TICTACTOE_FEEDBACK=false
 ```
 
 List eligible models without contacting the server:
 
 ```shell
-make benchmark-codegen-list
+make benchmark-tic-tac-toe-list
 ```
 
 The primary knobs are:
 
 | Make variable | Default | Purpose |
 | --- | --- | --- |
-| `CODEGEN_HOST` | `http://localhost:11435` | Running Kronk server |
-| `CODEGEN_MODEL` | `all` | One ID, comma-separated IDs, or every `/BENCHMARK` model |
-| `CODEGEN_SUBMISSIONS` | `3` | Maximum submissions per step, including its initial one |
-| `CODEGEN_FEEDBACK` | `true` | Resume failures with grader feedback; false allows one submission per step |
-| `CODEGEN_STEPS` | `40` | Maximum OpenCode agent steps per submission |
-| `CODEGEN_TIMEOUT` | `30m` | Timeout per submission; also separately applied to warm-up and unload |
+| `TICTACTOE_HOST` | `http://localhost:11435` | Running Kronk server |
+| `TICTACTOE_MODEL` | `all` | One ID, comma-separated IDs, or every `/BENCHMARK` model |
+| `TICTACTOE_SUBMISSIONS` | `3` | Maximum submissions per step, including its initial one |
+| `TICTACTOE_FEEDBACK` | `true` | Resume failures with grader feedback; false allows one submission per step |
+| `TICTACTOE_STEPS` | `40` | Maximum OpenCode agent steps per submission |
+| `TICTACTOE_TIMEOUT` | `30m` | Timeout per submission; also separately applied to warm-up and unload |
 
 Outputs are retained beneath the gitignored
-`.tools/codegen-benchmark/runs/`, grouped by local date and unique run:
+`.tools/tic-tac-toe-benchmark/runs/`, grouped by local date and unique run:
 
 ```text
 runs/YYYY-MM-DD/run-HHMMSS.<unique>/
@@ -189,10 +192,10 @@ values without querying a server; old reports without them show `not recorded`.
 History is maintained manually; the benchmark never updates it. The runner machine
 is the OpenCode/grader host, not a remote inference server.
 
-The prompt and acceptance checks together define workload v1. The single canonical
-prompt file is `tic-tac-toe.md`, containing the basic game and undo extension
-separated by a divider. Its filename does not indicate the workload version.
-It is not copied into runs. Reports show `Workload: v1`, with one row
+The prompts and acceptance checks together define workload v1. Its two prompt files
+are `game_references/prompt_step1.md` (basic game) and `game_references/prompt_step2.md` (undo move), loaded separately without
+splitting or reconstructing their contents. They are not copied into runs.
+Reports show `Workload: v1`, with one row
 per model and separate `Step 1 (Basic game)` and `Step 2 (Undo move)` columns.
 Each cell shows the outcome, attempt count, checks, agent time, and generated
 tokens, for example `Passed (attempts 2, checks 37/37, time 3m49s, generated-toks: 14133)`.
@@ -248,9 +251,9 @@ currently defaults to 10 minutes per invocation.
 Regenerate the latest run's report without invoking a model:
 
 ```shell
-make benchmark-codegen-report
+make benchmark-tic-tac-toe-report
 
 # Select a particular saved run:
-make benchmark-codegen-report \
-    CODEGEN_RUN=.tools/codegen-benchmark/runs/YYYY-MM-DD/run-HHMMSS.unique
+make benchmark-tic-tac-toe-report \
+    TICTACTOE_RUN=.tools/tic-tac-toe-benchmark/runs/YYYY-MM-DD/run-HHMMSS.unique
 ```

@@ -58,7 +58,8 @@ func boardFull(b *Board) bool {
 
 func move(b *Board, player byte) int {
 	for {
-		fmt.Print(fmt.Sprintf("Player %c's turn. Enter a number (1-9):", player))
+		prompt := fmt.Sprintf("Player %c's turn. Enter a number (1-9):", player)
+		fmt.Print(prompt)
 		line, err := stdin.ReadString('\n')
 		if err != nil {
 			os.Exit(0)

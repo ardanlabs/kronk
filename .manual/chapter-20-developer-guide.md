@@ -308,7 +308,7 @@ the binding call site.
 
 #### 20.4.3 OpenCode coding benchmark
 
-`.tools/codegen-benchmark` evaluates coding agents against a separately
+`.tools/tic-tac-toe-benchmark` evaluates coding agents against a separately
 managed Kronk server through `opencode run`. Workload v1 has two steps: the basic
 tic-tac-toe game, then an undo extension unlocked only after the basic game passes.
 Each step allows up to three submissions by default, sharing the same program and
@@ -323,20 +323,20 @@ The harness warms each model before its submissions and unloads it before contin
 to the next model. Warm-up time and tokens are excluded from agent measurements.
 
 ```shell
-make benchmark-codegen-list
-make benchmark-codegen
-make benchmark-codegen \
-    CODEGEN_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK \
-    CODEGEN_SUBMISSIONS=3
-make benchmark-codegen-report
+make benchmark-tic-tac-toe-list
+make benchmark-tic-tac-toe
+make benchmark-tic-tac-toe \
+    TICTACTOE_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK \
+    TICTACTOE_SUBMISSIONS=3
+make benchmark-tic-tac-toe-report
 ```
 
 Results are retained beneath the gitignored
-`.tools/codegen-benchmark/runs/YYYY-MM-DD/run-<unique>/`, without clearing
+`.tools/tic-tac-toe-benchmark/runs/YYYY-MM-DD/run-<unique>/`, without clearing
 previous runs. Each submission preserves its generated program, OpenCode event stream,
 stderr, and grader evidence. The aggregate plain-text `report.txt` has separate step
 columns and can be copied into the manually maintained `history.txt`. See
-`.tools/codegen-benchmark/README.md` for all runtime knobs and replay commands.
+`.tools/tic-tac-toe-benchmark/README.md` for all runtime knobs and replay commands.
 This is not part of `make test`; starting the model server and running inference remain
 explicit human actions.
 

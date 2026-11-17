@@ -38,7 +38,6 @@ type options struct {
 	host       string
 	model      string
 	configFile string
-	promptFile string
 	outputDir  string
 	reportDir  string
 	attempts   int
@@ -121,8 +120,7 @@ func parseFlags() (options, error) {
 	flag.StringVar(&opts.reportDir, "run", "", "saved run directory to use with -report (defaults to latest)")
 	flag.Parse()
 	opts.configFile = filepath.Join(root, "zarf", "kms", "tools_model_config.yaml")
-	opts.promptFile = filepath.Join(root, ".tools", "codegen-benchmark", "tic-tac-toe.md")
-	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "runs")
+	opts.outputDir = filepath.Join(root, ".tools", "tic-tac-toe-benchmark", "runs")
 	return opts, nil
 }
 
@@ -139,13 +137,13 @@ func run(opts options) (runErr error) {
 		return generateReport(dir, nil)
 	}
 	if opts.attempts < 1 || opts.attempts > defaultAttempts {
-		return errors.New("codegen benchmark: submissions must be between 1 and 3")
+		return errors.New("tic-tac-toe benchmark: submissions must be between 1 and 3")
 	}
 	if opts.steps < 1 {
-		return errors.New("codegen benchmark: steps must be at least 1")
+		return errors.New("tic-tac-toe benchmark: steps must be at least 1")
 	}
 	if opts.timeout <= 0 {
-		return errors.New("codegen benchmark: timeout must be positive")
+		return errors.New("tic-tac-toe benchmark: timeout must be positive")
 	}
 
 	configured, err := loadModels(opts.configFile)
@@ -168,7 +166,7 @@ func run(opts options) (runErr error) {
 		return err
 	}
 	if _, err := exec.LookPath("opencode"); err != nil {
-		return errors.New("codegen benchmark: opencode is not installed or not on PATH")
+		return errors.New("tic-tac-toe benchmark: opencode is not installed or not on PATH")
 	}
 	if err := verifyServer(context.Background(), host, selected); err != nil {
 		return err
@@ -177,23 +175,23 @@ func run(opts options) (runErr error) {
 	if err != nil {
 		return err
 	}
-	fullPrompt, err := loadPrompt(opts.promptFile)
-	if err != nil {
-		return err
-	}
-	prompt, undoPrompt, found := strings.Cut(fullPrompt, "\n\n================================================================================\n\n# Add One-Move Undo\n")
-	if !found || strings.TrimSpace(undoPrompt) == "" {
-		return errors.New("codegen benchmark: prompt is missing the undo extension")
-	}
-	stages := []benchmarkStep{
-		{name: basicGameStep, prompt: prompt, grade: gradeProgram},
-		{name: undoMoveStep, prompt: "# Add One-Move Undo\n" + undoPrompt, grade: gradeUndoProgram},
-	}
-
 	root, err := repositoryRoot()
 	if err != nil {
 		return err
 	}
+	prompt, err := loadPrompt(filepath.Join(root, ".tools", "tic-tac-toe-benchmark", "game_references", "prompt_step1.md"))
+	if err != nil {
+		return err
+	}
+	undoPrompt, err := loadPrompt(filepath.Join(root, ".tools", "tic-tac-toe-benchmark", "game_references", "prompt_step2.md"))
+	if err != nil {
+		return err
+	}
+	stages := []benchmarkStep{
+		{name: basicGameStep, prompt: prompt, grade: gradeProgram},
+		{name: undoMoveStep, prompt: undoPrompt, grade: gradeUndoProgram},
+	}
+
 	runDir, err := prepareRunDir(opts.outputDir)
 	if err != nil {
 		return err
@@ -215,7 +213,7 @@ func run(opts options) (runErr error) {
 		}
 		runErr = errors.Join(runErr, generateReport(runDir, &record))
 	}()
-	fmt.Printf("Code-generation benchmark\n- server: %s\n- models: %d\n- maximum submissions/challenge step: %d\n- grader feedback: %t\n- output: %s\n", host, len(selected), opts.attempts, opts.feedback, runDir)
+	fmt.Printf("Tic-tac-toe benchmark\n- server: %s\n- models: %d\n- maximum submissions/challenge step: %d\n- grader feedback: %t\n- output: %s\n", host, len(selected), opts.attempts, opts.feedback, runDir)
 	for _, model := range selected {
 		if err := runModel(root, runDir, host, stages, model, opts); err != nil {
 			return err
@@ -431,10 +429,10 @@ func warmModel(ctx context.Context, host, modelID string) error {
 	}
 	status, body, err := postJSON(ctx, host, "/v1/chat/completions", payload)
 	if err != nil {
-		return fmt.Errorf("codegen benchmark: warming model %s: %w", modelID, err)
+		return fmt.Errorf("tic-tac-toe benchmark: warming model %s: %w", modelID, err)
 	}
 	if status != http.StatusOK {
-		return fmt.Errorf("codegen benchmark: warming model %s returned %s: %s", modelID, http.StatusText(status), body)
+		return fmt.Errorf("tic-tac-toe benchmark: warming model %s returned %s: %s", modelID, http.StatusText(status), body)
 	}
 	return nil
 }
@@ -442,10 +440,10 @@ func warmModel(ctx context.Context, host, modelID string) error {
 func unloadModel(ctx context.Context, host, modelID string) error {
 	status, body, err := postJSON(ctx, host, "/v1/kronk/models/unload", map[string]string{"id": modelID})
 	if err != nil {
-		return fmt.Errorf("codegen benchmark: unloading model %s: %w", modelID, err)
+		return fmt.Errorf("tic-tac-toe benchmark: unloading model %s: %w", modelID, err)
 	}
 	if status != http.StatusOK && status != http.StatusNotFound {
-		return fmt.Errorf("codegen benchmark: unloading model %s returned %s: %s", modelID, http.StatusText(status), body)
+		return fmt.Errorf("tic-tac-toe benchmark: unloading model %s returned %s: %s", modelID, http.StatusText(status), body)
 	}
 	return nil
 }
@@ -483,7 +481,7 @@ func postJSON(ctx context.Context, host, path string, payload any) (int, string,
 func loadModels(path string) ([]benchmarkModel, error) {
 	doc, err := modelconfig.Load(path)
 	if err != nil {
-		return nil, fmt.Errorf("codegen benchmark: loading %s: %w", path, err)
+		return nil, fmt.Errorf("tic-tac-toe benchmark: loading %s: %w", path, err)
 	}
 	configs := doc.Models
 
@@ -494,7 +492,7 @@ func loadModels(path string) ([]benchmarkModel, error) {
 		}
 		resolved := cfg.ToKronkConfig()
 		if resolved.ContextWindow() <= 0 || resolved.DefaultParams.MaxTokens <= 0 {
-			return nil, fmt.Errorf("codegen benchmark: model %s must configure context-window and sampling-parameters.max_tokens", id)
+			return nil, fmt.Errorf("tic-tac-toe benchmark: model %s must configure context-window and sampling-parameters.max_tokens", id)
 		}
 		eligible = append(eligible, benchmarkModel{
 			ID:            id,
@@ -504,7 +502,7 @@ func loadModels(path string) ([]benchmarkModel, error) {
 	}
 	slices.SortFunc(eligible, func(a, b benchmarkModel) int { return strings.Compare(a.ID, b.ID) })
 	if len(eligible) == 0 {
-		return nil, fmt.Errorf("codegen benchmark: %s contains no models ending in %s", path, modelBenchmarkSuffix)
+		return nil, fmt.Errorf("tic-tac-toe benchmark: %s contains no models ending in %s", path, modelBenchmarkSuffix)
 	}
 	return eligible, nil
 }
@@ -525,11 +523,11 @@ func selectModels(configured []benchmarkModel, requested string) ([]benchmarkMod
 	for id := range strings.SplitSeq(requested, ",") {
 		id = strings.TrimSpace(id)
 		if !strings.HasSuffix(id, modelBenchmarkSuffix) {
-			return nil, fmt.Errorf("codegen benchmark: model %q must end in %s", id, modelBenchmarkSuffix)
+			return nil, fmt.Errorf("tic-tac-toe benchmark: model %q must end in %s", id, modelBenchmarkSuffix)
 		}
 		model, exists := byID[id]
 		if !exists {
-			return nil, fmt.Errorf("codegen benchmark: model %q is not configured", id)
+			return nil, fmt.Errorf("tic-tac-toe benchmark: model %q is not configured", id)
 		}
 		if !seen[id] {
 			selected = append(selected, model)
@@ -551,7 +549,7 @@ func prepareSession(root, dir, host string, model benchmarkModel, steps int) ([]
 	}
 	configPath := filepath.Join(dir, "opencode-config.json")
 	if err := os.WriteFile(configPath, append(config, '\n'), 0o600); err != nil {
-		return nil, fmt.Errorf("codegen benchmark: writing OpenCode config: %w", err)
+		return nil, fmt.Errorf("tic-tac-toe benchmark: writing OpenCode config: %w", err)
 	}
 	return prepareOpenCodeEnvironment(root, dir, config)
 }
@@ -607,7 +605,7 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 
 	source, readErr := os.ReadFile(filepath.Join(programDir, "main.go"))
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return result{}, fmt.Errorf("codegen benchmark: reading generated main.go: %w", readErr)
+		return result{}, fmt.Errorf("tic-tac-toe benchmark: reading generated main.go: %w", readErr)
 	}
 	if readErr == nil {
 		snapshot := filepath.Join(artifactDir, "program")
@@ -625,7 +623,7 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 	// Preserve the submission even if the CLI's event stream cannot be decoded.
 	agent, parseErr := parseAgentResult(stdout.Bytes())
 	if parseErr != nil {
-		return result{}, fmt.Errorf("codegen benchmark: parsing OpenCode events: %w", parseErr)
+		return result{}, fmt.Errorf("tic-tac-toe benchmark: parsing OpenCode events: %w", parseErr)
 	}
 	agent.WallTime = wallTime
 	if agentErr != nil {
@@ -659,14 +657,14 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 	}
 	data, err := json.MarshalIndent(item, "", "  ")
 	if err != nil {
-		return result{}, fmt.Errorf("codegen benchmark: encoding result: %w", err)
+		return result{}, fmt.Errorf("tic-tac-toe benchmark: encoding result: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(artifactDir, "result.json"), append(data, '\n'), 0o644); err != nil {
-		return result{}, fmt.Errorf("codegen benchmark: writing result: %w", err)
+		return result{}, fmt.Errorf("tic-tac-toe benchmark: writing result: %w", err)
 	}
 
 	if agent.Error != "" {
-		fmt.Fprintf(os.Stderr, "codegen benchmark: OpenCode %s submission %d for %s: %s\n", task.name, attempt, model.ID, agent.Error)
+		fmt.Fprintf(os.Stderr, "tic-tac-toe benchmark: OpenCode %s submission %d for %s: %s\n", task.name, attempt, model.ID, agent.Error)
 		return item, nil
 	}
 	fmt.Printf("score=%d/%d build=%t turns=%d tools=%d wall=%s\n",
@@ -676,19 +674,19 @@ func runAttempt(modelDir, prompt string, env []string, model benchmarkModel, att
 
 func prepareAttemptDirectory(dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("codegen benchmark: creating attempt directory: %w", err)
+		return "", fmt.Errorf("tic-tac-toe benchmark: creating attempt directory: %w", err)
 	}
 	cmd := exec.Command("git", "init", "--quiet", dir)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("codegen benchmark: initializing attempt repository: %w: %s", err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("tic-tac-toe benchmark: initializing attempt repository: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	programDir := filepath.Join(dir, "tictactoe")
 	if err := os.MkdirAll(programDir, 0o755); err != nil {
-		return "", fmt.Errorf("codegen benchmark: creating program directory: %w", err)
+		return "", fmt.Errorf("tic-tac-toe benchmark: creating program directory: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(programDir, "go.mod"), []byte("module tictactoe\n\ngo 1.27.0\n"), 0o644); err != nil {
-		return "", fmt.Errorf("codegen benchmark: writing go.mod: %w", err)
+		return "", fmt.Errorf("tic-tac-toe benchmark: writing go.mod: %w", err)
 	}
 	return programDir, nil
 }
@@ -700,7 +698,7 @@ func openCodeConfig(host string, model benchmarkModel, steps int) ([]byte, error
 	}
 	baseURL, err := url.JoinPath(host, "/v1")
 	if err != nil {
-		return nil, fmt.Errorf("codegen benchmark: building provider URL: %w", err)
+		return nil, fmt.Errorf("tic-tac-toe benchmark: building provider URL: %w", err)
 	}
 
 	permission := map[string]any{
@@ -766,7 +764,7 @@ func openCodeConfig(host string, model benchmarkModel, steps int) ([]byte, error
 	}
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("codegen benchmark: encoding OpenCode config: %w", err)
+		return nil, fmt.Errorf("tic-tac-toe benchmark: encoding OpenCode config: %w", err)
 	}
 	return data, nil
 }
@@ -776,14 +774,14 @@ func prepareOpenCodeEnvironment(root, attemptDir string, config []byte) ([]strin
 	for _, name := range []string{"home", "config", "data", "cache", "state", "tmp"} {
 		dir := filepath.Join(openCodeRoot, name)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("codegen benchmark: creating OpenCode directory: %w", err)
+			return nil, fmt.Errorf("tic-tac-toe benchmark: creating OpenCode directory: %w", err)
 		}
 	}
 
 	skillSource := filepath.Join(root, ".agents", "default", "skills", "use-modern-go")
 	skillDestination := filepath.Join(openCodeRoot, "config", "opencode", "skills", "use-modern-go")
 	if err := os.CopyFS(skillDestination, os.DirFS(skillSource)); err != nil {
-		return nil, fmt.Errorf("codegen benchmark: installing use-modern-go skill: %w", err)
+		return nil, fmt.Errorf("tic-tac-toe benchmark: installing use-modern-go skill: %w", err)
 	}
 
 	return openCodeEnvironment(attemptDir, config), nil
@@ -882,26 +880,26 @@ func verifyServer(parent context.Context, host string, selected []benchmarkModel
 	defer cancel()
 	modelsURL, err := url.JoinPath(host, "/v1/models")
 	if err != nil {
-		return fmt.Errorf("codegen benchmark: building models URL: %w", err)
+		return fmt.Errorf("tic-tac-toe benchmark: building models URL: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {
-		return fmt.Errorf("codegen benchmark: creating models request: %w", err)
+		return fmt.Errorf("tic-tac-toe benchmark: creating models request: %w", err)
 	}
 	if token := strings.TrimSpace(os.Getenv("KRONK_TOKEN")); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("codegen benchmark: connecting to Kronk at %s: %w", host, err)
+		return fmt.Errorf("tic-tac-toe benchmark: connecting to Kronk at %s: %w", host, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
 		if readErr != nil {
-			return fmt.Errorf("codegen benchmark: reading GET %s error response: %w", modelsURL, readErr)
+			return fmt.Errorf("tic-tac-toe benchmark: reading GET %s error response: %w", modelsURL, readErr)
 		}
-		return fmt.Errorf("codegen benchmark: GET %s returned %s: %s", modelsURL, resp.Status, strings.TrimSpace(string(body)))
+		return fmt.Errorf("tic-tac-toe benchmark: GET %s returned %s: %s", modelsURL, resp.Status, strings.TrimSpace(string(body)))
 	}
 	var response struct {
 		Data []struct {
@@ -909,7 +907,7 @@ func verifyServer(parent context.Context, host string, selected []benchmarkModel
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return fmt.Errorf("codegen benchmark: decoding model list: %w", err)
+		return fmt.Errorf("tic-tac-toe benchmark: decoding model list: %w", err)
 	}
 	available := make(map[string]bool, len(response.Data))
 	for _, model := range response.Data {
@@ -917,7 +915,7 @@ func verifyServer(parent context.Context, host string, selected []benchmarkModel
 	}
 	for _, model := range selected {
 		if !available[model.ID] {
-			return fmt.Errorf("codegen benchmark: configured model %q is not available from %s", model.ID, host)
+			return fmt.Errorf("tic-tac-toe benchmark: configured model %q is not available from %s", model.ID, host)
 		}
 	}
 	return nil
@@ -931,7 +929,7 @@ func serverVersions(parent context.Context, host string) (string, string, error)
 	for _, path := range []string{"/v1/liveness", "/v1/kronk/libs"} {
 		requestURL, err := url.JoinPath(host, path)
 		if err != nil {
-			return "", "", fmt.Errorf("codegen benchmark: building version URL: %w", err)
+			return "", "", fmt.Errorf("tic-tac-toe benchmark: building version URL: %w", err)
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
@@ -956,14 +954,14 @@ func serverVersions(parent context.Context, host string) (string, string, error)
 			return json.NewDecoder(io.LimitReader(resp.Body, 8*1024)).Decode(&metadata)
 		}()
 		if err != nil {
-			return "", "", fmt.Errorf("codegen benchmark: reading server version from %s: %w", path, err)
+			return "", "", fmt.Errorf("tic-tac-toe benchmark: reading server version from %s: %w", path, err)
 		}
 		version := metadata.Build
 		if path == "/v1/kronk/libs" {
 			version = metadata.Current
 		}
 		if strings.TrimSpace(version) == "" {
-			return "", "", fmt.Errorf("codegen benchmark: missing server version from %s", path)
+			return "", "", fmt.Errorf("tic-tac-toe benchmark: missing server version from %s", path)
 		}
 		versions = append(versions, version)
 	}
@@ -973,7 +971,7 @@ func serverVersions(parent context.Context, host string) (string, string, error)
 func loadPrompt(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("codegen benchmark: reading prompt %s: %w", path, err)
+		return "", fmt.Errorf("tic-tac-toe benchmark: reading prompt %s: %w", path, err)
 	}
 	return strings.TrimSpace(string(data)), nil
 }
@@ -986,7 +984,7 @@ func normalizeHost(host string) (string, error) {
 	u, err := url.Parse(host)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") ||
 		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
-		return "", fmt.Errorf("codegen benchmark: invalid host %q", host)
+		return "", fmt.Errorf("tic-tac-toe benchmark: invalid host %q", host)
 	}
 	return strings.TrimSuffix(u.String(), "/"), nil
 }
@@ -995,7 +993,7 @@ func prepareRunDir(dir string) (string, error) {
 	now := time.Now()
 	dateDir := filepath.Join(dir, now.Format("2006-01-02"))
 	if err := os.MkdirAll(dateDir, 0o755); err != nil {
-		return "", fmt.Errorf("codegen benchmark: creating output directory: %w", err)
+		return "", fmt.Errorf("tic-tac-toe benchmark: creating output directory: %w", err)
 	}
 	return os.MkdirTemp(dateDir, "run-"+now.Format("150405.000000000")+"-")
 }
@@ -1003,7 +1001,7 @@ func prepareRunDir(dir string) (string, error) {
 func repositoryRoot() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
-		return "", errors.New("codegen benchmark: locating source")
+		return "", errors.New("tic-tac-toe benchmark: locating source")
 	}
 	return filepath.Abs(filepath.Join(filepath.Dir(file), "..", ".."))
 }

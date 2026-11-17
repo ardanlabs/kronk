@@ -21,8 +21,8 @@ func TestUndoSubmissionsHaveIndependentBudget(t *testing.T) {
 		t.Run(outcome, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("BENCHMARK_CAPTURE_DIR", dir)
-			t.Setenv("BENCHMARK_BASIC", filepath.Join(root, ".tools/codegen-benchmark/testdata/correct.go"))
-			t.Setenv("BENCHMARK_UNDO", filepath.Join(root, ".tools/codegen-benchmark/testdata/undo/main.go"))
+			t.Setenv("BENCHMARK_BASIC", filepath.Join(root, ".tools/tic-tac-toe-benchmark/game_references/example_step1/main.go"))
+			t.Setenv("BENCHMARK_UNDO", filepath.Join(root, ".tools/tic-tac-toe-benchmark/game_references/example_step2/main.go"))
 			t.Setenv("BENCHMARK_UNDO_OUTCOME", outcome)
 			script := `#!/bin/sh
 set -eu

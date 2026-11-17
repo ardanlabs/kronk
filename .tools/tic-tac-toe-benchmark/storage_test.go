@@ -33,7 +33,7 @@ func TestSavedRunsAreRunnableAndRetained(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("BENCHMARK_FIXTURE", fixture)
-	undoSource, err := os.ReadFile("testdata/undo/main.go")
+	undoSource, err := os.ReadFile("game_references/example_step2/main.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,8 +93,7 @@ fi
 		t.Fatal(err)
 	}
 	opts := options{host: server.URL, model: "all", configFile: config,
-		promptFile: filepath.Join(root, ".tools/codegen-benchmark/tic-tac-toe.md"),
-		outputDir:  filepath.Join(dir, "runs"), attempts: 3, feedback: true, steps: 5, timeout: time.Minute}
+		outputDir: filepath.Join(dir, "runs"), attempts: 3, feedback: true, steps: 5, timeout: time.Minute}
 	historyPath := filepath.Join(dir, "history.txt")
 	const history = "Previously recorded run\n"
 	if err := os.WriteFile(historyPath, []byte(history), 0o644); err != nil {
@@ -111,10 +110,13 @@ fi
 		if err != nil || !strings.HasPrefix(string(sent), "# Tic-Tac-Toe — v1") || strings.Contains(string(sent), "Undo") || strings.Contains(string(sent), "====") || strings.Contains(string(sent), "writing-go") || !strings.Contains(string(sent), "Do not declare any struct types") || !strings.Contains(string(sent), "without a trailing space or newline") {
 			t.Fatalf("incorrect prompt sent to agent: %s %v", sent, err)
 		}
+		basicPrompt, err := os.ReadFile(filepath.Join(root, ".tools/tic-tac-toe-benchmark/game_references/prompt_step1.md"))
+		if err != nil || string(sent) != strings.TrimSpace(string(basicPrompt)) {
+			t.Fatalf("basic prompt differs from prompt_step1.md: %s %v", sent, err)
+		}
 		undoSent, err := os.ReadFile(promptLog + ".undo")
-		fullPrompt, promptErr := loadPrompt(filepath.Join(root, ".tools/codegen-benchmark/tic-tac-toe.md"))
-		_, extension, found := strings.Cut(fullPrompt, "\n# Add One-Move Undo\n")
-		if err != nil || promptErr != nil || !found || string(undoSent) != "# Add One-Move Undo\n"+extension {
+		undoPrompt, promptErr := os.ReadFile(filepath.Join(root, ".tools/tic-tac-toe-benchmark/game_references/prompt_step2.md"))
+		if err != nil || promptErr != nil || string(undoSent) != strings.TrimSpace(string(undoPrompt)) {
 			t.Fatalf("incorrect undo extension sent: %s %v %v", undoSent, err, promptErr)
 		}
 		runDir, err := latestRun(opts.outputDir)

@@ -8,7 +8,7 @@ kms:
   insecure-logging: true
 
 models:
-  # Code-generation benchmark: version1 passers and additional candidates.
+  # Tic-tac-toe benchmark: version1 passers and additional candidates.
   # One slot, 128K context; preserve existing sampling settings.
   unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/BENCHMARK:
     nseq-max: 1

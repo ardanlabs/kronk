@@ -276,7 +276,7 @@ func passCheck(checks []gradeCheck, name string) {
 }
 
 func prepareProgram(source string) (string, error) {
-	dir, err := os.MkdirTemp("", "kronk-codegen-grade-")
+	dir, err := os.MkdirTemp("", "kronk-tic-tac-toe-grade-")
 	if err != nil {
 		return "", fmt.Errorf("creating grader directory: %w", err)
 	}
@@ -633,5 +633,5 @@ func executeScenario(parent context.Context, binary string, s scenario) (executi
 		Input: e.SentInput, Expected: want.String(), Actual: e.Actual, Detail: e.Error}}
 }
 
-//go:embed testdata/grader_tests.go.txt
+//go:embed game_references/grader_tests.go.txt
 var graderUnitTests string

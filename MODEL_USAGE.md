@@ -69,7 +69,7 @@ download size. They are independent of the test-model reduction above.
 The OpenCode coding benchmark discovers its models from
 `zarf/kms/tools_model_config.yaml`. Every eligible model ID ends in `/BENCHMARK`;
 there is no separate hard-coded benchmark model list. Benchmark ownership and
-operating instructions are in `.tools/codegen-benchmark`.
+operating instructions are in `.tools/tic-tac-toe-benchmark`.
 
 ## Example models
 

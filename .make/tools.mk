@@ -280,25 +280,25 @@ test-adversarial: ## Run adversarial probes and print the triage prompt
 # OpenCode coding-agent benchmark against a separately managed Kronk server.
 # Eligible models use /BENCHMARK entries in zarf/kms/tools_model_config.yaml.
 # Start its server with make server-for-tools.
-CODEGEN_HOST ?= http://localhost:11435
-CODEGEN_MODEL ?= all
-CODEGEN_STEPS ?= 40
-CODEGEN_TIMEOUT ?= 10m
-CODEGEN_SUBMISSIONS ?= 3
-CODEGEN_FEEDBACK ?= true
-CODEGEN_RUN ?=
+TICTACTOE_HOST ?= http://localhost:11435
+TICTACTOE_MODEL ?= all
+TICTACTOE_STEPS ?= 40
+TICTACTOE_TIMEOUT ?= 10m
+TICTACTOE_SUBMISSIONS ?= 3
+TICTACTOE_FEEDBACK ?= true
+TICTACTOE_RUN ?=
 
-benchmark-codegen:
-	go run ./.tools/codegen-benchmark \
-		-host "$(CODEGEN_HOST)" \
-		-model "$(CODEGEN_MODEL)" \
-		-attempts "$(CODEGEN_SUBMISSIONS)" \
-		-feedback=$(CODEGEN_FEEDBACK) \
-		-steps "$(CODEGEN_STEPS)" \
-		-timeout "$(CODEGEN_TIMEOUT)"
+benchmark-tic-tac-toe:
+	go run ./.tools/tic-tac-toe-benchmark \
+		-host "$(TICTACTOE_HOST)" \
+		-model "$(TICTACTOE_MODEL)" \
+		-attempts "$(TICTACTOE_SUBMISSIONS)" \
+		-feedback=$(TICTACTOE_FEEDBACK) \
+		-steps "$(TICTACTOE_STEPS)" \
+		-timeout "$(TICTACTOE_TIMEOUT)"
 
-benchmark-codegen-list:
-	go run ./.tools/codegen-benchmark -list
+benchmark-tic-tac-toe-list:
+	go run ./.tools/tic-tac-toe-benchmark -list
 
-benchmark-codegen-report:
-	go run ./.tools/codegen-benchmark -report -run "$(CODEGEN_RUN)"
+benchmark-tic-tac-toe-report:
+	go run ./.tools/tic-tac-toe-benchmark -report -run "$(TICTACTOE_RUN)"

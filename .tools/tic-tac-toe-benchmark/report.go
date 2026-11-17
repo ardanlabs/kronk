@@ -47,7 +47,7 @@ func loadRunRecord(runDir string) (runRecord, error) {
 		case "Started", "Finished":
 			stamp, err := time.Parse(time.RFC3339Nano, value)
 			if err != nil {
-				return runRecord{}, fmt.Errorf("codegen benchmark: reading report timestamp: %w", err)
+				return runRecord{}, fmt.Errorf("tic-tac-toe benchmark: reading report timestamp: %w", err)
 			}
 			if key == "Started" {
 				record.Started = stamp
@@ -83,7 +83,7 @@ func generateReport(runDir string, record *runRecord) error {
 	}
 	path := filepath.Join(runDir, "report.txt")
 	if err := os.WriteFile(path, []byte(renderReport(runDir, models, *record)), 0o644); err != nil {
-		return fmt.Errorf("codegen benchmark: writing report: %w", err)
+		return fmt.Errorf("tic-tac-toe benchmark: writing report: %w", err)
 	}
 	fmt.Printf("Report written to %s\n", path)
 	return nil
@@ -92,17 +92,17 @@ func generateReport(runDir string, record *runRecord) error {
 func loadResults(runDir string) ([]modelResults, error) {
 	paths, err := filepath.Glob(filepath.Join(runDir, "*", "attempt-*", "result.json"))
 	if err != nil {
-		return nil, fmt.Errorf("codegen benchmark: finding results: %w", err)
+		return nil, fmt.Errorf("tic-tac-toe benchmark: finding results: %w", err)
 	}
 	byModel := make(map[string][]result)
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("codegen benchmark: reading %s: %w", path, err)
+			return nil, fmt.Errorf("tic-tac-toe benchmark: reading %s: %w", path, err)
 		}
 		var item result
 		if err := json.Unmarshal(data, &item); err != nil {
-			return nil, fmt.Errorf("codegen benchmark: decoding %s: %w", path, err)
+			return nil, fmt.Errorf("tic-tac-toe benchmark: decoding %s: %w", path, err)
 		}
 		byModel[item.Model.ID] = append(byModel[item.Model.ID], item)
 	}
