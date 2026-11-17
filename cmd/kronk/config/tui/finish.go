@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -126,7 +127,7 @@ func (a *app) offerView() string {
 	}
 
 	lines := []string{
-		a.st.ok.Render("✓ ") + a.st.muted.Render("Saved to "+shortPath(a.savedPath)),
+		a.st.ok.Render("✓ ") + a.st.muted.Render("Saved to "+a.oneLinePath(a.savedPath, len("✓ Saved to "))),
 		"",
 	}
 	if a.forAnother() {
@@ -158,35 +159,57 @@ func (a *app) offerView() string {
 	pull := func(width int) string {
 		return a.titledBox("Pull command", a.st.value.Render(source.PullCommand(a.choice)), width)
 	}
-	return a.buttonBox(box, func(width int) string {
-		return a.wrapTo(strings.Join(lines, "\n"), width) + "\n\n" + pull(width)
+	return a.buttonBox(box, func(width int) (string, string) {
+		return a.wrapTo(strings.Join(lines, "\n"), width), pull(width)
 	}, a.pull.offer, "esc skip")
 }
 
-// buttonBox draws the content in box with the buttons centered under it, and
-// the key help under the box. The box fits the content and the buttons, and
-// wraps only when the screen is narrower: content gets the width it may take
-// (0: no limit).
-func (a *app) buttonBox(box lipgloss.Style, content func(width int) string, b buttons, extra string) string {
+// buttonBox draws the text and then tail in box, with the buttons centered
+// under them, and the key help under the box. The box fits its content and
+// the buttons, and wraps only when the screen is narrower: content gets the
+// width it may take (0: no limit). On a short screen the text is cut; tail,
+// the buttons and the key help stay whole.
+func (a *app) buttonBox(box lipgloss.Style, content func(width int) (text, tail string), b buttons, extra string) string {
 	frame := box.GetHorizontalFrameSize()
 	room := 0
 	if w := a.contentWidth(); w > 0 {
 		room = max(w-frame, 1)
 	}
 
-	text := content(room)
+	text, tail := content(room)
 	row := a.buttonsView(b, room)
-	inner := max(lipgloss.Width(text), lipgloss.Width(row))
+	inner := max(lipgloss.Width(text), lipgloss.Width(tail), lipgloss.Width(row))
 	if room > 0 && inner > room {
 		box = box.Width(room + frame)
 		inner = room
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		box.Render(text+"\n\n"+lipgloss.PlaceHorizontal(inner, lipgloss.Center, row)),
-		"",
-		a.wrap(a.st.help.Render(a.buttonsHelp(b, extra))),
-	)
+	help := a.wrap(a.st.help.Render(a.buttonsHelp(b, extra)))
+	render := func(box lipgloss.Style, text string) string {
+		if tail != "" {
+			text += "\n\n" + tail
+		}
+		return box.Render(text + "\n\n" + lipgloss.PlaceHorizontal(inner, lipgloss.Center, row))
+	}
+	out := render(box, text)
+
+	// Too tall for the screen: drop the box's blank top and bottom lines,
+	// then cut the end of the text. The buttons and the key help stay.
+	if limit := a.bodyHeight() - 1 - lipgloss.Height(help); a.height > 0 && lipgloss.Height(out) > limit {
+		box = box.PaddingTop(0).PaddingBottom(0)
+		lines := strings.Split(a.wrapTo(text, inner), "\n")
+		for n := len(lines); n >= 0; n-- {
+			shown := slices.Clone(lines[:n])
+			if n < len(lines) {
+				shown = append(shown, a.st.muted.Render("…"))
+			}
+			if out = render(box, strings.Join(shown, "\n")); lipgloss.Height(out) <= limit {
+				break
+			}
+		}
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, out, "", help)
 }
 
 // wrapTo breaks text at width (0: no limit).
@@ -275,14 +298,15 @@ func (a *app) doneView() string {
 	row := func(label, value string) string {
 		return a.st.label.Render(padRight(label, doneLabelWidth)) + " " + a.st.value.Render(value)
 	}
+	path := func(p string) string { return a.oneLinePath(p, doneLabelWidth+1) }
 
 	lines := []string{
 		a.st.ok.Bold(true).Render("✓ All done!"),
 		"",
-		row("Config", shortPath(a.savedPath)),
+		row("Config", path(a.savedPath)),
 	}
 	if a.backup != "" {
-		lines = append(lines, row("Backup", shortPath(a.backup)))
+		lines = append(lines, row("Backup", path(a.backup)))
 	}
 	// An empty entry or section is not written: the defaults apply.
 	empty := len(questions.Apply(a.existing, a.changes)) == 0
@@ -326,7 +350,16 @@ func (a *app) doneView() string {
 		extra = "esc back to install · q exit"
 	}
 	box := a.st.box.BorderForeground(a.st.ok.GetForeground()).Padding(1, 2)
-	return a.buttonBox(box, func(int) string { return strings.Join(lines, "\n") }, a.done, extra)
+	return a.buttonBox(box, func(int) (string, string) { return strings.Join(lines, "\n"), "" }, a.done, extra)
+}
+
+// oneLinePath shortens path to fit on one line of an end screen's box after
+// a label of labelWidth cells, keeping its end, the file name.
+func (a *app) oneLinePath(path string, labelWidth int) string {
+	if w := a.contentWidth(); w > 0 {
+		return truncateLeft(shortPath(path), w-6-labelWidth)
+	}
+	return shortPath(path)
 }
 
 // forAnother reports whether the config is for another machine.
