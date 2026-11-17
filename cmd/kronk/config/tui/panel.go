@@ -11,6 +11,7 @@ import (
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/ardanlabs/kronk/cmd/kronk/config/questions"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // The answers list shows every question asked for this model, in order, with
@@ -329,14 +330,19 @@ func (w *answersKey) WithPosition(p huh.FieldPosition) huh.Field {
 	return w
 }
 
-// truncate shortens s to n cells with an ellipsis.
-func truncate(s string, n int) string {
-	if n <= 1 || lipgloss.Width(s) <= n {
+// truncateLeft shortens s to n cells, keeping its end, with an ellipsis.
+func truncateLeft(s string, n int) string {
+	w := lipgloss.Width(s)
+	if n <= 1 || w <= n {
 		return s
 	}
-	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r))+1 > n {
-		r = r[:len(r)-1]
+	return ansi.TruncateLeft(s, w-n+1, "…")
+}
+
+// truncate shortens s to n cells with an ellipsis.
+func truncate(s string, n int) string {
+	if n <= 1 {
+		return s
 	}
-	return string(r) + "…"
+	return ansi.Truncate(s, n, "…")
 }

@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/ardanlabs/kronk/cmd/kronk/config/questions"
 	"github.com/ardanlabs/kronk/cmd/kronk/config/source"
 	kronkserver "github.com/ardanlabs/kronk/cmd/server/api/services/kronk"
@@ -118,8 +119,14 @@ func (a *app) newForm(groups ...*huh.Group) *huh.Form {
 // formSize is the window size message the forms get: narrower when the
 // answers column is on screen.
 func (a *app) formSize() tea.WindowSizeMsg {
-	return tea.WindowSizeMsg{Width: min(a.formWidth(), maxFormWidth), Height: a.height}
+	// The form gets the rows under what the step draws above it; huh scrolls
+	// a list that is taller.
+	h := a.bodyHeight() - lipgloss.Height(a.aboveForm()) + 1
+	return tea.WindowSizeMsg{Width: min(a.formWidth(), maxFormWidth), Height: max(h, minFormHeight)}
 }
+
+// minFormHeight keeps a question and a few options on a very short terminal.
+const minFormHeight = 8
 
 // maxFormWidth keeps the forms' text at a length that reads well on wide
 // terminals.
@@ -373,11 +380,7 @@ func (a *app) newSectionsForm() *huh.Form {
 			}
 		}
 
-		noun := "settings"
-		if n == 1 {
-			noun = "setting"
-		}
-		label := questions.SectionLabel(sec) + a.st.muted.Render(fmt.Sprintf("  %d %s", n, noun))
+		label := questions.SectionLabel(sec) + a.st.muted.Render(fmt.Sprintf("  %d %s", n, nouns(n, "setting")))
 		if set > 0 {
 			label += a.st.muted.Render(fmt.Sprintf(" · %d in the file", set))
 		}
@@ -393,59 +396,73 @@ func (a *app) newSectionsForm() *huh.Form {
 	return a.newForm(huh.NewGroup(sel))
 }
 
-func (a *app) newReviewForm() *huh.Form {
-	// When the answers don't fit, the fixes come first, then keep: save
-	// anyway.
+// reviewOptions are the review's actions. When the answers don't fit, the
+// fixes come first, then keep: save anyway.
+func (a *app) reviewOptions() []huh.Option[string] {
+	if len(a.problems) > 0 {
+		return []huh.Option[string]{
+			huh.NewOption("Change one answer…", actOne),
+			huh.NewOption("Quit without saving", actQuit),
+		}
+	}
+
 	var opts []huh.Option[string]
 	for i, x := range a.fixes {
 		opts = append(opts, huh.NewOption(x.Label(), actFix+strconv.Itoa(i)))
 	}
 
-	if len(a.problems) > 0 {
-		sel := huh.NewSelect[string]().
-			Key(keyAction).
-			Title("Fix the answers above before saving.").
-			Description("Kronk would refuse them when it loads the model.").
-			Options(huh.NewOption("Change one answer…", actOne),
-				huh.NewOption("Quit without saving", actQuit)).
-			Value(&a.action)
-		return a.newForm(huh.NewGroup(withAnswersKey(sel)))
-	}
-
 	save := "Save to " + shortPath(a.path)
-	title, desc := "Save this entry?", "Or change answers before saving."
-	if a.server {
-		title = "Save these settings?"
-	}
-	if len(a.fixes) > 0 || (a.check != nil && !a.check.Recommended.Fits) {
+	if a.notFitting() {
 		save = "Keep it and save to " + shortPath(a.path)
-		title, desc = "It doesn't fit in memory.", "Pick a change that fits, or keep the answers and save."
 	}
-
-	opts = append(opts,
+	return append(opts,
 		huh.NewOption(save, actSave),
 		huh.NewOption("Save to another file…", actOther),
 		huh.NewOption("Change one answer…", actOne),
 		huh.NewOption("Quit without saving", actQuit),
 	)
+}
+
+// reviewFormHeight is the rows the review's menu takes: the blank line above
+// it, title, description and the blank line after it, the options and a
+// wrapped save path, then the blank line and the key help.
+func (a *app) reviewFormHeight() int {
+	options := 2 // change one answer, quit
+	if len(a.problems) == 0 {
+		options = len(a.fixes) + 4
+	}
+	return options + 8
+}
+
+// notFitting reports whether the memory check says the answers don't fit.
+func (a *app) notFitting() bool {
+	return len(a.fixes) > 0 || (a.check != nil && !a.check.Recommended.Fits)
+}
+
+func (a *app) newReviewForm() *huh.Form {
+	title, desc := "Save this entry?", "Or change answers before saving."
+	switch {
+	case len(a.problems) > 0:
+		// Without a save option the file path below is never asked.
+		title, desc = "Fix the answers above before saving.", "Kronk would refuse them when it loads the model."
+	case a.notFitting():
+		title, desc = "It doesn't fit in memory.", "Pick a change that fits, or keep the answers and save."
+	case a.server:
+		title = "Save these settings?"
+	}
 
 	sel := huh.NewSelect[string]().
 		Key(keyAction).
 		Title(title).
 		Description(desc).
-		Options(opts...).
+		Options(a.reviewOptions()...).
 		Value(&a.action)
 
 	path := huh.NewInput().
 		Title("File path").
 		Description("For another machine: copy it there, or point KRONK_POOL_MODEL_CONFIG_FILE at it.").
 		Placeholder("./model_config.yaml").
-		Validate(func(s string) error {
-			if strings.TrimSpace(s) == "" {
-				return fmt.Errorf("enter a path")
-			}
-			return nil
-		}).
+		Validate(validFile).
 		Value(&a.otherPath)
 
 	return a.newForm(

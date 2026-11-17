@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -19,41 +20,13 @@ func (a *app) View() tea.View {
 	case stepLoading, stepFacts, stepCheck, stepSaving:
 		b.WriteString(a.spin.View() + " " + a.status + "…")
 
-	case stepStart, stepSections, stepGroup, stepPick, stepVariant:
-		if a.formErr != nil {
-			b.WriteString(a.wrap(a.st.bad.Render("Error: ") + a.formErr.Error()))
-			b.WriteString("\n\n")
-		}
-		if a.step == stepPick {
-			b.WriteString(a.pickHeading() + "\n")
-		}
-		b.WriteString(a.currentForm().View())
-
-	case stepQuestions, stepReview:
+	case stepStart, stepSections, stepGroup, stepPick, stepVariant, stepQuestions, stepReview:
 		// The open list takes the screen.
 		if a.list.open {
-			b.WriteString(a.panelView(a.contentWidth(), a.height-lipgloss.Height(a.header())-2))
+			b.WriteString(a.panelView(a.contentWidth(), a.bodyHeight()))
 			break
 		}
-		if a.step == stepReview {
-			if a.saveErr != nil {
-				b.WriteString(a.wrap(a.st.bad.Render("Not saved: ") + a.saveErr.Error()))
-				b.WriteString("\n\n")
-			}
-			b.WriteString(a.reviewView())
-			b.WriteString("\n\n")
-			b.WriteString(a.currentForm().View())
-			break
-		}
-		switch {
-		case a.server:
-			b.WriteString(a.serverView())
-		case a.choice.Kind != source.KindChatModel:
-			b.WriteString(a.mediaView())
-		default:
-			b.WriteString(a.factsView())
-		}
-		b.WriteString("\n\n")
+		b.WriteString(a.aboveForm())
 		b.WriteString(a.currentForm().View())
 
 	case stepOffer:
@@ -76,12 +49,54 @@ func (a *app) View() tea.View {
 		// The answers sit beside the content, not at the far edge of a wide
 		// terminal.
 		left := lipgloss.NewStyle().Width(a.contentWidth()).Render(body)
-		body = lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", a.panelView(a.panelWidth(), a.height-lipgloss.Height(header)-2))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", a.panelView(a.panelWidth(), a.bodyHeight()))
 	}
 
 	v := tea.NewView(header + "\n\n" + body + "\n")
 	v.AltScreen = true
 	return v
+}
+
+// aboveForm is what a step with a form draws above it.
+func (a *app) aboveForm() string {
+	var b strings.Builder
+	switch a.step {
+	case stepStart, stepSections, stepGroup, stepPick, stepVariant:
+		if a.formErr != nil {
+			b.WriteString(a.wrap(a.st.bad.Render("Error: ") + a.formErr.Error()))
+			b.WriteString("\n\n")
+		}
+		if a.step == stepPick {
+			b.WriteString(a.pickHeading() + "\n")
+		}
+
+	case stepQuestions:
+		switch {
+		case a.server:
+			b.WriteString(a.serverView())
+		case a.choice.Kind != source.KindChatModel:
+			b.WriteString(a.mediaView())
+		default:
+			b.WriteString(a.factsView())
+		}
+		b.WriteString("\n\n")
+
+	case stepReview:
+		if a.saveErr != nil {
+			b.WriteString(a.wrap(a.st.bad.Render("Not saved: ") + a.saveErr.Error()))
+			b.WriteString("\n\n")
+		}
+		// The box leaves the review form room for its menu and key help.
+		room := a.bodyHeight() - lipgloss.Height(b.String()) - a.reviewFormHeight()
+		b.WriteString(a.reviewView(room))
+		b.WriteString("\n\n")
+	}
+	return b.String()
+}
+
+// bodyHeight is the number of rows under the header.
+func (a *app) bodyHeight() int {
+	return a.height - lipgloss.Height(a.header()) - 2
 }
 
 func (a *app) header() string {
@@ -91,12 +106,14 @@ func (a *app) header() string {
 		sub = shortPath(a.path)
 	}
 
-	// The header spans the answers column too.
-	line := title + "  " + a.st.subtitle.Render(sub)
-	if a.width > 0 {
-		return lipgloss.NewStyle().Width(a.width).Render(line)
+	if a.width <= 0 {
+		return title + "  " + a.st.subtitle.Render(sub)
 	}
-	return line
+
+	// The header spans the answers column too. A long path keeps its end,
+	// the file name, on one line.
+	sub = truncateLeft(sub, a.width-lipgloss.Width(title)-2)
+	return lipgloss.NewStyle().Width(a.width).Render(title + "  " + a.st.subtitle.Render(sub))
 }
 
 // wrap breaks text at the content width.
@@ -218,7 +235,9 @@ func (a *app) serverView() string {
 	})
 }
 
-func (a *app) reviewView() string {
+// reviewView draws the review in a box at most maxHeight rows tall, when
+// maxHeight is above 0.
+func (a *app) reviewView(maxHeight int) string {
 	var lines []string
 	if a.server {
 		lines = append(lines, a.st.heading.Render("Server settings"))
@@ -241,30 +260,14 @@ func (a *app) reviewView() string {
 		}
 	}
 
-	// The preview runs the same edit as the save on the same file, so it
-	// shows the lines exactly as they will be written. Saving to another
-	// file replaces the entry or section there with the whole result, so the
-	// preview is made against that file.
-	values := questions.Apply(a.existing, a.changes)
-	other := a.action == actOther
-	otherPath := expandHome(a.otherPath)
-	var entry string
-	var err error
+	head := len(lines)
+	label := "Entry as written"
 	if a.server {
-		lines = append(lines, "", a.st.label.Render("Section as written"))
-		if other {
-			entry, err = configfile.PreviewKMSValues(otherPath, values)
-		} else {
-			entry, err = configfile.PreviewKMS(a.path, a.changes)
-		}
-	} else {
-		lines = append(lines, "", a.st.label.Render("Entry as written"))
-		if other {
-			entry, err = configfile.PreviewEntryValues(otherPath, a.section, a.entryID, values)
-		} else {
-			entry, err = configfile.PreviewEntry(a.path, a.section, a.entryID, a.changes)
-		}
+		label = "Section as written"
 	}
+	lines = append(lines, "", a.st.label.Render(label))
+
+	entry, err := a.preview()
 	switch {
 	case err != nil:
 		lines = append(lines, a.st.bad.Render("  "+err.Error()))
@@ -279,35 +282,97 @@ func (a *app) reviewView() string {
 			lines = append(lines, a.st.muted.Render("  The server uses its defaults."))
 		}
 	}
+	end := len(lines)
 
-	if len(a.problems) > 0 {
+	switch {
+	case len(a.problems) > 0:
 		lines = append(lines, "")
 		for _, p := range a.problems {
 			lines = append(lines, a.st.bad.Render("  ✗ "+p))
 		}
-		return a.boxed(lines)
-	}
 
-	// Server settings and audio or image models have no memory check.
-	if a.server || a.choice.Kind != source.KindChatModel {
-		return a.boxed(lines)
-	}
+	case a.server || a.choice.Kind != source.KindChatModel:
+		// Server settings and audio or image models have no memory check.
 
-	lines = append(lines, "")
-	switch {
 	case a.check != nil:
 		r := a.check.Recommended
-		lines = append(lines, a.st.label.Render("Memory    ")+fmt.Sprintf("context %d · %d at a time · cache %s · %s", r.ContextWindow, r.NSeqMax, r.CacheTypeK, fitText(r)))
+		lines = append(lines, "", a.st.label.Render("Memory    ")+fmt.Sprintf("context %d · %d at a time · cache %s · %s", r.ContextWindow, r.NSeqMax, r.CacheTypeK, fitText(r)))
 		for _, w := range questions.ReviewWarnings(a.check.Warnings) {
 			lines = append(lines, a.st.warn.Render("  ! "+w))
 		}
+
 	case a.checkErr != nil:
-		lines = append(lines, a.st.warn.Render("Memory check failed: "+a.checkErr.Error()))
+		lines = append(lines, "", a.st.warn.Render("Memory check failed: "+a.checkErr.Error()))
+
 	default:
-		lines = append(lines, a.st.muted.Render("Memory check skipped: "+source.ErrNoLibs.Error()))
+		lines = append(lines, "", a.st.muted.Render("Memory check skipped: "+source.ErrNoLibs.Error()))
 	}
 
-	return a.boxed(lines)
+	return a.fitBox(maxHeight, lines, head, end)
+}
+
+// previewCache is the last entry or section preview, for the file it was
+// made against. The review draws on every frame; the preview reads the file.
+type previewCache struct {
+	ok        bool
+	other     bool
+	otherPath string
+	text      string
+	err       error
+}
+
+// preview is the entry or section as the save would write it. It runs the
+// same edit as the save on the same file, so it shows the lines exactly as
+// they will be written. Saving to another file replaces the entry or section
+// there with the whole result, so the preview is made against that file.
+func (a *app) preview() (string, error) {
+	other := a.action == actOther
+	if c := a.prev; c.ok && c.other == other && c.otherPath == a.otherPath {
+		return c.text, c.err
+	}
+
+	values := questions.Apply(a.existing, a.changes)
+	otherPath := expandHome(a.otherPath)
+	var text string
+	var err error
+	switch {
+	case a.server && other:
+		text, err = configfile.PreviewKMSValues(otherPath, values)
+	case a.server:
+		text, err = configfile.PreviewKMS(a.path, a.changes)
+	case other:
+		text, err = configfile.PreviewEntryValues(otherPath, a.section, a.entryID, values)
+	default:
+		text, err = configfile.PreviewEntry(a.path, a.section, a.entryID, a.changes)
+	}
+
+	a.prev = previewCache{ok: true, other: other, otherPath: a.otherPath, text: text, err: err}
+	return text, err
+}
+
+// fitBox draws the review lines boxed in at most maxHeight rows. The entry as
+// written, lines[head:end], goes first: it repeats the changes. Then the
+// changes are cut short. The heading and what follows the entry stay.
+func (a *app) fitBox(maxHeight int, lines []string, head, end int) string {
+	box := a.boxed(lines)
+	if maxHeight <= 0 || lipgloss.Height(box) <= maxHeight {
+		return box
+	}
+
+	changes, tail := lines[1:head], lines[end:]
+	hidden := a.st.muted.Render("  The entry as written is hidden: the terminal is too short.")
+	for n := len(changes); n >= 0; n-- {
+		shown := changes[:n]
+		if n < len(changes) {
+			more := fmt.Sprintf("  … %d more, ctrl+o lists the answers", len(changes)-n)
+			shown = append(slices.Clone(shown), a.st.muted.Render(more))
+		}
+		box = a.boxed(slices.Concat(lines[:1], shown, []string{"", hidden}, tail))
+		if lipgloss.Height(box) <= maxHeight {
+			break
+		}
+	}
+	return box
 }
 
 // boxed draws lines in a box no wider than the terminal; long lines wrap.

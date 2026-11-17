@@ -80,11 +80,7 @@ func (a *app) newGroupForm() *huh.Form {
 	var opts []huh.Option[string]
 	for _, g := range groups {
 		n := counts[g]
-		noun := "models"
-		if n.total == 1 {
-			noun = "model"
-		}
-		count := fmt.Sprintf("%3d %s", n.total, noun)
+		count := fmt.Sprintf("%3d %s", n.total, nouns(n.total, "model"))
 		if n.installed > 0 {
 			count += fmt.Sprintf(" · %d installed", n.installed)
 		}
@@ -140,15 +136,20 @@ func (a *app) groupLine() string {
 		}
 	}
 
-	parts := []string{fmt.Sprintf("%d models", len(choices))}
-	if len(choices) == 1 {
-		parts[0] = "1 model"
-	}
+	parts := []string{fmt.Sprintf("%d %s", len(choices), nouns(len(choices), "model"))}
 	if installed > 0 {
 		parts = append(parts, fmt.Sprintf("%d installed", installed))
 	}
 
 	return a.st.heading.Render(name) + a.st.muted.Render(" · "+strings.Join(parts, " · "))
+}
+
+// nouns is noun for one, or its plural.
+func nouns(n int, noun string) string {
+	if n == 1 {
+		return noun
+	}
+	return noun + "s"
 }
 
 // groupNouns name a group's models in the picker's question.

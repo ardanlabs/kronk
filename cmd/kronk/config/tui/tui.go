@@ -142,6 +142,7 @@ type app struct {
 	existing map[string]any
 
 	changes  []configfile.Change
+	prev     previewCache // the review's entry as written
 	check    *models.Analysis
 	checkErr error
 	fixes    []questions.Fix // offered when the check says it doesn't fit
@@ -334,6 +335,13 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.setBackground(msg.IsDark())
 
 	case spinner.TickMsg:
+		// The spinner only turns while something runs; busy and startPull
+		// start it again.
+		switch a.step {
+		case stepLoading, stepFacts, stepCheck, stepSaving, stepDownloading:
+		default:
+			return a, nil
+		}
 		var cmd tea.Cmd
 		a.spin, cmd = a.spin.Update(msg)
 		return a, cmd

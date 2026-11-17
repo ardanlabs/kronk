@@ -230,7 +230,6 @@ func (a *app) sectionsDone() (tea.Model, tea.Cmd) {
 }
 
 func (a *app) pickDone() (tea.Model, tea.Cmd) {
-
 	i := slices.IndexFunc(a.choices, func(c source.Choice) bool { return c.ID == a.picked })
 	if i < 0 {
 		return a.fail(fmt.Errorf("model %q not found", a.picked))
@@ -365,6 +364,7 @@ func (a *app) questionsDone() (tea.Model, tea.Cmd) {
 }
 
 func (a *app) startReview() (tea.Model, tea.Cmd) {
+	a.prev = previewCache{}
 	a.action = actSave
 	switch {
 	case len(a.problems) > 0:
