@@ -317,8 +317,7 @@ Acceptance checks cover source requirements, build, vet, helper behavior, and in
 gameplay in a pseudo-terminal; feedback reports observations, not suggested fixes.
 
 Start the tools server with `make server-for-tools`. Eligible models come exclusively
-from `zarf/kms/tools_model_config.yaml`: each selected ID must be configured there,
-end in `/BENCHMARK`, and be returned by the server's `GET /v1/models` endpoint.
+from `zarf/kms/tools_model_config.yaml`, with sufix `/BENCHMARK`.
 The harness warms each model before its submissions and unloads it before continuing
 to the next model. Warm-up time and tokens are excluded from agent measurements.
 
@@ -337,8 +336,7 @@ previous runs. Each submission preserves its generated program, OpenCode event s
 stderr, and grader evidence. The aggregate plain-text `report.txt` has separate step
 columns and can be copied into the manually maintained `history.txt`. See
 `.tools/tic-tac-toe-benchmark/README.md` for all runtime knobs and replay commands.
-This is not part of `make test`; starting the model server and running inference remain
-explicit human actions.
+This is not part of `make test`.
 
 ### 20.5 Request and Model Lifecycle
 

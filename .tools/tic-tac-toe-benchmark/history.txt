@@ -1,17 +1,23 @@
 Tic-tac-toe benchmark history
-============================
+==============================
 
-Date: 2026-11-16
+Run: run-205354.355699000-2625363118
 Workload: v1
 Steps: Step1 (basic game), Step2 (Undo move)
+Started: 2026-11-16T20:53:54.357267-05:00
 Runner machine: Pachas-Mac-Studio.local (darwin/arm64)
 Kronk version: 1.33.3-rc
 llama.cpp library: b12359
-Elapsed (combined): 39m18s
-Workflow: completed
+Workflow: running
 
-Model                                           Step 1 (Basic game)                                                    Step 2 (Undo move)
------                                           -------------------                                                    ------------------
-ornith-ai/Ornith-1.5-9B-Q8_0/BENCHMARK          Failed (attempts 3, checks 15/37, time 13m27s, generated-toks: 38701)  Not reached
-ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK         Passed (attempts 2, checks 37/37, time 3m49s, generated-toks: 14133)   Passed (attempts 1, checks 48/48, time 2m23s, generated-toks: 7847)
-AtomicChat/Ripple-65B-Preview-Q4_K_M/BENCHMARK  Passed (attempts 1, checks 37/37, time 11m26s, generated-toks: 5284)   Passed (attempts 1, checks 48/48, time 6m41s, generated-toks: 3224)
+Model                                             Step 1 (Basic game)                                                              Step 2 (Undo move)
+-----                                             -------------------                                                              ------------------
+AtomicChat/Ripple-65B-Preview-Q4_K_M/BENCHMARK    Passed (attempts 1, checks 37/37, time 16m8s, generated-toks: 8095)              Passed (attempts 1, checks 48/48, time 6m15s, generated-toks: 3107)
+mradermacher/Qwopus3.5-4B-Coder.Q8_0/BENCHMARK    Failed (attempts 3, checks 15/37, time 10m28s, generated-toks: 34795)            Not reached
+ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK           Passed (attempts 3, checks 37/37, time 11m5s, generated-toks: 42758)             Passed (attempts 2, checks 48/48, time 7m3s, generated-toks: 20400)
+ornith-ai/Ornith-1.5-9B-Q8_0/BENCHMARK            Failed (attempts 3, checks Not graded, time 31m36s, generated-toks: 48680)       Not reached
+ukisai/Swift-Qwen3.8-27B-Q8_0/BENCHMARK           Passed (attempts 1, checks 37/37, time 5m21s, generated-toks: 7652)              Passed (attempts 1, checks 48/48, time 1m37s, generated-toks: 2330)
+unsloth/Qwen3.8-27B-UD-Q6_K/BENCHMARK             Passed (attempts 2, checks 37/37, time 6m49s, generated-toks: 9112)              Passed (attempts 1, checks 48/48, time 5m58s, generated-toks: 7771)
+unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/BENCHMARK   Passed (attempts 2, checks 37/37, time 4m38s, generated-toks: 12623)             Passed (attempts 1, checks 48/48, time 58s, generated-toks: 2659)
+unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/BENCHMARK   Passed (attempts 2, checks 37/37, time 12m49s, generated-toks: 19481)            Passed (attempts 1, checks 48/48, time 5m26s, generated-toks: 3141)
+unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/BENCHMARK  Passed (attempts 1, checks 37/37, time 1m19s, generated-toks: 6165)              Passed (attempts 2, checks 48/48, time 2m34s, generated-toks: 10430)

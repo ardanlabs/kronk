@@ -382,12 +382,21 @@ func TestParseAgentResult(t *testing.T) {
 }
 
 func TestGradeProgramMissingSource(t *testing.T) {
-	grade := gradeProgram(t.Context(), "")
-	if got, want := grade.Passed, 0; got != want {
-		t.Errorf("passed checks: got %d, want %d", got, want)
-	}
-	if got, want := grade.Total, 37; got != want {
-		t.Errorf("total checks: got %d, want %d", got, want)
+	for _, tc := range []struct {
+		name  string
+		grade func(context.Context, string) gradeResult
+		total int
+	}{
+		{basicGameStep, gradeProgram, 37},
+		{undoMoveStep, gradeUndoProgram, 48},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			grade := tc.grade(t.Context(), "")
+			if grade.Passed != 0 || grade.Total != tc.total || len(grade.Checks) != 1 ||
+				len(grade.Findings) != 1 || grade.Findings[0].Location != "source-extracted" {
+				t.Fatalf("empty source contract: %+v", grade)
+			}
+		})
 	}
 }
 

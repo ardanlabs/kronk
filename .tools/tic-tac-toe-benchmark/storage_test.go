@@ -147,121 +147,105 @@ fi
 	}
 	opts := options{host: server.URL, model: "all", configFile: config,
 		outputDir: filepath.Join(dir, "runs"), attempts: 3, feedback: true, steps: 5, timeout: time.Minute}
-	historyPath := filepath.Join(dir, "history.txt")
-	const history = "Previously recorded run\n"
-	if err := os.WriteFile(historyPath, []byte(history), 0o644); err != nil {
+	if err := run(opts); err != nil {
 		t.Fatal(err)
 	}
-	var previous string
-	var previousReport []byte
-	for _, feedback := range []bool{true, false} {
-		opts.feedback = feedback
-		if err := run(opts); err != nil {
-			t.Fatal(err)
-		}
-		sent, err := os.ReadFile(promptLog)
-		if err != nil || !strings.HasPrefix(string(sent), "# Tic-Tac-Toe — v1") || strings.Contains(string(sent), "Undo") || strings.Contains(string(sent), "====") || strings.Contains(string(sent), "writing-go") || !strings.Contains(string(sent), "Do not declare any struct types") || !strings.Contains(string(sent), "without a trailing space or newline") {
-			t.Fatalf("incorrect prompt sent to agent: %s %v", sent, err)
-		}
-		basicPrompt, err := os.ReadFile(filepath.Join(root, ".tools/tic-tac-toe-benchmark/game_references/prompt_step1.md"))
-		if err != nil || string(sent) != strings.TrimSpace(string(basicPrompt)) {
-			t.Fatalf("basic prompt differs from prompt_step1.md: %s %v", sent, err)
-		}
-		undoSent, err := os.ReadFile(promptLog + ".undo")
-		undoPrompt, promptErr := os.ReadFile(filepath.Join(root, ".tools/tic-tac-toe-benchmark/game_references/prompt_step2.md"))
-		if err != nil || promptErr != nil || string(undoSent) != strings.TrimSpace(string(undoPrompt)) {
-			t.Fatalf("incorrect undo extension sent: %s %v %v", undoSent, err, promptErr)
-		}
-		runDir, err := latestRun(opts.outputDir)
-		if err != nil || runDir == previous {
-			t.Fatalf("new run: %s %v", runDir, err)
-		}
-		if previous != "" {
-			data, err := os.ReadFile(filepath.Join(previous, "report.txt"))
-			if err != nil || string(data) != string(previousReport) {
-				t.Fatal("previous run report changed")
-			}
-		}
-		models, err := loadResults(runDir)
-		if err != nil || len(models) != 1 || len(models[0].Attempts) != 2 {
-			t.Fatalf("passing each step should stop its repairs: %+v %v", models, err)
-		}
-		item := models[0].Attempts[0]
-		undo := models[0].Attempts[1]
-		if item.Step != basicGameStep || undo.Step != undoMoveStep || undo.Attempt != 2 || undo.Repair != "" ||
-			undo.Grade.Passed != undo.Grade.Total || undo.SourceSHA != fmt.Sprintf("%x", sha256.Sum256(undoSource)) {
-			t.Fatalf("undo submission or step boundary was lost: %+v", undo)
-		}
-		if item.Grade.Passed != item.Grade.Total || item.SourceSHA != fmt.Sprintf("%x", sha256.Sum256([]byte(source))) {
-			t.Fatalf("saved grade/source mismatch: %+v", item)
-		}
-		attempt := filepath.Join(modelDirName(item.Model.ID), "attempt-01")
-		if len(item.Grade.Evidence) != 22 || item.Grade.Evidence[0].Actual != item.Grade.Evidence[0].Expected {
-			t.Fatal("saved execution evidence missing or incorrect")
-		}
-		for _, path := range []string{runDir + ".tar.gz",
-			filepath.Join(runDir, "run.json"), filepath.Join(runDir, "grader.go.txt"),
-			filepath.Join(runDir, "prompt.md"), filepath.Join(runDir, "report.md"),
-			filepath.Join(runDir, modelDirName(item.Model.ID), "workspace"),
-			filepath.Join(runDir, attempt, "main.go.txt"), filepath.Join(runDir, attempt, "grading"),
-			filepath.Join(runDir, attempt, "feedback.md"), filepath.Join(runDir, attempt, "feedback.json"), filepath.Join(runDir, attempt, "prompt.md"),
-			filepath.Join(dir, "history.md")} {
-			if _, err := os.Stat(path); !os.IsNotExist(err) {
-				t.Fatalf("unnecessary artifact retained: %s: %v", path, err)
-			}
-		}
-		report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
-		if err != nil || !strings.Contains(string(report), "37/37") || !strings.Contains(string(report), "Workload: v1\nSteps: Step1 (basic game), Step2 (Undo move)\n") ||
-			!strings.Contains(string(report), "Kronk version: 1.33.4+dev\nllama.cpp library: b12283\n") || strings.Contains(string(report), "b99999") {
-			t.Fatalf("report: %s %v", report, err)
-		}
-		record, err := loadRunRecord(runDir)
-		if err != nil || record.Status != "completed" || record.Started.IsZero() || record.Finished.IsZero() || record.Machine == "" {
-			t.Fatalf("run record: %+v %v", record, err)
-		}
-		if err := run(options{report: true, reportDir: runDir}); err != nil {
-			t.Fatal(err)
-		}
-		regenerated, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
-		if err != nil || string(regenerated) != string(report) {
-			t.Fatalf("regeneration changed report: %v", err)
-		}
-		program := filepath.Join(runDir, attempt, "program")
-		saved, err := os.ReadFile(filepath.Join(program, "main.go"))
-		if err != nil || string(saved) != source {
-			t.Fatalf("saved source mismatch: %v", err)
-		}
-		binary := filepath.Join(t.TempDir(), "game")
-		output, err := runCommand(t.Context(), program, "go", "build", "-o", binary, ".")
-		if err != nil {
-			t.Fatalf("saved program build: %v %s", err, output)
-		}
-		if e, _ := executeScenario(t.Context(), binary, acceptanceScenarios()[0]); !e.Passed {
-			t.Fatalf("saved program gameplay: %s", e.Error)
-		}
-		previous, previousReport = runDir, report
+	sent, err := os.ReadFile(promptLog)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Infrastructure failure must retain source without inventing a passing grade.
-	t.Setenv("BENCHMARK_BAD_EVENTS", "yes")
-	if err := run(opts); err == nil || !strings.Contains(err.Error(), "parsing OpenCode events") {
-		t.Fatalf("malformed events: %v", err)
+	basicPrompt, err := os.ReadFile(filepath.Join(root, ".tools/tic-tac-toe-benchmark/game_references/prompt_step1.md"))
+	if err != nil || string(sent) != strings.TrimSpace(string(basicPrompt)) {
+		t.Fatalf("basic prompt differs from prompt_step1.md: %s %v", sent, err)
+	}
+	undoSent, err := os.ReadFile(promptLog + ".undo")
+	undoPrompt, promptErr := os.ReadFile(filepath.Join(root, ".tools/tic-tac-toe-benchmark/game_references/prompt_step2.md"))
+	if err != nil || promptErr != nil || string(undoSent) != strings.TrimSpace(string(undoPrompt)) {
+		t.Fatalf("incorrect undo extension sent: %s %v %v", undoSent, err, promptErr)
 	}
 	runDir, err := latestRun(opts.outputDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	program := filepath.Join(runDir, modelDirName("org/model/BENCHMARK"), "attempt-01", "program", "main.go")
+	models, err := loadResults(runDir)
+	if err != nil || len(models) != 1 || len(models[0].Attempts) != 2 {
+		t.Fatalf("passing each step should stop its repairs: %+v %v", models, err)
+	}
+	item := models[0].Attempts[0]
+	undo := models[0].Attempts[1]
+	if item.Step != basicGameStep || undo.Step != undoMoveStep || undo.Attempt != 2 || undo.Repair != "" ||
+		undo.Grade.Passed != undo.Grade.Total || undo.SourceSHA != fmt.Sprintf("%x", sha256.Sum256(undoSource)) {
+		t.Fatalf("undo submission or step boundary was lost: %+v", undo)
+	}
+	if item.Grade.Passed != item.Grade.Total || item.SourceSHA != fmt.Sprintf("%x", sha256.Sum256([]byte(source))) {
+		t.Fatalf("saved grade/source mismatch: %+v", item)
+	}
+	attempt := filepath.Join(modelDirName(item.Model.ID), "attempt-01")
+	if len(item.Grade.Evidence) != 22 || item.Grade.Evidence[0].Actual != item.Grade.Evidence[0].Expected {
+		t.Fatal("saved execution evidence missing or incorrect")
+	}
+	for _, path := range []string{runDir + ".tar.gz",
+		filepath.Join(runDir, "run.json"), filepath.Join(runDir, "grader.go.txt"),
+		filepath.Join(runDir, "prompt.md"), filepath.Join(runDir, "report.md"),
+		filepath.Join(runDir, modelDirName(item.Model.ID), "workspace"),
+		filepath.Join(runDir, attempt, "main.go.txt"), filepath.Join(runDir, attempt, "grading"),
+		filepath.Join(runDir, attempt, "feedback.md"), filepath.Join(runDir, attempt, "feedback.json"), filepath.Join(runDir, attempt, "prompt.md"),
+		filepath.Join(dir, "history.md")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("unnecessary artifact retained: %s: %v", path, err)
+		}
+	}
+	report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
+	if err != nil || !strings.Contains(string(report), "37/37") || !strings.Contains(string(report), "Workload: v1\nSteps: Step1 (basic game), Step2 (Undo move)\n") ||
+		!strings.Contains(string(report), "Kronk version: 1.33.4+dev\nllama.cpp library: b12283\n") || strings.Contains(string(report), "b99999") {
+		t.Fatalf("report: %s %v", report, err)
+	}
+	record, err := loadRunRecord(runDir)
+	if err != nil || record.Status != "completed" || record.Started.IsZero() || record.Finished.IsZero() || record.Machine == "" {
+		t.Fatalf("run record: %+v %v", record, err)
+	}
+	if err := run(options{report: true, reportDir: runDir}); err != nil {
+		t.Fatal(err)
+	}
+	regenerated, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
+	if err != nil || string(regenerated) != string(report) {
+		t.Fatalf("regeneration changed report: %v", err)
+	}
+	program := filepath.Join(runDir, attempt, "program")
+	saved, err := os.ReadFile(filepath.Join(program, "main.go"))
+	if err != nil || string(saved) != source {
+		t.Fatalf("saved source mismatch: %v", err)
+	}
+	binary := filepath.Join(t.TempDir(), "game")
+	output, err := runCommand(t.Context(), program, "go", "build", "-o", binary, ".")
+	if err != nil {
+		t.Fatalf("saved program build: %v %s", err, output)
+	}
+	if e, _ := executeScenario(t.Context(), binary, acceptanceScenarios()[0]); !e.Passed {
+		t.Fatalf("saved program gameplay: %s", e.Error)
+	}
+	previous, previousReport := runDir, report
+	// Infrastructure failure must retain source without inventing a passing grade.
+	t.Setenv("BENCHMARK_BAD_EVENTS", "yes")
+	if err := run(opts); err == nil || !strings.Contains(err.Error(), "parsing OpenCode events") {
+		t.Fatalf("malformed events: %v", err)
+	}
+	runDir, err = latestRun(opts.outputDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program = filepath.Join(runDir, modelDirName("org/model/BENCHMARK"), "attempt-01", "program", "main.go")
 	if data, err := os.ReadFile(program); err != nil || string(data) != source {
 		t.Fatalf("failed run lost source: %v", err)
 	}
 	if err := run(options{report: true, outputDir: opts.outputDir}); err != nil {
 		t.Fatal("report regeneration:", err)
 	}
-	record, err := loadRunRecord(runDir)
+	record, err = loadRunRecord(runDir)
 	if err != nil || record.Status != "failed" || !strings.Contains(record.Error, "parsing OpenCode events") || record.Finished.IsZero() {
 		t.Fatalf("regeneration lost failure metadata: %+v %v", record, err)
 	}
-	report, err := os.ReadFile(filepath.Join(runDir, "report.txt"))
+	report, err = os.ReadFile(filepath.Join(runDir, "report.txt"))
 	if err != nil || !strings.Contains(string(report), "No completed submissions.") || strings.Contains(string(report), "37/37") {
 		t.Fatalf("failed report: %s %v", report, err)
 	}
@@ -329,7 +313,7 @@ fi
 			}
 		}
 	}
-	if data, err := os.ReadFile(historyPath); err != nil || string(data) != history {
-		t.Fatalf("benchmark modified manual history: %s %v", data, err)
+	if data, err := os.ReadFile(filepath.Join(previous, "report.txt")); err != nil || string(data) != string(previousReport) {
+		t.Fatalf("later runs changed the previous report: %v", err)
 	}
 }

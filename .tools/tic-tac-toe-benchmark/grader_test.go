@@ -244,25 +244,6 @@ func TestCompilerDiagnosticsPreserved(t *testing.T) {
 // The undo reference is exercised through the terminal, independently of its
 // implementation. Ordinary games reuse the step-one oracle with only the new prompts;
 // undo cases specify the extra screens and restored turns explicitly.
-func TestUndoReference(t *testing.T) {
-	source, err := os.ReadFile("game_references/example_step2/main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	binary := fixtureBinary(t, string(source))
-	for _, s := range undoAcceptanceScenarios() {
-		t.Run(s.name, func(t *testing.T) {
-			e, _ := executeScenario(t.Context(), binary, s)
-			if !e.Passed {
-				t.Fatalf("%s\nexpected %q\nactual %q", e.Error, e.Expected, e.Actual)
-			}
-			if e.SentInput != s.input {
-				t.Fatalf("incomplete interaction: sent %q, want %q", e.SentInput, s.input)
-			}
-		})
-	}
-}
-
 func TestUndoGrade(t *testing.T) {
 	source, err := os.ReadFile("game_references/example_step2/main.go")
 	if err != nil {
@@ -272,10 +253,15 @@ func TestUndoGrade(t *testing.T) {
 	if r.Total != 48 || r.Passed != r.Total || len(r.Checks) != r.Total || len(r.Evidence) != 33 || len(r.Findings) != 0 {
 		t.Fatalf("undo reference grade: %+v", r)
 	}
-	for _, grade := range []gradeResult{gradeProgram(t.Context(), ""), gradeUndoProgram(t.Context(), "")} {
-		if grade.Passed != 0 || len(grade.Checks) != 1 || grade.Findings[0].Location != "source-extracted" {
-			t.Fatalf("empty source contract: %+v", grade)
-		}
+	for _, e := range r.Evidence {
+		t.Run(e.Scenario, func(t *testing.T) {
+			if !e.Passed {
+				t.Fatalf("%s\nexpected %q\nactual %q", e.Error, e.Expected, e.Actual)
+			}
+			if e.SentInput != e.Input {
+				t.Fatalf("incomplete interaction: sent %q, want %q", e.SentInput, e.Input)
+			}
+		})
 	}
 }
 
