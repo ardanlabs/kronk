@@ -15,7 +15,7 @@ func groupedApp() *app {
 		{ID: "unsloth/Qwen3-0.6B-Q8_0", Installed: true},
 		{ID: "unsloth/gpt-oss-20b-Q8_0"},
 		{ID: "nomic-ai/nomic-embed-text-v1.5.Q8_0", Endpoint: "embeddings"},
-		{ID: "gpustack/bge-reranker-v2-m3-Q8_0", Endpoint: "embeddings"},
+		{ID: "gpustack/bge-reranker-v2-m3-Q8_0", Endpoint: "rerank"},
 		{ID: "tiny", Kind: source.KindAudioModel},
 	}
 	return a
