@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"strings"
 )
 
@@ -12,22 +13,8 @@ func gradeUndoProgram(parent context.Context, source string) gradeResult {
 	return gradeProgramWith(parent, source, undoAcceptanceScenarios(), tests)
 }
 
-const undoPlayerTests = `
-func TestGeneratedUndoSentinel(t *testing.T) {
-	saved := stdin
-	defer func() { stdin = saved }()
-	for _, player := range []func(*Board) int{playerX, playerO} {
-		for _, board := range []Board{{}, {'X', 'O', 'X', 'O', 'X', 'O', 'O', 'X', 'O'}} {
-			for _, input := range []string{"0\n", " \t0 \r\n", "00\n01\n-1\n10\nword\n0\n"} {
-				b := board
-				stdin = bufio.NewReader(strings.NewReader(input))
-				if got := player(&b); got != -1 { t.Fatalf("undo: got %d want -1", got) }
-				if b != board { t.Fatal("undo sentinel changed board") }
-			}
-		}
-	}
-}
-`
+//go:embed game_references/grader_undo_tests.go.txt
+var undoPlayerTests string
 
 // Ordinary games reuse the frozen step-one oracle with updated prompts. Undo screens
 // are explicit observations, not a second implementation of the game loop.

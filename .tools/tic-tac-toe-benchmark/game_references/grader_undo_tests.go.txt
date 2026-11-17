@@ -1,0 +1,15 @@
+
+func TestGeneratedUndoSentinel(t *testing.T) {
+	saved := stdin
+	defer func() { stdin = saved }()
+	for _, player := range []func(*Board) int{playerX, playerO} {
+		for _, board := range []Board{{}, {'X', 'O', 'X', 'O', 'X', 'O', 'O', 'X', 'O'}} {
+			for _, input := range []string{"0\n", " \t0 \r\n", "00\n01\n-1\n10\nword\n0\n"} {
+				b := board
+				stdin = bufio.NewReader(strings.NewReader(input))
+				if got := player(&b); got != -1 { t.Fatalf("undo: got %d want -1", got) }
+				if b != board { t.Fatal("undo sentinel changed board") }
+			}
+		}
+	}
+}

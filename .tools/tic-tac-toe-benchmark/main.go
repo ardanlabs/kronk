@@ -71,7 +71,7 @@ type agentResult struct {
 }
 
 const (
-	basicGameStep = "Step1 (basic game)"
+	basicGameStep = "Step1 (Basic game)"
 	undoMoveStep  = "Step2 (Undo move)"
 )
 
