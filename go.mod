@@ -2,6 +2,8 @@ module github.com/ardanlabs/kronk
 
 go 1.27.0
 
+tool github.com/ardanlabs/kronk/.tools/tic-tac-toe-benchmark
+
 require (
 	github.com/ardanlabs/bucky v1.1.6
 	github.com/ardanlabs/conf/v3 v3.13.0
