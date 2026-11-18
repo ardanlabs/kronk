@@ -321,6 +321,14 @@ var (
 	ComputeQwen3TTSBackbone = newComputeKind(17)
 	// ComputeQwen3TTSDecoder identifies shared Qwen predictor/codec and per-helper state.
 	ComputeQwen3TTSDecoder = newComputeKind(18)
+	// ComputeKokoroBackbone identifies noncausal Kokoro encoder workspaces.
+	ComputeKokoroBackbone = newComputeKind(19)
+	// ComputeKokoroDecoder identifies Kokoro prosody and waveform workspaces.
+	ComputeKokoroDecoder = newComputeKind(20)
+	// ComputeTinyVocaBackbone identifies noncausal Tiny-Voca encoder workspaces.
+	ComputeTinyVocaBackbone = newComputeKind(21)
+	// ComputeTinyVocaDecoder identifies Tiny-Voca frame stacks and source-filter synthesis.
+	ComputeTinyVocaDecoder = newComputeKind(22)
 )
 
 func newComputeKind(value uint8) ComputeKind {

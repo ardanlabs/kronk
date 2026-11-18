@@ -334,7 +334,9 @@ func TestSpeechReferenceLifecycle(t *testing.T) {
 					t.Error(err)
 				}
 			})
-			const referenceText = "The little bird is singing."
+			// Give the speaker encoder several seconds of speech. The shorter
+			// clip made Chatterbox exhaust its frame budget on some backends.
+			const referenceText = "The little bird is singing in the garden. The sun is shining and the sky is blue."
 			recording, err := krn.Speech(t.Context(), model.SpeechRequest{Input: referenceText})
 			if err != nil {
 				t.Fatal(err)

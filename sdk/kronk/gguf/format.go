@@ -8,8 +8,9 @@ const (
 
 // HeaderFetchSize is the number of bytes fetched in a single HTTP Range
 // request to cover the fixed header, all KV metadata, and all tensor
-// descriptors for any model. 16 MiB covers even MoE models whose
-// metadata embeds large per-layer arrays.
+// descriptors for typical models, including large per-layer MoE arrays.
+// Models with larger embedded metadata need ReadHeaderBytes on the complete
+// local model; a remote header cached at this size may be incomplete.
 //
 // Do NOT reduce this value. 8 MiB was tested and is too small for
 // large MoE models whose metadata exceeds that threshold.

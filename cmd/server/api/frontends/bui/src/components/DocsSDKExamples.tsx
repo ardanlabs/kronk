@@ -5734,10 +5734,12 @@ const speechExample = `// This example shows you how to generate speech with Kro
 // the model, its matching audio decoder, and the native libraries.
 // It writes a complete PCM16 mono WAV to speech.wav in the working directory.
 // Speech detection and decoder discovery are automatic; WithSpeech is optional.
-// The verified bundles are Chatterbox Turbo and Qwen3-TTS 1.7B Base on Metal.
-// Change modelSource below to switch between them, without a decoder URL.
-// Both accept optional reference recordings; Qwen also accepts a language and
-// reference transcript. Streaming audio is not exposed.
+// The verified bundles are Chatterbox Turbo, Qwen3-TTS 1.7B Base, Kokoro and
+// Tiny-Voca on Metal. Change modelSource below to switch between them, without
+// a decoder URL. Empty Voice uses each model's default conditioning.
+// Chatterbox and Qwen accept reference recordings; Qwen also accepts a reference
+// transcript. Kokoro and Tiny-Voca use preset voices, without voice cloning.
+// Streaming audio is not exposed.
 //
 // Run the example like this from the root of the project:
 // $ make example-speech
@@ -5761,6 +5763,8 @@ import (
 
 const (
 	// modelSource = "ggml-org/chatterbox-turbo-Q8_0"
+	// modelSource = "ggml-org/Kokoro-82M-F32"
+	// modelSource = "ggml-org/tiny-voca-F32"
 	modelSource = "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0"
 	outputFile  = "speech.wav"
 )
@@ -5832,8 +5836,9 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
 		model.WithProjFile(mp.ProjFile),
-		// Limits default to 512 frames; optionally lower them with
+		// Qwen and Chatterbox default to 512 frames; optionally lower them with
 		// model.WithSpeech(&model.SpeechConfig{MaxFrames: 256}).
+		// Kokoro and Tiny-Voca require the default: they are not autoregressive.
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create speech model: %w", err)
@@ -5864,8 +5869,11 @@ func speech(krn *kronk.Kronk) error {
 	request := model.SpeechRequest{
 		Input: "Mary had a little lamb, Its fleece was white as snow; And everywhere that Mary went, The lamb was sure to go.",
 		Voice: "", // Empty uses default conditioning, even without named presets.
-		// Language: "en", // Qwen-only; empty also uses English.
+		// Kokoro voices include "af_heart" (default) and "bf_emma" (British).
+		// Tiny-Voca voices are "M2" (default) and "F2".
+		// Language: "en", // Qwen, Kokoro and Tiny-Voca; omit for Chatterbox.
 		// Reference: model.SpeechReference{Audio: recording, Text: transcript},
+		// Reference recordings are supported only by Qwen and Chatterbox.
 		// recording is PCM16 mono WAV bytes at 8–48 kHz, at most 30 seconds.
 		// transcript is optional and Qwen-only; leave it empty for Chatterbox.
 	}

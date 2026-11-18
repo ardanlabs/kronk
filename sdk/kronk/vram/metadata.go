@@ -43,6 +43,10 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 				return chatterboxTurboDecoderResult(tensors, modelSizeBytes, cfg)
 			case modelprofile.ComputeQwen3TTSDecoder:
 				return qwen3TTSDecoderResult(tensors, modelSizeBytes, cfg)
+			case modelprofile.ComputeKokoroDecoder:
+				return kokoroDecoderResult(tensors, modelSizeBytes, cfg)
+			case modelprofile.ComputeTinyVocaDecoder:
+				return tinyVocaDecoderResult(metadata, tensors, modelSizeBytes, cfg)
 			default:
 				return Result{}, fmt.Errorf("build-from-metadata: unsupported speech decoder allocation family")
 			}
@@ -60,14 +64,26 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 	}
 
 	if profile.Purpose == modelprofile.PurposeSpeech || profile.ComputeKind == modelprofile.ComputeChatterboxTurboBackbone {
-		if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone && profile.ComputeKind != modelprofile.ComputeQwen3TTSBackbone {
+		if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone && profile.ComputeKind != modelprofile.ComputeQwen3TTSBackbone && profile.ComputeKind != modelprofile.ComputeKokoroBackbone && profile.ComputeKind != modelprofile.ComputeTinyVocaBackbone {
 			return Result{}, fmt.Errorf("build-from-metadata: unsupported speech backbone allocation family")
 		}
-		frames, err := speechFrames(cfg.Speech)
-		if err != nil {
-			return Result{}, err
+		switch profile.ComputeKind {
+		case modelprofile.ComputeKokoroBackbone:
+			// Kokoro's duration predictor, not the autoregressive frame cap,
+			// determines waveform length. Keep the speech marker for planners.
+			cfg.Speech = &SpeechConfig{}
+		case modelprofile.ComputeTinyVocaBackbone:
+			if err := tinyVocaSpeechLimits(cfg.Speech); err != nil {
+				return Result{}, err
+			}
+			cfg.Speech = &SpeechConfig{MaxFrames: 512}
+		default:
+			frames, err := speechFrames(cfg.Speech)
+			if err != nil {
+				return Result{}, err
+			}
+			cfg.Speech = &SpeechConfig{MaxFrames: frames}
 		}
-		cfg.Speech = &SpeechConfig{MaxFrames: frames}
 		if cfg.ContextWindow <= 0 {
 			cfg.ContextWindow = 2048
 		}
@@ -82,7 +98,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		}
 	}
 
-	if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone && profile.ComputeKind != modelprofile.ComputeQwen3TTSBackbone {
+	if profile.ComputeKind != modelprofile.ComputeChatterboxTurboBackbone && profile.ComputeKind != modelprofile.ComputeQwen3TTSBackbone && profile.ComputeKind != modelprofile.ComputeKokoroBackbone && profile.ComputeKind != modelprofile.ComputeTinyVocaBackbone {
 		cfg.Speech = nil
 	}
 
@@ -233,6 +249,15 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		KVCacheOnCPU:          cfg.KVCacheOnCPU,
 		SWAFull:               cfg.SWAFull,
 		VTransposed:           cfg.VTransposed,
+	}
+
+	if profile.ComputeKind == modelprofile.ComputeKokoroBackbone {
+		input.NoPersistentCache = true
+		input.kokoroFFNLength = profile.Dimensions.FeedForwardLength
+	}
+	if profile.ComputeKind == modelprofile.ComputeTinyVocaBackbone {
+		input.NoPersistentCache = true
+		input.tinyVocaFFNLength = profile.Dimensions.FeedForwardLength
 	}
 
 	if profile.Architecture == "lfm3" {

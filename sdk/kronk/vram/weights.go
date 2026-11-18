@@ -1,5 +1,7 @@
 package vram
 
+import "github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+
 // calculateModelResidency places weights independently of execution-slot state
 // and workspaces. Architecture-specific weight facts come from normalized Input;
 // dense and MoE models reuse the same placement rules.
@@ -36,6 +38,14 @@ func calculateActiveWeights(input Input, activeTotal, offloadLayers int64) (gpu,
 
 	blockBytes := max(activeTotal-inputBytes-outputBytes, 0)
 	gpu, cpu = splitByGPULayers(blockBytes, max(offloadLayers-1, 0), input.BlockCount)
+	if input.ComputeKind == modelprofile.ComputeKokoroBackbone {
+		// ALBERT stores only layer zero. Partial offload of the last N
+		// logical layers does not move that shared layer's weights.
+		gpu, cpu = 0, blockBytes
+		if offloadLayers > input.BlockCount {
+			gpu, cpu = blockBytes, 0
+		}
+	}
 	cpu += inputBytes
 
 	if offloadLayers > 0 {

@@ -211,6 +211,7 @@ The verified bundles are:
 | --- | --- | --- |
 | `ggml-org/chatterbox-turbo-Q8_0` | F16 audio decoder | English, 24 kHz WAV; empty voice uses the bundled `default` voice |
 | `ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0` | Matching Q8_0 audio decoder | 24 kHz WAV; use an empty voice, including when the bundle has no named presets |
+| `ggml-org/tiny-voca-F32` | Matching F32 audio decoder | English, 24 kHz WAV; default `M2` or preset `F2`; no voice cloning |
 
 Install with the regular Hugging Face/catalog downloader. It discovers and
 downloads the matching decoder; you do not need to supply a separate projector
@@ -219,9 +220,10 @@ URL:
 ```shell
 kronk model pull --local ggml-org/chatterbox-turbo-Q8_0
 kronk model pull --local ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0
+kronk model pull --local ggml-org/tiny-voca-F32
 ```
 
-From a source checkout, `make install-speak-models` installs both bundles.
+From a source checkout, `make install-speak-models` installs the speech bundles.
 Files remain in the normal model store under `~/.kronk/models/` unless you
 configure a different data root. The companion is named `mmproj-*.gguf`, but
 it is an audio decoder, not an image projector. Use the matching companion,
@@ -245,7 +247,33 @@ Use Kronk's library manager to install the compatible native bundle before
 calling `kronk.Init`. Older or incompatible libraries without native audio
 generation return `model.ErrSpeechUnsupported`. Soprano, Pocket TTS, other
 Qwen sizes/variants, and Chatterbox Multilingual are not qualified by these
-two working bundles; upstream native support alone is not Kronk support.
+working bundles; upstream native support alone is not Kronk support.
+
+#### Tiny-Voca
+
+Tiny-Voca accepts English text and normalizes numbers, times, abbreviations and
+pronunciations using its bundled dictionaries and pronunciation model. Use the
+regular `Speech` method with `Voice: "M2"` (the default) or `Voice: "F2"`.
+`Language` may be empty, `en`, `en-us`, or `english`, case-insensitively; it
+does not translate text. Recordings and reference transcripts are rejected.
+
+A request may contain multiple sentences, but must normalize to at most **509
+phoneme symbols in total**, including word breaks and punctuation, excluding
+sentence padding. Unknown words passed to the pronunciation model must be at
+most **512 bytes** each. These are post-normalization limits, not English
+character limits. Split longer passages into separate requests.
+
+Tiny-Voca is non-autoregressive and has no persistent KV cache. Speaking speed
+is fixed at **1.0**. Leave `SpeechConfig.MaxFrames` unset or at its default
+**512**; nondefault limits are rejected rather than used as output caps. The
+native synthesizer rejects individual utterances exceeding **3,000 duration
+frames**. Memory estimates are provisional source-derived allowances, not
+measured peaks; they reserve for the admitted text and configured slot count.
+
+On a Mac with the speech fixtures installed, `make test-speech` includes a
+Tiny-Voca smoke test for both voices, complete non-silent WAV output, rejected
+inputs, cancellation, and subsequent reuse. This model-specific test uses the
+`speech_integration` build tag and is excluded from ordinary test runs.
 
 ### 11.9.2 Go SDK Usage
 
@@ -323,7 +351,7 @@ template and must not be sent through chat, embedding, or reranking methods.
   missing encoder. The previously qualified Qwen decoder has this fallback
   behavior. Transcript tokens and encoded audio conditioning must fit the
   context along with the new text and generation budget.
-- `Language` is optional and Qwen-only. Empty uses English. Accepted names and
+- For Qwen, `Language` is optional. Empty uses English. Accepted names and
   codes are English (`en`), Chinese (`zh`), German (`de`), Italian (`it`),
   Portuguese (`pt`), Spanish (`es`), Japanese (`ja`), Korean (`ko`), French
   (`fr`), and Russian (`ru`); names/codes are case-insensitive. The loaded
@@ -333,7 +361,7 @@ template and must not be sent through chat, embedding, or reranking methods.
 - Speed and speech-sampling controls are not exposed. Chat sampling settings
   and `max_tokens` do not configure speech.
 - `model.WithSpeech(&model.SpeechConfig{MaxFrames: 256})` can lower the
-  generation ceiling. Nil configuration or `MaxFrames: 0` uses **512**;
+  autoregressive generation ceiling. Nil configuration or `MaxFrames: 0` uses **512**;
   accepted explicit limits are **1–512**. Frames are model-specific units,
   not characters, PCM samples, or a common duration across models. Reaching
   the ceiling without end-of-speech returns `model.ErrSpeechLimit`, not
