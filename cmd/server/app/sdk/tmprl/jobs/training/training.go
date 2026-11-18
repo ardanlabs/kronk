@@ -559,12 +559,37 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 }
 
 func (j *Job) openArtifact(ctx context.Context, e tmprl.Execution, adapter bool) (*os.File, error) {
-	run, err := j.jobs.Get(ctx, e)
-	if err != nil {
-		return nil, executionError(err)
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+	var state State
+	if !adapter && j.cfg.MoxieDB != nil {
+		// Evaluation evidence outlives Temporal history. The catalog binds the
+		// exact execution to its readiness; it never supplies an artifact path.
+		entry, err := j.cfg.MoxieDB.GetCatalogExecution(ctx, j.cfg.Namespace, e.WorkflowID, e.RunID)
+		switch {
+		case err == nil:
+			var observation CatalogObservation
+			if err := json.Unmarshal(entry.Attempt.Observation, &observation); err != nil {
+				return nil, fmt.Errorf("reading job observation: %w", err)
+			}
+			state = observation.State
+			state.RunID = entry.Attempt.RunID.String
+		case !errors.Is(err, moxiedb.ErrNotFound):
+			return nil, err
+		}
+	}
+	if state.RunID == "" {
+		// Preserve live reads for legacy executions not yet in the catalog,
+		// and the existing publication checks for adapter downloads.
+		run, err := j.jobs.Get(ctx, e)
+		if err != nil {
+			return nil, executionError(err)
+		}
+		state = Describe(run)
 	}
 	name := "evaluation.json"
-	if run.Artifacts.Training.Report == "" || adapter && (run.Status != tmprl.StatusCompleted || !run.Artifacts.Training.Accepted || run.Artifacts.Training.Adapter == "") {
+	if !state.EvaluationAvailable || adapter && !state.AdapterAvailable {
 		return nil, fmt.Errorf("%w: training artifact is not available", tmprl.ErrInvalidArgument)
 	}
 	if adapter {
@@ -575,7 +600,7 @@ func (j *Job) openArtifact(ctx context.Context, e tmprl.Execution, adapter bool)
 		return nil, err
 	}
 	defer root.Close()
-	return root.Open(filepath.Join(storageDirectory, run.RunID, "steps", "training", name))
+	return root.Open(filepath.Join(storageDirectory, state.RunID, "steps", "training", name))
 }
 
 // records reads bounded, confined training input and verifies its provenance.

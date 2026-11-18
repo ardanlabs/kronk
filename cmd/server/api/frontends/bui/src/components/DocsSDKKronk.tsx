@@ -527,6 +527,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">TokenizeHTTP provides http handler support for a tokenize call.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-tokenizeids">
+              <h4>Kronk.TokenizeIDs</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) TokenizeIDs(ctx context.Context, input string) ([]int32, error)</code>
+              </pre>
+              <p className="doc-description">TokenizeIDs returns the model vocabulary's token IDs for non-empty input. It preserves whitespace, applies no chat template, and adds no BOS or other special tokens. Model control tokens already in input are parsed as special tokens, allowing callers to supply already-formatted Gemma text. It uses normal request admission and lifecycle handling. Cancellation is checked before and after tokenization, but cannot interrupt the native call.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-unload">
               <h4>Kronk.Unload</h4>
               <pre className="code-block">
@@ -656,6 +664,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-systeminfo">Kronk.SystemInfo</a></li>
                 <li><a href="#method-kronk-tokenize">Kronk.Tokenize</a></li>
                 <li><a href="#method-kronk-tokenizehttp">Kronk.TokenizeHTTP</a></li>
+                <li><a href="#method-kronk-tokenizeids">Kronk.TokenizeIDs</a></li>
                 <li><a href="#method-kronk-unload">Kronk.Unload</a></li>
               </ul>
             </div>

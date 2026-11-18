@@ -1,6 +1,7 @@
 package datasets
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -250,6 +251,33 @@ func (s *Service) StopRun(ctx context.Context, e tmprl.Execution) error {
 // OpenPreparedDataset reads the exact prepared output selected by the job.
 // The caller closes the stream; supplied artifact paths never select a file.
 func (s *Service) OpenPreparedDataset(ctx context.Context, e tmprl.Execution) (io.ReadCloser, error) {
+	if s.db != nil {
+		if err := e.Validate(); err != nil {
+			return nil, err
+		}
+		entry, err := s.db.GetCatalogExecution(ctx, s.namespace, e.WorkflowID, e.RunID)
+		switch {
+		case err == nil:
+			// Published outputs outlive Temporal history. Read the exact saved
+			// version, with the same integrity checks as dataset downloads.
+			if a := entry.Attempt; a.ResultDatasetID.Valid && a.ResultDatasetVersion.Valid {
+				records, err := s.Records(ctx, a.ResultDatasetID.String, int(a.ResultDatasetVersion.Int64))
+				if err != nil {
+					return nil, err
+				}
+				var data bytes.Buffer
+				for _, record := range records {
+					if err := json.NewEncoder(&data).Encode(record); err != nil {
+						return nil, err
+					}
+				}
+				return io.NopCloser(&data), nil
+			}
+		case !errors.Is(err, moxiedb.ErrNotFound):
+			return nil, err
+		}
+	}
+	// Legacy outputs without a catalog publication still use the runner.
 	if !s.RunsAvailable() {
 		return nil, training.ErrUnavailable
 	}

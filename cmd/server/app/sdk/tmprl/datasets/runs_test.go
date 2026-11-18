@@ -15,6 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
+	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
@@ -138,6 +139,29 @@ func TestCatalogExactDatasetOutput(t *testing.T) {
 	if err != nil || !state.DatasetAvailable || state.PreparedDatasetVersion != 2 || state.DatasetRecordCount != 1 {
 		t.Fatalf("catalog selected head instead of exact result: %+v %v", state, err)
 	}
+	// Download the exact published version without Temporal, not the newer head.
+	file, err := service.OpenPreparedDataset(t.Context(), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, readErr := optimization.ReadRecords(t.Context(), file)
+	if err := errors.Join(readErr, file.Close()); err != nil || len(records) != 1 || records[0].Prompt != "When does original open?" || records[0].Target != "Dawn." {
+		t.Fatalf("historical download selected wrong records: %+v %v", records, err)
+	}
+	for _, other := range []tmprl.Execution{
+		{WorkflowID: "another-workflow", RunID: e.RunID},
+		{WorkflowID: e.WorkflowID, RunID: "another-run"},
+	} {
+		if file, err := service.OpenPreparedDataset(t.Context(), other); err == nil {
+			file.Close()
+			t.Fatalf("download accepted unregistered execution: %+v", other)
+		}
+	}
+	otherNamespace := datasets.New(datasets.Config{Files: files, DB: db, Namespace: "another-namespace"})
+	if file, err := otherNamespace.OpenPreparedDataset(t.Context(), e); err == nil {
+		file.Close()
+		t.Fatal("download accepted another namespace's execution")
+	}
 	// The run names what it adds to and what it read, from the SQL job row.
 	if state.TargetDatasetID != d.ID || state.TargetDatasetName != "Catalog output" || state.BaseVersion != 1 || state.SourceDocument != "harbor-manual.md" {
 		t.Fatalf("run identity: target %q %q, base %d, source %q", state.TargetDatasetID, state.TargetDatasetName, state.BaseVersion, state.SourceDocument)
@@ -178,6 +202,10 @@ func TestCatalogExactDatasetOutput(t *testing.T) {
 	if _, err := restarted.GetRun(t.Context(), e); err == nil {
 		t.Fatal("changed saved output advertised as available")
 	}
+	if file, err := restarted.OpenPreparedDataset(t.Context(), e); err == nil {
+		file.Close()
+		t.Fatal("download accepted changed saved output")
+	}
 	if err := os.WriteFile(path, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -186,5 +214,9 @@ func TestCatalogExactDatasetOutput(t *testing.T) {
 	}
 	if _, err := service.GetRun(t.Context(), e); err == nil {
 		t.Fatal("missing saved output advertised as available")
+	}
+	if file, err := service.OpenPreparedDataset(t.Context(), e); err == nil {
+		file.Close()
+		t.Fatal("download accepted missing saved output")
 	}
 }
