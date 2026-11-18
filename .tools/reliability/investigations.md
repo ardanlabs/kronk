@@ -398,13 +398,32 @@ qualification; the MoE forms have selected coverage.
 ### Admission/lifecycle
 
 ```sh copy Copy Lifecycle Command
-make example-lifecycle-load \
-  LIFECYCLE_LOAD_OUT=".tools/lifecycle-load/output/admission-$(date +%Y%m%d-%H%M%S)"
+make example-lifecycle-load
 ```
 
-This has its own fixed fixture, admission configuration and artifacts. Consult
-[the lifecycle tool](../lifecycle-load/main.go); do not pass reliability cells
-or claim its permit recovery validates inference-state recovery.
+This has its own fixed fixture and admission configuration: one execution slot,
+two admission permits and a 100ms admission timeout. Wait for server readiness
+before running it. Three cycles run by default; override with
+`LIFECYCLE_LOAD_CYCLES=10` for a larger bounded repetition budget. Each cycle
+uses fresh trace IDs, requires generated content before active cancellation,
+and checks permit reuse after queued cancellation and admission timeout while
+the holder remains active, followed by same-slot recovery.
+
+Each invocation creates a unique timestamped child of
+`.tools/lifecycle-load/output/` containing `summary.json`, `events.ndjson` and
+`tool.log`; previous runs are never replaced. `LIFECYCLE_LOAD_OUT` overrides the
+parent, not an individual run directory. The actual run path is printed.
+
+A full PASS requires both client behavior and correlated JSON server-stage
+logs. `LIFECYCLE_SERVER_LOG` must name the running server's log (default
+`~/.kronk/kronk.log`). Missing stage evidence reports INCOMPLETE with a nonzero
+exit, even when all client checks pass; contradictory stage evidence reports
+FAIL. The collector allows up to two seconds for final logs to arrive and
+ignores records predating the run or unrelated trace IDs.
+
+Consult [the lifecycle tool](../lifecycle-load/main.go); do not pass reliability
+cells or claim its permit recovery validates inference-state recovery. This is
+a bounded lifecycle regression probe, not a duration-based soak test.
 
 ## Paths outside the package commands
 
