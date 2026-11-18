@@ -36,15 +36,23 @@ func (app Upload) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-// NewTraining submits one job using an uploaded document or prepared JSONL dataset.
-// The job owns model approval, dataset readiness, defaults, and training policy.
+// NewTraining submits one job using an uploaded document, a prepared JSONL
+// dataset, or a saved dataset version. The job owns model approval, dataset
+// readiness, defaults, and training policy.
 type NewTraining struct {
 	ID              string              `json:"id"`
 	PreparationOnly bool                `json:"preparation_only"`
 	Model           string              `json:"model"`
 	DatasetID       string              `json:"dataset_id"`
 	Prepare         *PreparationOptions `json:"prepare,omitzero"`
+	SavedDataset    *SavedDataset       `json:"saved_dataset,omitzero"`
 	Training        TrainingOptions     `json:"training"`
+}
+
+// SavedDataset selects a saved dataset version to train on.
+type SavedDataset struct {
+	ID      string `json:"id"`
+	Version int    `json:"version"`
 }
 
 // PreparationOptions selects a source document and its preparation model.
@@ -90,7 +98,7 @@ func toJobRequest(app NewTraining) (training.Request, error) {
 	if !app.PreparationOnly && strings.TrimSpace(app.Model) == "" {
 		fields.Add("model", fmt.Errorf("is required"))
 	}
-	if app.Prepare == nil && strings.TrimSpace(app.DatasetID) == "" {
+	if app.Prepare == nil && app.SavedDataset == nil && strings.TrimSpace(app.DatasetID) == "" {
 		fields.Add("dataset_id", fmt.Errorf("is required"))
 	}
 	if len(fields) != 0 {
@@ -103,6 +111,9 @@ func toJobRequest(app NewTraining) (training.Request, error) {
 			LearningRate: app.Training.LearningRate, Seed: app.Training.Seed,
 			LoRARank: app.Training.LoRARank, LoRAAlpha: app.Training.LoRAAlpha,
 		},
+	}
+	if saved := app.SavedDataset; saved != nil {
+		request.SavedDataset = &training.SavedDataset{ID: saved.ID, Version: saved.Version}
 	}
 	if app.Prepare != nil {
 		request.Prepare = &preparation.PreparationRequest{
@@ -166,9 +177,25 @@ type Run struct {
 	DatasetRecordCount     int             `json:"dataset_record_count"`
 	SkippedRecords         int             `json:"skipped_records,omitzero"`
 	FailureReason          string          `json:"failure_reason,omitzero"`
+	Issues                 []RunIssue      `json:"issues,omitempty"`
 	TrainingReady          bool            `json:"training_ready"`
 	EvaluationAvailable    bool            `json:"evaluation_available"`
 	AdapterAvailable       bool            `json:"adapter_available"`
+	// A training run's dataset version, its settings (present only when the live
+	// run is readable; the base model is not echoed), and its evaluation outcome:
+	// accepted, not_compared, or needs_improvement once it finishes.
+	TrainingDatasetID      string          `json:"training_dataset_id,omitzero"`
+	TrainingDatasetName    string          `json:"training_dataset_name,omitzero"`
+	TrainingDatasetVersion int             `json:"training_dataset_version,omitzero"`
+	TrainingSettings       TrainingOptions `json:"training_settings,omitzero"`
+	EvaluationResult       string          `json:"evaluation_result,omitzero"`
+}
+
+// RunIssue is a safe diagnostic count, not a backend error or log entry.
+type RunIssue struct {
+	Code     string `json:"code"`
+	Count    int    `json:"count"`
+	Required int    `json:"required,omitempty"`
 }
 
 // RunSettings echoes the preparation request. It is present only when the
@@ -237,7 +264,16 @@ type Evaluation struct {
 	AdapterCorrect int                `json:"adapter_correct"`
 	Total          int                `json:"total"`
 	Accepted       bool               `json:"accepted"`
+	Checks         []AcceptanceCheck  `json:"checks,omitempty"`
 	Answers        []EvaluationAnswer `json:"answers"`
+}
+
+// AcceptanceCheck exposes the evaluator's persisted acceptance evidence.
+type AcceptanceCheck struct {
+	Code     string `json:"code"`
+	Actual   int    `json:"actual"`
+	Required int    `json:"required"`
+	Passed   bool   `json:"passed"`
 }
 
 // EvaluationAnswer preserves report text without interpreting factual accuracy.
@@ -246,6 +282,7 @@ type EvaluationAnswer struct {
 	Expected      string `json:"expected"`
 	BaseAnswer    string `json:"base_answer"`
 	AdapterAnswer string `json:"adapter_answer"`
+	AdapterPassed *bool  `json:"adapter_passed,omitempty"`
 }
 
 // Encode implements web.Encoder.
@@ -263,8 +300,11 @@ func toAppEvaluation(report evaluate.EvaluationReport) Evaluation {
 	for i, answer := range report.Answers {
 		result.Answers[i] = EvaluationAnswer{
 			Prompt: answer.Prompt, Expected: answer.Expected,
-			BaseAnswer: answer.BaseAnswer, AdapterAnswer: answer.AdapterAnswer,
+			BaseAnswer: answer.BaseAnswer, AdapterAnswer: answer.AdapterAnswer, AdapterPassed: answer.AdapterPassed,
 		}
+	}
+	for _, check := range report.Checks {
+		result.Checks = append(result.Checks, AcceptanceCheck{Code: check.Code, Actual: check.Actual, Required: check.Required, Passed: check.Passed})
 	}
 	return result
 }
@@ -280,6 +320,12 @@ type Dataset struct {
 	UpdatedAt     time.Time         `json:"updated_at"`
 	Versions      []int             `json:"versions"`
 	Documents     []DatasetDocument `json:"documents"`
+	// Training records and the evaluation questions the dataset holds and needs.
+	TrainingRecords     int `json:"training_records"`
+	ValidationQuestions int `json:"validation_questions"`
+	ValidationNeeded    int `json:"validation_needed"`
+	TestQuestions       int `json:"test_questions"`
+	TestNeeded          int `json:"test_needed"`
 }
 
 type DatasetDocument struct {
@@ -323,7 +369,8 @@ func (d *NewDataset) Decode(data []byte) error {
 
 func toAppDataset(d datasetstore.Dataset) Dataset {
 	result := Dataset{ID: d.ID, Name: d.Name, Version: d.Version, RecordCount: d.RecordCount, TrainingReady: d.TrainingReady,
-		CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt, Versions: slices.Clone(d.Versions), Documents: make([]DatasetDocument, len(d.Documents))}
+		CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt, Versions: slices.Clone(d.Versions), Documents: make([]DatasetDocument, len(d.Documents)),
+		TrainingRecords: d.TrainingRecords, ValidationQuestions: d.ValidationQuestions, ValidationNeeded: d.ValidationNeeded, TestQuestions: d.TestQuestions, TestNeeded: d.TestNeeded}
 	for i, document := range d.Documents {
 		result.Documents[i] = DatasetDocument{ID: document.ID, Name: document.Name, RecordCount: document.RecordCount, PageStart: document.PageStart, PageEnd: document.PageEnd}
 	}
@@ -475,6 +522,28 @@ func toAppRun(run datasets.State) Run {
 		PreparedDatasetID: run.PreparedDatasetID, PreparedDatasetVersion: run.PreparedDatasetVersion,
 		TargetDatasetID: run.TargetDatasetID, TargetDatasetName: run.TargetDatasetName,
 		BaseVersion: run.BaseVersion, SourceDocument: run.SourceDocument,
+	}
+	for _, issue := range run.Issues {
+		result.Issues = append(result.Issues, RunIssue{Code: issue.Code, Count: issue.Count, Required: issue.Required})
+	}
+	if run.Mode == "training" {
+		// A training run names the dataset version it trains on, not one it adds to.
+		result.TrainingDatasetID, result.TrainingDatasetName, result.TrainingDatasetVersion = run.TargetDatasetID, run.TargetDatasetName, run.BaseVersion
+		result.TargetDatasetID, result.TargetDatasetName, result.BaseVersion = "", "", 0
+		t := run.Request.Training
+		result.TrainingSettings = TrainingOptions{
+			MaximumEpochs: t.MaximumEpochs, BatchSize: t.BatchSize, LearningRate: t.LearningRate,
+			Seed: t.Seed, LoRARank: t.LoRARank, LoRAAlpha: t.LoRAAlpha,
+		}
+		switch run.Status {
+		case optimization.StatusNeedsImprovement:
+			result.EvaluationResult = "needs_improvement"
+		case tmprl.StatusCompleted:
+			result.EvaluationResult = "accepted"
+			if run.NotCompared {
+				result.EvaluationResult = "not_compared"
+			}
+		}
 	}
 	if prepare := run.Request.Prepare; prepare != nil {
 		result.Settings = RunSettings{

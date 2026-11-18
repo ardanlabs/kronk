@@ -25,6 +25,23 @@ type State struct {
 func Run(ctx context.Context, workspace *os.Root, trainer training.Trainer, job training.TrainingJob, records []training.Record, fingerprint string) (training.Artifacts, error) {
 	splits, err := training.Split(records)
 	if err != nil {
+		count := 0
+		for _, record := range records {
+			if !record.ValidationPrompt && !record.IndependentPrompt {
+				count++
+			}
+		}
+		if training.ValidateRecords(records) == nil && count < training.MinimumTrainingRecords {
+			issue := struct {
+				Code     string `json:"code"`
+				Count    int    `json:"count"`
+				Required int    `json:"required"`
+			}{"training-records-insufficient", count, training.MinimumTrainingRecords}
+			if saveErr := tmprl.WriteJSON(workspace, "requirements.json", issue); saveErr != nil {
+				return training.Artifacts{}, saveErr
+			}
+			return training.Artifacts{}, temporal.NewNonRetryableApplicationError(err.Error(), issue.Code, err)
+		}
 		return training.Artifacts{}, temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
 	}
 	job.Dataset = splits

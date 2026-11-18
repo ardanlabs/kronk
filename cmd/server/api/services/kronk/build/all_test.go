@@ -12,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/trainapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
@@ -58,8 +59,9 @@ func TestTrainingRouteWiring(t *testing.T) {
 		wantRun    int
 	}{
 		{"disabled", trainapp.Config{}, http.StatusNotFound, http.StatusNotFound},
-		{"uploads-only", trainapp.Config{Uploads: store}, http.StatusBadRequest, http.StatusServiceUnavailable},
-		{"enabled", trainapp.Config{Job: job, Uploads: store}, http.StatusBadRequest, http.StatusOK},
+		// Startup always pairs uploads with the datasets service, which reads runs through the job.
+		{"uploads-only", trainapp.Config{Uploads: store, Datasets: datasets.New(datasets.Config{Uploads: store})}, http.StatusBadRequest, http.StatusServiceUnavailable},
+		{"enabled", trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Job: job, Uploads: store})}, http.StatusBadRequest, http.StatusOK},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			api := mux.WebAPI(mux.Config{Log: log, AuthorizationMode: auth.Open}, build.Routes(build.Config{Training: test.training}))

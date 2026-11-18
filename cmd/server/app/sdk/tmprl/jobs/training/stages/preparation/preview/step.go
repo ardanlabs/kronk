@@ -119,7 +119,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		state.Result.PromptTokens += usage.PromptTokens
 		state.Result.CompletionTokens += usage.CompletionTokens
 		if len(state.Result.Exclusions) > 0 {
-			state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("%d source exclusions recorded; inspect source_exclusions", len(state.Result.Exclusions)))
+			state.Result.Warnings = append(state.Result.Warnings, preparation.ExclusionWarning(len(state.Result.Exclusions)))
 		}
 	}
 	state.Result.Preview = state.Records

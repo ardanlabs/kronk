@@ -49,7 +49,7 @@ func (t *trainer) Validate(ctx context.Context, _ optimization.TrainingJob) erro
 }
 
 func (t *trainer) Train(ctx context.Context, input optimization.TrainingJob, publish func(tmprl.Progress)) (optimization.TrainingCandidate, error) {
-	if len(input.Dataset.Train) != 20 || len(input.Dataset.Validation) < 10 || len(input.Dataset.Test) != 0 {
+	if len(input.Dataset.Train) != 20 || len(input.Dataset.Validation) < optimization.MinimumValidationQuestions || len(input.Dataset.Test) != 0 {
 		return optimization.TrainingCandidate{}, errors.New("incorrect optimization splits or protected test leakage")
 	}
 	if t.attempts.Add(1) == 1 && t.mode == "retry" {
@@ -66,19 +66,20 @@ func (t *trainer) Train(ctx context.Context, input optimization.TrainingJob, pub
 	return optimization.TrainingCandidate{Path: path, BestEpoch: 1, TrainingLoss: 0.7, ValidationLoss: 0.8}, ctx.Err()
 }
 
-func (t *trainer) Predict(ctx context.Context, _ optimization.TrainingJob, adapter string, records []optimization.Record) ([]string, error) {
-	if len(records) != 20 {
+func (t *trainer) Predict(ctx context.Context, _ optimization.TrainingJob, adapter string, records []optimization.Record, _ func(int)) ([]string, error) {
+	if len(records) < optimization.MinimumTestQuestions {
 		return nil, errors.New("incorrect protected evaluation split")
 	}
-	correct := 16
+	// The base model answers half; an accepted adapter answers 75%, and a rejected
+	// one does no better than the base model.
+	correct := len(records) / 2
 	if adapter != "" {
 		data, err := os.ReadFile(adapter)
 		if err != nil || string(data) != "controlled adapter" {
 			return nil, fmt.Errorf("candidate content changed: %v", err)
 		}
-		correct = 18
-		if t.mode == "reject" {
-			correct = 17
+		if t.mode != "reject" {
+			correct = (len(records)*3 + 3) / 4
 		}
 	}
 	answers := make([]string, len(records))
@@ -226,7 +227,7 @@ func TestPreparationSourceContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := verified.Artifacts.Preparation
-	if result == nil || result.RecordCount != 50 || !result.TrainingReady || len(result.Exclusions) != 1 || result.Exclusions[0] != (preparation.SourceExclusion{Reference: "markdown:line:83", Reason: "model abstained: no_supported_example"}) {
+	if result == nil || result.RecordCount != 44 || !result.TrainingReady || len(result.Exclusions) != 1 || result.Exclusions[0] != (preparation.SourceExclusion{Reference: "markdown:line:83", Reason: "model abstained: no_supported_example"}) {
 		t.Fatalf("incorrect result/exclusion accounting: %+v", result)
 	}
 	recordFile, err := workspace.Open("dataset.jsonl")
@@ -237,7 +238,7 @@ func TestPreparationSourceContract(t *testing.T) {
 	if err := errors.Join(readErr, recordFile.Close()); err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 50 || !slices.Equal(records[:3], accepted.Records) || records[0].Evidence != sample.Artifacts.Preview.Preview[0].Evidence {
+	if len(records) != 44 || !slices.Equal(records[:3], accepted.Records) || records[0].Evidence != sample.Artifacts.Preview.Preview[0].Evidence {
 		t.Fatal("reviewed records, local evidence or dataset count changed")
 	}
 	data, err := workspace.ReadFile("dataset-report.json")
@@ -532,10 +533,12 @@ func TestTrainingJob(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		document bool
+		saved    bool
 		mode     string
 		status   tmprl.Status
 	}{
 		{name: "document-to-published-adapter", document: true, status: tmprl.StatusCompleted},
+		{name: "saved-dataset-version", saved: true, status: tmprl.StatusCompleted},
 		{name: "document-with-generation-retry", document: true, mode: "generation-retry", status: tmprl.StatusCompleted},
 		{name: "prepared-input-with-retry", mode: "retry", status: tmprl.StatusCompleted},
 		{name: "evaluation-rejected", mode: "reject", status: optimization.StatusNeedsImprovement},
@@ -547,7 +550,8 @@ func TestTrainingJob(t *testing.T) {
 			defer cancel()
 			name, data := source(t, test.document)
 			// Generated datasets can exceed the upload limit and live in a separate root.
-			storage, err := uploads.New(uploads.Config{Root: t.TempDir(), MaximumBytes: int64(len(data))})
+			uploadRoot := t.TempDir()
+			storage, err := uploads.New(uploads.Config{Root: uploadRoot, MaximumBytes: int64(len(data))})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -574,11 +578,43 @@ func TestTrainingJob(t *testing.T) {
 				request.DatasetID = ""
 				request.Prepare = &preparation.PreparationRequest{DatasetID: dataset.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer}
 			}
+			var saved datasetstore.Dataset
+			if test.saved {
+				records, err := optimization.ReadRecords(ctx, strings.NewReader(data))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for i := range records {
+					records[i].SourceDocument = dataset.ID
+				}
+				saved, err = service.Create(ctx, "Device records")
+				if err != nil {
+					t.Fatal(err)
+				}
+				empty := saved.Version
+				saved, err = service.Add(ctx, saved.ID, saved.Version, datasetstore.Addition{PublicationID: "import", Source: dataset, Records: records})
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Training reads the saved version, never the upload it came from.
+				if err := os.Remove(filepath.Join(uploadRoot, "uploads", dataset.ID, "source"+dataset.Format)); err != nil {
+					t.Fatal(err)
+				}
+				missing := job.Request{Model: "gemma", SavedDataset: &job.SavedDataset{ID: saved.ID, Version: saved.Version + 1}}
+				if _, err := trainingJob.Start(ctx, missing); !errors.Is(err, datasetstore.ErrDatasetNotFound) {
+					t.Fatalf("missing dataset version: got %v, want not found", err)
+				}
+				unready := job.Request{Model: "gemma", SavedDataset: &job.SavedDataset{ID: saved.ID, Version: empty}}
+				if _, err := trainingJob.Start(ctx, unready); !errors.Is(err, tmprl.ErrInvalidArgument) {
+					t.Fatalf("version not ready for training: got %v, want invalid argument", err)
+				}
+				request = job.Request{Model: "gemma", SavedDataset: &job.SavedDataset{ID: saved.ID, Version: saved.Version}}
+			}
 			run, err := trainingJob.Start(ctx, request)
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantTraining := optimization.Training{MaximumEpochs: 3, BatchSize: 2, LearningRate: 0.0002, Seed: 3407, LoRARank: 8, LoRAAlpha: 8}
+			wantTraining := optimization.Training{MaximumEpochs: 10, BatchSize: 2, LearningRate: 0.0002, Seed: 3407, LoRARank: 8, LoRAAlpha: 8}
 			if run.Request.Training != wantTraining {
 				t.Fatalf("default training parameters: got %+v, want %+v", run.Request.Training, wantTraining)
 			}
@@ -596,11 +632,17 @@ func TestTrainingJob(t *testing.T) {
 			}
 			// Mutating the returned snapshot cannot change durable execution input.
 			run.Definition.Stages[0].Name = "mutated"
-			worker := trainingJob.Jobs().NewWorker()
-			if err := worker.Start(); err != nil {
-				t.Fatal(err)
+			workers := trainingJob.Workers()
+			for _, w := range workers {
+				if err := w.Start(); err != nil {
+					t.Fatal(err)
+				}
 			}
-			stopWorker := sync.OnceFunc(worker.Stop)
+			stopWorker := sync.OnceFunc(func() {
+				for _, w := range workers {
+					w.Stop()
+				}
+			})
 			t.Cleanup(stopWorker)
 			var reviewDecision, trainingDecision tmprl.Decision
 			if test.document {
@@ -665,7 +707,7 @@ func TestTrainingJob(t *testing.T) {
 					t.Fatal(err)
 				}
 				prepared := waitForCheckpoint(t, ctx, trainingJob, run.Execution, "start-training")
-				if prepared.Artifacts.Preparation == nil || !prepared.Artifacts.Preparation.TrainingReady || prepared.Artifacts.Preparation.RecordCount != 50 || prepared.Stages[0].Status != tmprl.StatusCompleted || !prepared.Stages[1].StartedAt.IsZero() || compute.attempts.Load() != 0 {
+				if prepared.Artifacts.Preparation == nil || !prepared.Artifacts.Preparation.TrainingReady || prepared.Artifacts.Preparation.RecordCount != 44 || prepared.Stages[0].Status != tmprl.StatusCompleted || !prepared.Stages[1].StartedAt.IsZero() || compute.attempts.Load() != 0 {
 					t.Fatalf("preparation did not finish independently: %+v", prepared)
 				}
 				file, err := os.Open(prepared.Artifacts.Preparation.RecordsPath)
@@ -680,7 +722,7 @@ func TestTrainingJob(t *testing.T) {
 				if err := json.Unmarshal(receipt.Payload, &accepted); err != nil {
 					t.Fatal(err)
 				}
-				if len(records) != 50 || !slices.Equal(records[:3], accepted.Records) {
+				if len(records) != 44 || !slices.Equal(records[:3], accepted.Records) {
 					t.Fatalf("review edits lost or duplicated: %+v", records)
 				}
 				assertSteps(t, env, run.Execution, []string{"preparation/extract", "preparation/preview", "preparation/generate", "preparation/verify"})
@@ -737,7 +779,7 @@ func TestTrainingJob(t *testing.T) {
 			}
 			if test.mode != "fail" {
 				report, err := trainingJob.Evaluation(ctx, run.Execution)
-				if err != nil || report.Total != 20 || report.Accepted != (test.status == tmprl.StatusCompleted) {
+				if err != nil || report.Total < optimization.MinimumTestQuestions || report.Accepted != (test.status == tmprl.StatusCompleted) {
 					t.Fatalf("evaluation: got %+v, %v", report, err)
 				}
 			}
@@ -762,7 +804,7 @@ func TestTrainingJob(t *testing.T) {
 			}
 			if test.document {
 				wantSteps = append([]string{"preparation/extract", "preparation/preview", "preparation/generate", "preparation/verify"}, wantSteps...)
-				if result.Artifacts.Preparation == nil || result.Artifacts.Preparation.RecordCount != 50 {
+				if result.Artifacts.Preparation == nil || result.Artifacts.Preparation.RecordCount != 44 {
 					t.Fatalf("preparation: got %+v, want 50 records", result.Artifacts.Preparation)
 				}
 				if len(result.Decisions) != 2 {
@@ -803,6 +845,9 @@ func TestTrainingJob(t *testing.T) {
 							}
 							if listed.ClosedAt.IsZero() || !reflect.DeepEqual(listed.Artifacts, result.Artifacts) {
 								t.Fatalf("listed run: got %+v, want closed run with result artifacts", listed)
+							}
+							if test.saved && (listed.Mode != "training" || listed.TargetDatasetID != saved.ID) {
+								t.Fatalf("saved-dataset run must list as training for its dataset: mode %q target %q", listed.Mode, listed.TargetDatasetID)
 							}
 						}
 					}
@@ -912,15 +957,20 @@ func TestDatasetReadinessBoundaries(t *testing.T) {
 		approvedVariants                             int
 		sharedEvidence, approved, factMode, accepted bool
 	}{
+		// Datasets that cannot hold back evaluation records still train on 20 or
+		// more training records, without comparing the adapter with the base model.
 		{name: "distinct-evidence", facts: 50, variants: 1, accepted: true},
-		{name: "normalized-shared-evidence", facts: 50, variants: 1, sharedEvidence: true},
-		{name: "all-approved-training-only", facts: 50, variants: 1, approved: true},
+		{name: "normalized-shared-evidence", facts: 50, variants: 1, sharedEvidence: true, accepted: true},
+		{name: "all-approved-training-only", facts: 50, variants: 1, approved: true, accepted: true},
+		{name: "training-boundary", facts: 20, variants: 1, approved: true, accepted: true},
+		{name: "too-few-training-records", facts: 19, variants: 1, approved: true},
 		{name: "fact-boundary", facts: 30, variants: 5, factMode: true, accepted: true},
-		{name: "fact-too-few-facts", facts: 29, variants: 5, factMode: true},
-		{name: "fact-too-few-variants", facts: 30, variants: 4, factMode: true},
-		{name: "fact-all-approved", facts: 30, variants: 5, factMode: true, approved: true},
+		{name: "fact-too-few-facts", facts: 29, variants: 5, factMode: true, accepted: true},
+		{name: "fact-too-few-variants", facts: 30, variants: 4, factMode: true, accepted: true},
+		{name: "fact-all-approved", facts: 30, variants: 5, factMode: true, approved: true, accepted: true},
 		{name: "fact-mixed-approved", facts: 30, variants: 5, factMode: true, approvedVariants: 3, accepted: true},
-		{name: "fact-insufficient-unapproved", facts: 30, variants: 5, factMode: true, approvedVariants: 4},
+		{name: "fact-insufficient-unapproved", facts: 30, variants: 5, factMode: true, approvedVariants: 4, accepted: true},
+		{name: "fact-too-few-records", facts: 3, variants: 6, factMode: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var source strings.Builder
@@ -952,13 +1002,13 @@ func TestDatasetFactContractValidation(t *testing.T) {
 		r := optimization.Record{Prompt: fmt.Sprintf("Training question %02d?", i), Target: fmt.Sprintf("Answer %02d.", i), Evidence: fmt.Sprintf("Evidence for fact %02d.", i), FactID: fmt.Sprintf("fact-%02d", i)}
 		records = append(records, r)
 	}
-	for i := range 10 {
+	for i := range 8 {
 		r := records[i]
 		r.Prompt = fmt.Sprintf("Validation question %02d?", i)
 		r.ValidationPrompt = true
 		records = append(records, r)
 	}
-	for i := range 20 {
+	for i := range 16 {
 		r := records[i]
 		r.Prompt = fmt.Sprintf("Independent question %02d?", i)
 		r.IndependentPrompt = true
@@ -985,6 +1035,13 @@ func TestDatasetFactContractValidation(t *testing.T) {
 			allowed[i].Evidence = allowed[0].Evidence // Same evidence, different target is different knowledge.
 		}
 	}
+	// An incomplete evaluation set trains on the training records without it.
+	t.Run("missing-validation", func(t *testing.T) {
+		assertPreparedDataset(t, "missing-validation.jsonl", encode(append(slices.Clone(records[:20]), records[21:]...)), true)
+	})
+	t.Run("missing-test", func(t *testing.T) {
+		assertPreparedDataset(t, "missing-test.jsonl", encode(records[:len(records)-1]), true)
+	})
 	t.Run("normalized-facts", func(t *testing.T) {
 		assertPreparedDataset(t, "normalized-facts.jsonl", encode(allowed), true)
 	})
@@ -1005,8 +1062,7 @@ func TestDatasetFactContractValidation(t *testing.T) {
 		},
 		"approved-evaluation": func(rows []optimization.Record) []optimization.Record { rows[20].UserApproved = true; return rows },
 		"mixed-fact-mode":     func(rows []optimization.Record) []optimization.Record { rows[0].FactID = ""; return rows },
-		"missing-validation":  func(rows []optimization.Record) []optimization.Record { return append(rows[:20], rows[21:]...) },
-		"missing-test":        func(rows []optimization.Record) []optimization.Record { return rows[:49] },
+		"too-few-training":    func(rows []optimization.Record) []optimization.Record { return rows[1:] },
 	} {
 		t.Run(name, func(t *testing.T) {
 			assertPreparedDataset(t, name+".jsonl", encode(change(slices.Clone(records))), false)
@@ -1056,5 +1112,70 @@ func assertPreparedDataset(t *testing.T, name, data string, accepted bool) {
 	}
 	if got := compute.attempts.Load(); got != 0 {
 		t.Errorf("training attempts: got %d, want 0", got)
+	}
+}
+
+// A preparation holds its worker for its whole run, including review. Training
+// has its own worker, so it runs beside the preparation instead of waiting.
+func TestTrainingBesidePreparation(t *testing.T) {
+	env := newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	storage, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(model, []byte("controlled model"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	j, err := job.New(env.Client, job.Config{TaskQueue: env.TaskQueue, Uploads: storage, StorageRoot: t.TempDir(), Models: map[string]string{"gemma": model}, Trainer: &trainer{}, Completer: completer{}, Log: env.Log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := datasets.New(datasets.Config{Files: j.Datasets(), Job: j})
+	name, data := source(t, false)
+	file, err := storage.Put(ctx, uploads.Input{Name: name}, strings.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := optimization.ReadRecords(ctx, strings.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range records {
+		records[i].SourceDocument = file.ID
+	}
+	saved, err := service.Create(ctx, "Device records")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err = service.Add(ctx, saved.ID, saved.Version, datasetstore.Addition{PublicationID: "import", Source: file, Records: records})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range j.Workers() {
+		if err := w.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(w.Stop)
+	}
+	name, content := source(t, true)
+	document, err := storage.Put(ctx, uploads.Input{Name: name}, strings.NewReader(content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparing, err := j.Start(ctx, job.Request{PreparationOnly: true, Prepare: &preparation.PreparationRequest{DatasetID: document.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer, MaxQuestions: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForCheckpoint(t, ctx, j, preparing.Execution, "preview-review")
+	training, err := j.Start(ctx, job.Request{Model: "gemma", SavedDataset: &job.SavedDataset{ID: saved.ID, Version: saved.Version}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := j.Jobs().Wait(ctx, training.Execution)
+	if err != nil || result.Status != tmprl.StatusCompleted {
+		t.Fatalf("training beside a waiting preparation: %v, %+v", err, result)
 	}
 }

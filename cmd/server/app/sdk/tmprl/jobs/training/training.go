@@ -42,6 +42,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/worker"
 )
 
 //go:embed job.yaml
@@ -57,6 +58,14 @@ type Request struct {
 	Training        optimization.Training           `json:"training"`
 	DatasetID       string                          `json:"dataset_id,omitzero"`
 	Prepare         *preparation.PreparationRequest `json:"prepare,omitzero"`
+	SavedDataset    *SavedDataset                   `json:"saved_dataset,omitzero"`
+}
+
+// SavedDataset selects a saved dataset version as training input. Training reads
+// the version's records from the dataset store; nothing is uploaded.
+type SavedDataset struct {
+	ID      string `json:"id"`
+	Version int    `json:"version"`
 }
 
 // Artifacts retains the outputs owned by each stage of the job.
@@ -75,6 +84,14 @@ type State struct {
 	AdapterAvailable    bool
 	RemainingSeconds    int64
 	FailureReason       string
+	Issues              []RunIssue `json:"issues,omitempty"`
+}
+
+// RunIssue contains only a stable diagnostic code and counts, never error text.
+type RunIssue struct {
+	Code     string `json:"code"`
+	Count    int    `json:"count"`
+	Required int    `json:"required,omitempty"`
 }
 
 // Describe interprets an execution observation without querying or changing it.
@@ -169,7 +186,7 @@ func New(c client.Client, cfg Config) (*Job, error) {
 	j := Job{cfg: cfg, client: c}
 	jobs, err := tmprl.New(c, tmprl.Config[Request, Artifacts]{
 		Names:     tmprl.Names{Workflow: "moxie.training.Job", Activity: "moxie.training.Step", Memo: "moxie.training.job", Query: "training-state", Control: "training-control"},
-		TaskQueue: cfg.TaskQueue, StorageRoot: cfg.StorageRoot, StorageDirectory: storageDirectory,
+		TaskQueue: cfg.TaskQueue, Queue: j.queue, StorageRoot: cfg.StorageRoot, StorageDirectory: storageDirectory,
 		Steps: j.steps(), Outcomes: []tmprl.Status{optimization.StatusNeedsImprovement}, Log: cfg.Log,
 	})
 	if err != nil {
@@ -189,6 +206,21 @@ func New(c client.Client, cfg Config) (*Job, error) {
 // Jobs exposes foundation's worker and infrastructure APIs to the host.
 // Application callers use Start, Get, List, review methods, and Stop instead.
 func (j *Job) Jobs() *tmprl.Jobs[Request, Artifacts] { return j.jobs }
+
+// queue gives runs that train their own queue, so one preparation and one
+// training run side by side. Preparation runs use TaskQueue.
+func (j *Job) queue(r Request) string {
+	if r.PreparationOnly {
+		return j.cfg.TaskQueue
+	}
+	return j.cfg.TaskQueue + "-train"
+}
+
+// Workers creates one worker per queue: preparation and training. The host
+// starts and stops them.
+func (j *Job) Workers() []worker.Worker {
+	return []worker.Worker{j.jobs.NewWorker(), j.jobs.NewQueueWorker(j.queue(Request{}))}
+}
 
 // Datasets exposes the configured reusable asset store for host integration.
 // HTTP dependencies are supplied explicitly by the host, not discovered here.
@@ -244,7 +276,9 @@ func (j *Job) Get(ctx context.Context, e tmprl.Execution) (State, error) {
 			return State{}, err
 		}
 	}
-	return Describe(run), nil
+	state := Describe(run)
+	state.Issues = j.runIssues(run)
+	return state, nil
 }
 
 // List preserves runner ordering and pagination and interprets each observation.
@@ -444,14 +478,20 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 	if len(r.ID) > 200 || !r.PreparationOnly && j.cfg.Models[r.Model] == "" {
 		return Request{}, fmt.Errorf("%w: approved model and ID of at most 200 bytes are required", tmprl.ErrInvalidArgument)
 	}
-	if (r.Prepare == nil) == (r.DatasetID == "") {
-		return Request{}, fmt.Errorf("%w: select exactly one document preparation or prepared dataset", tmprl.ErrInvalidArgument)
+	inputs := 0
+	for _, selected := range []bool{r.Prepare != nil, r.DatasetID != "", r.SavedDataset != nil} {
+		if selected {
+			inputs++
+		}
+	}
+	if inputs != 1 {
+		return Request{}, fmt.Errorf("%w: select exactly one document preparation, prepared dataset, or saved dataset version", tmprl.ErrInvalidArgument)
 	}
 	if r.PreparationOnly && r.Prepare == nil {
 		return Request{}, fmt.Errorf("%w: preparation-only requires a source document", tmprl.ErrInvalidArgument)
 	}
 	if r.Training == (optimization.Training{}) {
-		r.Training = optimization.Training{MaximumEpochs: 3, BatchSize: 2, LearningRate: 0.0002, Seed: 3407}
+		r.Training = optimization.Training{MaximumEpochs: 10, BatchSize: 2, LearningRate: 0.0002, Seed: 3407}
 	}
 	if r.Training.LoRARank == 0 {
 		r.Training.LoRARank = 8
@@ -462,6 +502,19 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 	t := r.Training
 	if !r.PreparationOnly && (t.MaximumEpochs < 1 || t.MaximumEpochs > 100 || t.BatchSize < 1 || t.BatchSize > 128 || t.Seed < 0 || t.LoRARank < 1 || t.LoRAAlpha <= 0 || math.IsNaN(t.LoRAAlpha) || math.IsInf(t.LoRAAlpha, 0) || t.LearningRate <= 0 || t.LearningRate > 1 || math.IsNaN(t.LearningRate) || math.IsInf(t.LearningRate, 0)) {
 		return Request{}, fmt.Errorf("%w: invalid training hyperparameters", tmprl.ErrInvalidArgument)
+	}
+	if saved := r.SavedDataset; saved != nil {
+		saved.ID = strings.TrimSpace(saved.ID)
+		if !datasetstore.ValidID(saved.ID) || saved.Version < 1 {
+			return Request{}, fmt.Errorf("%w: saved dataset requires a dataset ID and a positive version", tmprl.ErrInvalidArgument)
+		}
+		dataset, err := j.dataset(ctx, saved.ID, saved.Version)
+		if err != nil {
+			return Request{}, err
+		}
+		if !dataset.TrainingReady {
+			return Request{}, fmt.Errorf("%w: dataset version %d is not ready for training", tmprl.ErrInvalidArgument, saved.Version)
+		}
 	}
 	if r.Prepare != nil {
 		if len(r.Prepare.ReviewedRecords) != 0 {
@@ -530,6 +583,19 @@ func (j *Job) records(ctx context.Context, request Request, artifacts Artifacts,
 	var file io.ReadCloser
 	var err error
 	limit := int64(100 << 20)
+	if saved := request.SavedDataset; saved != nil {
+		if _, err := j.dataset(ctx, saved.ID, saved.Version); err != nil {
+			return nil, err
+		}
+		records, err := j.cfg.Datasets.Records(ctx, saved.ID, saved.Version)
+		if err != nil {
+			return nil, err
+		}
+		if err := optimization.TrainingReadiness(records); err != nil {
+			return nil, fmt.Errorf("%w: saved dataset: %w", tmprl.ErrInvalidArgument, err)
+		}
+		return records, nil
+	}
 	if request.Prepare == nil {
 		source, sourceErr := j.cfg.Uploads.Get(ctx, request.DatasetID)
 		if sourceErr != nil {
@@ -639,7 +705,7 @@ func (j *Job) steps() map[string]tmprl.StepHandler[Request, Artifacts] {
 	return map[string]tmprl.StepHandler[Request, Artifacts]{
 		"preparation/extract":  j.prepare(extract.Step{}),
 		"preparation/preview":  j.prepare(preview.Step{}),
-		"preparation/generate": j.prepare(generate.Step{}),
+		"preparation/generate": j.prepare(generate.Step{Verify: verify.Batch}),
 		"preparation/verify":   j.prepare(verify.Step{}),
 		"training/split":       j.optimize(split.Step{}),
 		"training/train":       j.optimize(train.Step{}),
@@ -679,10 +745,16 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 				return tmprl.StepResult[Artifacts]{}, invalidInput("Preview review must be accepted before full preparation")
 			}
 		}
+		var datasetRecords []optimization.Record
+		if step.Name() == "generate" && request.TargetDatasetID != "" && request.BaseVersion > 0 {
+			if datasetRecords, err = j.cfg.Datasets.Records(ctx, request.TargetDatasetID, request.BaseVersion); err != nil {
+				return tmprl.StepResult[Artifacts]{}, stepError(err)
+			}
+		}
 		output, err := step.Execute(ctx, preparation.StepContext{
 			Preparation: &preparation.PreparationContext{
 				Input:  preparation.PreparationInput{Request: request, Kind: preparation.PreparationFull},
-				Source: source, Extractor: j.cfg.Extractor, Completer: j.cfg.Completer,
+				Source: source, Extractor: j.cfg.Extractor, Completer: j.cfg.Completer, DatasetRecords: datasetRecords,
 				OpenSource: func(ctx context.Context) (io.ReadCloser, error) {
 					return j.cfg.Uploads.Open(ctx, source.ID)
 				},
@@ -865,13 +937,27 @@ const (
 	failureQuestionsExist = "dataset-questions-exist"
 	failureDatasetChanged = "dataset-changed"
 	failureNoExamples     = "preparation-no-examples"
+
+	// Types raised by the preparation steps and request validation.
+	failureNoSourceUnits     = "preparation-no-source-units"
+	failureRequestBudget     = "preparation-request-budget-exhausted"
+	failureNoVerified        = "preparation-no-verified-examples"
+	failureCheckpointVersion = "preparation-checkpoint-version"
+	failureInvalidRequest    = "invalid-training"
+
+	// Types raised when the document extractor fails.
+	failureExtractorUnavailable = "preparation-extractor-unavailable"
+	failurePageRange            = "preparation-page-range"
+	failureExtractionFailed     = "preparation-extraction-failed"
 )
 
 // FailureReason returns the first known application failure type of a run.
 func FailureReason(types []string) string {
 	for _, t := range types {
 		switch t {
-		case failureDocumentExists, failureQuestionsExist, failureDatasetChanged, failureNoExamples:
+		case failureDocumentExists, failureQuestionsExist, failureDatasetChanged, failureNoExamples,
+			failureNoSourceUnits, failureRequestBudget, failureNoVerified, failureCheckpointVersion, failureInvalidRequest,
+			failureExtractorUnavailable, failurePageRange, failureExtractionFailed, "training-records-insufficient":
 			return t
 		}
 	}
@@ -886,6 +972,12 @@ func stepError(err error) error {
 		return temporal.NewNonRetryableApplicationError(err.Error(), failureQuestionsExist, err)
 	case errors.Is(err, datasetstore.ErrDatasetConflict), errors.Is(err, datasetstore.ErrDatasetNotFound):
 		return temporal.NewNonRetryableApplicationError(err.Error(), failureDatasetChanged, err)
+	case errors.Is(err, providers.ErrExtractorUnavailable):
+		return temporal.NewApplicationError(err.Error(), failureExtractorUnavailable, err)
+	case errors.Is(err, providers.ErrPageRangePastEnd):
+		return temporal.NewNonRetryableApplicationError(err.Error(), failurePageRange, err)
+	case errors.Is(err, providers.ErrExtractionFailed):
+		return temporal.NewNonRetryableApplicationError(err.Error(), failureExtractionFailed, err)
 	}
 	if errors.Is(err, tmprl.ErrInvalidArgument) || errors.Is(err, uploads.ErrInvalidArgument) || errors.Is(err, uploads.ErrNotFound) || errors.Is(err, preparation.ErrInvalidArgument) || errors.Is(err, datasetstore.ErrDatasetConflict) || errors.Is(err, datasetstore.ErrDatasetNotFound) {
 		return temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)

@@ -117,6 +117,51 @@ func TestDatasetVersionsAndDocumentRemoval(t *testing.T) {
 	}
 }
 
+// Evaluation questions can reword another document's records; each record keeps
+// one question per kind, and questions leave with the record they reword.
+func TestDatasetEvaluationQuestionsFollowTheirRecords(t *testing.T) {
+	ctx := t.Context()
+	store, err := datasets.New(datasets.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataset, err := store.Create(ctx, "Harbor notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fact := func(source, prompt, evidence string) training.Record {
+		return training.Record{Prompt: prompt, Target: evidence, Evidence: evidence, FactID: training.FactID(evidence, evidence), SourceDocument: source}
+	}
+	first := documentAddition("source-a", "a")
+	first.Records = []training.Record{fact("source-a", "When does the harbor open?", "The harbor opens at dawn.")}
+	second := documentAddition("source-b", "b")
+	question := fact("source-b", "At what hour does the harbor open?", "The harbor opens at dawn.")
+	question.ValidationPrompt = true
+	repeat := question
+	repeat.Prompt = "What time is the harbor opened?"
+	second.Records = []training.Record{fact("source-b", "When does the ferry leave?", "The ferry leaves at noon."), question, repeat}
+	if _, err := store.Add(ctx, dataset.ID, 1, first); err != nil {
+		t.Fatal(err)
+	}
+	added, err := store.Add(ctx, dataset.ID, 2, second)
+	if err != nil || added.RecordCount != 3 {
+		t.Fatalf("second document: %+v, %v", added, err)
+	}
+	if records, err := store.Records(ctx, dataset.ID, 3); err != nil || len(records) != 3 || records[2] != question {
+		t.Fatalf("one validation question per record: %+v, %v", records, err)
+	}
+	removed, err := store.Remove(ctx, dataset.ID, 3, first.PublicationID)
+	if err != nil || removed.RecordCount != 1 {
+		t.Fatalf("removing the reworded record: %+v, %v", removed, err)
+	}
+	if records, err := store.Records(ctx, dataset.ID, 4); err != nil || len(records) != 1 || records[0].ValidationPrompt {
+		t.Fatalf("question outlived its record: %+v, %v", records, err)
+	}
+	if _, err := store.Inspect(ctx, dataset.ID, 4); err != nil {
+		t.Fatalf("filtered version failed its index check: %v", err)
+	}
+}
+
 func TestDatasetConcurrentPublishers(t *testing.T) {
 	path := t.TempDir()
 	first, err := datasets.New(datasets.Config{Root: path})

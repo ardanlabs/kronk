@@ -344,6 +344,19 @@ func evaluationInput(t *testing.T) (preparation.StepContext, checkpoint.State) {
 	return input, state
 }
 
+// evaluationCounts returns the validation and test questions among records.
+func evaluationCounts(records []training.Record) (validation, test int) {
+	for _, r := range records {
+		switch {
+		case r.ValidationPrompt:
+			validation++
+		case r.IndependentPrompt:
+			test++
+		}
+	}
+	return validation, test
+}
+
 func savedState(t *testing.T, input preparation.StepContext) checkpoint.State {
 	t.Helper()
 	data, err := input.Workspace.ReadFile(checkpoint.File)
@@ -398,10 +411,11 @@ func TestGenerationSafePointContinuation(t *testing.T) {
 	for _, phase := range []string{"generation", "evaluation"} {
 		t.Run(phase, func(t *testing.T) {
 			input, initial := generationInput(t)
-			wantCount := 64
+			// Training records plus 8 validation and 16 test questions.
+			wantCount := 58
 			if phase == "evaluation" {
 				input, initial = evaluationInput(t)
-				wantCount = 50
+				wantCount = 44
 			}
 			paused := errors.New("controlled safe-point suspension")
 			input.SafePoint = func(_ context.Context, path string) error {
@@ -442,7 +456,7 @@ func TestGenerationSafePointContinuation(t *testing.T) {
 				t.Fatal(err)
 			}
 			completed := savedState(t, input)
-			if !completed.Generated || len(completed.Records) != wantCount || completed.EvaluationNext != 30 || !slices.Equal(completed.Records[:len(saved.Records)], saved.Records) || completed.ReviewID != initial.ReviewID {
+			if validation, test := evaluationCounts(completed.Records); !completed.Generated || len(completed.Records) != wantCount || validation != 8 || test != 16 || !slices.Equal(completed.Records[:len(saved.Records)], saved.Records) || completed.ReviewID != initial.ReviewID {
 				t.Fatalf("Continue repeated or lost committed progress: %+v", completed)
 			}
 		})
@@ -450,15 +464,51 @@ func TestGenerationSafePointContinuation(t *testing.T) {
 }
 
 func TestDocumentQuestionCap(t *testing.T) {
+	// The limit covers training records and the 24 evaluation questions that 20
+	// or more training records need. Below 44 there is no room for both, so the
+	// run saves training records only. The document has 34 passages. A dataset
+	// that already holds 52 training records needs its 24 questions from this
+	// run, rewording its earlier records. Verification rejections are replaced.
 	for _, test := range []struct {
-		limit int
-		want  int
+		name       string
+		limit      int
+		want       int
+		evaluation int
+		base       int
+		reject     bool
 	}{
-		{3, 3}, {20, 20}, {21, 21}, {40, 40}, {0, 64},
+		{name: "3", limit: 3, want: 3}, {name: "20", limit: 20, want: 20}, {name: "21", limit: 21, want: 21}, {name: "43", limit: 43, want: 34},
+		{name: "44", limit: 44, want: 44, evaluation: 24}, {name: "50", limit: 50, want: 50, evaluation: 24}, {name: "60", limit: 60, want: 58, evaluation: 24}, {name: "0", want: 58, evaluation: 24},
+		{name: "dataset", limit: 30, want: 30, evaluation: 24, base: 52},
+		{name: "rejected", limit: 20, want: 20, reject: true},
 	} {
-		t.Run(fmt.Sprint(test.limit), func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			input, state := generationInput(t)
 			input.Preparation.Input.Request.MaxQuestions = test.limit
+			baseFacts := make(map[string]bool)
+			for i := range test.base {
+				evidence := fmt.Sprintf("Pier %d closes at dusk.", i)
+				r := training.Record{Prompt: fmt.Sprintf("When does pier %d close?", i), Target: evidence, Evidence: evidence, SourceDocument: "earlier"}
+				r.FactID = training.FactID(r.Evidence, r.Target)
+				input.Preparation.DatasetRecords = append(input.Preparation.DatasetRecords, r)
+				baseFacts[r.FactID] = true
+			}
+			step := generate.Step{}
+			rejected := func(r training.Record) bool {
+				return strings.HasSuffix(r.Prompt, " harbor-5?") || strings.HasSuffix(r.Prompt, " harbor-12?")
+			}
+			if test.reject {
+				step.Verify = func(_ context.Context, input preparation.StepContext, state *checkpoint.State) error {
+					kept := state.Records[:state.Verified]
+					for _, r := range state.Records[state.Verified:] {
+						if !rejected(r) {
+							kept = append(kept, r)
+						}
+					}
+					state.Records, state.Verified = kept, len(kept)
+					return tmprl.WriteJSON(input.Workspace, checkpoint.File, *state)
+				}
+			}
 			if err := input.Workspace.Remove(checkpoint.File); err != nil {
 				t.Fatal(err)
 			}
@@ -488,22 +538,45 @@ func TestDocumentQuestionCap(t *testing.T) {
 				data, err := json.Marshal(map[string]any{"decisions": decisions})
 				return providers.Completion{Content: string(data)}, err
 			})
-			if _, err := (generate.Step{}).Execute(t.Context(), input); err != nil {
+			if _, err := step.Execute(t.Context(), input); err != nil {
 				t.Fatal(err)
 			}
 			got := savedState(t, input)
-			if len(got.Records) != test.want || !got.Generated || !slices.Equal(got.Records[:3], input.Review.Records) {
-				t.Fatalf("cap %d: got %d records, generated=%v; want %d with review preserved", test.limit, len(got.Records), got.Generated, test.want)
+			validation, independent := evaluationCounts(got.Records)
+			if len(got.Records) != test.want || validation+independent != test.evaluation || !got.Generated || !slices.Equal(got.Records[:3], input.Review.Records) {
+				t.Fatalf("cap %d: got %d records with %d evaluation questions, generated=%v; want %d with %d and review preserved", test.limit, len(got.Records), validation+independent, got.Generated, test.want, test.evaluation)
 			}
-			if test.limit > 0 && test.limit <= 34 && evaluations != 0 {
-				t.Fatal("evaluation exceeded the document question cap")
+			if evaluations != test.evaluation {
+				t.Fatalf("cap %d: %d evaluation requests, want %d", test.limit, evaluations, test.evaluation)
+			}
+			fromBase := 0
+			for _, r := range got.Records {
+				if r.ValidationPrompt || r.IndependentPrompt {
+					if baseFacts[r.FactID] {
+						fromBase++
+					}
+					if r.SourceDocument != "source" {
+						t.Fatalf("evaluation question not owned by this run's document: %+v", r)
+					}
+				}
+				if test.reject && rejected(r) {
+					t.Fatalf("rejected record was saved: %q", r.Prompt)
+				}
+			}
+			// Six run records cover 6 validation and 6 test questions; the rest
+			// reword the dataset's earlier records.
+			if test.base > 0 && fromBase != 12 || test.base == 0 && fromBase != 0 {
+				t.Fatalf("%d evaluation questions reword earlier dataset records", fromBase)
+			}
+			if test.reject && got.Verified != len(got.Records) {
+				t.Fatalf("verified %d of %d records", got.Verified, len(got.Records))
 			}
 			reopen(t, &input)
 			input.Preparation.Completer = completionFunc(func(context.Context, providers.CompletionRequest) (providers.Completion, error) {
 				t.Fatal("completed capped generation called the provider on replay")
 				return providers.Completion{}, nil
 			})
-			if _, err := (generate.Step{}).Execute(t.Context(), input); err != nil {
+			if _, err := step.Execute(t.Context(), input); err != nil {
 				t.Fatal(err)
 			}
 			if replay := savedState(t, input); !reflect.DeepEqual(replay, got) {
@@ -1207,7 +1280,7 @@ func TestGenerationFailuresPreserveCheckpoint(t *testing.T) {
 }
 
 func TestGenerationRejectsInvalidCheckpoint(t *testing.T) {
-	for _, name := range []string{"missing prompt", "missing count", "blank prompt", "reason without count", "blank reason", "already generated", "no pending passages", "evaluations started", "verification started", "candidate count", "candidate reference", "candidate evidence", "candidate target", "candidate identity", "candidate owner", "candidate approval", "candidate duplicate", "candidate reason"} {
+	for _, name := range []string{"missing prompt", "missing count", "blank prompt", "reason without count", "blank reason", "already generated", "no pending passages", "evaluations started", "candidate count", "candidate reference", "candidate evidence", "candidate target", "candidate identity", "candidate owner", "candidate approval", "candidate duplicate", "candidate reason"} {
 		t.Run(name, func(t *testing.T) {
 			input, state := generationInput(t)
 			state.GenerationAttempts = 1
@@ -1239,8 +1312,6 @@ func TestGenerationRejectsInvalidCheckpoint(t *testing.T) {
 				state.Next = len(state.Units)
 			case "evaluations started":
 				state.EvaluationNext = 1
-			case "verification started":
-				state.Verified = 1
 			case "candidate count":
 				state.GenerationDecisions = state.GenerationDecisions[:4]
 			case "candidate reference":
@@ -1564,7 +1635,7 @@ func TestEvaluationFailuresPreserveCheckpoint(t *testing.T) {
 }
 
 func TestEvaluationRejectsInvalidCheckpoint(t *testing.T) {
-	for _, name := range []string{"missing prompt", "missing count", "blank prompt", "blank prompt without count", "already generated", "incomplete training generation", "all evaluations done", "verification started", "insufficient training records"} {
+	for _, name := range []string{"missing prompt", "missing count", "blank prompt", "blank prompt without count", "already generated", "incomplete training generation"} {
 		t.Run(name, func(t *testing.T) {
 			input, state := evaluationInput(t)
 			state.EvaluationRejections, state.EvaluationRejectedPrompt = 1, state.Records[4].Prompt
@@ -1581,12 +1652,6 @@ func TestEvaluationRejectsInvalidCheckpoint(t *testing.T) {
 				state.Generated = true
 			case "incomplete training generation":
 				state.Next--
-			case "all evaluations done":
-				state.EvaluationNext = 30
-			case "verification started":
-				state.Verified = 1
-			case "insufficient training records":
-				state.Records = state.Records[:19]
 			}
 			if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 				t.Fatal(err)
@@ -1614,14 +1679,19 @@ func TestEvaluationCompletesAndReplays(t *testing.T) {
 	}
 	reopen(t, &input)
 	state := savedState(t, input)
-	if calls != 26 || len(state.Records) != 50 || state.EvaluationNext != 30 || !state.Generated || state.Result.PromptTokens != 179 || state.Result.CompletionTokens != 99 || !reflect.DeepEqual(state.Records[:24], original.Records) {
+	// Twenty training records need 8 validation questions (4 saved) and 16 test questions.
+	if calls != 20 || len(state.Records) != 44 || !state.Generated || state.Result.PromptTokens != 161 || state.Result.CompletionTokens != 87 || !reflect.DeepEqual(state.Records[:24], original.Records) {
 		t.Fatalf("completion changed counts/usage/saved examples: %+v", state)
 	}
 	for i, r := range state.Records[24:] {
-		index := i + 4
-		fact := original.Records[index%20]
-		if r.Evidence != fact.Evidence || r.Target != fact.Target || r.FactID != fact.FactID || r.SourceDocument != fact.SourceDocument || r.UserApproved || r.ValidationPrompt != (index < 10) || r.IndependentPrompt != (index >= 10) {
-			t.Fatalf("evaluation %d changed fact or split: %+v", index, r)
+		// Validation continues with facts 4-7; test questions start again at fact 0.
+		validation, index := i < 4, i-4
+		if validation {
+			index = i + 4
+		}
+		fact := original.Records[index]
+		if r.Evidence != fact.Evidence || r.Target != fact.Target || r.FactID != fact.FactID || r.SourceDocument != fact.SourceDocument || r.UserApproved || r.ValidationPrompt != validation || r.IndependentPrompt == validation {
+			t.Fatalf("evaluation %d changed fact or split: %+v", i, r)
 		}
 	}
 	input.Preparation.Completer = completionFunc(func(context.Context, providers.CompletionRequest) (providers.Completion, error) {

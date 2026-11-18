@@ -1,6 +1,7 @@
 package tmprl
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,8 +55,12 @@ func (f StepFunc[R, A]) Execute(ctx context.Context, input StepContext[R, A]) (S
 // Config supplies application identity, storage and capabilities, not execution
 // order. Order and execution policies come from the submitted job definition.
 type Config[R, A any] struct {
-	Names            Names
-	TaskQueue        string
+	Names     Names
+	TaskQueue string
+	// Queue routes a request to a task queue; nil or empty uses TaskQueue. Each
+	// queue's worker holds one job at a time, so jobs on different queues run
+	// side by side.
+	Queue            func(R) string
 	StorageRoot      string
 	StorageDirectory string
 	Steps            map[string]StepHandler[R, A]
@@ -151,9 +156,13 @@ func (j *Jobs[R, A]) Submit(ctx context.Context, id string, input JobInput[R]) (
 	if input.ControlStage != "" && (len(input.Job.Stages) != 1 || input.Job.Stages[0].Name != input.ControlStage) {
 		return Run[R, A]{}, fmt.Errorf("%w: ordered controls require a single matching stage", ErrInvalidArgument)
 	}
+	queue := j.cfg.TaskQueue
+	if j.cfg.Queue != nil {
+		queue = cmp.Or(j.cfg.Queue(input.Request), queue)
+	}
 	state := QueuedJob[R, A](input)
 	e, err := Start(ctx, j.client, client.StartWorkflowOptions{
-		ID: id, TaskQueue: j.cfg.TaskQueue, Memo: map[string]any{j.cfg.Names.Memo: state},
+		ID: id, TaskQueue: queue, Memo: map[string]any{j.cfg.Names.Memo: state},
 		WorkflowIDReusePolicy:                    enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 		WorkflowExecutionErrorWhenAlreadyStarted: true,
 	}, j.cfg.Names.Workflow, input)
@@ -161,7 +170,7 @@ func (j *Jobs[R, A]) Submit(ctx context.Context, id string, input JobInput[R]) (
 		return Run[R, A]{}, fmt.Errorf("starting job: %w", err)
 	}
 	state.Execution = e
-	j.cfg.Log(ctx, "job submitted", "job", input.Job.Name, "workflow_id", e.WorkflowID, "run_id", e.RunID, "task_queue", j.cfg.TaskQueue, "stages", len(input.Job.Stages))
+	j.cfg.Log(ctx, "job submitted", "job", input.Job.Name, "workflow_id", e.WorkflowID, "run_id", e.RunID, "task_queue", queue, "stages", len(input.Job.Stages))
 	return state, nil
 }
 
@@ -237,9 +246,14 @@ func (j *Jobs[R, A]) RegisterActivity(w worker.Registry) {
 	w.RegisterActivityWithOptions(j.ExecuteStep, activity.RegisterOptions{Name: j.cfg.Names.Activity})
 }
 
-// NewWorker creates a worker; its Start/Run and Stop calls belong to the host.
+// NewWorker creates a worker for TaskQueue; its Start/Run and Stop calls belong to the host.
 func (j *Jobs[R, A]) NewWorker() worker.Worker {
-	return NewWorker(j.client, j.cfg.TaskQueue, j.WorkerOptions(), j.Register)
+	return j.NewQueueWorker(j.cfg.TaskQueue)
+}
+
+// NewQueueWorker creates a worker for a queue that Config.Queue returns.
+func (j *Jobs[R, A]) NewQueueWorker(queue string) worker.Worker {
+	return NewWorker(j.client, queue, j.WorkerOptions(), j.Register)
 }
 
 // Subscribe receives local progress; use Get for durable cross-worker state.

@@ -61,11 +61,13 @@ type TrainingCandidate struct {
 }
 
 // Trainer performs computation without owning orchestration or persistence.
-// Predict loads the candidate when adapter is nonempty, or the frozen base otherwise.
+// Predict loads the candidate when adapter is nonempty, or the frozen base
+// otherwise, and reports the number of records answered so far to answered,
+// which may be nil.
 type Trainer interface {
 	Validate(context.Context, TrainingJob) error
 	Train(context.Context, TrainingJob, func(tmprl.Progress)) (TrainingCandidate, error)
-	Predict(context.Context, TrainingJob, string, []Record) ([]string, error)
+	Predict(ctx context.Context, job TrainingJob, adapter string, records []Record, answered func(int)) ([]string, error)
 }
 
 // StatusNeedsImprovement ends training when evaluation rejects the candidate.
@@ -78,6 +80,9 @@ type Artifacts struct {
 	Report     string `json:"report,omitzero"`
 	Adapter    string `json:"adapter,omitzero"`
 	Accepted   bool   `json:"accepted"`
+	// NotCompared records an adapter accepted without evaluation questions to
+	// compare it with the base model.
+	NotCompared bool `json:"not_compared,omitzero"`
 }
 
 // StepContext supplies resolved resources and incoming artifacts to a step.

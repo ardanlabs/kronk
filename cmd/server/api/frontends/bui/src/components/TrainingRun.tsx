@@ -1,496 +1,472 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { api } from '../services/api';
-import { useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
-import type { TrainingEvaluation, TrainingPreviewRecord, TrainingRun as Run, TrainingStage, TrainingStep } from '../types';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { api, ApiError } from '../services/api';
+import { FINE_TUNING_MODEL_ID, DEFAULT_TRAINING_OPTIONS, requestMessage, retryDelay, trainingPath, trainingStepLabels, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
+import { useModelList } from '../contexts/ModelListContext';
+import type { PreparationDataset, TrainingOptions, TrainingRun as Run } from '../types';
 import { FieldLabel } from './ParamTooltips';
-import { PreparedDatasetResult } from './PreparationDatasetHistory';
+import { active, Badge, date, DetailTabs, failedStep, records, runKey, stepGlyphs, stepStateLabels, timeLeft, useNow, type StepState } from './PreparationRuns';
+import { EvaluationChecks, failureText, notAccepted, runIssues, RunIssues, useEvaluation } from './RunIssues';
 
-const previewDrafts = new Map<string, TrainingPreviewRecord[]>();
-
-function formatDate(value?: string): string {
-  return !value || value.startsWith('0001-') ? '—' : new Date(value).toLocaleString();
-}
-
-export default function TrainingRun() {
-  const [params, setParams] = useSearchParams();
-  const workflowID = params.get('workflow_id') ?? '';
-  const runID = params.get('run_id') ?? '';
-  const [workflowInput, setWorkflowInput] = useState(workflowID);
-  const [runInput, setRunInput] = useState(runID);
-  const [run, setRun] = useState<Run | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [refresh, setRefresh] = useState(0);
-
-  useEffect(() => {
-    setWorkflowInput(workflowID);
-    setRunInput(runID);
-    setRun(null);
-    setError('');
-    setLoading(false);
-    if (!workflowID || !runID) return;
-
-    const controller = new AbortController();
-    setLoading(true);
-    api.trainingRun(workflowID, runID, controller.signal)
-      .then((result) => { if (!controller.signal.aborted) setRun(result); })
-      .catch((err) => {
-        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load training job.');
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [workflowID, runID, refresh]);
-
-  function openJob(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!workflowInput.trim() || !runInput.trim()) return;
-    if (workflowInput.trim() === workflowID && runInput.trim() === runID) {
-      setRefresh((value) => value + 1);
-      return;
-    }
-    setParams({ workflow_id: workflowInput.trim(), run_id: runInput.trim() });
-  }
-
-  return (
-    <div className="fine-page training-job-page">
-      <div className="page-header fine-page-header">
-        <div>
-          <span className="fine-eyebrow">Fine-tuning · Job state</span>
-          <h2>Training Job</h2>
-          <p>View the job, its stages, and each step as reported by the training service.</p>
-        </div>
-        <Link className="btn btn-secondary" to="/fine-tuning">Back to Fine-Tuning</Link>
-      </div>
-
-      <section className="fine-panel" aria-label="Find training job">
-        <form onSubmit={openJob}>
-          <div className="fine-form-grid">
-            <div className="form-group">
-              <FieldLabel htmlFor="training-workflow-id" tooltipKey="trainingWorkflowID">Workflow ID</FieldLabel>
-              <input id="training-workflow-id" className="form-input" required value={workflowInput} onChange={(event) => setWorkflowInput(event.target.value)} />
-            </div>
-            <div className="form-group">
-              <FieldLabel htmlFor="training-run-id" tooltipKey="trainingRunID">Run ID</FieldLabel>
-              <input id="training-run-id" className="form-input" required value={runInput} onChange={(event) => setRunInput(event.target.value)} />
-            </div>
-          </div>
-          <div className="fine-actions">
-            <button className="btn btn-primary" type="submit">View Job</button>
-            <span className="fine-action-note">Use the two IDs returned when the job was submitted.</span>
-          </div>
-        </form>
-      </section>
-
-      {(!workflowID || !runID) && <p role="status">Enter both IDs to view a training job.</p>}
-      {loading && <p role="status">Loading training job…</p>}
-      {error && <div className="fine-error" role="alert">Could not load training job: {error} Check the IDs and that the training service is enabled, then select View Job to retry.</div>}
-
-      {run && <TrainingJobState run={run} onRefresh={() => setRefresh((value) => value + 1)} />}
-    </div>
-  );
-}
-
-export function TrainingJobState({ run, onRefresh, view = 'all' }: { run: Run; onRefresh: () => void; view?: 'all' | 'preparation' | 'training' }) {
-  const { stopSubmission, stopRun } = useFineTuningRunner();
-  const stop = stopSubmission(run);
-  const terminal = ['completed', 'needs_improvement', 'failed', 'stopped'].includes(run.status);
-  const controlStage = run.stage || run.stages[0]?.name;
-  const canStop = !terminal && (view === 'all' || controlStage === view);
-  const stopping = stop?.status === 'sending' || stop?.status === 'requested';
-  const stopLabel = controlStage === 'preparation' ? 'Preparation' : 'Training';
-  const stages = run.stages.filter((stage) => view === 'all' || stage.name === view);
-  const currentStage = stages.find((stage) => stage.name === run.stage)
-    ?? stages.find((stage) => stage.status !== 'completed') ?? stages.at(-1);
-  return (
-    <section className="fine-job-view" aria-label={view === 'preparation' ? 'Preparation job state' : 'Training job state'}>
-      <div className="fine-run-heading">
-        <div><span className="fine-eyebrow">{view === 'preparation' ? 'Document preparation' : 'Model training'}</span><h3>{view === 'preparation' ? 'Preparation progress' : 'Training progress'}</h3></div>
-        <div className="fine-actions">
-          <span className="fine-status">{run.status}</span>
-          <button className="btn btn-secondary" onClick={onRefresh}>Refresh</button>
-          {canStop && <button className="btn btn-danger" type="button" disabled={stopping} onClick={() => {
-            if (window.confirm(`Stop ${stopLabel}? This requests cancellation of this job. Existing saved dataset versions are unchanged. A stopped job cannot be resumed from this screen.`)) void stopRun(run);
-          }}>{stop?.status === 'sending' ? 'Requesting cancellation…' : stop?.status === 'requested' ? 'Cancellation requested' : `Stop ${stopLabel}`}</button>}
-        </div>
-      </div>
-      {!terminal && stopping && <p role="status" className="fine-action-note">{stop.status === 'sending' ? 'Requesting cancellation for this job…' : 'Cancellation requested. The job may still be running; progress is preserved until the service reports a terminal state.'}</p>}
-      {!terminal && stop?.error && <p role="alert" className="fine-error">Could not confirm cancellation: {stop.error} The job may still be running. Retry Stop {stopLabel} to request cancellation for this job.</p>}
-      {run.state_stale && <p role="status" className="fine-action-note">This is the last reported state and may be out of date. Refresh to request the latest state.</p>}
-      {run.status === 'queued' && !run.stage && <p role="status" className="fine-action-note">Your job was submitted and is waiting for a training worker. This server runs one reserved job at a time, including Preparation. It will start when the worker becomes available; Stop cancels this queued request.</p>}
-      {currentStage ? <JobProgress key={`${run.workflow_id}/${run.run_id}/${currentStage.name}`} run={run} stage={currentStage} /> : <p role="status">No steps reported yet.</p>}
-      {run.prepared_dataset_id
-        ? <PreparedDatasetResult key={`${run.prepared_dataset_id}:${run.prepared_dataset_version}`} id={run.prepared_dataset_id} version={run.prepared_dataset_version} />
-        : <ArtifactDownload key={JSON.stringify([run.workflow_id, run.run_id, run.dataset_available, run.state_stale])} run={run} artifact="dataset" />}
-      {view !== 'training' && run.preview && <PreviewReview key={JSON.stringify([run.workflow_id, run.run_id, run.checkpoint?.id])} run={run} savedRecords={run.preview.records} onRefresh={onRefresh} />}
-      {view !== 'preparation' && <StartPreparedTraining run={run} onRefresh={onRefresh} />}
-      {stages.filter((stage) => stage !== currentStage).map((stage) => <section className="fine-panel" key={stage.name}><StepStates caption={`${stage.name} steps`} steps={stage.steps} /></section>)}
-      <details className="fine-panel fine-job-details">
-        <summary>Job details</summary>
-        <div className="fine-run-facts">
-          <span><strong>Workflow ID</strong>{run.workflow_id}</span>
-          <span><strong>Run ID</strong>{run.run_id}</span>
-          <span><strong>Started</strong>{formatDate(run.started_at)}</span>
-          <span><strong>Updated</strong>{formatDate(run.updated_at)}</span>
-          {run.closed_at && <span><strong>Closed</strong>{formatDate(run.closed_at)}</span>}
-        </div>
-      </details>
-      {view !== 'preparation' && <>
-        <EvaluationResults key={JSON.stringify([run.workflow_id, run.run_id, run.evaluation_available])} run={run} />
-        <ArtifactDownload key={JSON.stringify([run.workflow_id, run.run_id, run.adapter_available, run.state_stale])} run={run} artifact="adapter" />
-      </>}
-    </section>
-  );
-}
-
-const stepLabels: Record<string, string> = {
-  extract: 'Extract document', preview: 'Generate preview', generate: 'Generate examples', verify: 'Verify examples',
-  split: 'Split dataset', train: 'Train adapter', evaluate: 'Evaluate adapter', publish: 'Publish adapter',
-};
+// Training runs start from a saved dataset version and belong to that dataset: the
+// dataset's page lists them, the setup page starts one, and each run has its own page.
 
 export function duration(milliseconds: number): string {
+  if (milliseconds < 60000) return 'less than 1 min';
   const minutes = Math.max(1, Math.ceil(milliseconds / 60000));
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} hr ${minutes % 60} min`;
 }
 
-function JobProgress({ run, stage }: { run: Run; stage: TrainingStage }) {
-  const [now, setNow] = useState(Date.now);
-  const step = stage.steps.find((item) => item.name === run.step && stage.name === run.stage)
-    ?? stage.steps.find((item) => item.status === 'failed' || item.status === 'running');
-  const complete = stage.status === 'completed';
-  const waiting = run.status === 'waiting' && run.stage === stage.name;
-  const running = run.status === 'running' && stage.status === 'running' && !run.state_stale;
-  const progress = !complete && run.progress?.stage === stage.name && run.progress.step === step?.name ? run.progress : undefined;
-  useEffect(() => {
-    if (!running || waiting) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [running, waiting]);
+const trainingSteps = ['split', 'train', 'evaluate', 'publish'];
+const stepCopy: Record<string, string> = {
+  split: 'The dataset is being split into training records and evaluation questions.',
+  train: 'The adapter is learning from the training records. Leaving this screen never stops it.',
+  evaluate: 'The adapter and the base model answer the evaluation questions so they can be compared.',
+  publish: 'The adapter is being saved so it can be downloaded.',
+};
+const baseModelName = 'Gemma 3 1B IT · Q8_0';
 
-  const percentage = progress && progress.total > 0 ? Math.max(0, Math.min(100, Math.floor(progress.completed / progress.total * 100))) : undefined;
-  const elapsedStart = step?.started_at;
-  const elapsedEnd = running ? now : Date.parse(step?.closed_at ?? run.updated_at ?? '');
-  const elapsed = elapsedStart ? elapsedEnd - Date.parse(elapsedStart) : NaN;
-  const remaining = running && !waiting && progress?.remaining_seconds && progress.completed < progress.total ? progress.remaining_seconds * 1000 : undefined;
-  const title = complete ? `${stage.name === 'preparation' ? 'Preparation' : 'Training'} complete`
-    : waiting ? run.checkpoint?.name === 'preview-review' ? 'Preview ready for review' : 'Ready to start training'
-      : step ? stepLabels[step.name] ?? step.name : `Waiting to start ${stage.name}`;
+export const trainedOn = (run: Run) => run.training_dataset_name ?? run.training_dataset_id ?? 'Uploaded dataset';
+const span = (from?: string, to?: string) => from && to ? duration(Date.parse(to) - Date.parse(from)) : '—';
 
-  return (
-    <section className="fine-panel fine-job-progress" aria-label={`${stage.name} progress`}>
-      <div className="fine-panel-heading">
-        <div><span>{complete ? 'Finished' : waiting ? 'Your next action' : 'Current step'}</span><h3>{title}</h3></div>
-        <span className={`fine-status fine-status-${stage.status}`}>{stage.status.replaceAll('_', ' ')}</span>
-      </div>
-      {stage.status === 'failed' && <p className="fine-error" role="alert">This step failed. Saved progress remains attached to this job.</p>}
-      {waiting && <p className="fine-panel-copy">{run.checkpoint?.name === 'preview-review' ? 'Open the preview to review your examples before building the full dataset.' : 'Preparation is finished. Training starts only when you authorize it.'}</p>}
-      {progress && !waiting && <>
-        <div className="fine-job-count"><strong>{progress.completed.toLocaleString()} <span>/ {progress.total.toLocaleString()}</span></strong><span>{percentage === undefined ? 'In progress' : `${percentage}%`}</span></div>
-        {percentage !== undefined && <div className="fine-progress-track" role="progressbar" aria-label={`${stepLabels[progress.step] ?? progress.step} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentage}><span style={{ width: `${percentage}%` }} /></div>}
-      </>}
-      {!complete && !waiting && <div className="fine-job-timing">
-        <div><span>Step elapsed</span><strong>{Number.isFinite(elapsed) && elapsed >= 0 ? elapsed < 60000 ? 'Less than a minute' : duration(elapsed) : 'Not started'}</strong></div>
-        <div><span>Estimated step remaining</span><strong>{run.state_stale ? 'Unavailable · state is out of date' : !running ? 'Unavailable · not running' : remaining ? `About ${duration(remaining)}` : progress?.completed === progress?.total && progress?.total ? 'Finishing up…' : 'Estimating as progress arrives…'}</strong></div>
-      </div>}
-      {!complete && !waiting && <p className="fine-action-note">{progress ? 'Counts apply to this step, not the final accepted dataset size. ' : ''}Time estimates use worker progress retained in Temporal heartbeats and survive page reloads. Later steps and review waits are not included; retries and changing model speed can affect the estimate.</p>}
-      <StepStates caption={`${stage.name === 'preparation' ? 'Preparation' : 'Training'} steps`} steps={stage.steps} />
-    </section>
-  );
+type Result = 'accepted' | 'not_compared' | 'needs_improvement';
+const results: Record<Result, { label: string; detail: string; glyph: string }> = {
+  accepted: { label: 'Accepted', detail: 'Beat the base model', glyph: '✓' },
+  not_compared: { label: 'Not compared', detail: 'No evaluation questions', glyph: '–' },
+  needs_improvement: { label: 'Needs improvement', detail: 'Under 70% correct or no gain', glyph: '!' },
+};
+// result is a finished training's evaluation outcome; runs still going or closed early have none.
+export function result(run: Run): Result | null {
+  if (run.status === 'needs_improvement') return 'needs_improvement';
+  if (run.status !== 'completed') return null;
+  return run.evaluation_result ?? 'accepted';
 }
 
-function ArtifactDownload({ run, artifact }: { run: Run; artifact: 'adapter' | 'dataset' }) {
-  const request = useRef<AbortController | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [error, setError] = useState('');
-  const [sent, setSent] = useState(false);
-  useEffect(() => () => request.current?.abort(), []);
-  const dataset = artifact === 'dataset';
-  const title = dataset ? 'Prepared Dataset' : 'Published Adapter';
-  const filename = dataset ? 'dataset.jsonl' : 'adapter.gguf';
-  if (!(dataset ? run.dataset_available : run.adapter_available)) return null;
+// setupPath opens the training setup for a dataset version; back says where its back link goes.
+export const setupPath = (dataset: string, version: number, back: Record<string, string> = {}) =>
+  `/fine-tuning?${new URLSearchParams({ view: 'train', dataset, version: String(version), ...back })}`;
+const addDocumentsPath = (dataset: string) => `/fine-tuning?${new URLSearchParams({ view: 'prepare', dataset })}`;
 
-  async function download() {
-    if (request.current || run.state_stale) return;
+// liveProgress is the training step's progress while the worker reports it.
+function liveProgress(run: Run) {
+  const progress = run.progress;
+  return run.status === 'running' && !run.state_stale && progress?.total && progress.step === run.step ? progress : undefined;
+}
+
+function TrainingStepCell({ run }: { run: Run }) {
+  const progress = liveProgress(run);
+  const outcome = result(run);
+  if (outcome) return <><span className={`prep-main${outcome === 'accepted' ? ' dash-done-text' : ''}`}>{outcome === 'needs_improvement' ? 'Adapter trained' : <><span aria-hidden="true">✓ </span>Adapter ready</>}</span><span className="prep-sub">Took {span(run.started_at, run.closed_at)}</span></>;
+  if (run.status === 'failed') return <><span className="prep-main">Failed during {(trainingStepLabels[failedStep(run)?.name ?? run.step ?? ''] ?? 'training').toLowerCase()}</span><span className="prep-sub">Open for the reason</span></>;
+  if (run.status === 'stopped') return <><span className="prep-main">Stopped</span><span className="prep-sub">Cancelled · cannot resume</span></>;
+  if (run.status === 'queued') return <><span className="prep-main">Waiting for a worker</span><span className="prep-sub">Not started</span></>;
+  const percent = progress ? Math.min(100, Math.floor(progress.completed / progress.total * 100)) : null;
+  return <>
+    <span className="prep-main">{trainingStepLabels[run.step ?? ''] ?? 'Training'}</span>
+    {percent !== null && <div className="prep-track" role="progressbar" aria-label="Training progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div>}
+    {progress?.remaining_seconds ? <span className="dash-eta">{timeLeft(progress.remaining_seconds * 1000)} left</span> : null}
+  </>;
+}
+
+function ResultCell({ run }: { run: Run }) {
+  const outcome = result(run);
+  if (!outcome) return <span className="prep-sub">{active(run) ? 'After evaluation' : '—'}</span>;
+  return <><span className={`train-result train-result-${outcome}`}><span aria-hidden="true">{results[outcome].glyph}</span>{results[outcome].label}</span><span className="prep-sub">{results[outcome].detail}</span></>;
+}
+
+// trainingLabel is a training's status in a few words, such as "Training · 35% · 4 min left"
+// while it runs and "Trained · Accepted" once it finishes.
+export function trainingLabel(run: Run) {
+  const outcome = result(run);
+  if (outcome) return `Trained · ${results[outcome].label}`;
+  if (run.status === 'failed') return 'Training failed';
+  if (run.status === 'stopped') return 'Training stopped';
+  if (run.status === 'queued') return 'Training queued';
+  const progress = liveProgress(run);
+  if (!progress) return 'Training';
+  const left = progress.remaining_seconds ? ` · ${timeLeft(progress.remaining_seconds * 1000)} left` : '';
+  return `Training · ${Math.min(100, Math.floor(progress.completed / progress.total * 100))}%${left}`;
+}
+
+// useDatasetTrainings loads a dataset's training runs, newest first, and keeps them
+// current while one is in progress.
+export function useDatasetTrainings(datasetID: string | undefined, visible: boolean) {
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!visible || !datasetID) return;
     const controller = new AbortController();
-    request.current = controller;
-    setDownloading(true);
-    setError('');
-    setSent(false);
-    try {
-      const blob = await api.downloadTrainingArtifact(run.workflow_id, run.run_id, artifact, controller.signal);
-      if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      try {
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-      } finally {
-        link.remove();
-        URL.revokeObjectURL(url);
+    void (async () => {
+      while (!controller.signal.aborted) {
+        try {
+          const page = await api.trainingRuns('', controller.signal, '', { mode: 'training', targetDatasetID: datasetID, pageSize: 50, order: 'newest' });
+          if (controller.signal.aborted) return;
+          setRuns(page.runs ?? []);
+          setError('');
+          setLoading(false);
+          if (!(page.runs ?? []).some(active)) return;
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          setError(requestMessage(err, 'Could not load trainings.'));
+          setLoading(false);
+        }
+        await retryDelay(controller.signal);
       }
-      setSent(true);
-    } catch (err) {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : `Could not download ${artifact}.`);
-    } finally {
-      if (!controller.signal.aborted) setDownloading(false);
-      request.current = null;
-    }
-  }
-
-  return (
-    <section className="fine-panel" aria-label={title}>
-      <div className="fine-panel-heading"><div><span>{dataset ? 'Preparation · Completed artifact' : 'Training · Published artifact'}</span><h3>{title}</h3></div></div>
-      <p className="fine-panel-copy">{dataset ? `${run.dataset_record_count} verified examples. Download your dataset as JSONL, including small test datasets that are not ready for training.` : "Download this job's published adapter. The service checks availability again when you download."}</p>
-      {error && <p className="fine-error" role="alert">Could not download {artifact}: {error}</p>}
-      <div className="fine-actions">
-        <button className="btn btn-primary" type="button" disabled={downloading || run.state_stale} onClick={() => void download()}>
-          {downloading ? 'Downloading…' : error ? 'Retry Download' : dataset ? 'Download Dataset' : 'Download Adapter'}
-        </button>
-        <span className="fine-action-note" role="status">
-          {run.state_stale ? 'Refresh to confirm current job state before downloading.' : sent ? 'Download sent to your browser.' : downloading ? `Fetching ${artifact}…` : `Saves as ${filename}.`}
-        </span>
-      </div>
-    </section>
-  );
-}
-
-function EvaluationResults({ run }: { run: Run }) {
-  const [report, setReport] = useState<TrainingEvaluation | null>(null);
-  const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
-
-  useEffect(() => {
-    if (!run.evaluation_available) return;
-    const controller = new AbortController();
-    setReport(null);
-    setError('');
-    api.trainingEvaluation(run.workflow_id, run.run_id, controller.signal)
-      .then((result) => { if (!controller.signal.aborted) setReport(result); })
-      .catch((err) => {
-        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load evaluation results.');
-      });
+    })();
     return () => controller.abort();
-  }, [run.workflow_id, run.run_id, run.evaluation_available, retry]);
-
-  return (
-    <section className="fine-panel training-evaluation" aria-label="Evaluation Results">
-      <div className="fine-panel-heading">
-        <div><span>Training · Evaluation</span><h3>Evaluation Results</h3></div>
-        {report && <span className="fine-status">{report.accepted ? 'Accepted' : 'Needs improvement'}</span>}
-      </div>
-      {!run.evaluation_available ? (
-        <p role="status">{run.status === 'failed' ? 'This job failed without an evaluation report. No evaluation scores are available.' : 'No evaluation report is available yet. Refresh the job to check again.'}</p>
-      ) : error ? (
-        <>
-          <p className="fine-error" role="alert">Could not load evaluation results: {error}</p>
-          <button className="btn btn-secondary" type="button" onClick={() => { setError(''); setRetry((value) => value + 1); }}>Retry Evaluation</button>
-        </>
-      ) : !report ? <p role="status">Loading evaluation results…</p> : (
-        <>
-          <p className="fine-panel-copy">Scores use normalized exact match (case and whitespace), not semantic or manual factual grading. Acceptance is the saved evaluation decision; it does not mean an adapter has been published or is available to download.</p>
-          <div className="fine-run-facts">
-            <span><strong>Base correct</strong>{report.base_correct} / {report.total}</span>
-            <span><strong>Adapter correct</strong>{report.adapter_correct} / {report.total}</span>
-          </div>
-          <div className="fine-records">
-            {report.answers.map((answer, index) => (
-              <article className="fine-record" key={index}>
-                <div className="fine-record-number">{String(index + 1).padStart(2, '0')}</div>
-                <div className="fine-record-fields">
-                  <details>
-                    <summary>{answer.prompt}</summary>
-                    <p><strong>Expected:</strong> {answer.expected}</p>
-                    <p><strong>Base answer:</strong> {answer.base_answer}</p>
-                    <p><strong>Adapter answer:</strong> {answer.adapter_answer}</p>
-                  </details>
-                </div>
-              </article>
-            ))}
-          </div>
-          {report.answers.length === 0 && <p>No answer details were saved in this report.</p>}
-        </>
-      )}
-    </section>
-  );
+  }, [visible, datasetID]);
+  return { runs, error, loading };
 }
 
-export function StartPreparedTraining({ run, onRefresh, onStarted }: { run: Run; onRefresh: () => void; onStarted?: () => void }) {
-  const { trainingSubmission, startPreparedTraining } = useFineTuningRunner();
-  const submission = trainingSubmission(run);
-  const mounted = useRef(false);
+// DatasetTrainings is the Training runs tab of a dataset's page: every training of
+// the dataset, newest first, 10 per page like the dashboard.
+export function DatasetTrainings({ runs, error, loading, trainPath, trainingReady }: { runs: Run[]; error: string; loading: boolean; trainPath: string; trainingReady: boolean }) {
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(runs.length / 10));
+  const shown = Math.min(page, pages - 1);
+  const rows = runs.slice(shown * 10, shown * 10 + 10);
+  const running = runs.some(active);
+  const actionLabel = runs.length ? 'Retrain' : 'Start training';
+  const blocked = running ? 'Wait for the current training run to finish before starting another.' : !trainingReady ? 'This version needs at least 20 training records. Add documents in the Dataset tab to prepare more.' : '';
+  const action = blocked ? <button className="btn btn-primary" type="button" disabled>{actionLabel}</button>
+    : <Link className="btn btn-primary" to={trainPath}>{actionLabel}</Link>;
+  return <>
+    {error && <p className="prep-warning" role="status">Could not refresh trainings: {error} Retrying automatically.</p>}
+    {loading && <p className="prep-copy" role="status">Loading training runs…</p>}
+    {!loading && runs.length > 0 && <div className="ds-training-heading">
+      <p className="prep-copy">{blocked || 'Retraining starts a new run from this dataset version. Earlier runs are kept.'}</p>
+      {action}
+    </div>}
+    {runs.length > 0 && <div className="catalog-table-wrap prep-table-wrap"><table className="catalog-table prep-table dash-table train-table">
+      <caption className="prep-sr-only">Training runs of this dataset</caption>
+      <thead><tr><th scope="col">Version</th><th scope="col">Status</th><th scope="col">Step</th><th scope="col">Result</th><th scope="col">Date created</th><th scope="col"><span className="prep-sr-only">Training details</span></th></tr></thead>
+      <tbody>
+        {rows.map((run) => <tr key={runKey(run)}>
+          <td><Link className="prep-run-link" to={trainingPath(run)}>{run.training_dataset_version ? `Version ${run.training_dataset_version}` : 'Version —'}</Link><span className="prep-sub">{baseModelName}</span></td>
+          <td data-label="Status"><Badge run={run} />{run.state_stale && active(run) && <span className="prep-sub prep-stale-tag">Last known status</span>}</td>
+          <td data-label="Step"><TrainingStepCell run={run} /></td>
+          <td data-label="Result"><ResultCell run={run} /></td>
+          <td data-label="Date created">{date(run.started_at)}</td>
+          <td className="prep-row-action"><Link className="btn btn-secondary" aria-label={`Details of training on version ${run.training_dataset_version ?? ''}, created ${date(run.started_at)}`} to={trainingPath(run)}>Details</Link></td>
+        </tr>)}
+      </tbody>
+    </table></div>}
+    {pages > 1 && <nav className="dash-pager" aria-label="Pages">
+      <span>Showing {shown * 10 + 1}–{shown * 10 + rows.length} of {runs.length} · page {shown + 1} of {pages}</span>
+      <div className="prep-actions">
+        <button className="btn btn-secondary" type="button" disabled={shown === 0} onClick={() => setPage(shown - 1)}>← Previous</button>
+        <button className="btn btn-secondary" type="button" disabled={shown === pages - 1} onClick={() => setPage(shown + 1)}>Next →</button>
+      </div>
+    </nav>}
+    {!loading && !runs.length && !error && <div className="empty-state ds-training-empty"><h3>No training runs yet</h3><p>{blocked || 'Train a model with this dataset. Review the settings before starting.'}</p>{action}</div>}
+  </>;
+}
+
+const settingFields: [keyof TrainingOptions, string, 'fineTuningMaximumEpochs' | 'fineTuningLearningRate' | 'fineTuningBatchSize' | 'fineTuningLoRARank' | 'fineTuningLoRAAlpha' | 'fineTuningShuffleSeed', string][] = [
+  ['maximum_epochs', 'Maximum epochs', 'fineTuningMaximumEpochs', '1'], ['learning_rate', 'Learning rate', 'fineTuningLearningRate', 'any'], ['batch_size', 'Batch size', 'fineTuningBatchSize', '1'],
+  ['lora_rank', 'LoRA rank', 'fineTuningLoRARank', '1'], ['lora_alpha', 'LoRA alpha', 'fineTuningLoRAAlpha', 'any'], ['seed', 'Random seed', 'fineTuningShuffleSeed', '1'],
+];
+
+// TrainingSetup starts a training run on one saved dataset version.
+export function TrainingSetup({ visible }: { visible: boolean }) {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const { models, loading: modelsLoading, loadModels } = useModelList();
+  const { submitting, error, trainingActivity, adopting, startDatasetTraining } = useFineTuningRunner();
+  const datasetID = params.get('dataset') ?? '';
+  const version = Number(params.get('version'));
+  const [dataset, setDataset] = useState<PreparationDataset | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [training, setTraining] = useState<TrainingOptions>(DEFAULT_TRAINING_OPTIONS);
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => { void loadModels(); }, [loadModels]);
   useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-  const waiting = run.status === 'waiting' && run.stage === 'preparation' && !!run.checkpoint?.id
-    && run.checkpoint.name === 'start-training' && run.checkpoint.stage === 'preparation' && !run.checkpoint.step
-    && run.stages.some((stage) => stage.name === 'preparation' && stage.status === 'completed');
-  const submitting = submission?.status === 'sending';
-  const uncertain = submission?.status === 'uncertain';
-  const accepted = submission?.status === 'accepted';
-  if (run.preparation_only || (!waiting && !submission)) return null;
+    if (!visible || !datasetID) return;
+    const controller = new AbortController();
+    setLoadError('');
+    api.preparationDataset(datasetID, controller.signal).then((next) => setDataset(next), (err) => {
+      if (!controller.signal.aborted) setLoadError(requestMessage(err, 'Could not load this dataset.'));
+    });
+    return () => controller.abort();
+  }, [visible, datasetID, attempt]);
+  useEffect(() => { if (visible) heading.current?.focus(); }, [visible]);
 
-  async function handleStart() {
-    if (await startPreparedTraining(run) && mounted.current) {
-      onRefresh();
-      onStarted?.();
-    }
-  }
+  const back = params.get('preparation') && params.get('run') ? { to: `/fine-tuning?${new URLSearchParams({ preparation: params.get('preparation')!, run: params.get('run')!, details: 'trainings' })}`, label: `${dataset?.name ?? 'Dataset'} · training runs` }
+    : params.get('training') && params.get('run') ? { to: `/fine-tuning?${new URLSearchParams({ training: params.get('training')!, run: params.get('run')! })}`, label: 'Training run' }
+      : { to: '/fine-tuning', label: 'Dashboard' };
+  // Counts come from the dataset's latest version; an older version shows only its number.
+  const latest = !!dataset && dataset.version === version;
+  const evaluation = dataset ? Math.min(dataset.validation_questions, dataset.validation_needed) + Math.min(dataset.test_questions, dataset.test_needed) : 0;
+  const evaluationNeeded = dataset ? dataset.validation_needed + dataset.test_needed : 0;
+  const modelInstalled = !!models?.data.some((model) => model.id === FINE_TUNING_MODEL_ID);
+  const invalidSetting = settingFields.find(([key]) => !Number.isFinite(training[key]) || training[key] <= 0);
+  const issues: { message: string; link?: ReactNode }[] = [];
+  if (!datasetID || !Number.isInteger(version) || version < 1) issues.push({ message: 'Open training from a dataset with a saved version.', link: <Link to="/fine-tuning">Go to the dashboard</Link> });
+  else if (!dataset) issues.push({ message: loadError ? 'The dataset could not be loaded.' : 'Wait for the dataset to load.' });
+  else if (latest && !dataset.training_ready) issues.push({ message: `This version has ${records(dataset.training_records)} for training; training needs 20.`, link: <Link to={addDocumentsPath(dataset.id)}>Add documents</Link> });
+  if (!modelsLoading && !modelInstalled) issues.push({ message: `Install ${baseModelName} from the Catalog.`, link: <Link to="/catalog">Open the Catalog</Link> });
+  if (invalidSetting) issues.push({ message: `Enter a positive ${invalidSetting[1].toLowerCase()}.` });
+  if (trainingActivity?.path) issues.push({ message: 'Another training is already queued or running; one training runs at a time.', link: <Link to={trainingActivity.path}>Open it</Link> });
+  if (adopting) issues.push({ message: 'Checking for trainings in progress…' });
+  const ready = !issues.length && !submitting;
 
-  return (
-    <section className="fine-panel" aria-label="Start prepared training">
-      <div className="fine-panel-heading">
-        <div><span>Preparation complete</span><h3>Dataset Prepared</h3></div>
-      </div>
-      <p className="fine-panel-copy">Preparation is complete. Start Training uses this job's prepared dataset and the training settings saved when the job was submitted.</p>
-      {!run.training_ready && <p className="fine-action-note" role="status">This dataset has {run.dataset_record_count} examples and is not training-ready. Training needs at least 20 training, 10 validation, and 20 protected test examples, with sufficient distinct facts and valid splits. Small capped datasets are for preparation tests; download this dataset or prepare a larger one to train.</p>}
-      {submission?.error && <p className="fine-error" role="alert">{submission.error}</p>}
-      <div className="fine-review-actions">
-        <span className="fine-action-note" role="status">
-          {accepted ? 'Training authorized. Follow the job state for training progress.'
-            : uncertain ? 'Could not confirm authorization. Retry Start Training sends the same submission; it does not create another job.'
-              : submitting ? 'Requesting Training authorization…'
-                : run.state_stale ? 'Refresh to confirm the current job state before starting Training.'
-                  : !run.training_ready ? 'Start Training is unavailable for this dataset.'
-                    : waiting ? 'Training will not start until you choose Start Training.'
-                    : 'Start Training is available only at the completed Preparation checkpoint.'}
-        </span>
-        <button className="btn btn-primary" type="button" disabled={submitting || accepted || (!uncertain && (!waiting || run.state_stale || !run.training_ready))} onClick={() => void handleStart()}>
-          {submitting ? 'Submitting…' : uncertain ? 'Retry Start Training' : accepted ? 'Training Authorized' : 'Start Training'}
-        </button>
-      </div>
-    </section>
-  );
-}
+  const start = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!ready || !dataset) return;
+    const run = await startDatasetTraining(training, { id: dataset.id, version });
+    if (run) navigate(trainingPath(run));
+  };
 
-function StepStates({ caption, steps }: { caption: string; steps: TrainingStep[] }) {
-  return (
-    <div className="fine-step-plan">
-      <h4>{caption}</h4>
-      <ol aria-label={caption}>
-        {steps.map((step, index) => (
-          <li key={step.name} className={`fine-step-item fine-step-${step.status}`} aria-current={step.status === 'running' ? 'step' : undefined}>
-            <span className="fine-step-marker" aria-hidden="true">{step.status === 'completed' ? '✓' : step.status === 'failed' ? '!' : index + 1}</span>
-            <div><strong>{stepLabels[step.name] ?? step.name}</strong><span>{step.status.replaceAll('_', ' ') || 'Pending'}{step.attempt > 1 ? ` · Attempt ${step.attempt}` : ''}</span></div>
-            {step.closed_at && <span className="fine-step-time">{formatDate(step.closed_at)}</span>}
-          </li>
-        ))}
-      </ol>
-      {steps.length === 0 && <p className="fine-action-note">No steps reported yet.</p>}
+  return <>
+    <Link className="prep-back" to={back.to}>← {back.label}</Link>
+    <div className="page-header-with-action prep-heading">
+      <div><h2 ref={heading} tabIndex={-1}>Train with {dataset?.name ?? 'this dataset'}</h2><p className="page-description">Train an adapter from this dataset version. Training runs on its own and does not change the dataset.</p></div>
     </div>
-  );
+    <div className="fine-setup-wrapper">
+      <form className="fine-configure-view" onSubmit={start}>
+        <div className="fine-preparation-fields">
+          <section className="fine-panel" aria-labelledby="train-dataset-title">
+            <div className="fine-panel-heading"><div><span>Training dataset</span><h3 id="train-dataset-title">{dataset ? `${dataset.name} · version ${version}` : 'Dataset'}</h3></div>{dataset && latest && <span className={`fine-status ${dataset.training_ready ? 'fine-status-completed' : 'fine-status-stopped'}`}>{dataset.training_ready ? '✓ Ready for training' : 'Not ready'}</span>}</div>
+            {loadError && !dataset && <p className="fine-error" role="alert">Could not load the dataset: {loadError} <button className="btn btn-secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Try again</button></p>}
+            {!dataset && !loadError && <p className="prep-copy" role="status">Loading the dataset…</p>}
+            {dataset && <>
+              {latest ? <p className="fine-panel-copy">{records(dataset.training_records)} for training from {dataset.documents.length} {dataset.documents.length === 1 ? 'document' : 'documents'} · {evaluationNeeded ? `${evaluation} of ${evaluationNeeded} evaluation questions` : 'no evaluation questions'}</p>
+                : <p className="fine-panel-copy">Training uses version {version} as it was saved. The latest version is {dataset.version}.</p>}
+              {latest && evaluationNeeded > 0 && evaluation < evaluationNeeded && <p className="fine-action-note">Without all its evaluation questions, the adapter is trained without being compared with the base model. Add documents to the dataset to add them.</p>}
+              <div className="fine-actions"><Link className="btn btn-secondary" to={back.to}>View dataset</Link></div>
+            </>}
+          </section>
+
+          <section className="fine-panel train-settings" aria-labelledby="train-settings-title">
+            <div className="fine-panel-heading"><div><span>Settings</span><h3 id="train-settings-title">Base model and settings</h3></div></div>
+            <div className="fine-supported-model">
+              <div><strong>{baseModelName}</strong><code>{FINE_TUNING_MODEL_ID}</code></div>
+              <span className={`fine-status ${modelInstalled ? 'fine-status-completed' : 'fine-status-stopped'}`}>{modelsLoading ? 'Checking' : modelInstalled ? 'Installed' : 'Not installed'}</span>
+            </div>
+            {(() => {
+              const field = ([key, label, tooltip, step]: typeof settingFields[number]) => <div className="form-group" key={key}>
+                <FieldLabel htmlFor={`train-${key}`} tooltipKey={tooltip}>{label}</FieldLabel>
+                <input id={`train-${key}`} className="form-input" type="number" required min={0} step={step} value={Number.isNaN(training[key]) ? '' : training[key]} disabled={submitting} onChange={(event) => setTraining((current) => ({ ...current, [key]: event.target.valueAsNumber }))} />
+              </div>;
+              return <>
+                <div className="fine-recipe-columns">{settingFields.slice(0, 3).map(field)}</div>
+                <details className="fine-recipe-details">
+                  <summary>Advanced settings</summary>
+                  <div className="fine-recipe-columns">{settingFields.slice(3).map(field)}</div>
+                  <div className="fine-actions"><button className="btn btn-secondary" type="button" disabled={submitting} onClick={() => setTraining(DEFAULT_TRAINING_OPTIONS)}>Reset to defaults</button><span className="fine-action-note">These are the server’s defaults.</span></div>
+                </details>
+              </>;
+            })()}
+          </section>
+          {error && <p className="fine-error" role="alert">Could not start training: {error}</p>}
+        </div>
+        <div className="fine-preview-action-bar" aria-label="Start training">
+          <div aria-live="polite">
+            <strong>{ready ? 'Ready to start training' : issues.length ? `${issues.length} ${issues.length === 1 ? 'requirement' : 'requirements'} remaining` : 'Starting…'}</strong>
+            {issues[0] ? <span>{issues[0].message} {issues[0].link}</span> : <span>Trains on {dataset?.name} version {version}{latest ? ` (${records(dataset.training_records)})` : ''}. You can leave this screen; training keeps running.</span>}
+          </div>
+          <button className="btn btn-primary" type="submit" disabled={!ready}>{submitting ? 'Starting…' : 'Start training'}</button>
+        </div>
+      </form>
+    </div>
+  </>;
 }
 
-// Keep unsubmitted edits across in-app navigation. Submitted snapshots belong
-// to the provider so uncertain retries cannot change their input.
-function PreviewReview({ run, savedRecords, onRefresh }: { run: Run; savedRecords: TrainingPreviewRecord[]; onRefresh: () => void }) {
-  const { previewSubmission, continuePreview } = useFineTuningRunner();
-  const submission = previewSubmission(run);
-  const draftKey = JSON.stringify([run.workflow_id, run.run_id, run.checkpoint?.id]);
-  const [draft, setDraft] = useState(() => (submission?.request.records ?? previewDrafts.get(draftKey) ?? savedRecords).map((record) => ({ ...record })));
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-  const waiting = run.status === 'waiting' && run.checkpoint?.name === 'preview-review'
-    && run.checkpoint.stage === 'preparation' && run.checkpoint.step === 'preview';
-  const [open, setOpen] = useState(waiting);
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => { if (waiting) setOpen(true); }, [waiting]);
-  useEffect(() => {
-    const element = dialog.current;
-    if (!element || !open) return;
-    element.showModal();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { element.close(); document.body.style.overflow = previousOverflow; };
-  }, [open]);
-  const submitting = submission?.status === 'sending';
-  const uncertain = submission?.status === 'uncertain';
-  const accepted = submission?.status === 'accepted';
-  const editable = waiting && !run.state_stale && (!submission || submission.status === 'rejected');
-  const records = submission && submission.status !== 'rejected' ? submission.request.records : waiting ? draft : savedRecords;
-  const validRecords = records.length > 0 && records.every((record) => record.prompt.trim() && record.target.trim());
+// TrainingRunScreen is one training run's page: live progress, then its result.
+export function TrainingRunScreen({ workflowID, runID, visible }: { workflowID: string; runID: string; visible: boolean }) {
+  const [run, setRun] = useState<Run | null>(null);
+  const [error, setError] = useState<{ text: string; missing: boolean } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [source, setSource] = useState<Run | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
 
-  async function handleContinue() {
-    if (!uncertain && !validRecords) return;
-    if (await continuePreview(run, records)) {
-      previewDrafts.delete(draftKey);
-      if (mounted.current) { setOpen(false); onRefresh(); }
-    }
+  useEffect(() => {
+    if (!visible) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      try {
+        const next = await api.trainingRun(workflowID, runID, controller.signal);
+        if (controller.signal.aborted) return;
+        setRun(next);
+        setError(null);
+        if (active(next)) timer = setTimeout(load, next.status === 'running' ? 1000 : 3000);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        const missing = err instanceof ApiError && err.status === 404;
+        setError({ text: requestMessage(err, 'Could not load this training run.'), missing });
+        if (!missing) timer = setTimeout(load, 5000);
+      }
+    };
+    void load();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [visible, workflowID, runID, attempt]);
+
+  // Back goes to the dataset's Training runs tab, on its newest preparation run's page.
+  const datasetID = run?.training_dataset_id;
+  useEffect(() => {
+    if (!visible || !datasetID) return;
+    const controller = new AbortController();
+    api.trainingRuns('', controller.signal, '', { mode: 'preparation', targetDatasetID: datasetID, pageSize: 1 })
+      .then((page) => setSource(page.runs?.[0] ?? null), () => {});
+    return () => controller.abort();
+  }, [visible, datasetID]);
+
+  useEffect(() => { if (visible) (run ? document.getElementById('train-card-title') : heading.current)?.focus(); }, [visible, !!run]);
+
+  const refresh = () => setAttempt((value) => value + 1);
+  return <>
+    <Link className="prep-back" to={source ? `/fine-tuning?${new URLSearchParams({ preparation: source.workflow_id, run: source.run_id, details: 'trainings' })}` : '/fine-tuning'}>← {source && run ? `${trainedOn(run)} · training runs` : 'Dashboard'}</Link>
+    {run ? <>
+      {error && <p className="prep-warning" role="status">Could not refresh this run: {error.text} Retrying automatically. <button className="prep-inline-link" type="button" onClick={refresh}>Try again</button></p>}
+      <TrainingRunView run={run} visible={visible} />
+    </> : error?.missing ? <section className="fine-panel"><h2 ref={heading} tabIndex={-1}>Training run not found</h2><p>This training run does not exist or is no longer available.</p><Link className="btn btn-secondary" to="/fine-tuning">Back to the dashboard</Link></section>
+      : error ? <div className="prep-load-error" role="alert"><span>Could not load this training run: {error.text} Retrying automatically.</span><button className="btn btn-secondary" type="button" onClick={refresh}>Try again</button></div>
+        : <p className="prep-copy" role="status">Loading training run…</p>}
+  </>;
+}
+
+function TrainingRunView({ run, visible }: { run: Run; visible: boolean }) {
+  const now = useNow(active(run) && visible);
+  const stage = run.stages.find((item) => item.name === 'training') ?? run.stages.at(-1);
+  const steps = stage?.steps ?? [];
+  const outcome = result(run);
+  const progress = liveProgress(run);
+  const percent = progress ? Math.min(100, Math.floor(progress.completed / progress.total * 100)) : null;
+  const index = Math.max(0, trainingSteps.indexOf(run.step ?? '')) + 1;
+  const settings = run.training_settings;
+  const [detailTab, setDetailTab] = useState('');
+  const previousStatus = useRef(run.status);
+  useEffect(() => {
+    if (previousStatus.current !== run.status && (run.status === 'failed' || notAccepted(run))) setDetailTab('issues');
+    previousStatus.current = run.status;
+  }, [run.status, run.evaluation_result]);
+  const issues = runIssues(run);
+  const evaluation = useEvaluation(run);
+  const openIssues = () => { setDetailTab('issues'); document.getElementById('run-tab-issues')?.focus(); };
+  const stepState = (name: string): StepState => {
+    const status = steps.find((item) => item.name === name)?.status;
+    if (status === 'completed' || status === 'failed') return status;
+    if (name !== run.step) return 'pending';
+    return run.status === 'stopped' ? 'stopped' : run.status === 'running' ? 'running' : 'pending';
+  };
+  const chips = <ol className="step-chips" aria-label="Steps">{trainingSteps.map((name) => {
+    const state = stepState(name);
+    return <li key={name} className={`step-chip step-chip-${state}`} aria-current={state === 'running' ? 'step' : undefined}><span aria-hidden="true">{stepGlyphs[state]}</span>{trainingStepLabels[name]}<span className="prep-sr-only">: {stepStateLabels[state].toLowerCase()}</span></li>;
+  })}</ol>;
+
+  let card: ReactNode;
+  if (outcome) {
+    const titles: Record<Result, string> = { accepted: 'The adapter beat the base model', not_compared: 'The adapter is trained', needs_improvement: 'The adapter did not meet the acceptance requirements' };
+    const copies: Record<Result, string> = {
+      accepted: 'It answered at least 70% of the evaluation questions correctly, more than the base model.',
+      not_compared: 'This dataset had no evaluation questions, so the adapter was not compared with the base model.',
+      needs_improvement: 'Result: Needs improvement. Review Issues for the available evaluation evidence and suggested next steps.',
+    };
+    card = <section className={`fine-panel done-card train-done train-done-${outcome}`} aria-labelledby="train-card-title">
+      <div className="done-top"><span className="dash-done-mark" aria-hidden="true">{results[outcome].glyph}</span><div>
+        <span className="fine-eyebrow">{outcome === 'needs_improvement' ? 'Not accepted' : results[outcome].label}</span>
+        <h3 id="train-card-title" tabIndex={-1}>{titles[outcome]}</h3>
+        <p className="prep-copy">{copies[outcome]}</p>
+        {issues.length > 0 && <button className="prep-inline-link run-issues-link" type="button" onClick={openIssues}>View issues ({issues.length})</button>}
+      </div></div>
+      <dl className="done-inline-stats">
+        <div><dt>Trained on</dt><dd>{run.training_dataset_version ? `v${run.training_dataset_version}` : '—'}<small>{trainedOn(run)}</small></dd></div>
+        <div><dt>Took</dt><dd>{span(run.started_at, run.closed_at)}<small>finished {date(run.closed_at)}</small></dd></div>
+        <div><dt>Epochs</dt><dd>{settings ? `Up to ${settings.maximum_epochs}` : '—'}<small>best epoch kept</small></dd></div>
+        <div><dt>Base model</dt><dd>Gemma 3 1B<small>Q8_0</small></dd></div>
+      </dl>
+    </section>;
+  } else if (!active(run)) {
+    const failed = run.status === 'failed';
+    const step = failedStep(run)?.name ?? run.step;
+    card = <section className={`fine-panel live-hero live-hero-${run.status}`} aria-labelledby="train-card-title">
+      <div className="live-gauge">
+        <div className="live-ring live-ring-idle" aria-hidden="true"><span className="ring-text">{failed ? '×' : '■'}</span></div>
+      </div>
+      <div className="live-main">
+        <span className="fine-eyebrow">{failed ? 'Failed' : 'Stopped'} · step {Math.max(0, trainingSteps.indexOf(step ?? '')) + 1} of {trainingSteps.length}</span>
+        <h3 id="train-card-title" tabIndex={-1}>{trainingStepLabels[step ?? ''] ?? 'Training'}</h3>
+        <p className="prep-copy">{failed ? failureText(run) || 'An unexpected error stopped this run. See Issues for the available troubleshooting details.' : 'This training was cancelled and cannot be resumed.'} No adapter was saved; the dataset is unchanged.</p>
+        {issues.length > 0 && <button className="prep-inline-link run-issues-link" type="button" onClick={openIssues}>View issues ({issues.length})</button>}
+      </div>
+      <div className="live-steps">{chips}</div>
+      <div className="live-foot"><p>{[`Ran for ${span(run.started_at, run.closed_at)}`, `${trainedOn(run)}${run.training_dataset_version ? ` v${run.training_dataset_version}` : ''}`, baseModelName].join(' · ')}</p></div>
+    </section>;
+  } else {
+    const queued = run.status === 'queued';
+    const remainingSeconds = progress?.remaining_seconds;
+    const timing = run.status !== 'running' ? '' : remainingSeconds ? `About ${timeLeft(remainingSeconds * 1000)} left` : progress && progress.completed >= progress.total ? 'Finishing up…' : 'Estimating time left…';
+    card = <section className={`fine-panel live-hero live-hero-${queued ? 'queued' : 'running'}`} aria-labelledby="train-card-title">
+      <div className="live-gauge">
+        <div className={`live-ring${percent === null ? queued ? ' live-ring-idle' : ' live-ring-spin' : ''}`} style={{ '--pct': percent ?? 0 } as React.CSSProperties} aria-hidden="true">
+          {percent !== null ? <><span className="ring-num">{percent}%</span><span className="ring-text">of this step</span></> : <span className="ring-text">{queued ? 'Queued' : 'Working'}</span>}
+        </div>
+        {timing && <p className="live-time">{timing}</p>}
+      </div>
+      <div className="live-main">
+        <span className="fine-eyebrow">{queued ? 'Queued' : `Step ${index} of ${trainingSteps.length}`}</span>
+        <h3 id="train-card-title" tabIndex={-1}>{queued ? 'Waiting for a worker' : trainingStepLabels[run.step ?? ''] ?? 'Training'}</h3>
+        <p className="prep-copy">{queued ? 'Training starts on its own when the earlier training finishes. One training runs at a time; preparations do not hold it up.' : stepCopy[run.step ?? ''] ?? 'This training keeps going while you browse.'}</p>
+        {progress && <p className="live-count"><strong>{progress.completed} of {progress.total}</strong> {run.step === 'train' ? 'training steps' : run.step === 'evaluate' ? 'answers · the base model answers every question, then the adapter' : ''}{settings && run.step === 'train' ? ` · up to ${settings.maximum_epochs} ${settings.maximum_epochs === 1 ? 'epoch' : 'epochs'}` : ''}</p>}
+      </div>
+      <div className="live-steps">{chips}</div>
+      <div className="live-foot">
+        <p>{[queued ? `Queued ${duration(now - Date.parse(run.started_at))} ago` : `Running for ${duration(now - Date.parse(run.started_at))}`, `${trainedOn(run)}${run.training_dataset_version ? ` v${run.training_dataset_version}` : ''}`, baseModelName].join(' · ')}</p>
+      </div>
+    </section>;
   }
 
-  function updateRecord(index: number, field: 'prompt' | 'target', value: string) {
-    const updated = draft.map((record, recordIndex) => recordIndex === index ? { ...record, [field]: value } : record);
-    previewDrafts.set(draftKey, updated);
-    setDraft(updated);
-  }
+  // The same details panel as a preparation run: the evaluation first once there is one.
+  const tabs: [string, string][] = [
+    ...(issues.length ? [['issues', `Issues (${issues.length})`] as [string, string]] : []),
+    ...(run.evaluation_available ? [['evaluation', 'Evaluation'] as [string, string]] : []),
+    ...(active(run) ? [] : [['steps', 'Step history'] as [string, string]]),
+    ['settings', 'Training settings'],
+  ];
+  const shownTab = tabs.some(([key]) => key === detailTab) ? detailTab : issues.length && (run.status === 'failed' || notAccepted(run)) ? 'issues' : run.evaluation_available && outcome && outcome !== 'not_compared' ? 'evaluation' : active(run) ? 'settings' : 'steps';
+  return <div className="prep-detail prep-run-detail">
+    {run.state_stale && active(run) && <p className="prep-warning" role="status">Showing the last saved status{run.observed_at ? ` from ${date(run.observed_at)}` : ''}. The training worker is not reporting right now.</p>}
+    {card}
+    <DetailTabs tabs={tabs} shown={shownTab} onSelect={setDetailTab}>
+      {shownTab === 'issues' && <RunIssues key={runKey(run)} run={run} issues={issues} evaluation={evaluation} />}
+      {shownTab === 'evaluation' && <EvaluationResults evaluation={evaluation} />}
+      {shownTab === 'steps' && <ol className="run-timeline">{trainingSteps.map((name, at) => {
+        const state = stepState(name);
+        const step = steps.find((item) => item.name === name);
+        const detail = state === 'completed' ? `Took ${span(step?.started_at, step?.closed_at)}` : state === 'failed' ? `Failed ${date(step?.closed_at ?? run.closed_at)}${step && step.attempt > 1 ? ` after ${step.attempt} attempts` : ''}` : state === 'stopped' ? `Stopped ${date(run.closed_at)}` : 'Not started';
+        return <li key={name} className={`run-step run-step-${state} fine-step-${state === 'stopped' ? 'failed' : state}`}>
+          <span className="fine-step-marker" aria-hidden="true">{state === 'pending' ? at + 1 : stepGlyphs[state]}</span>
+          <div className="run-step-body"><div className="run-step-title"><strong>{trainingStepLabels[name]}</strong><span className="run-step-state">{stepStateLabels[state]}</span></div><span className="prep-sub">{detail}</span></div>
+        </li>;
+      })}</ol>}
+      {shownTab === 'settings' && <dl className="prep-facts">{([
+        ['Dataset', trainedOn(run)], ['Version', run.training_dataset_version ? `Version ${run.training_dataset_version}` : '—'], ['Base model', settings?.model ?? FINE_TUNING_MODEL_ID],
+        ...settingFields.map(([key, label]) => [label, settings ? settings[key] : '—']),
+        ['Date created', date(run.started_at)], ['Updated', date(run.updated_at)], ['Run ID', `${run.workflow_id} · ${run.run_id}`],
+      ] as [string, string | number][]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
+    </DetailTabs>
+  </div>;
+}
 
-  return (
-    <>
-    <section className="fine-panel fine-preview-launcher" aria-label="Dataset preview">
-      <div><h3>{waiting ? 'Review your preview' : 'Saved preview'}</h3><p>{records.length} {records.length === 1 ? 'example' : 'examples'} · {waiting ? 'Review before building the full dataset.' : 'View the examples saved with this job.'}</p></div>
-      <button className="btn btn-primary" type="button" onClick={() => setOpen(true)}>{waiting ? 'Review Preview' : 'View Preview'}</button>
-    </section>
-    <dialog ref={dialog} className="fine-preview-dialog" aria-labelledby="fine-preview-title" onCancel={() => setOpen(false)} onClose={(event) => { if (!event.currentTarget.open) setOpen(false); }} onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }} onKeyDown={(event) => {
-      if (event.key !== 'Tab') return;
-      const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]')].filter((element) => element.getClientRects().length > 0);
-      const first = controls[0], last = controls.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }}>
-    <section className="fine-panel fine-review-panel" aria-label="Review Examples">
-      <div className="fine-panel-heading">
-        <div><span>Dataset preview · {records.length} {records.length === 1 ? 'example' : 'examples'}</span><h3 id="fine-preview-title">Review examples</h3></div>
-        <button className="btn btn-secondary" type="button" autoFocus onClick={() => setOpen(false)}>Close preview</button>
-      </div>
-      <div className="fine-preview-scroll">
-      <p className="fine-panel-copy">
-        {waiting ? 'Review and edit these examples before building the full dataset. Build dataset does not start training.' : 'Saved preview examples. Review is read-only because this job is not waiting at Preview.'}
-      </p>
-      {editable && <p className="fine-action-note">Closing this preview does not stop preparation. Your edits stay in this browser session as you move between screens; submit them before reloading or closing this browser tab.</p>}
-      {run.preview?.warnings && run.preview.warnings.length > 0 && (
-        <ul aria-label="Preparation warnings">{run.preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
-      )}
-      <div className="fine-records">
-        {records.map((record, index) => {
-          const saved = savedRecords[index];
-          const edited = record.prompt !== saved?.prompt || record.target !== saved?.target;
-          return (
-            <article className="fine-record" key={index}>
-              <div className="fine-record-number" aria-label={`Example ${index + 1} of ${records.length}`}>{index + 1}/{records.length}</div>
-              <div className="fine-record-fields">
-                <FieldLabel tooltipKey="fineTuningPrompt">Input<textarea readOnly={!editable} required aria-invalid={!record.prompt.trim()} aria-describedby={!record.prompt.trim() ? `fine-preview-prompt-error-${index}` : undefined} value={record.prompt} onChange={(event) => updateRecord(index, 'prompt', event.target.value)} /></FieldLabel>
-                {!record.prompt.trim() && <p id={`fine-preview-prompt-error-${index}`} className="fine-error">Enter a nonblank input.</p>}
-                <FieldLabel tooltipKey="fineTuningTarget">Expected output<textarea readOnly={!editable} required aria-invalid={!record.target.trim()} aria-describedby={!record.target.trim() ? `fine-preview-target-error-${index}` : undefined} value={record.target} onChange={(event) => updateRecord(index, 'target', event.target.value)} /></FieldLabel>
-                {!record.target.trim() && <p id={`fine-preview-target-error-${index}`} className="fine-error">Enter a nonblank expected output.</p>}
-                <details><summary>Source evidence</summary><p>{record.evidence}</p></details>
-              </div>
-              <span className="fine-verification review">{accepted ? 'Accepted' : submitting || uncertain ? 'Submitted' : edited ? 'Edited' : waiting ? 'Review' : 'Saved'}</span>
-            </article>
-          );
-        })}
-      </div>
-      {records.length === 0 && <p role="status">No preview examples are available.</p>}
-      {submission?.error && <p className="fine-error" role="alert">{submission.error}</p>}
-      </div>
-      <div className="fine-review-actions">
-        <span className="fine-action-note" role="status">
-          {accepted ? 'Review accepted. Follow the job state for preparation progress.'
-            : uncertain ? 'Could not confirm acceptance. Retry Build dataset sends the same submitted examples. Editing is locked until acceptance is confirmed.'
-              : submitting ? 'Submitting reviewed examples…'
-                : editable ? validRecords ? 'Build dataset continues preparation. Training remains a separate choice.' : 'Complete each input and expected output to continue.'
-                  : 'Build dataset is available only while Preview is waiting for review with current job state.'}
-        </span>
-        <button className="btn btn-primary" type="button" disabled={submitting || accepted || (!uncertain && (!editable || !validRecords))} onClick={() => void handleContinue()}>
-          {submitting ? 'Submitting…' : uncertain ? 'Retry Build dataset' : accepted ? 'Review Accepted' : 'Build dataset'}
-        </button>
-      </div>
-    </section>
-    </dialog>
-    </>
-  );
+function EvaluationResults({ evaluation }: { evaluation: ReturnType<typeof useEvaluation> }) {
+  const { report, error, retry } = evaluation;
+  if (error) return <>
+    <p className="fine-error" role="alert">Could not load evaluation results: {error}</p>
+    <button className="btn btn-secondary" type="button" onClick={retry}>Try again</button>
+  </>;
+  if (!report) return <p className="prep-copy" role="status">Loading evaluation results…</p>;
+  if (report.total === 0) return <p className="prep-copy">This dataset had no evaluation questions, so the adapter was trained without comparing it with the base model. Add documents to the dataset to get evaluation questions for the next training.</p>;
+  return <><dl className="ds-stats">
+    <div><dt>Base model correct</dt><dd>{report.base_correct} / {report.total}</dd></div>
+    <div><dt>Adapter correct</dt><dd className={report.accepted ? 'ds-ok' : ''}>{report.adapter_correct} / {report.total}</dd></div>
+    <div><dt>Result</dt><dd>{report.accepted ? 'Accepted' : 'Needs improvement'}</dd></div>
+  </dl><EvaluationChecks report={report} />
+    <div className="run-evaluation-answers"><h3>Evaluation answers</h3><p className="prep-copy">Compare the expected answer with the base model and adapter. Older reports may not include individual pass results.</p>{report.answers.map((answer, index) => <details className="run-evaluation-answer" key={index}>
+      <summary>{answer.adapter_passed === undefined ? '' : answer.adapter_passed ? '✓ Passed · ' : '× Did not pass · '}{answer.prompt}</summary>
+      <dl><div><dt>Expected answer</dt><dd>{answer.expected}</dd></div><div><dt>Base model</dt><dd>{answer.base_answer || '(Empty answer)'}</dd></div><div><dt>Adapter</dt><dd>{answer.adapter_answer || '(Empty answer)'}</dd></div></dl>
+    </details>)}</div></>;
 }

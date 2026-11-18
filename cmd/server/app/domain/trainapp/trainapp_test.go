@@ -484,6 +484,65 @@ func TestReadState(t *testing.T) {
 	}
 }
 
+func TestReadSavedDatasetTraining(t *testing.T) {
+	for _, test := range []struct {
+		status      tmprl.Status
+		notCompared bool
+		want        string
+	}{
+		{status: tmprl.StatusCompleted, want: "accepted"},
+		{status: tmprl.StatusCompleted, notCompared: true, want: "not_compared"},
+		{status: optimization.StatusNeedsImprovement, want: "needs_improvement"},
+		{status: tmprl.StatusFailed},
+	} {
+		t.Run(string(test.status)+"/"+test.want, func(t *testing.T) {
+			c := new(mocks.Client)
+			api, _ := testAPI(t, c)
+			settings := optimization.Training{MaximumEpochs: 4, BatchSize: 2, LearningRate: 0.0003, Seed: 7, LoRARank: 8, LoRAAlpha: 16}
+			state := tmprl.Run[training.Request, training.Artifacts]{
+				Status: test.status, Stage: "training", Step: "publish",
+				Request:   training.Request{Model: "/private/model.gguf", SavedDataset: &training.SavedDataset{ID: "dataset-AAAAAAAAAAAAAAAAAAAAAAAAAA", Version: 3}, Training: settings},
+				Artifacts: training.Artifacts{Training: optimization.Artifacts{NotCompared: test.notCompared}},
+			}
+			payload, err := converter.GetDefaultDataConverter().ToPayload(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			closed := enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED
+			if test.status == tmprl.StatusFailed {
+				closed = enumspb.WORKFLOW_EXECUTION_STATUS_FAILED
+			}
+			c.On("DescribeWorkflowExecution", mock.Anything, "training-example", "run-2").Return(&workflowservice.DescribeWorkflowExecutionResponse{
+				WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{
+					Execution: &commonpb.WorkflowExecution{WorkflowId: "training-example", RunId: "run-2"},
+					Type:      &commonpb.WorkflowType{Name: "moxie.training.Job"}, Status: closed,
+					Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"moxie.training.job": payload}},
+				},
+			}, nil)
+			history := new(mocks.HistoryEventIterator)
+			history.On("HasNext").Return(false)
+			c.On("GetWorkflowHistory", mock.Anything, "training-example", "run-2", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT).Return(history)
+			w := httptest.NewRecorder()
+			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("response: %d %s", w.Code, w.Body)
+			}
+			var got trainapp.Run
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			wantSettings := trainapp.TrainingOptions{MaximumEpochs: 4, BatchSize: 2, LearningRate: 0.0003, Seed: 7, LoRARank: 8, LoRAAlpha: 16}
+			if got.TrainingDatasetID != "dataset-AAAAAAAAAAAAAAAAAAAAAAAAAA" || got.TrainingDatasetVersion != 3 || got.TrainingSettings != wantSettings || got.EvaluationResult != test.want {
+				t.Fatalf("training run: %+v", got)
+			}
+			// A training run reads its dataset; it never adds to one.
+			if got.TargetDatasetID != "" || got.BaseVersion != 0 || strings.Contains(w.Body.String(), "private") {
+				t.Fatalf("training run exposes a target or private model: %s", w.Body)
+			}
+		})
+	}
+}
+
 func TestReadProgressEstimate(t *testing.T) {
 	for _, mode := range []string{"running", "paused", "stale", "wrong step", "old heartbeat"} {
 		t.Run(mode, func(t *testing.T) {
@@ -763,7 +822,7 @@ func (w *failedDownloadWriter) Write(data []byte) (int, error) {
 }
 
 func TestReadEvaluation(t *testing.T) {
-	for _, name := range []string{"accepted", "rejected", "not ready", "missing file", "malformed"} {
+	for _, name := range []string{"accepted", "rejected", "diagnostics", "not ready", "missing file", "malformed"} {
 		t.Run(name, func(t *testing.T) {
 			api, state, datasetPath := readyTrainingAPI(t, new(mocks.Client))
 			state.Artifacts.Training.Report = "/private/worker/evaluation.json"
@@ -782,6 +841,10 @@ func TestReadEvaluation(t *testing.T) {
 				want.Accepted, want.AdapterCorrect = true, 19
 			case "rejected":
 				state.Status = optimization.StatusNeedsImprovement
+			case "diagnostics":
+				state.Status = optimization.StatusNeedsImprovement
+				want.Checks = []trainapp.AcceptanceCheck{{Code: "answer-score", Actual: 12, Required: 14, Passed: false}}
+				want.Answers[0].AdapterPassed = new(false)
 			case "not ready":
 				state.Artifacts.Training.Report = ""
 				wantStatus = http.StatusNotFound
@@ -821,6 +884,38 @@ func TestReadEvaluation(t *testing.T) {
 			var run trainapp.Run
 			if err := json.Unmarshal(w.Body.Bytes(), &run); err != nil || w.Code != http.StatusOK || run.EvaluationAvailable != (name != "not ready") {
 				t.Fatalf("availability: %+v, %v (%d)", run, err, w.Code)
+			}
+		})
+	}
+}
+
+func TestRunIssueEvidence(t *testing.T) {
+	for _, status := range []tmprl.Status{tmprl.StatusFailed, tmprl.StatusCompleted, tmprl.StatusRunning} {
+		t.Run(string(status), func(t *testing.T) {
+			api, state, path := readyTrainingAPI(t, new(mocks.Client))
+			state.Status = status
+			// Neither source text nor raw errors may cross the diagnostics boundary.
+			data := `{"result":{"source_exclusions":[{"reference":"private-source","reason":"verification rejected example \"secret prompt\": grounding"},{"reference":"private-source","reason":"verification rejected example \"other secret\": task_quality"},{"reference":"private-source","reason":"verification rejected example \"third secret\": grounding"},{"reference":"private-source","reason":"unsupported table"}]}}`
+			if err := os.WriteFile(filepath.Join(filepath.Dir(path), "steps.json"), []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			w := httptest.NewRecorder()
+			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
+			var got trainapp.Run
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusOK {
+				t.Fatalf("run diagnostics: %d %s (%v)", w.Code, w.Body, err)
+			}
+			want := []trainapp.RunIssue{{Code: "grounding", Count: 2}, {Code: "task_quality", Count: 1}, {Code: "preparation-omissions", Count: 1}}
+			if status == tmprl.StatusRunning {
+				want = nil
+			}
+			if !reflect.DeepEqual(got.Issues, want) {
+				t.Fatalf("issues: %+v, want %+v", got.Issues, want)
+			}
+			for _, private := range []string{"secret", "private-source", "unsupported table", "source_exclusions"} {
+				if strings.Contains(w.Body.String(), private) {
+					t.Fatalf("diagnostics exposed %q: %s", private, w.Body)
+				}
 			}
 		})
 	}

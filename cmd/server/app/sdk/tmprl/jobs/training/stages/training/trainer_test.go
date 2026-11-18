@@ -84,7 +84,7 @@ func TestGoMLXTrainerMissingModel(t *testing.T) {
 					adapter = filepath.Join(job.Workdir, "absent-adapter.gguf")
 				}
 				var answers []string
-				answers, err = api.Predict(t.Context(), job, adapter, records)
+				answers, err = api.Predict(t.Context(), job, adapter, records, nil)
 				if answers != nil {
 					t.Errorf("Predict: got %q, want nil answers", answers)
 				}
@@ -175,7 +175,7 @@ func TestGoMLXTrainerNativeSuccess(t *testing.T) {
 		{Prompt: "What is the cost for mooring?", Target: "Private mooring target.", Evidence: "Private mooring evidence.", FactID: "mooring", IndependentPrompt: true},
 	}
 	wantRecords := slices.Clone(records)
-	answers, err := trainer.Predict(ctx, job, "", records)
+	answers, err := trainer.Predict(ctx, job, "", records, nil)
 	if err != nil {
 		t.Fatalf("Predict base: got %v, want nil", err)
 	}

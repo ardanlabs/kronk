@@ -15,7 +15,7 @@ func (Step) Name() string { return "evaluate" }
 
 // Execute merges the evaluation report and ends rejected pipelines.
 func (s Step) Execute(ctx context.Context, input training.StepContext) (tmprl.StepResult[training.Artifacts], error) {
-	output, err := Run(ctx, input.Workspace, input.Trainer, input.Job)
+	output, err := Run(ctx, input.Workspace, input.Trainer, input.Job, input.Publish)
 	if err != nil {
 		return tmprl.StepResult[training.Artifacts]{}, err
 	}
@@ -24,7 +24,7 @@ func (s Step) Execute(ctx context.Context, input training.StepContext) (tmprl.St
 	}
 	artifacts := input.Artifacts
 	artifacts.Report = output.Report
-	artifacts.Accepted = output.Accepted
+	artifacts.Accepted, artifacts.NotCompared = output.Accepted, output.NotCompared
 	result := tmprl.StepResult[training.Artifacts]{Artifacts: artifacts}
 	if !output.Accepted {
 		result.Status = training.StatusNeedsImprovement

@@ -32,7 +32,7 @@ func (s trainer) Train(_ context.Context, job training.TrainingJob, _ func(tmprl
 	}
 	return training.TrainingCandidate{Path: s.path, BestEpoch: 1, TrainingLoss: s.loss}, s.err
 }
-func (trainer) Predict(context.Context, training.TrainingJob, string, []training.Record) ([]string, error) {
+func (trainer) Predict(context.Context, training.TrainingJob, string, []training.Record, func(int)) ([]string, error) {
 	panic("unexpected prediction")
 }
 

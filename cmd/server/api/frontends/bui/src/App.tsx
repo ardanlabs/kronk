@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
@@ -50,7 +50,6 @@ import TestingConfiguration from './components/TestingConfiguration';
 import Accuracy from './components/Accuracy';
 import Efficiency from './components/Efficiency';
 import FineTuning from './components/FineTuning';
-import TrainingRun from './components/TrainingRun';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DownloadProvider } from './contexts/DownloadContext';
@@ -274,7 +273,7 @@ function App() {
                 <Route path="/accuracy" element={<Accuracy />} />
                 <Route path="/efficiency" element={<Efficiency />} />
                 <Route path="/fine-tuning" element={<FineTuning />} />
-                <Route path="/fine-tuning/job" element={<TrainingRun />} />
+                <Route path="/fine-tuning/job" element={<Navigate replace to="/fine-tuning" />} />
                 <Route path="/testing/basic" element={<TestingBasic />} />
                 <Route path="/testing/sampling" element={<TestingSampling />} />
                 <Route path="/testing/configurator" element={<TestingConfiguration />} />

@@ -98,6 +98,40 @@ func TestTrainDatasetRunsDeterministicEpochsAndPreservesBase(t *testing.T) {
 	}
 }
 
+// Without validation records, an epoch's training loss selects the checkpoint.
+func TestTrainDatasetWithoutValidationSelectsByTrainingLoss(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "go")
+	path := filepath.Join(t.TempDir(), "gemma.gguf")
+	writeTestModel(t, path, testConfig(), "gemma3")
+	runtime, err := NewLoRARuntime(path, AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	dataset := PreparedDataset{Training: []TrainingRecord{
+		{Tokens: []int32{1, 4, 5}, Targets: []int32{4, 5, 6}, LossMask: []bool{false, true, true}},
+		{Tokens: []int32{1, 7, 8, 9}, Targets: []int32{7, 8, 9, 10}, LossMask: []bool{false, false, true, true}},
+	}}
+	result, err := runtime.TrainDataset(t.Context(), dataset, TrainingConfig{
+		Epochs: 3, LearningRate: 1e-2, BatchSize: 2, Seed: 42, AdapterCheckpointDirectory: filepath.Join(t.TempDir(), "checkpoints"),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBest := result.Epochs[0]
+	for _, epoch := range result.Epochs {
+		if epoch.ValidationLoss != epoch.TrainingLoss || math.IsNaN(epoch.TrainingLoss) {
+			t.Fatalf("epoch %d selection loss %g, want its training loss %g", epoch.Epoch, epoch.ValidationLoss, epoch.TrainingLoss)
+		}
+		if epoch.TrainingLoss < wantBest.TrainingLoss {
+			wantBest = epoch
+		}
+	}
+	if result.BestEpoch != wantBest.Epoch || validateSelectedCheckpoint(result) != nil {
+		t.Fatalf("selected epoch %d, want %d with an exportable checkpoint: %+v", result.BestEpoch, wantBest.Epoch, result)
+	}
+}
+
 func TestTrainDatasetValidationLossIsEpochLocal(t *testing.T) {
 	t.Setenv("GOMLX_BACKEND", cmp.Or(os.Getenv("GOMLX_BACKEND"), "go"))
 	path := filepath.Join(t.TempDir(), "gemma.gguf")
