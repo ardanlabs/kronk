@@ -7,26 +7,26 @@
 # what I asked for" as a defect, not a pass. Every probe states the invariant it
 # asserts; a probe that cannot assert one reports NO SIGNAL, never PASS.
 #
-# Coverage targets the parts a deployment gets hurt by: constrained decoding
-# (grammar.go), the MTP/speculative decode path (the default model is an 'mtp-'
-# build, so every request goes through it), the Anthropic and Responses API
-# translations, logprobs, and parameter validation.
+# Coverage targets constrained decoding, tool parsing, the Anthropic and
+# Responses API translations, logprobs, and parameter validation. A model name
+# does not establish MTP coverage; use reliability for execution-path assertions.
 #
 # All output lands under $OUT (default <repo>/.tools/adversarial/output).
 #
-# Requires: bash 3.2+ (macOS stock), curl, jq. Nothing else.
+# Requires: bash 3.2+ (macOS stock), curl, jq, python3.
 #
 # Usage:
 #   make test-adversarial                                  # --tier=deep (smoke + deep)
 #   .tools/adversarial/adversarial.sh                      # same, run directly
 #   .tools/adversarial/adversarial.sh --tier=smoke         # contract probes only, no long gens
-#   .tools/adversarial/adversarial.sh --tier=all           # everything, incl. soak and TTL eviction
+#   .tools/adversarial/adversarial.sh --tier=all           # deep plus soak; eviction is opt-in
 #   .tools/adversarial/adversarial.sh stream structured    # only these probe groups
 #   .tools/adversarial/adversarial.sh -l                   # list groups and their tiers
 #   SERVER=1 .tools/adversarial/adversarial.sh             # start and manage a server for the run
 #   MODEL=other/MODEL .tools/adversarial/adversarial.sh    # any model; see MODEL notes below
 #
 set -uo pipefail
+umask 077
 
 # --- configuration ----------------------------------------------------------
 # Repo root, derived from this script's location (.tools/adversarial/), so output
@@ -47,9 +47,11 @@ TIER=${TIER:-deep}
 # models a text chat model cannot stand in for. The 'caps' group asserts the one
 # reachable thing: the capability refusal must be 4xx, not 5xx or a hang.
 
-# 1 keeps the per-call scratch dir (every body, SSE capture, console). Default 0
-# leaves findings.txt and the server log, flagged bodies inlined into findings.
-KEEP_ALL=${KEEP_ALL:-0}
+# Keep exact requests, responses and SSE by default, not just clipped excerpts.
+# KEEP_ALL=0 removes captures after a clean run, but retains them for findings,
+# missing coverage, warnings, or an interrupted run. Use a separate OUT per run.
+KEEP_ALL=${KEEP_ALL:-1}
+KRONK_TOKEN=${KRONK_TOKEN:-}
 
 # By default the script probes an existing server. Set SERVER=1 to start
 # SERVER_CMD, wait for it to answer, and kill it (and everything it spawned)
@@ -70,8 +72,8 @@ params:smoke:parameters that are accepted, ignored, or rejected (n, stop, out-of
 tokenize:smoke:/v1/tokenize contract and monotonicity
 caps:smoke:capability refusal on a chat-only model must be 4xx, not 5xx
 admin:smoke:pool, devices, diagnose, models ps, imc-sessions
-stream:deep:streaming deltas must reassemble to the non-streamed answer
-determinism:deep:temperature 0 + fixed seed must be reproducible (MTP accept path)
+stream:deep:SSE framing, finish reasons, usage, and reconstructed tool calls
+determinism:opt:reproducibility diagnostics, not a byte-equality API guarantee
 toolloop:deep:full tool round trip, tool_choice modes, tool results fed back
 truncation:deep:does a length-capped generation silently drop a tool call
 advargs:deep:crafted argument text against the tool-call parser
@@ -82,7 +84,7 @@ concurrency:deep:parallel requests must not contaminate each other
 cancel:deep:mid-stream cancellation must not poison the slot or the cache
 responsesapi:deep:/v1/responses non-stream and SSE event ordering
 messagesapi:deep:/v1/messages Anthropic-compatible contract
-soak:all:sustained mixed workload -- leaks and degradation over time
+soak:all:mixed HTTP workload and canary diagnostics; not a memory-leak test
 evict:opt:pool TTL eviction; needs --pool-ttl on the server, sleeps 90s
 '
 
@@ -104,12 +106,13 @@ $(group_names | while read -r g; do printf '  %-14s %-6s %s\n' "$g" "[$(group_ti
 
 tiers:
   smoke   contract probes only, no long generations. Minutes.
-  deep    smoke + every generation-heavy group. The default. Tens of minutes.
-  all     deep + soak + TTL eviction. Long.
+  deep    smoke + generation contract checks. The default. Tens of minutes.
+  all     deep + soak. Long. Determinism and TTL eviction require explicit names.
   opt     never selected by a tier; name the group to run it.
 
 env:
   HOST         server base url            (default $HOST)
+  KRONK_TOKEN  optional bearer token; never written to the report
   MODEL        model id                   (default $MODEL)
                A trailing profile may resolve against owner/model from
                /v1/models. No unrelated model is substituted.
@@ -120,19 +123,27 @@ env:
   TIMEOUT      per-request seconds        (default $TIMEOUT)
   SERVER       1=manage the server, 0=use mine (default $SERVER)
   SERVER_CMD   how to start it            (default: $SERVER_CMD)
-  SERVERLOG    server stdout+stderr       (default \$OUT/kronk-server.log)
+  SERVERLOG    local server log, including for SERVER=0 (default \$OUT/kronk-server.log)
   SERVER_WAIT  seconds to wait for it     (default $SERVER_WAIT; a cold 'go run' compiles first)
-  KEEP_ALL     1=keep every body on disk  (default $KEEP_ALL)
+  KEEP_ALL     0=remove captures only after a clean run (default $KEEP_ALL)
 
 Keep --insecure-logging in SERVER_CMD: it makes a tool-call parse failure
 traceable. --llama-log 1 surfaces engine-level errors the API hides.
 
 output (all under \$OUT):
-  findings.txt      per-probe result lines, a VERDICT block, and the full
-                    request/response of every flagged call
+  findings.txt      per-probe results, verdicts, and flagged-call excerpts
+  summary.json      PASS / FAIL / INCOMPLETE, findings, coverage gaps, warnings
+  .work/            exact bodies, SSE, status, trace IDs and console capture
+  server-events.jsonl  current-run JSON/logfmt server records normalized to JSON
+  server-evidence.json  log findings and corroborated coverage, with record locations
   kronk-server.log  the server's own log, when SERVER=1
 
-exit status: 0 = nothing flagged, 1 = findings, 2 = the run could not proceed.
+Analyze a log supplied after a run without HTTP requests or inference:
+  python3 "$REPO_ROOT/.tools/adversarial/server_evidence.py" --run RUN_DIR --server-log LOG_FILE --out NEW_DIR
+The destination must not exist; original results and captures are left unchanged.
+
+exit status: 0 = selected checks passed, 1 = findings, 2 = could not run,
+             3 = no findings but coverage incomplete. Warnings are diagnostic.
 EOF
   exit "${1:-0}"
 }
@@ -158,13 +169,14 @@ case "$TIER" in
 esac
 
 # --- preflight --------------------------------------------------------------
-for dep in curl jq; do
+for dep in curl jq python3; do
   command -v "$dep" >/dev/null || { echo "missing required tool: $dep" >&2; exit 2; }
 done
 
 mkdir -p "$OUT" || exit 2
 FINDINGS="$OUT/findings.txt"
 : >"$FINDINGS" || exit 2
+rm -f "$OUT/summary.json" "$OUT/server-events.jsonl" "$OUT/server-evidence.json"
 WORK="$OUT/.work"
 rm -rf "$WORK"
 mkdir -p "$WORK" || exit 2
@@ -174,7 +186,25 @@ mkdir -p "$WORK" || exit 2
 # under PIPE_BUF are atomic, so concurrent writers cannot interleave.
 FLAGFILE="$WORK/flags"
 NOSIGFILE="$WORK/nosignal"
-: >"$FLAGFILE"; : >"$NOSIGFILE"
+WARNFILE="$WORK/warnings"
+: >"$FLAGFILE"; : >"$NOSIGFILE"; : >"$WARNFILE"
+RUN_ID=$(python3 -c 'import uuid; print(uuid.uuid4().hex)') || exit 2
+LOG_OFFSET=0
+if [ "$SERVER" != 1 ] && [ -f "$SERVERLOG" ]; then
+  LOG_OFFSET=$(wc -c <"$SERVERLOG" | tr -d ' ')
+fi
+
+# Every HTTP request carries its own W3C trace context. Store only the trace ID,
+# never authorization headers. Calls from parallel subshells use separate tags.
+request_curl() {
+  local tag=$1 trace
+  shift
+  trace=$(python3 -c 'import uuid; print(uuid.uuid4().hex)') || return 1
+  printf '%s\n' "$trace" >>"$WORK/$tag.trace-id"
+  local headers=(-H "traceparent: 00-$trace-${trace:0:16}-01")
+  [ -z "$KRONK_TOKEN" ] || headers+=(-H "Authorization: Bearer $KRONK_TOKEN")
+  command curl "${headers[@]}" "$@"
+}
 
 # flag = a defect. nosignal = a probe that neither passed nor failed because it
 # never exercised what it tests; kept separate so it reads as missing coverage.
@@ -187,8 +217,7 @@ flag()     { printf '%s\t%s\t%s\n' "$1" "$2" "${3:-$1}" >>"$FLAGFILE"; }
 nosignal() { printf '%s\t%s\n' "$1" "$2" >>"$NOSIGFILE"; }
 flagged()  { [ -s "$FLAGFILE" ]; }
 
-# Mirror all output into a scratch console capture so a crash mid-run stays
-# diagnosable; promoted to $OUT/console.txt only if the run died.
+# Mirror all output into the retained captures so a crash stays diagnosable.
 #
 # An explicit FIFO, not 'exec > >(tee ...)': with a process substitution $! is
 # not a child of this shell, so cleanup's flush-wait returns 127 immediately and
@@ -225,11 +254,9 @@ cleanup() {
   [ -n "$CONSOLE_TEE" ] && wait "$CONSOLE_TEE" 2>/dev/null
   rm -f "$CONSOLE_FIFO"
 
-  [ "$KEEP_ALL" = 1 ] && return 0
-  # Keep the console only when the run did NOT complete (rc other than 0 or 1);
-  # then findings.txt is truncated and the console is the only record.
-  if [ "$rc" != 0 ] && [ "$rc" != 1 ]; then
-    cp "$CONSOLE" "$OUT/console.txt" 2>/dev/null
+  # Exact replay evidence must survive any non-clean result, even KEEP_ALL=0.
+  if [ "$KEEP_ALL" = 1 ] || [ "$rc" != 0 ] || [ -s "$WARNFILE" ]; then
+    return 0
   fi
   rm -rf "$WORK"
   return 0
@@ -241,7 +268,7 @@ trap 'exit 130' INT TERM
 start_server() {
   # Refuse to start on top of a live server: ours would die on the port conflict
   # while the old one keeps answering, and we would measure someone else's.
-  if curl -sf --max-time 5 "$HOST/v1/models" >/dev/null 2>&1; then
+  if request_curl preflight-existing -sf --max-time 5 "$HOST/v1/models" >/dev/null 2>&1; then
     echo "something is already serving $HOST" >&2
     echo "stop it first, or use SERVER=0 to probe it as-is" >&2
     return 1
@@ -266,7 +293,7 @@ start_server() {
 
   local waited=0
   while [ "$waited" -lt "$SERVER_WAIT" ]; do
-    if curl -sf --max-time 5 "$HOST/v1/models" >/dev/null 2>&1; then
+    if request_curl preflight-ready -sf --max-time 5 "$HOST/v1/models" >/dev/null 2>&1; then
       echo "== server up after ${waited}s (pgid $SERVER_PGID)"
       return 0
     fi
@@ -280,12 +307,12 @@ start_server() {
 
 if [ "$SERVER" = 1 ]; then
   start_server || exit 2
-elif ! curl -sf --max-time 10 "$HOST/v1/models" >/dev/null 2>&1; then
+elif ! request_curl preflight-connect -sf --max-time 10 "$HOST/v1/models" >/dev/null 2>&1; then
   echo "cannot reach $HOST -- is the server up? (start one with SERVER=1)" >&2
   exit 2
 else
   echo "== using existing server: $HOST"
-  echo "== server log: not captured when SERVER=0; inspect the server's own terminal"
+  echo "== server log: $SERVERLOG (only new, trace-correlated records will be scanned)"
 fi
 echo "== findings: $FINDINGS"
 
@@ -301,7 +328,7 @@ say() { echo "$*" | tee -a "$SUMMARY"; }
 MODEL_BASE=$MODEL
 resolve_model() {
   local listed
-  listed=$(curl -sf --max-time 15 "$HOST/v1/models" 2>/dev/null | jq -r '.data[]?.id // empty' 2>/dev/null)
+  listed=$(request_curl preflight-models -sf --max-time 15 "$HOST/v1/models" 2>/dev/null | jq -r '.data[]?.id // empty' 2>/dev/null)
   if [ -z "$listed" ]; then
     say "!! /v1/models returned no model ids; proceeding with MODEL=$MODEL unverified"
     nosignal "preflight" "/v1/models listed nothing, so the model under test was never confirmed loaded"
@@ -385,13 +412,14 @@ TOOLS_TYPED='[
 # takes a body. Response body -> $WORK/<tag>.resp.json, status -> <tag>.status.
 _send() {
   local tag=$1 method=$2 path=$3 code rc
+  printf '%s %s\n' "$method" "$path" >"$WORK/$tag.endpoint"
   if [ "$method" = GET ]; then
-    code=$(curl -sS --max-time "$TIMEOUT" -X GET \
+    code=$(request_curl "$tag" -sS --max-time "$TIMEOUT" -X GET \
       -o "$WORK/$tag.resp.json" -w '%{http_code}' \
       "$HOST$path" 2>"$WORK/$tag.curl.err")
     rc=$?
   else
-    code=$(curl -sS --max-time "$TIMEOUT" -X "$method" \
+    code=$(request_curl "$tag" -sS --max-time "$TIMEOUT" -X "$method" \
       -o "$WORK/$tag.resp.json" -w '%{http_code}' \
       "$HOST$path" -H 'Content-Type: application/json' \
       --data-binary @"$WORK/$tag.req.json" 2>"$WORK/$tag.curl.err")
@@ -427,13 +455,15 @@ status_of() {
 # form: "aborted mid-stream" and "aborted before the first token" exercise
 # different server paths and are indistinguishable once the capture is gone.
 sse() {
-  local tag=$1 path=$2 body=$3 maxt=${4:-$TIMEOUT}
+  local tag=$1 path=$2 body=$3 maxt=${4:-$TIMEOUT} code rc
   printf '%s' "$body" >"$WORK/$tag.req.json"
-  curl -sS --max-time "$maxt" -N "$HOST$path" \
+  printf 'POST %s\n' "$path" >"$WORK/$tag.endpoint"
+  code=$(request_curl "$tag" -sS --max-time "$maxt" -N "$HOST$path" \
     -H 'Content-Type: application/json' -H 'Accept: text/event-stream' \
-    --data-binary @"$WORK/$tag.req.json" \
-    >"$WORK/$tag.sse" 2>"$WORK/$tag.curl.err"
-  printf 'curl_exit=%s bytes=%s\n' "$?" "$(wc -c <"$WORK/$tag.sse" | tr -d ' ')" >"$WORK/$tag.status"
+    --data-binary @"$WORK/$tag.req.json" -o "$WORK/$tag.sse" -w '%{http_code}' \
+    2>"$WORK/$tag.curl.err")
+  rc=$?
+  printf 'http_status=%s curl_exit=%s bytes=%s\n' "$code" "$rc" "$(wc -c <"$WORK/$tag.sse" | tr -d ' ')" >"$WORK/$tag.status"
 }
 
 # sse_chunks <tag> -> JSON array of every 'data:' payload except [DONE].
@@ -486,6 +516,9 @@ bad() { say "  FAIL $1: $2"; flag "$1" "$2" "${3:-$1}"; }
 
 # skip <label> <reason> -- the probe could not run its assertion.
 skip() { say "  NOSIG $1: $2"; nosignal "$1" "$2"; }
+
+# Observations that are not API guarantees must not become server defects.
+warn() { say "  WARN $1: $2"; printf '%s\t%s\n' "$1" "$2" >>"$WARNFILE"; }
 
 # expect_status <label> <expected-pattern> <what>
 # Pattern is an egrep alternation, e.g. '4[0-9][0-9]' or '400|422'.
@@ -819,16 +852,8 @@ g_caps() {
       '/v1/reranking behaves identically to /v1/rerank'
   fi
 
-  # audioapp.go 400s on multipart parse and on the file form field BEFORE it ever
-  # acquires a model, so a 4xx here cannot be attributed to the missing
-  # capability. Recorded rather than asserted.
-  local code
-  code=$(curl -sS --max-time 60 -o "$WORK/caps-audio.resp.json" -w '%{http_code}' \
-    "$HOST/v1/audio/transcriptions" -F "model=$MODEL" -F 'file=@/dev/null;filename=a.wav' \
-    2>"$WORK/caps-audio.curl.err")
-  printf 'http_status=%s curl_exit=%s\n' "$code" "$?" >"$WORK/caps-audio.status"
-  say "  caps-audio: HTTP $(status_of caps-audio)$(errbody_hint caps-audio)"
-  skip caps-audio 'audioapp.go rejects the empty upload before any capability check, so this cannot distinguish a refusal from a bad request'
+  # Audio capability testing needs a valid audio fixture. An empty multipart
+  # upload only tests form validation, so it is not a capability probe.
 }
 
 # =============================================================================
@@ -1093,9 +1118,8 @@ g_tokenize() {
 }
 
 # =============================================================================
-# deep: stream -- a completed stream must reassemble to the non-streamed answer.
-# Every OpenAI client treats the reassembled deltas as authoritative, so any
-# divergence means streaming and non-streaming clients see different replies.
+# deep: stream -- assert the SSE protocol, not equality between independent
+# generations. Batching and floating-point execution can change generated text.
 g_stream() {
   local NOTHINK=$NOTHINK_FORCED
   local prompt='List exactly five prime numbers, comma separated, nothing else.'
@@ -1120,22 +1144,22 @@ g_stream() {
     return
   fi
 
-  # --- the equivalence assertion.
+  # --- cross-request equality is diagnostic, not a protocol guarantee.
   local got
   got=$(sse_text st-stream)
   say "  st-stream: reassembled content: $(printf '%s' "$got" | tr '\n' ' ' | cut -c1-160)"
-  # Exact equality is the contract; whitespace-only drift and different text are
-  # both defects but of very different urgency, so report them apart.
-  if [ "$got" = "$ref" ]; then
+  if [ -z "$got" ]; then
+    bad st-content 'the text-only stream returned no content' st-stream
+  elif [ "$got" = "$ref" ]; then
     ok st-equiv 'reassembled stream is byte-identical to the non-streamed answer'
   else
     local gt rt
     gt=$(printf '%s' "$got" | tr -d ' \t\n\r')
     rt=$(printf '%s' "$ref" | tr -d ' \t\n\r')
     if [ "$gt" = "$rt" ]; then
-      bad st-equiv "stream and non-stream differ in whitespace only (ref ${#ref} bytes, stream ${#got} bytes); the text matches but the bytes a client assembles do not" st-stream
+      warn st-equiv "independent stream and non-stream generations differ in whitespace (ref ${#ref} bytes, stream ${#got} bytes)"
     else
-      bad st-equiv "stream and non-stream produced DIFFERENT TEXT at temperature 0 seed 1 (ref ${#ref} bytes, stream ${#got} bytes)" st-stream
+      warn st-equiv "independent stream and non-stream generations differ at temperature 0 seed 1 (ref ${#ref} bytes, stream ${#got} bytes)"
     fi
   fi
 
@@ -1237,12 +1261,9 @@ g_stream() {
 }
 
 # =============================================================================
-# deep: determinism -- the MTP/speculative accept path must be output-neutral.
-# The default model is an 'mtp-' build, so every token goes through
-# batchgen_mtp.go / draft_mtp.go / batchgen_speculative.go, whose correctness
-# claim is that accepted tokens equal what the target model would have produced.
-# Invariant: at temperature 0 with a fixed seed, the same request produces the
-# same output -- serially, from a warm cache, and under concurrency.
+# opt: determinism -- observe repeated output with a fixed seed. This neither
+# establishes MTP execution nor isolates a cold-cache control, and byte equality
+# across independent requests is not an API guarantee.
 g_determinism() {
   local NOTHINK=$NOTHINK_FORCED
   local prompt='Write exactly three sentences about the ocean. Be precise and consistent.'
@@ -1267,23 +1288,20 @@ g_determinism() {
   if [ "$mismatch" = 0 ]; then
     ok det-serial 'three identical requests at temperature 0 seed 1 produced identical output'
   else
-    bad det-serial "$mismatch of 3 repetitions diverged at temperature 0 seed 1 -- the decode path is not reproducible" det-rep2
+    warn det-serial "$mismatch of 3 repetitions diverged at temperature 0 seed 1"
   fi
 
-  # --- identical text with different token counts means usage accounting is
-  # decoupled from what was generated.
+  # Tokenization and hidden reasoning can differ too; retain usage as evidence.
   local t1 t2
   t1=$(jqr det-rep1 '.usage.completion_tokens // 0')
   t2=$(jqr det-rep2 '.usage.completion_tokens // 0')
-  expect_eq det-tokens "$t2" "$t1" 'repeated requests bill the same completion_tokens'
+  say "  det-tokens: completion_tokens=$t1 / $t2 (observation only)"
 
-  # --- cold vs warm: a prefix served from cache must decode to the same
-  # continuation as one recomputed from scratch, or KV cache and prefill
-  # disagree and answers change silently under load.
+  # Observe cache use without claiming that the first request was cold.
   local warm
   warm=$(jqr det-rep2 '.usage.prompt_tokens_details.cached_tokens // 0')
   if [ "${warm:-0}" -gt 0 ]; then
-    ok det-cachehit "the repeat ran against a warm cache (cached=$warm), so cold-vs-warm was genuinely compared"
+    ok det-cachehit "the repeat reported cached=$warm; no cold-cache control was forced"
   else
     skip det-cachehit 'the repeat reported cached=0, so warm-cache decoding was never actually exercised'
   fi
@@ -1320,7 +1338,7 @@ g_determinism() {
   elif [ "$mismatch" = 0 ]; then
     ok det-parallel "$n concurrent copies of the request agreed with each other"
   else
-    bad det-parallel "$mismatch of $n concurrent copies diverged from the other concurrent copies -- decoding is order-dependent under load" det-par1
+    warn det-parallel "$mismatch of $n concurrent copies produced different output"
   fi
 
   # --- tool calls: that path buffers text through a state machine before
@@ -1338,7 +1356,7 @@ g_determinism() {
     elif [ "$a" = "$b" ]; then
       ok det-tool 'repeated tool-call requests produced identical calls and arguments'
     else
-      bad det-tool 'repeated identical tool-call requests produced different tool calls' det-tool1
+      warn det-tool 'repeated identical tool-call requests produced different tool calls'
     fi
   else
     skip det-tool 'a tool-call repetition failed; tool-path determinism untested'
@@ -1559,6 +1577,12 @@ g_structured() {
       "properties":{"name":{"type":"string"},"age":{"type":"integer"},
                     "hobbies":{"type":"array","items":{"type":"string"}}},
       "required":["name","age","hobbies"]}}}'
+  # The same required keys, types and additionalProperties rule apply to both
+  # buffered and streamed output. This validates this fixture, not arbitrary schemas.
+  local person_filter='type == "object" and keys == ["age","hobbies","name"]
+    and (.name | type) == "string"
+    and (.age | type) == "number" and .age == (.age | floor)
+    and (.hobbies | type) == "array" and all(.hobbies[]; type == "string")'
   post sr-schema /v1/chat/completions \
     "$(chat_body 400 'Describe a fictional person.' \
        "$(jq -nc --argjson rf "$schema" '{response_format:$rf,tools:[]}')")" >/dev/null
@@ -1571,21 +1595,9 @@ g_structured() {
     elif ! printf '%s' "$c" | jq -e 'type == "object"' >/dev/null 2>&1; then
       bad sr-schema 'json_schema output is not even a JSON object'
     else
-      ok sr-schema 'json_schema output parses as an object'
-      # Not a full JSON Schema validator: required-key presence, declared types,
-      # and (per strict:true) no undeclared keys.
-      printf '%s' "$c" | jq -e '(.name | type) == "string"' >/dev/null 2>&1 \
-        && ok sr-schema-name 'name is a string as declared' \
-        || bad sr-schema-name 'name is missing or not a string, against a strict schema'
-      printf '%s' "$c" | jq -e '(.age | type) == "number" and (.age == (.age | floor))' >/dev/null 2>&1 \
-        && ok sr-schema-age 'age is an integer as declared' \
-        || bad sr-schema-age 'age is missing, non-numeric, or not an integer, against a strict schema'
-      printf '%s' "$c" | jq -e '(.hobbies | type) == "array" and (all(.hobbies[]; type == "string"))' >/dev/null 2>&1 \
-        && ok sr-schema-hobbies 'hobbies is an array of strings as declared' \
-        || bad sr-schema-hobbies 'hobbies is missing or not an array of strings, against a strict schema'
-      printf '%s' "$c" | jq -e '[keys[] | select(. != "name" and . != "age" and . != "hobbies")] | length == 0' >/dev/null 2>&1 \
-        && ok sr-schema-strict 'no keys beyond the schema, as strict:true requires' \
-        || bad sr-schema-strict "strict:true but the output carries undeclared keys: $(printf '%s' "$c" | jq -c '[keys[] | select(. != "name" and . != "age" and . != "hobbies")]' 2>/dev/null)"
+      printf '%s' "$c" | jq -e "$person_filter" >/dev/null 2>&1 \
+        && ok sr-schema 'required keys, declared types and no extra properties match the person schema' \
+        || bad sr-schema 'json_schema output violates required keys, declared types or additionalProperties=false'
     fi
   else
     bad sr-schema "json_schema rejected -> HTTP $(status_of sr-schema)$(errbody_hint sr-schema)"
@@ -1655,14 +1667,17 @@ g_structured() {
        "$(jq -nc --argjson rf "$schema" '{response_format:$rf,tools:[],stream:true}')")"
   local sc
   sc=$(sse_text sr-stream)
-  if [ -z "$sc" ]; then
+  if [ "$(status_of sr-stream)" != 200 ]; then
+    bad sr-stream "streamed json_schema request returned HTTP $(status_of sr-stream)"
+  elif [ -z "$sc" ]; then
     skip sr-stream 'the constrained stream produced no content; streamed constrained decoding untested'
-  elif printf '%s' "$sc" | jq -e 'type == "object"' >/dev/null 2>&1; then
+  elif printf '%s' "$sc" | jq -e "$person_filter" >/dev/null 2>&1; then
     ok sr-stream 'a streamed json_schema response reassembles into a conforming object'
-  elif [ "$(sse_chunks sr-stream | jq -r '[.[].choices[0].finish_reason // empty] | last // ""')" = length ]; then
+  elif ! printf '%s' "$sc" | jq -e 'type == "object"' >/dev/null 2>&1 && \
+       [ "$(sse_chunks sr-stream | jq -r '[.[].choices[0].finish_reason // empty] | last // ""')" = length ]; then
     skip sr-stream 'the constrained stream hit max_tokens, so the unparseable reassembly says nothing about the constraint'
   else
-    bad sr-stream 'a streamed json_schema response does not reassemble into a JSON object, though the buffered one does'
+    bad sr-stream 'streamed json_schema output violates required keys, declared types or additionalProperties=false'
   fi
 
   # --- the server must survive all of that.
@@ -2034,16 +2049,22 @@ g_cancel() {
   for cut in 1 2 4 8; do
     for i in 1 2; do
       local tag="cx-abort${cut}s-$i"
-      # The byte count tells mid-stream aborts from pre-stream ones; without it
-      # this group cannot claim to have tested mid-stream cancellation.
+      # An initial role delta, keep-alive, HTTP error, or a request that already
+      # finished is not evidence of cancelling an active generation.
       sse "$tag" /v1/chat/completions "$body" "$cut"
       local bytes
       bytes=$(wc -c <"$WORK/$tag.sse" | tr -d ' ')
-      if [ "${bytes:-0}" -gt 0 ]; then
+      if [ "$(status_of "$tag")" = 200 ] && \
+         grep -q 'curl_exit=28 ' "$WORK/$tag.status" && \
+         ! sse_has_done "$tag" && \
+         sse_chunks "$tag" | jq -e 'any(.[]; any(.choices[]?;
+           ((.delta.content // "") | length) > 0 or
+           ((.delta.reasoning_content // "") | length) > 0 or
+           any(.delta.tool_calls[]?; ((.function.arguments // "") | length) > 0)))' >/dev/null 2>&1; then
         streamed=$((streamed + 1))
         say "  $tag: cut after ${cut}s, $bytes bytes of SSE already received (genuinely mid-stream)"
       else
-        say "  $tag: cut after ${cut}s, NO SSE bytes received -- pre-stream cancel, not mid-stream"
+        say "  $tag: $bytes bytes, but no timed-out HTTP 200 generation payload; mid-generation cancel not established"
       fi
     done
   done
@@ -2051,13 +2072,13 @@ g_cancel() {
   if [ "$streamed" -gt 0 ]; then
     ok cx-midstream "$streamed abort(s) landed genuinely mid-stream"
   else
-    bad cx-midstream 'every abort landed before the first SSE byte; mid-stream cancellation was never tested'
+    skip cx-midstream 'no timeout interrupted an observed generation payload; mid-stream cancellation was not established'
   fi
 
   sleep 2
 
-  # Recovery: a cancelled request leaving its slot busy shows up as the follow-up
-  # hanging or as cached collapsing to zero.
+  # This establishes API recovery, not release of every slot. Use lifecycle or
+  # reliability for same-slot recovery and slot-occupancy assertions.
   chat cx-after 300 'Call bash to echo recovered.'
   if [ "$(status_of cx-after)" = 200 ]; then
     ok cx-after 'the server answered a normal request after eight cancellations'
@@ -2073,7 +2094,7 @@ g_cancel() {
     bad cx-after-stream 'a stream after repeated cancellation never reached [DONE]; a slot may be poisoned'
   fi
 
-  # Leaked slots show in ps as still occupied long after the requests are gone.
+  # Capture pool state for triage; readability alone does not prove slot release.
   get cx-ps /v1/kronk/models/ps >/dev/null
   expect_status cx-ps '200' 'models ps is readable after cancellations'
   say "  cx-ps: $(jqr cx-ps 'tostring' | cut -c1-300)"
@@ -2333,7 +2354,6 @@ g_messagesapi() {
   expect_jq ms-stopseq '((.error.message // .error // .message // "") | tostring
                          | test("stop_sequences is not supported"))' \
     'the refusal names stop_sequences rather than failing generically'
-  nosignal ms-stopseq "stop_sequences is declared in the Anthropic request struct but unimplemented, so stop-sequence behavior is untested here"
 
   # --- max_tokens must yield stop_reason=max_tokens: a client trusting end_turn
   # treats a truncated answer as complete.
@@ -2460,18 +2480,16 @@ g_soak() {
 
   say "  soak: canary before ${dur_before}s cached=$cached_before / after ${dur_after}s cached=$cached_after"
 
-  # The first call cached the canary prompt; a collapse to zero means sustained
-  # load evicted or corrupted the entry.
+  # Cache eviction is allowed and does not demonstrate corrupted state.
   if [ "${cached_after:-0}" -gt 0 ]; then
     ok soak-cache "the canary's prefix survived the soak (cached=$cached_after)"
   else
-    bad soak-cache "the canary's cached prefix collapsed to 0 after sustained load (was $cached_before)" soak-canary-after
+    warn soak-cache "canary cached_tokens=0 after sustained load (was $cached_before); eviction is not corruption"
   fi
 
-  # A 4x blowup on an identical cached request is a leak signature. Loose on
-  # purpose: a smoke alarm, not a benchmark.
+  # Latency without memory measurements or a controlled baseline is diagnostic.
   if [ "${dur_before:-0}" -gt 0 ] && [ "${dur_after:-0}" -gt $(( dur_before * 4 + 10 )) ]; then
-    bad soak-latency "the identical canary went from ${dur_before}s to ${dur_after}s across the soak"
+    warn soak-latency "the identical canary went from ${dur_before}s to ${dur_after}s across the soak; this does not establish a leak"
   else
     ok soak-latency "canary latency stayed within bounds (${dur_before}s -> ${dur_after}s)"
   fi
@@ -2524,6 +2542,7 @@ if [ -n "$(printf '%s' "$REQUESTED" | tr -d ' ')" ]; then
       selected="$selected $g"
     else
       say "unknown group '$g' (try -l)"
+      exit 2
     fi
   done
 else
@@ -2557,70 +2576,49 @@ for g in $selected; do
 done
 
 # =============================================================================
-# Server-log corroboration -- three signatures invisible to a client probe, each
-# meaning the run's PASS lines are not the whole story.
+# Server-log corroboration: exclude previous runs and unrelated requests. Native
+# stderr without a trace ID stays in the original log for manual investigation.
 scan_server_log() {
-  [ -s "$SERVERLOG" ] || return 0
+  local evidence="$OUT/server-evidence.json" label reason source
   say "================================ SERVER LOG ==============================="
-
-  # 1. Truncated tool call: buffered tool-call text discarded at the cap. Never
-  #    appears in a response body.
-  # finish_reason=length is the cap doing its job, so only a DROP WITHOUT a cap
-  # is a defect. model.go emits finish_reason on the same line as
-  # buffered_tool_bytes, so the two can be correlated.
-  local dropfile=$WORK/logdrop.txt dropped
-  { grep '"tool_calls":0' "$SERVERLOG" 2>/dev/null || true; } \
-    | { grep -v '"buffered_tool_bytes":0' || true; } \
-    | jq -r 'select((.buffered_tool_bytes // 0) > 0 and (.finish_reason // "") != "length")
-             | "    " + (.id // "?") + "  finish=" + (.finish_reason // "?")
-               + "  buffered_tool_bytes=" + ((.buffered_tool_bytes // 0)|tostring)
-               + "  output_tokens=" + ((.output_tokens // 0)|tostring)' 2>/dev/null >"$dropfile"
-  dropped=$(grep -c . "$dropfile" 2>/dev/null); dropped=${dropped:-0}
-  if [ "$dropped" -gt 0 ]; then
-    say "$dropped completion(s) with buffered_tool_bytes > 0, tool_calls=0 and finish_reason != length"
-    say "  -- the server buffered a tool call and discarded it without hitting the cap:"
-    head -40 "$dropfile" | tee -a "$SUMMARY"
-    flag "server-log-truncation" "$dropped completion(s) discarded buffered tool-call bytes without hitting the token cap"
-  else
-    say "  no discarded-tool-call signature found (drops at finish_reason=length are the cap working as designed)"
+  say "  only new JSON or logfmt records matching this run's trace IDs are scanned"
+  if ! python3 "$REPO_ROOT/.tools/adversarial/server_evidence.py" \
+      --work "$WORK" --server-log "$SERVERLOG" --offset "$LOG_OFFSET" \
+      --groups "$RAN" --out "$OUT"; then
+    nosignal server-log-read 'could not collect current-run server evidence'
+    return
   fi
-
-  # 2. A panic, even a recovered one: the middleware turning it into a 500 is why
-  #    no probe saw it.
-  local panics
-  panics=$(grep -c -i 'panic:\|goroutine [0-9]* \[running\]' "$SERVERLOG" 2>/dev/null)
-  if [ "${panics:-0}" -gt 0 ]; then
-    say "  $panics panic marker(s) in the server log:"
-    grep -i -m5 'panic:' "$SERVERLOG" 2>/dev/null | cut -c1-300 | sed 's/^/    /' | tee -a "$SUMMARY"
-    flag "server-log-panic" "$panics panic marker(s) in the server log"
-  else
-    say "  no panics"
+  say "  $(jq -r '.correlated_records' "$evidence") correlated records"
+  if [ ! -s "$OUT/server-events.jsonl" ]; then
+    say "  no correlated server evidence; native/untraced logs require manual review"
   fi
-
-  # 3. ERROR-level lines. Noisy, so reported rather than flagged -- but a clean
-  #    client-side verdict over hundreds of server errors is not clean.
-  local errs
-  errs=$(grep -c '"level":"ERROR"' "$SERVERLOG" 2>/dev/null)
-  if [ "${errs:-0}" -gt 0 ]; then
-    say "  $errs ERROR-level line(s); most frequent messages:"
-    grep '"level":"ERROR"' "$SERVERLOG" 2>/dev/null \
-      | jq -r '.msg // .message // "?"' 2>/dev/null \
-      | sort | uniq -c | sort -rn | head -10 | sed 's/^/    /' | tee -a "$SUMMARY"
-    nosignal "server-log-errors" "$errs ERROR-level lines in the server log; review them against the PASS lines"
-  else
-    say "  no ERROR-level lines"
-  fi
+  # Remove only gaps that correlated server evidence actually establishes.
+  while IFS=$'\t' read -r label reason; do
+    awk -F'\t' -v label="$label" '$1 != label' "$NOSIGFILE" >"$WORK/nosignal.next"
+    mv "$WORK/nosignal.next" "$NOSIGFILE"
+    ok "$label" "$reason (corroborated by server telemetry)"
+  done < <(jq -r '.resolved[] | [.label,.reason] | @tsv' "$evidence")
+  while IFS=$'\t' read -r label reason source; do
+    say "  FAIL $label: $reason"
+    flag "$label" "$reason" "$source"
+  done < <(jq -r '.findings[] | [.label,.reason,.evidence] | @tsv' "$evidence")
+  while IFS=$'\t' read -r label reason; do
+    skip "$label" "$reason"
+  done < <(jq -r '.no_signal[] | [.label,.reason] | @tsv' "$evidence")
+  while IFS=$'\t' read -r label reason; do
+    warn "$label" "$reason"
+  done < <(jq -r '.warnings[] | [.label,.reason] | @tsv' "$evidence")
+  say "  absence of correlated findings does not clear native/untraced logs"
   say ""
 }
-[ "$SERVER" = 1 ] && scan_server_log
+scan_server_log
 
 # =============================================================================
-# Evidence -- inline the request and response of every flagged call, so the
-# bodies that explain a finding survive and the rest are deleted.
+# Evidence excerpts for reading; exact replay bodies remain in .work.
 if flagged; then
   say "================================ EVIDENCE ================================"
-  say "The request and response of every flagged call, inlined so this file stands"
-  say "alone. Re-run with KEEP_ALL=1 to keep every body on disk instead."
+  say "Flagged-call excerpts follow. Exact bodies, endpoints and trace IDs are"
+  say "retained in $WORK, including requests whose result was NO SIGNAL."
   while IFS=$'\t' read -r label reason source; do
     [ -n "$label" ] || continue
     say ""
@@ -2632,6 +2630,7 @@ if flagged; then
     fi
 
     [ -f "$WORK/$label.status" ] && say "  status: $(tr -d '\n' <"$WORK/$label.status")"
+    [ -f "$WORK/$label.trace-id" ] && say "  trace_id: $(cat "$WORK/$label.trace-id")"
     if [ -s "$WORK/$label.curl.err" ]; then
       say "  curl stderr:"
       sed 's/^/    /' <"$WORK/$label.curl.err" | tee -a "$SUMMARY"
@@ -2724,16 +2723,52 @@ if grep -q '^preflight' "$NOSIGFILE" 2>/dev/null; then
 fi
 
 say ""
-if [ "$nflag" -gt 0 ]; then
-  say "RESULT: $nflag finding(s), $nnosig no-signal. Evidence is inlined above."
-else
-  say "RESULT: no findings, $nnosig no-signal."
+result=PASS; result_code=0
+if [ "$nflag" -gt 0 ]; then result=FAIL; result_code=1
+elif [ "$nnosig" -gt 0 ]; then result=INCOMPLETE; result_code=3
 fi
+say "RESULT: $result ($nflag findings, $nnosig no-signal). Warnings are diagnostic."
+
+# TSV records come from subshells; use them rather than scraping display text.
+python3 - "$OUT" "$RUN_ID" "$HOST" "$MODEL" "$MODEL_BASE" "$THINK" "$TIER" "$RAN" "$result" "$result_code" "$KEEP_ALL" "${BASH_SOURCE[0]}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+out = pathlib.Path(sys.argv[1])
+work = out / '.work'
+def records(name):
+    rows = []
+    for line in (work / name).read_text().splitlines():
+        fields = line.split('\t', 2)
+        rows.append(dict(label=fields[0], reason=fields[1], evidence=fields[2] if len(fields) > 2 else fields[0]))
+    return rows
+
+warnings = records('warnings')
+retained = sys.argv[11] == '1' or int(sys.argv[10]) != 0 or bool(warnings)
+summary = dict(run_id=sys.argv[2], host=sys.argv[3], model=sys.argv[4], model_base=sys.argv[5],
+    thinking=sys.argv[6] == '1', tier=sys.argv[7], groups=sys.argv[8].split(),
+    result=sys.argv[9], exit_code=int(sys.argv[10]), findings=records('flags'),
+    no_signal=records('nosignal'), warnings=warnings,
+    tool_sha256=hashlib.sha256(pathlib.Path(sys.argv[12]).read_bytes()).hexdigest(),
+    captures='.work' if retained else None, server_events='server-events.jsonl',
+    server_evidence='server-evidence.json',
+    mtp_coverage='not asserted; use reliability execution-path evidence')
+summary['requests'] = [dict(label=path.stem, trace_ids=path.read_text().splitlines(),
+    endpoint=(work / (path.stem + '.endpoint')).read_text().strip()
+        if (work / (path.stem + '.endpoint')).is_file() else '/v1/models (preflight)')
+    for path in sorted(work.glob('*.trace-id'))]
+(out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+PY
+[ "$?" = 0 ] || { say 'could not write summary.json'; exit 2; }
 say ""
 say "files: $FINDINGS"
+say "       $OUT/summary.json"
+say "       $OUT/server-events.jsonl"
+say "       $OUT/server-evidence.json"
 [ "$SERVER" = 1 ] && say "       $SERVERLOG"
-[ "$KEEP_ALL" = 1 ] && say "       $WORK/  (KEEP_ALL=1: every request/response body and console.txt)"
+[ "$KEEP_ALL" = 1 ] || [ "$result_code" != 0 ] || [ -s "$WARNFILE" ] && \
+  say "       $WORK/  (exact requests, responses, trace IDs and console)"
 
-# 0 clean, 1 findings, 2 could not run -- what makes the harness usable unattended.
-[ "$nflag" -gt 0 ] && exit 1
-exit 0
+exit "$result_code"

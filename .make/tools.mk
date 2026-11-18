@@ -238,17 +238,19 @@ test-load-all: ## Run explicitly selected reliability profiles and cells
 # ==============================================================================
 
 # Exercises the server's four-stage request lifecycle with one execution slot
-# and two admission permits. It holds Stage 4 open, verifies a queued request
-# cancels in Stage 3, verifies a third request times out in Stage 1, then
-# cancels the holder and confirms the slot and admission permit are released.
+# and two admission permits. Three cycles check queued cancellation, admission
+# timeout, independent permit reuse, active cancellation, and slot recovery.
+# PASS requires matching structured server-stage evidence.
 # The selected model must use nseq-max: 1, queue-depth: 2, and
 # admission-timeout: 100ms; see .tools/lifecycle-load/main.go for setup details.
 # Requires nseq-max: 1
 LIFECYCLE_LOAD_OUT ?= .tools/lifecycle-load/output
 LIFECYCLE_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
+LIFECYCLE_LOAD_CYCLES ?= 3
 
 example-lifecycle-load: ## Probe server admission, cancellation, and slot release
 	KRONK_LIFECYCLE_OUT="$(LIFECYCLE_LOAD_OUT)" \
+	KRONK_LIFECYCLE_CYCLES="$(LIFECYCLE_LOAD_CYCLES)" \
 	KRONK_SERVER_LOG="$(LIFECYCLE_SERVER_LOG)" \
 	go run ./.tools/lifecycle-load
 

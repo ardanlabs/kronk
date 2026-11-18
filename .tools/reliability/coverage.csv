@@ -15,7 +15,7 @@ GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) text-state,2) imag
 1,1,Off,On,Yes,Dense,Hybrid,,,,,,not apply,not apply,not apply,,,
 1,1,Off,On,Yes,MoE,Pure,,,,,,not apply,not apply,not apply,,,
 1,1,Off,On,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,covered,,not apply,not apply,not apply,,,
-1,1,On,Off,No,Dense,Pure,unsloth/Qwen3-0.6B-Q8_0,Lifecycle 8K; state/context 32K.,covered,not apply,covered,not apply,not apply,not apply,,,covered
+1,1,On,Off,No,Dense,Pure,unsloth/Qwen3-0.6B-Q8_0,Lifecycle 8K: 3 cycles with permit reuse and required stage evidence; state/context 32K.,covered,not apply,covered,not apply,not apply,not apply,,,covered
 1,1,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q6_K,Companion qualified; text-state alternate pending.,overlaped by 1:21,not apply,,not apply,not apply,not apply,,covered,
 1,1,On,Off,No,MoE,Pure,,,,not apply,,not apply,not apply,not apply,,,
 1,1,On,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,covered,not apply,covered,not apply,not apply,not apply,covered,,
