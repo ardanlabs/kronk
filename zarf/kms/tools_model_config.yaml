@@ -8,6 +8,75 @@ kms:
   insecure-logging: true
 
 models:
+  # Tic-tac-toe benchmark: version1 passers and additional candidates.
+  # One slot, 128K context; preserve existing sampling settings.
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 32000
+      reasoning_effort: low
+
+  unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 32000
+
+  mradermacher/Qwopus3.5-4B-Coder.Q8_0/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 32000
+
+  ukisai/Swift-Qwen3.8-27B-Q8_0/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 32000
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 32000
+
+  unsloth/Qwen3.8-27B-UD-Q6_K/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 32000
+
+  ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 32000
+
+  AtomicChat/Ripple-65B-Preview-Q4_K_M/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 32000
+
+  ornith-ai/Ornith-1.5-9B-Q8_0/BENCHMARK:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 32000
+
   # Quick-check fixtures: one/two-slot text/image workloads, IMC and MTP modes.
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK: &quick
     nseq-max: 1

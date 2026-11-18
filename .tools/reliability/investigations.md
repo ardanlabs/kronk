@@ -484,10 +484,10 @@ those contracts. Multi-GPU and classic full-drafter coverage remain out of scope
 
 ## Running, collecting and judging evidence
 
-Quick-check and reliability share `zarf/kms/tools_model_config.yaml`.
-`make server-for-tools` loads that dedicated configuration from the current
-checkout; restart the tools server after changing it. Normal server targets and
-the codegen benchmark retain `zarf/kms/model_config.yaml` and its `/AGENT` entries.
+Quick-check, reliability, and the tic-tac-toe benchmark share
+`zarf/kms/tools_model_config.yaml`. `make server-for-tools` loads that dedicated
+configuration from the current checkout; restart the tools server after changing
+it. Normal server targets retain `zarf/kms/model_config.yaml` and its `/AGENT` entries.
 
 - Obtain permission before accessing any remote test machine, including SSH discovery, fetching
   files or starting/stopping anything there. An instruction to analyze already

@@ -2,12 +2,15 @@ module github.com/ardanlabs/kronk
 
 go 1.27.0
 
+tool github.com/ardanlabs/kronk/.tools/tic-tac-toe-benchmark
+
 require (
 	github.com/ardanlabs/bucky v1.1.6
 	github.com/ardanlabs/conf/v3 v3.13.0
 	github.com/ardanlabs/jinja v1.12.0
 	github.com/ardanlabs/malina v1.2.3
 	github.com/arl/statsviz v0.8.2
+	github.com/creack/pty v1.1.24
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0

@@ -308,36 +308,35 @@ the binding call site.
 
 #### 20.4.3 OpenCode coding benchmark
 
-`.tools/codegen-benchmark` is a deliberate coding-agent benchmark against a separately
-managed Kronk server. It runs the tic-tac-toe prompt from
-`examples/talks/tic-tac-toe.md` through `opencode run`, preserving an isolated OpenCode
-home and nested Git repository for each attempt. The repository boundary keeps OpenCode
-inside the attempt directory, where it can compile and repair its program before the
-harness applies hidden structural tests and scripted gameplay checks.
+`.tools/tic-tac-toe-benchmark` evaluates coding agents against a separately
+managed Kronk server through `opencode run`. Workload v1 has two steps: the basic
+tic-tac-toe game, then an undo extension unlocked only after the basic game passes.
+Each step allows up to three submissions by default, sharing the same program and
+OpenCode session so the model can repair failures using deterministic grader evidence.
+Acceptance checks cover source requirements, build, vet, helper behavior, and interactive
+gameplay in a pseudo-terminal; feedback reports observations, not suggested fixes.
 
-The harness warms each model with a minimal `hello model` chat completion before its
-attempts, then unloads that model before continuing to the next configured model. Warm-up
-time and tokens are excluded from the OpenCode benchmark measurements.
-
-Eligible models come exclusively from `zarf/kms/model_config.yaml`: every selected ID
-must be configured there, end in `/AGENT`, and be returned by the running server's
-`GET /v1/models` endpoint. The harness defaults to one attempt per eligible model.
+Start the tools server with `make server-for-tools`. Eligible models come exclusively
+from `zarf/kms/tools_model_config.yaml`, with sufix `/BENCHMARK`.
+The harness warms each model before its submissions and unloads it before continuing
+to the next model. Warm-up time and tokens are excluded from agent measurements.
 
 ```shell
-make benchmark-codegen-list
-make benchmark-codegen
-make benchmark-codegen \
-    CODEGEN_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/AGENT \
-    CODEGEN_ATTEMPTS=3
+make benchmark-tic-tac-toe-list
+make benchmark-tic-tac-toe
+make benchmark-tic-tac-toe \
+    TICTACTOE_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK \
+    TICTACTOE_SUBMISSIONS=3
+make benchmark-tic-tac-toe-report
 ```
 
-Results land directly beneath `.tools/codegen-benchmark/output`. Each run clears the
-previous contents, stores every selected model beneath that directory, and writes one
-aggregate `report.md` for model comparison. Each attempt retains the generated program,
-OpenCode state and event stream, and grader result. See
-`.tools/codegen-benchmark/README.md` for all runtime knobs. This is not part of
-`make test`; starting the model server and running inference remain explicit human
-actions.
+Results are retained beneath the gitignored
+`.tools/tic-tac-toe-benchmark/runs/YYYY-MM-DD/run-<unique>/`, without clearing
+previous runs. Each submission preserves its generated program, OpenCode event stream,
+stderr, and grader evidence. The aggregate plain-text `report.txt` has separate step
+columns and can be copied into the manually maintained `history.txt`. See
+`.tools/tic-tac-toe-benchmark/README.md` for all runtime knobs and replay commands.
+This is not part of `make test`.
 
 ### 20.5 Request and Model Lifecycle
 
