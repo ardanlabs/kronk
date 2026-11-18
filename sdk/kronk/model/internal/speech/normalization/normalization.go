@@ -47,9 +47,11 @@ func New(template string, names []string, lookup func(name, key string) (string,
 }
 
 // Render normalizes text using the model template and the requested language and
-// voice. Cancellation is checked before and after rendering and within builtins;
+// voice. An optional G2P callback supplies unknown-word pronunciations; nil
+// reports no pronunciation so the template can use its spelling fallback.
+// Cancellation is checked before and after rendering and within builtins;
 // Jinja itself does not expose cancellation of template-only work.
-func (r *Renderer) Render(ctx context.Context, text, language, voice string) (string, error) {
+func (r *Renderer) Render(ctx context.Context, text, language, voice string, g2p func(string) (string, error)) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -58,6 +60,22 @@ func (r *Renderer) Render(ctx context.Context, text, language, voice string) (st
 		"language": jinja.NewString(language),
 		"voice":    jinja.NewString(voice),
 	}
+	values["tts_g2p"] = jinja.NewCallable("tts_g2p", func(args []jinja.Value, kwargs map[string]jinja.Value) (jinja.Value, error) {
+		if err := arguments(ctx, "tts_g2p", args, kwargs, 1); err != nil {
+			return jinja.None(), err
+		}
+		if !args[0].IsString() {
+			return jinja.None(), errors.New("tts_g2p: word must be a string")
+		}
+		if g2p == nil {
+			return jinja.NewString(""), nil
+		}
+		phones, err := g2p(args[0].AsString())
+		if err != nil {
+			return jinja.None(), fmt.Errorf("tts_g2p: %w", err)
+		}
+		return jinja.NewString(phones), nil
+	})
 	values["tts_norm_scan"] = jinja.NewCallable("tts_norm_scan", func(args []jinja.Value, kwargs map[string]jinja.Value) (jinja.Value, error) {
 		if err := arguments(ctx, "tts_norm_scan", args, kwargs, 2); err != nil {
 			return jinja.None(), err

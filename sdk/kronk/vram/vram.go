@@ -154,6 +154,10 @@ type Input struct {
 	kokoroGraphBytes      int64                    // Provisional observed/source-liveness decoder graph allowance.
 	kokoroHostBytes       int64                    // Serialized CPU prosody, LSTM readback, harmonic and ISTFT scratch.
 	kokoroOutputSamples   int64                    // Single-segment waveform bound at Kronk's fixed speed 1.0.
+	tinyVocaFFNLength     int64                    // Noncausal encoder intermediate width.
+	tinyVocaGraphBytes    int64                    // Source-derived duration and frame-stack graph allowance.
+	tinyVocaHostBytes     int64                    // Shared frame states, host tables and source-filter scratch.
+	tinyVocaTableBytes    int64                    // Per-helper token/stress tables and padded segment storage.
 }
 
 // Result contains the calculated VRAM requirements.

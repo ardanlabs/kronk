@@ -148,6 +148,8 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 		engine.adapter = &speech.ChatterboxTurbo{}
 	case modelprofile.ComputeKokoroBackbone:
 		engine.adapter, err = speech.NewKokoro(m.model, cfg.SpeechMaxFrames(), modelMetaArrayCount, modelMetaArrayString)
+	case modelprofile.ComputeTinyVocaBackbone:
+		engine.adapter, err = speech.NewTinyVoca(m.model, m.mtmdMetaCtx, cfg.SpeechMaxFrames(), modelMetaArrayCount, modelMetaArrayString, genAudioG2P)
 	default:
 		return fmt.Errorf("%w: no speech runtime for architecture %q", ErrSpeechUnsupported, m.modelInfo.Architecture)
 	}

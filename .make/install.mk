@@ -98,9 +98,6 @@ install-speak-models: install-kronk ## Download published speech model bundles
 	@echo
 	kronk model pull --local "ggml-org/tiny-voca-F32"
 	@echo
-	@echo "MiniMax Music3 downloads approximately 15.8 GB including its decoder."
-	kronk model pull --local "ggml-org/MiniMax-Music3-Q8_0"
-	@echo
 	@echo "Soprano and Pocket TTS are not installed: compatible backbone/mmproj bundles have not been verified."
 	@echo "Downloading these models does not verify Kronk speech runtime or pool support."
 	@echo
