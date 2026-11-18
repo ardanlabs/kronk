@@ -73,7 +73,7 @@ change. Go commands require the environment described in [§20.9](#209-verificat
 | Middleware, request context, errors, or tracing | `cmd/server/foundation/web/` | all route registration using the middleware | foundation tests plus one affected domain test |
 | Public language-model SDK behavior | `sdk/kronk/` | `sdk/kronk/model/`, examples, generated SDK docs | focused `sdk/kronk` tests and compile an affected example when useful |
 | Batch scheduling, KV state, IMC, media, sampling, or speculative inference | `sdk/kronk/model/` | yzma boundary, `sdk/kronk/tests/` suite definitions, observability | focused unit tests in `sdk/kronk/model`; model-backed integration suites are human/CI work |
-| Tool/reasoning parser | `sdk/kronk/parsers/<family>/` and registry contract in `sdk/kronk/model/` | parser registration and model-family selection | parser-family tests and registry tests |
+| Tool/reasoning parser | `sdk/kronk/model/internal/parsers/<family>/` and public contract in `sdk/kronk/model/` | internal parser contract, model-owned selection, and JSON repair | parser-family tests and registry tests |
 | Multi-model loading or eviction | typed owners `sdk/kronk/pool/`, `sdk/bucky/pool/`; shared mechanics `sdk/pool/engine/`; app facade `sdk/pool/` | resource-manager APIs and server composition | engine eviction tests, typed-pool tests, failed-load and budget tests |
 | Resource accounting | shared resource manager used through `sdk/pool/engine/` | each typed loader's plan/display/unload methods | synthetic budget/reservation tests; never rely on host memory alone |
 | Bucky handle, transcription, or stream | `sdk/bucky/` and `sdk/bucky/model/` | `sdk/bucky/pool/`, audio route, Chapter 18 for user behavior | package unit tests and focused `sdk/bucky/tests/transcribe` tests where dependencies are available |
@@ -128,10 +128,12 @@ largest command.
   prompt planning, batch slots, sequence IDs, prefill/decode, media handling, IMC,
   samplers, parser interfaces, and draft/MTP behavior. Changes here must preserve
   cross-slot isolation and native-resource cleanup on every exit path.
-- **`sdk/kronk/parsers/`** contains model-family parser plug-ins. Family packages own
+- **`sdk/kronk/model/internal/parsers/`** contains built-in model-family parsers. Family packages own
   streaming state machines and extraction/normalization of reasoning and tool calls.
-  The model package owns the registry contract and selection boundary; parser packages
-  should not reach into batch-engine state.
+  The model package owns default selection, custom-parser registration, and conversion
+  between the internal contract and public model types. Parser packages do not import
+  the parent model package or reach into batch-engine state. Shared JSON repair lives
+  alongside them in `sdk/kronk/model/internal/jsonrepair/`.
 - **`sdk/kronk/observ/`**, `sdk/kronk/vram/`, `sdk/kronk/gguf/`,
   and `sdk/kronk/hf/` own their named concerns. Prefer these boundaries to embedding
   format or resource calculations in request handlers.
@@ -612,8 +614,12 @@ planning intentionally resets the selected session before rebuilding it.
 
 #### 20.6.3 Parser registry ownership
 
-Parser implementations live under `sdk/kronk/parsers/`, grouped by model family. The
-registry interface and registration entry point live in `sdk/kronk/model/`. A parser
+Built-in parser implementations live under `sdk/kronk/model/internal/parsers/`, grouped
+by model family. Their shared contract is independent of the parent model package.
+The public custom-parser interface, registration entry point, and built-in selection
+live in `sdk/kronk/model/`; loading a model requires no caller registration of defaults.
+Custom factories registered before loading models are tried first, in registration
+order, followed by the built-ins with the fallback last. A parser
 plug-in supplies factories/state machines for its advertised family and must tolerate
 stream chunk boundaries: tags, JSON, reasoning delimiters, and tool arguments may span
 chunks. It must keep request state per parser instance and produce equivalent logical
@@ -863,7 +869,7 @@ specific test, for example:
 
 ```shell
 go test -count=1 ./sdk/kronk/model
-go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen
+go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/model/internal/parsers/qwen
 ```
 
 Agents must **never prescribe or run a full repository test run**, and must **never

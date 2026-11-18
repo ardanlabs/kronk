@@ -3,6 +3,8 @@
 ## Index
 
 - [v1.33.3](#v1333)
+  - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
+  - [Internal Parser Packages](#v1333-internal-parser-packages)
 - [v1.33.2](#v1332)
   - [Responses Reasoning Output](#v1332-responses-reasoning-output)
   - [Structured-Output Schema Validation](#v1332-structured-output-schema-validation)
@@ -56,6 +58,30 @@
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
 ## v1.33.3
+
+### v1.33.3: Speech Response Numeric Types
+
+`model.SpeechResponse.SampleRate` changes from `int32` to `int`, and `Samples`
+changes from `int64` to `int`. Use `int` variables when constructing or consuming
+responses, or explicitly convert at boundaries that require fixed-width values.
+`SampleRate` is samples per second per channel; `Samples` counts samples per
+channel, excluding the WAV header. Duration and generated audio are unchanged.
+Response literals should use named fields; the new `Stereo bool` field is false
+for existing mono speech models.
+
+### v1.33.3: Internal Parser Packages
+
+The `sdk/kronk/parsers/*` and `sdk/kronk/jsonrepair` import paths are removed.
+Built-in parsing and JSON repair are now internal model implementation details
+and cannot be imported by applications. Remove explicit registrations of built-in
+parsers; both `model.NewModel` and the higher-level Kronk API select built-ins
+automatically. Applications using JSON repair directly must supply their own repair
+implementation or dependency.
+
+Custom parsers remain supported through the existing `model.Parser` contract and
+`model.RegisterParser`. Register custom factories before loading any models; they
+are tried in registration order before the built-ins. Parser precedence among
+built-ins, tool-call wire formats, and reasoning output are unchanged.
 
 ## v1.33.2
 

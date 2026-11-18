@@ -4,25 +4,41 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
-	"runtime"
 	"slices"
 	"sync"
-	"unsafe"
+	"sync/atomic"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speech"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
 
-const (
-	speechContextWindow = 2048
-	speechBatchSize     = 512
-)
+var errSpeechEngineStopped = errors.New("speech engine stopped")
 
-// speechEngine owns per-sequence pipelines and their shared default voice.
-// Model owns the backbone context and decoder they borrow. All native work on
-// those shared contexts must be serialized; helpers are not independent workers.
+// speechModel owns model-specific conditioning without depending on the public
+// request types or shared engine state. Its errors reject the current request.
+type speechModel interface {
+	Validate(language, referenceText string) (string, error)
+	Prepare(vocab llama.Vocab, language, referenceText string, input *mtmd.HelperGenAudioInput) (int, error)
+}
+
+// speechExecution advances one sequence without owning its job or scheduling.
+// Only the engine owner calls these methods after initialization.
+type speechExecution interface {
+	Start(input *mtmd.HelperGenAudioInput) error
+	Step(ctx context.Context, promptTokens int) (speech.Output, bool, bool, error)
+	Reset() error
+	Free()
+}
+
+// speechEngine owns scheduling, jobs, and the shared default voice. Model owns
+// the backbone context and decoder borrowed by the sequence implementations.
+// All native work on those shared contexts remains serialized by the engine.
 type speechEngine struct {
+	adapter   speechModel
 	voice     mtmd.Bitmap
 	slots     []speechSlot
 	model     *Model
@@ -37,74 +53,49 @@ type speechEngine struct {
 }
 
 type speechSlot struct {
-	helper     mtmd.HelperGenAudio
-	input      mtmd.HelperGenAudioInput
-	sampler    llama.Sampler
-	job        *speechJob
-	started    bool
-	prefilling bool
-	frames     int
-	token      llama.Token
-	hidden     []float32
-	voice      mtmd.Bitmap
+	execution speechExecution
+	input     mtmd.HelperGenAudioInput
+	job       *speechJob
+	started   bool
+	voice     mtmd.Bitmap
 }
 
-// ResolveSpeechConfig resolves the supported speech resource limits for planning
-// and loading a model already classified as speech. It does not select a runtime
-// or apply chat defaults. Incompatible explicit settings return ErrInvalidRequest.
-func ResolveSpeechConfig(cfg Config) (Config, error) {
-	switch {
-	case cfg.SpeechMaxFrames() < 1 || cfg.SpeechMaxFrames() > 512:
-		return cfg, fmt.Errorf("%w: speech max frames must be between 1 and 512", ErrInvalidRequest)
-	case cfg.ContextWindow() != 0 && cfg.ContextWindow() != speechContextWindow:
-		return cfg, fmt.Errorf("%w: speech context window must be %d per sequence", ErrInvalidRequest, speechContextWindow)
-	case cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() != speechBatchSize:
-		return cfg, fmt.Errorf("%w: speech prefill batch size must be %d", ErrInvalidRequest, speechBatchSize)
-	case cfg.PtrPhysicalBatchSize != nil && cfg.PhysicalBatchSize() != speechBatchSize:
-		return cfg, fmt.Errorf("%w: speech physical batch size must be %d", ErrInvalidRequest, speechBatchSize)
-	case cfg.KVCacheMode() != KVCachePartitioned:
-		return cfg, fmt.Errorf("%w: speech requires partitioned KV cache", ErrInvalidRequest)
-	case cfg.IncrementalCache() || cfg.IMCSessionCapacity() > 0:
-		return cfg, fmt.Errorf("%w: speech does not support IMC", ErrInvalidRequest)
-	case cfg.PtrDraftModel != nil || cfg.MTPDrafterFile != "" ||
-		(cfg.SpeculationMode() != SpeculationAuto && cfg.SpeculationMode() != SpeculationDisabled):
-		return cfg, fmt.Errorf("%w: speech does not support speculative decoding", ErrInvalidRequest)
-	case len(cfg.Adapters) > 0:
-		return cfg, fmt.Errorf("%w: speech does not support adapters", ErrInvalidRequest)
-	}
+type speechResult struct {
+	response     SpeechResponse
+	promptTokens int
+	err          error
+}
 
-	for _, cacheType := range []GGMLType{cfg.CacheTypeK, cfg.CacheTypeV} {
-		if !cacheType.IsZero() && cacheType != GGMLTypeAuto && cacheType != GGMLTypeF16 {
-			return cfg, fmt.Errorf("%w: speech requires F16 KV cache, got %s", ErrInvalidRequest, cacheType)
-		}
-	}
-
-	nSlots := cfg.NSeqMax()
-	if nSlots <= 0 {
-		nSlots = defNSeqMax
-	}
-
-	if nSlots > math.MaxUint32/speechContextWindow {
-		return cfg, fmt.Errorf("%w: speech aggregate context exceeds native capacity", ErrInvalidRequest)
-	}
-
-	cfg = adjustQueueDepth(cfg)
-	cfg = adjustAdmissionTimeout(cfg)
-	cfg = adjustThreads(cfg)
-	cfg.PtrNSeqMax = new(nSlots)
-	cfg.PtrContextWindow = new(speechContextWindow)
-	cfg.PtrPrefillBatchSize = new(speechBatchSize)
-	cfg.PtrPhysicalBatchSize = new(speechBatchSize)
-	cfg.PtrIncrementalCache = new(false)
-	cfg.PtrSpeech = &SpeechConfig{MaxFrames: cfg.SpeechMaxFrames()}
-	cfg.CacheTypeK, cfg.CacheTypeV = GGMLTypeF16, GGMLTypeF16
-	cfg.Speculation = SpeculationDisabled
-	cfg.nBatch, cfg.nUBatch = speechBatchSize, speechBatchSize
-
-	return cfg, nil
+type speechJob struct {
+	ctx          context.Context
+	request      SpeechRequest
+	promptTokens int
+	resultCh     chan speechResult
+	claimed      atomic.Bool
 }
 
 func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
+	// Speech purpose and a generic backbone architecture do not identify an
+	// execution protocol. Use the same tensor-aware family resolution as planning.
+	data, err := gguf.ReadHeaderBytes(m.cfg.ModelFiles[0])
+	if err != nil {
+		return fmt.Errorf("read speech model header: %w", err)
+	}
+	metadata, tensors, err := gguf.ParseHeaderAndTensors(data, 0)
+	if err != nil {
+		return fmt.Errorf("parse speech model header: %w", err)
+	}
+	profile := arch.ResolveWithTensors(metadata, tensors)
+	var adapter speechModel
+	switch profile.ComputeKind {
+	case modelprofile.ComputeQwen3TTSBackbone:
+		adapter = &speech.Qwen3TTS{}
+	case modelprofile.ComputeChatterboxTurboBackbone:
+		adapter = &speech.ChatterboxTurbo{}
+	default:
+		return fmt.Errorf("%w: no speech runtime for architecture %q", ErrSpeechUnsupported, m.modelInfo.Architecture)
+	}
+
 	cfg, err := ResolveSpeechConfig(m.cfg)
 	if err != nil {
 		return err
@@ -130,7 +121,7 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	if err != nil {
 		return fmt.Errorf("init speech context: %w", err)
 	}
-	engine := speechEngine{}
+	engine := speechEngine{adapter: adapter}
 	defer func() {
 		if err != nil {
 			engine.free()
@@ -142,8 +133,8 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	if err != nil {
 		return fmt.Errorf("speech context memory: %w", err)
 	}
-	if got := llama.NCtxSeq(lctx); got != speechContextWindow {
-		return fmt.Errorf("speech context per sequence: got %d, want %d", got, speechContextWindow)
+	if got := llama.NCtxSeq(lctx); got != speech.AutoregressiveContextWindow {
+		return fmt.Errorf("speech context per sequence: got %d, want %d", got, speech.AutoregressiveContextWindow)
 	}
 	voiceName, err := mtmd.GenAudioVoiceName(m.mtmdMetaCtx, 0)
 	if err != nil {
@@ -161,34 +152,30 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	input.SpeakerRef = engine.voice
 	vocab := llama.ModelGetVocab(m.model)
 	suppressed := copySuppressTokens(vocab)
-	var biases []llama.LogitBias
-	for _, token := range suppressed {
-		biases = append(biases, llama.LogitBias{Token: token, Bias: float32(math.Inf(-1))})
-	}
 
 	for i := range cfg.NSeqMax() {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		helper, err := mtmd.HelperGenAudioInit(lctx, m.mtmdMetaCtx)
+		slot := speechSlot{input: input}
+		slot.input.SeqID = llama.SeqId(i)
+		execution, err := speech.NewAutoregressive(ctx, m.log, speech.AutoregressiveConfig{
+			Model:          m.model,
+			Context:        lctx,
+			Memory:         mem,
+			Decoder:        m.mtmdMetaCtx,
+			Input:          slot.input,
+			SuppressTokens: suppressed,
+			MaxFrames:      cfg.SpeechMaxFrames(),
+		})
 		if err != nil {
 			return fmt.Errorf("init speech sequence %d: %w: %w", i, ErrSpeechUnsupported, err)
 		}
-		slot := speechSlot{helper: helper, input: input}
-		slot.input.SeqID = llama.SeqId(i)
-		slot.sampler = llama.SamplerChainInit(llama.SamplerChainDefaultParams())
-		if len(biases) > 0 {
-			llama.SamplerChainAdd(slot.sampler, llama.SamplerInitLogitBias(llama.VocabNTokens(vocab), int32(len(biases)), unsafe.SliceData(biases)))
-		}
-		llama.SamplerChainAdd(slot.sampler, llama.SamplerInitPenalties(llama.VocabNTokens(vocab), 4096, 1.05, 0, 0))
-		llama.SamplerChainAdd(slot.sampler, llama.SamplerInitTopK(slot.input.TopK))
-		llama.SamplerChainAdd(slot.sampler, llama.SamplerInitTemp(slot.input.Temp))
-		llama.SamplerChainAdd(slot.sampler, llama.SamplerInitDist(slot.input.Seed))
+		slot.execution = execution
 		engine.slots = append(engine.slots, slot)
 		m.log(ctx, "speech-runtime", "status", "slot-ready", "slot", i)
 	}
 
-	runtime.KeepAlive(biases)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -202,15 +189,255 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	m.speech = &engine
 	m.log(ctx, "MODEL-INFO", "values", m.modelInfo.String())
 	m.log(ctx, "MODEL-CONFIG", "values", cfg.String())
-	engine.start(m)
+
+	engine.model = m
+	engine.maxFrames = cfg.SpeechMaxFrames()
+	engine.requestQ = make(chan *speechJob, max(len(engine.slots)*cfg.QueueDepth(), 1))
+	engine.stopCh = make(chan struct{})
+	engine.doneCh = make(chan struct{})
+	engine.accepting = true
+
+	go engine.processLoop()
 
 	return nil
 }
 
+func (e *speechEngine) prepare(slot *speechSlot) error {
+	req := slot.job.request
+	tokens := llama.Tokenize(e.model.vocab, req.Input, false, true)
+	slot.job.promptTokens = len(tokens)
+	input := slot.input
+	referenceTokens, err := e.adapter.Prepare(e.model.vocab, req.Language, req.Reference.Text, &input)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+	if len(tokens) == 0 || len(tokens)+referenceTokens+1+e.maxFrames > speech.AutoregressiveContextWindow {
+		return fmt.Errorf("%w: speech text exceeds the context budget", ErrInvalidRequest)
+	}
+	if len(req.Reference.Audio) > 0 {
+		if !mtmd.SupportAudio(e.model.mtmdMetaCtx) {
+			return fmt.Errorf("%w: speech decoder has no reference audio encoder", ErrInvalidRequest)
+		}
+		voice, err := newMediaBitmap(e.model.mtmdMetaCtx, req.Reference.Audio)
+		if err != nil {
+			return fmt.Errorf("%w: speech reference: %w", ErrInvalidRequest, err)
+		}
+		slot.voice = voice
+		input.SpeakerRef = voice
+	}
+	if req.Voice != "" && req.Voice != "default" {
+		voice, err := mtmd.GenAudioGetVoice(e.model.mtmdMetaCtx, req.Voice)
+		if err != nil {
+			return fmt.Errorf("%w: speech voice: %w", ErrInvalidRequest, err)
+		}
+		if voice == 0 {
+			return fmt.Errorf("%w: unknown speech voice %q", ErrInvalidRequest, req.Voice)
+		}
+		slot.voice = voice
+		input.SpeakerRef = voice
+	}
+	if err := slot.job.ctx.Err(); err != nil {
+		return err
+	}
+	input.SetPrompt(req.Input)
+	if err := slot.execution.Start(&input); err != nil {
+		// Reference preprocessing can reject an otherwise valid WAV (for
+		// example, a clip too short for the speaker encoder). No backbone
+		// rows have been decoded; normal helper/sequence cleanup permits reuse.
+		if len(req.Reference.Audio) > 0 {
+			return fmt.Errorf("%w: preparing speech reference: %w", ErrInvalidRequest, err)
+		}
+		return fmt.Errorf("prepare speech input: %w", err)
+	}
+	slot.started = true
+	return nil
+}
+
+func (e *speechEngine) step(slot *speechSlot) (SpeechResponse, bool, bool, error) {
+	if !slot.started {
+		if err := e.prepare(slot); err != nil {
+			fatal := !errors.Is(err, ErrInvalidRequest) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+			return SpeechResponse{}, false, fatal, err
+		}
+	}
+	output, done, fatal, err := slot.execution.Step(slot.job.ctx, slot.job.promptTokens)
+	switch {
+	case errors.Is(err, speech.ErrContextLimit):
+		err = fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	case errors.Is(err, speech.ErrFrameLimit):
+		err = ErrSpeechLimit
+	}
+	response := SpeechResponse{
+		Audio:      output.Audio,
+		SampleRate: output.SampleRate,
+		Samples:    output.Samples,
+		Stereo:     output.Stereo,
+	}
+	return response, done, fatal, err
+}
+
+func (e *speechEngine) shutdown(err error) {
+	e.submitMu.Lock()
+	defer e.submitMu.Unlock()
+	if e.accepting {
+		e.accepting = false
+		e.stopErr = err
+		close(e.stopCh)
+	}
+}
+
+func (e *speechEngine) stoppedErr() error {
+	e.submitMu.Lock()
+	defer e.submitMu.Unlock()
+	return e.stopErr
+}
+
+func (e *speechEngine) stop(ctx context.Context) error {
+	e.shutdown(errSpeechEngineStopped)
+	select {
+	case <-e.doneCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (e *speechEngine) run(ctx context.Context, req SpeechRequest) (SpeechResponse, int, error) {
+	if err := ctx.Err(); err != nil {
+		return SpeechResponse{}, 0, err
+	}
+	job := speechJob{ctx: ctx, request: req, resultCh: make(chan speechResult, 1)}
+	e.submitMu.Lock()
+	if !e.accepting {
+		err := e.stopErr
+		e.submitMu.Unlock()
+		return SpeechResponse{}, 0, err
+	}
+	e.submitWG.Add(1)
+	e.submitMu.Unlock()
+
+	var err error
+	select {
+	case e.requestQ <- &job:
+	case <-ctx.Done():
+		err = ctx.Err()
+	case <-e.stopCh:
+		err = e.stoppedErr()
+	}
+	e.submitWG.Done()
+	if err != nil {
+		return SpeechResponse{}, 0, err
+	}
+	var result speechResult
+	select {
+	case result = <-job.resultCh:
+	case <-ctx.Done():
+		// Claim an unstarted job solely to prevent the owner starting it.
+		// Running work must acknowledge cleanup before releasing admission.
+		if job.claimed.CompareAndSwap(false, true) {
+			return SpeechResponse{}, 0, ctx.Err()
+		}
+		result = <-job.resultCh
+	}
+	if err := ctx.Err(); err != nil {
+		result.response = SpeechResponse{}
+		result.err = err
+	}
+	return result.response, result.promptTokens, result.err
+}
+
+// processLoop gives every active slot one bounded prefill or generation step
+// per round. Only this goroutine touches native inference state after loading.
+func (e *speechEngine) processLoop() {
+	defer close(e.doneCh)
+	for {
+		select {
+		case <-e.stopCh:
+			e.submitWG.Wait()
+			err := e.stoppedErr()
+			for i := range e.slots {
+				if e.slots[i].job != nil {
+					e.finish(&e.slots[i], SpeechResponse{}, err)
+				}
+			}
+			for {
+				select {
+				case job := <-e.requestQ:
+					job.resultCh <- speechResult{err: err}
+				default:
+					return
+				}
+			}
+		default:
+		}
+
+		active := false
+		for i := range e.slots {
+			slot := &e.slots[i]
+			if slot.job == nil {
+				select {
+				case slot.job = <-e.requestQ:
+					if !slot.job.claimed.CompareAndSwap(false, true) {
+						slot.job = nil
+						active = true // Revisit the queue without going idle.
+						continue
+					}
+				default:
+					continue
+				}
+			}
+			active = true
+			select {
+			case <-e.stopCh:
+				continue
+			default:
+			}
+			if err := slot.job.ctx.Err(); err != nil {
+				e.finish(slot, SpeechResponse{}, err)
+				continue
+			}
+			response, done, fatal, err := e.step(slot)
+			if fatal {
+				e.shutdown(err)
+			}
+			if done || err != nil {
+				e.finish(slot, response, err)
+			}
+		}
+		if !active {
+			select {
+			case e.slots[0].job = <-e.requestQ:
+				if !e.slots[0].job.claimed.CompareAndSwap(false, true) {
+					e.slots[0].job = nil
+				}
+			case <-e.stopCh:
+			}
+		}
+	}
+}
+
+func (e *speechEngine) finish(slot *speechSlot, response SpeechResponse, err error) {
+	job := slot.job
+	if cleanupErr := slot.execution.Reset(); cleanupErr != nil {
+		e.shutdown(cleanupErr)
+		err = errors.Join(err, cleanupErr)
+	}
+	if slot.voice != 0 {
+		mtmd.BitmapFree(slot.voice)
+	}
+	*slot = speechSlot{execution: slot.execution, input: slot.input}
+	if cancelErr := job.ctx.Err(); cancelErr != nil {
+		err = cancelErr
+	}
+	if err != nil {
+		response = SpeechResponse{}
+	}
+	job.resultCh <- speechResult{response: response, promptTokens: job.promptTokens, err: err}
+}
+
 func (e *speechEngine) free() {
 	for _, v := range slices.Backward(e.slots) {
-		llama.SamplerFree(v.sampler)
-		mtmd.HelperGenAudioFree(v.helper)
+		v.execution.Free()
 	}
 	e.slots = nil
 	if e.voice != 0 {

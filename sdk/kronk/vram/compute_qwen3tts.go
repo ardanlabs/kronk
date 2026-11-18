@@ -96,12 +96,94 @@ func qwen3TTSDecoderResult(tensors []gguf.TensorInfo, size int64, cfg Config) (R
 	}
 	// Native allocates 38 F32 slots; allow alignment and tensor bookkeeping.
 	stateBytes += 16 * 1024
+	// b12503 speaker mel uses a 256-sample hop at 24 kHz. Reserve the
+	// entire accepted clip, not the old speaker warmup length. Pooling has
+	// repeated mean/std, concatenation, attention and weighted-stat arrays;
+	// allow 32 full-width F32 arrays in addition to convolution intermediates.
+	melFrames := speechReferenceSeconds*24000/256 + 1
+	speakerWidth := int64(1536)
+	if dims := dimensions["a.conv_out.weight"]; len(dims) == 3 {
+		speakerWidth = max(speakerWidth, dims[2])
+	}
+	referenceGraph := 4 * melFrames * 32 * speakerWidth
+	for name, dims := range dimensions {
+		if strings.HasPrefix(name, "a.") && !strings.HasPrefix(name, "a.gen.") &&
+			!strings.HasPrefix(name, "a.seanet.") && !strings.HasPrefix(name, "a.downsample.") &&
+			strings.HasSuffix(name, ".weight") && len(dims) == 3 {
+			referenceGraph += speechReferenceConvGraph(dims, melFrames)
+		}
+	}
+	// Four mel copies plus padded waveform/STFT preprocessing scratch. The
+	// audio decoder/bitmap and per-slot accepted WAV are reserved separately.
+	referenceHost := 16*128*melFrames + 8*speechReferenceSeconds*24000
+	var referenceBytes int64
+	if marker, ok := dimensions["a.gen.enc.quant.rest.codebook.weight"]; ok {
+		// Native has_ref_encoder() uses this marker, not has_audio_encoder.
+		// Old projectors still pay for speaker conditioning, but never for
+		// the absent SEANet/transformer/RVQ reference encoder graph.
+		if len(marker) != 3 || marker[0] <= 0 || marker[1] <= 0 || marker[2] <= 0 {
+			return Result{}, fmt.Errorf("Qwen3-TTS reference estimate requires a positive rank-3 codebook, got %v", marker)
+		}
+		// SEANet strides 4,5,6,8: 720000 samples -> 750 transformer
+		// positions -> 375 reference frames after stride-2 downsampling.
+		// Sum im2col/layout/activation allowances at each stage's own rate,
+		// without assuming graph allocator lifetime reuse. These are
+		// unmeasured graph allowances, not calibrated allocator bounds.
+		steps := speechReferenceSeconds * 24000
+		convs := map[string]int64{"a.seanet.conv_in.weight": steps}
+		for block, stride := range []int64{4, 5, 6, 8} {
+			for _, kind := range []string{"res_conv1", "res_conv2"} {
+				convs[fmt.Sprintf("a.seanet.blk.%d.%s.weight", block, kind)] = steps
+			}
+			steps = (steps + stride - 1) / stride
+			convs[fmt.Sprintf("a.seanet.blk.%d.scale_conv.weight", block)] = steps
+		}
+		convs["a.seanet.conv_out.weight"] = steps
+		convs["a.downsample.conv.weight"] = (steps + 1) / 2
+		for name, length := range convs {
+			dims := dimensions[name]
+			if len(dims) != 3 || dims[0] <= 0 || dims[1] <= 0 || dims[2] <= 0 {
+				return Result{}, fmt.Errorf("Qwen3-TTS reference estimate requires positive rank-3 %s, got %v", name, dims)
+			}
+			referenceGraph += speechReferenceConvGraph(dims, length)
+		}
+		for name, dims := range dimensions {
+			if strings.HasPrefix(name, "a.gen.enc.tfm.") && strings.HasSuffix(name, ".weight") && len(dims) == 2 {
+				// Four F32 arrays per projected width provision projection,
+				// normalization/activation and residual/layout intermediates.
+				referenceGraph += 16 * steps * dims[1]
+				if strings.HasSuffix(name, ".attn_q.weight") {
+					// Eight heads; explicitly allow score and softmax arrays
+					// even on backends that can fuse attention.
+					referenceGraph += 8 * 8 * steps * steps
+				}
+			}
+		}
+		refFrames := (steps + 1) / 2
+		// RVQ distances and reductions across all codebooks, plus readback
+		// groups and their frame-major copy. Include native output, helper
+		// speaker/ref rows and prompt-construction overlap in host scratch.
+		first := dimensions["a.gen.enc.quant.first.codebook.weight"]
+		if len(first) != 2 || first[0] <= 0 || first[1] <= 0 {
+			return Result{}, fmt.Errorf("Qwen3-TTS reference estimate requires a positive rank-2 first codebook, got %v", first)
+		}
+		referenceGraph += 8*refFrames*(first[1]+marker[1]*marker[2]) + 4*steps*steps
+		referenceBytes = 4 * refFrames * (marker[2] + 1)
+		width := int64(2048)
+		if dims := dimensions["a.gen.code.out_embd.weight"]; len(dims) == 2 {
+			width = dims[0]
+		}
+		referenceGraph += 8 * refFrames * width
+		referenceHost += 4*steps*steps + 16*(refFrames+1)*width + 2*referenceBytes + 8*speechReferenceSeconds*24000
+	}
 	return Calculate(Input{
 		Architecture: "clip", ModelSizeBytes: size, ComputeBackend: cfg.ComputeBackend,
 		ComputeKind: modelprofile.ComputeQwen3TTSDecoder, NoPersistentCache: true,
 		Slots: max(cfg.Slots, 1), GPULayers: cfg.GPULayers,
 		Speech: &SpeechConfig{MaxFrames: frames}, speechCodecStateBytes: stateBytes,
 		speechSamplesPerFrame: samplesPerFrame,
+		speechReferenceGraph:  referenceGraph, speechReferenceHost: referenceHost,
+		speechReferenceBytes: referenceBytes,
 	}), nil
 }
 
@@ -117,11 +199,15 @@ func qwen3TTSDecoderMemory(input Input) ComputeMemory {
 	if input.Speech != nil && input.Speech.MaxFrames != 0 {
 		frames = input.Speech.MaxFrames
 	}
-	workspace := int64(1536 * 1024 * 1024)
+	workspace := int64(1536*1024*1024) + input.speechReferenceGraph
 	runtime := int64(128 * 1024 * 1024)
 	// Both subcontexts retain host workspace, and each active state retains
 	// one full-window waveform readback even when the last window is partial.
 	host := int64(32*1024*1024) + max(input.Slots, 1)*(4*qwen3TTSWindowFrames*input.speechSamplesPerFrame+256*1024)
+	// Shared last reference plus deep-copied reference codes per helper.
+	// The retained input bitmap and WAV are independent of generated output.
+	host += input.speechReferenceHost + (max(input.Slots, 1)+1)*input.speechReferenceBytes
+	host += speechReferenceAudioMemory(input.Slots, 24000)
 	// Other backends have not been measured. Provisionally add 50% to shared
 	// arenas and host scratch before applying the normal 10% margin.
 	// Codec state has source-derived dimensions and is not scaled with arenas.

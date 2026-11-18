@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/kronk/parsers/qwen"
 )
 
 func TestContentRoundTrip(t *testing.T) {
@@ -135,17 +134,6 @@ func TestMessagesSchemaAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertJSONEqual(t, string(got), string(want))
-
-	// Exercise Qwen's real schema consumer, not just its expected Go shape.
-	calls := (qwen.Parser{}).ToolCallWithSchema(t.Context(), nil,
-		"<function=lookup>\n<parameter=id>\n9007199254740993\n</parameter>\n<parameter=enabled>\ntrue\n</parameter>\n</function>", tools)
-	if len(calls) != 1 {
-		t.Fatalf("calls: got %d, want 1", len(calls))
-	}
-	args := calls[0].Function.Arguments
-	if args["id"] != json.Number("9007199254740993") || args["enabled"] != true {
-		t.Errorf("Qwen arguments: got %#v, want exact integer and boolean", args)
-	}
 }
 
 func TestToolResultTranslation(t *testing.T) {

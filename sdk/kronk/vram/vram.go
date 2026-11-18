@@ -142,8 +142,10 @@ type Input struct {
 	SWAFull               bool                     // Size SWA layers against the full context window.
 	VTransposed           bool                     // Size V using the model-wide transposed layout.
 	cacheLayerDevices     []int                    // Internal placement for shared compressed-cache mirrors.
-	speechReferenceTokens int64                    // Largest preset reference read from the decoder tensors.
-	speechReferenceBytes  int64                    // Largest materialized preset reference copied into a helper.
+	speechReferenceTokens int64                    // Largest preset or accepted audio reference, in codec frames.
+	speechReferenceBytes  int64                    // Largest reference copied into each helper and the shared last-reference state.
+	speechReferenceGraph  int64                    // Unmeasured, dimension-based shared encoding graph allowance.
+	speechReferenceHost   int64                    // Serialized reference preprocessing/readback scratch.
 	speechVoiceBytes      int64                    // Materialized preset voice payload.
 	speechEmbeddingBytes  int64                    // Encoded embedding readback during lazy helper initialization.
 	speechCodecStateBytes int64                    // F32 persistent codec state per active helper.

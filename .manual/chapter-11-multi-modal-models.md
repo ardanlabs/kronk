@@ -282,8 +282,11 @@ This uses the standard `context`, `errors`, and `os` packages plus
 initialization, and error handling.
 
 `SpeechResponse.Audio` contains the WAV header and audio data, not base64 or
-raw PCM. `SampleRate` is samples per second and `Samples` excludes the header;
-duration is `float64(Samples) / float64(SampleRate)` seconds. The caller owns
+raw PCM. `SampleRate` and `Samples` are `int` values: samples per second per
+channel and sample count per channel, excluding the header. `Stereo` is a
+`bool`: false means mono and true means stereo. The currently supported
+speech models return mono (`Stereo: false`). Duration is
+`float64(Samples) / float64(SampleRate)` seconds. The caller owns
 the bytes, which remain valid after another request or model unload. No
 partial audio is returned on failure. Speech calls do not require a chat
 template and must not be sent through chat, embedding, or reranking methods.
@@ -297,10 +300,38 @@ template and must not be sent through chat, embedding, or reranking methods.
   default conditioning. Other voice names must be presets in that exact
   decoder bundle. OpenAI voice names such as `alloy` are not a supported
   universal voice list. Qwen Base does not need a preset named `default`.
-- The request has no language, reference-audio, voice-cloning, speed, or
-  speech-sampling options. The tested path is English; Qwen currently uses
-  the native English default rather than exposing its family's language
-  selector. Chat sampling settings and `max_tokens` do not configure speech.
+- `Reference` is an optional value of type `model.SpeechReference`. Its zero
+  value preserves existing default/preset behavior. Set `Reference.Audio` to
+  the bytes of a **PCM16 little-endian mono WAV**, at **8–48 kHz**, with
+  **1 sample through 30 seconds** of audio and at most **8 MiB** including
+  metadata. Filenames, base64 strings, stereo, compressed audio and other WAV
+  encodings are not accepted. Use a recording you own or have permission to
+  use. Keep its bytes unchanged until `Speech` returns. These are container
+  limits, not a guarantee that every recording supplies usable speaker
+  features: encoder rejection, including clips that are too short, returns
+  `model.ErrInvalidRequest` without disabling subsequent requests.
+- Reference audio replaces default conditioning for both Qwen3-TTS Base and
+  Chatterbox Turbo. Combining it with a named preset `Voice` is rejected;
+  empty `Voice` and `"default"` are allowed. Voice similarity depends on the
+  model and recording; matching the input speaker is not guaranteed.
+- `Reference.Text` is an optional transcript of the **reference recording**,
+  not the new utterance. It requires `Reference.Audio` and must be nonblank
+  UTF-8 without NUL bytes, at most 64 KiB. Only Qwen3-TTS supports it. A
+  matching decoder with the newer reference codec encoder uses the transcript
+  for in-context conditioning. Older decoders log a warning and use only
+  speaker-embedding conditioning; supplying a transcript does not add the
+  missing encoder. The previously qualified Qwen decoder has this fallback
+  behavior. Transcript tokens and encoded audio conditioning must fit the
+  context along with the new text and generation budget.
+- `Language` is optional and Qwen-only. Empty uses English. Accepted names and
+  codes are English (`en`), Chinese (`zh`), German (`de`), Italian (`it`),
+  Portuguese (`pt`), Spanish (`es`), Japanese (`ja`), Korean (`ko`), French
+  (`fr`), and Russian (`ru`); names/codes are case-insensitive. The loaded
+  backbone must contain the corresponding language token. This selects
+  conditioning, not translation: provide the text in the desired language.
+  Chatterbox Turbo rejects language selection and reference transcripts.
+- Speed and speech-sampling controls are not exposed. Chat sampling settings
+  and `max_tokens` do not configure speech.
 - `model.WithSpeech(&model.SpeechConfig{MaxFrames: 256})` can lower the
   generation ceiling. Nil configuration or `MaxFrames: 0` uses **512**;
   accepted explicit limits are **1–512**. Frames are model-specific units,
@@ -316,6 +347,28 @@ template and must not be sent through chat, embedding, or reranking methods.
   default is **1**. Requests can overlap, but native inference is serialized;
   more slots do not promise a throughput speedup. Memory requirements grow
   with slot count even though the loaded model weights are shared.
+
+For example, read a permitted recording from disk with `os.ReadFile` and pass
+its bytes to the already-loaded handle:
+
+```go
+recording, err := os.ReadFile("reference.wav")
+if err != nil {
+    return err
+}
+response, err := krn.Speech(ctx, model.SpeechRequest{
+    Input: "This is a new sentence in the reference voice.",
+    Reference: model.SpeechReference{
+        Audio: recording,
+        // Text: "The words spoken in reference.wav.", // Optional, Qwen-only.
+    },
+    // Language: "en", // Optional, Qwen-only.
+})
+if err != nil {
+    return err
+}
+return os.WriteFile("conditioned.wav", response.Audio, 0644)
+```
 
 Use a context deadline for processing. Cancellation is checked between native
 steps and around final audio generation; it may wait for an in-flight native
@@ -352,14 +405,19 @@ temporary pressure with no idle eviction candidate returns `pool.ErrServerBusy`.
 
 Speech memory planning supports the bundles above through 512 frames, without
 restricting the selected native backend. CPU decoder placement charges weights
-and working memory to RAM rather than VRAM. Non-Metal memory estimates are
-provisional; leave spare RAM and VRAM when choosing pool budgets. Estimates are
-not peak-memory guarantees, and execution requires a compatible native library
+and working memory to RAM rather than VRAM. Reservations include the accepted
+30-second reference workload even when a particular request omits `Reference`.
+Reference-encoding workspace estimates are provisional on every backend;
+Qwen decoders with the optional transcript-conditioning encoder require
+additional capacity. Non-Metal generation estimates are also provisional.
+Leave spare RAM and VRAM when choosing pool budgets. Estimates are not
+peak-memory guarantees, and execution requires a compatible native library
 bundle. Unsupported decoder layouts fail planning explicitly. Lower frame
-limits can reduce output allowances without reducing all working memory.
+limits can reduce output allowances without reducing reference-encoding or
+all other working memory.
 
-Incremental/streaming audio delivery, selectable output formats, reference
-voices, and an HTTP/BUI synthesis interface remain outside this SDK contract.
+Incremental/streaming audio delivery, selectable output formats, and an HTTP/BUI
+synthesis interface remain outside this SDK contract.
 
 ---
 

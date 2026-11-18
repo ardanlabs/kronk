@@ -5736,7 +5736,8 @@ const speechExample = `// This example shows you how to generate speech with Kro
 // Speech detection and decoder discovery are automatic; WithSpeech is optional.
 // The verified bundles are Chatterbox Turbo and Qwen3-TTS 1.7B Base on Metal.
 // Change modelSource below to switch between them, without a decoder URL.
-// Streaming audio, voice cloning, and a language selector are not exposed.
+// Both accept optional reference recordings; Qwen also accepts a language and
+// reference transcript. Streaming audio is not exposed.
 //
 // Run the example like this from the root of the project:
 // $ make example-speech
@@ -5863,6 +5864,10 @@ func speech(krn *kronk.Kronk) error {
 	request := model.SpeechRequest{
 		Input: "Mary had a little lamb, Its fleece was white as snow; And everywhere that Mary went, The lamb was sure to go.",
 		Voice: "", // Empty uses default conditioning, even without named presets.
+		// Language: "en", // Qwen-only; empty also uses English.
+		// Reference: model.SpeechReference{Audio: recording, Text: transcript},
+		// recording is PCM16 mono WAV bytes at 8–48 kHz, at most 30 seconds.
+		// transcript is optional and Qwen-only; leave it empty for Chatterbox.
 	}
 	fmt.Println("\\nTEXT:", request.Input)
 

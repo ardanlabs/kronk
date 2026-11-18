@@ -70,7 +70,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func RegisterParser(f ParserFactory)</code>
               </pre>
-              <p className="doc-description">RegisterParser appends a parser factory to the registry. Call once per parser at server bootstrap, before any models are loaded. Order matters: the catch-all parser (fallback) must be registered last so the more specific parsers get first chance to claim.</p>
+              <p className="doc-description">RegisterParser appends a custom parser factory to the registry. Call once per parser at application bootstrap, before any models are loaded. Custom parsers are tried in registration order, ahead of all built-in parsers. A custom catch-all prevents subsequent factories and built-ins from running.</p>
             </div>
 
             <div className="doc-section" id="func-speculativecontextcount">
@@ -1129,7 +1129,7 @@ export default function DocsSDKModel() {
 	ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
 }`}</code>
               </pre>
-              <p className="doc-description">Parser is the plugin interface implemented by each model lineage. Implementations live in sdk/kronk/parsers/&lt;name&gt;/ and are registered at startup via RegisterParser.</p>
+              <p className="doc-description">Parser is the plugin interface implemented by each model lineage. Built-in implementations are model-internal. Applications implement this interface to add custom parsers through RegisterParser.</p>
             </div>
 
             <div className="doc-section" id="type-parserfactory">
@@ -1294,15 +1294,28 @@ export default function DocsSDKModel() {
               <p className="doc-description">SpeechConfig configures speech generation limits. It does not select the model's runtime; speech models are identified from their model bundle. The initial runtime uses 2,048 context tokens per sequence, 512-token logical and physical batches, and partitioned F16 KV cache. Incompatible overrides, IMC, speculative decoding, and adapters are rejected during model loading. NSeqMax controls overlapping requests (default one); native execution remains serialized. Chat sampling settings do not configure speech generation.</p>
             </div>
 
+            <div className="doc-section" id="type-speechreference">
+              <h4>SpeechReference</h4>
+              <pre className="code-block">
+                <code>{`type SpeechReference struct {
+	Audio []byte // Encoded speaker recording, not a filename or base64.
+	Text  string // Optional transcript of Audio, not the new text to generate.
+}`}</code>
+              </pre>
+              <p className="doc-description">SpeechReference supplies an optional speaker recording. Its zero value means no reference. Audio must be a PCM16 little-endian mono WAV at 8–48 kHz, no longer than 30 seconds and at most 8 MiB including container metadata. Text is an optional nonblank UTF-8 transcript of Audio, at most 64 KiB; it is supported only by Qwen3-TTS. A decoder with a reference encoder uses the transcript for in-context conditioning; older decoders fall back to speaker-embedding conditioning. The caller must not modify Audio until Speech returns. Use recordings you own or have permission to use.</p>
+            </div>
+
             <div className="doc-section" id="type-speechrequest">
               <h4>SpeechRequest</h4>
               <pre className="code-block">
                 <code>{`type SpeechRequest struct {
-	Input string // Text to speak.
-	Voice string // Preset voice name; empty or "default" uses default conditioning.
+	Input     string          // Text to speak.
+	Voice     string          // Preset voice name; empty or "default" uses default conditioning.
+	Language  string          // Qwen language name or two-letter code; empty uses English.
+	Reference SpeechReference // Optional; the zero value preserves default/preset conditioning.
 }`}</code>
               </pre>
-              <p className="doc-description">SpeechRequest supplies text and an optional preset voice for speech generation. Input must be nonblank UTF-8 without NUL bytes, at most 64 KiB, and fit the context window together with voice conditioning and the full frame budget. Empty Voice or "default" uses default model conditioning; other names must be presets in the loaded decoder. A bundle need not contain a named preset. Language selection, reference audio, and voice cloning are not exposed.</p>
+              <p className="doc-description">SpeechRequest supplies text and optional conditioning for speech generation. Input must be nonblank UTF-8 without NUL bytes, at most 64 KiB, and fit the context window together with voice conditioning and the full frame budget. Empty Voice or "default" uses default model conditioning; other names must be presets in the loaded decoder. A bundle need not contain a named preset. Reference audio replaces default conditioning and cannot be combined with a named preset. Language is supported only by Qwen3-TTS; empty uses English.</p>
             </div>
 
             <div className="doc-section" id="type-speechresponse">
@@ -1310,11 +1323,12 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`type SpeechResponse struct {
 	Audio      []byte // Complete WAV file, including its header.
-	SampleRate int32  // Samples per second.
-	Samples    int64  // Audio sample count, excluding the WAV header.
+	SampleRate int    // Samples per second per channel.
+	Samples    int    // Sample count per channel, excluding the WAV header.
+	Stereo     bool   // False is mono; true is stereo.
 }`}</code>
               </pre>
-              <p className="doc-description">SpeechResponse contains a complete PCM16 little-endian mono WAV. Audio is caller-owned and remains valid after subsequent requests or model unload.</p>
+              <p className="doc-description">SpeechResponse contains a complete PCM16 little-endian WAV. Audio is caller-owned and remains valid after subsequent requests or model unload. Currently supported speech models return mono audio (Stereo is false).</p>
             </div>
 
             <div className="doc-section" id="type-splitmode">
@@ -3397,6 +3411,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
                 <li><a href="#type-speculationmode">SpeculationMode</a></li>
                 <li><a href="#type-speechconfig">SpeechConfig</a></li>
+                <li><a href="#type-speechreference">SpeechReference</a></li>
                 <li><a href="#type-speechrequest">SpeechRequest</a></li>
                 <li><a href="#type-speechresponse">SpeechResponse</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>

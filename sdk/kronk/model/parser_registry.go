@@ -3,27 +3,9 @@ package model
 // =============================================================================
 // Parser Registry
 //
-// The registry holds an ordered list of parser factories. selectParser
-// walks the list in registration order and returns the first parser that
-// claims the given Fingerprint. Bootstrap is responsible for explicit
-// registration:
-//
-// model.RegisterParser(beam.New) // XML-Harmony before generic Harmony
-// model.RegisterParser(gpt.New) // Harmony before architecture lineages
-// model.RegisterParser(lfm.New)
-// model.RegisterParser(deepseek.New)
-// model.RegisterParser(llama.New)
-// model.RegisterParser(qwen.New)
-// model.RegisterParser(toolcall.New)
-// model.RegisterParser(gemma.New)
-// model.RegisterParser(glm.New)
-// model.RegisterParser(mistral.New)
-// model.RegisterParser(fallback.New) // catch-all — must be last
-//
-// There is no init()-time auto-registration. Every binary that needs
-// parser support enumerates the parsers it wants. This keeps the
-// wired-in set visible via `grep RegisterParser` and avoids accidental
-// dependencies pulled in by blank imports.
+// The model package owns the built-in parser set. The registry holds custom
+// factories, which are tried in registration order before the built-ins.
+// No caller bootstrap or init()-time registration is needed for defaults.
 // =============================================================================
 
 // ParserFactory is the constructor signature each parser package's
@@ -38,20 +20,15 @@ type ParserFactory func(Fingerprint) (Parser, bool)
 // no concurrent mutation in practice, so no lock is needed.
 var registeredParsers []ParserFactory
 
-// RegisterParser appends a parser factory to the registry. Call once
-// per parser at server bootstrap, before any models are loaded. Order
-// matters: the catch-all parser (fallback) must be registered last so
-// the more specific parsers get first chance to claim.
+// RegisterParser appends a custom parser factory to the registry. Call once
+// per parser at application bootstrap, before any models are loaded. Custom
+// parsers are tried in registration order, ahead of all built-in parsers.
+// A custom catch-all prevents subsequent factories and built-ins from running.
 func RegisterParser(f ParserFactory) {
 	registeredParsers = append(registeredParsers, f)
 }
 
-// selectParser walks the registered factories in registration order and
-// returns the first Parser that claims the fingerprint.
-//
-// Returns nil if no factory claims — bootstrap should always register a
-// catch-all (typically the fallback parser, registered last) so this
-// never happens in production.
+// selectParser tries custom factories first, then the ordered built-in set.
 func selectParser(fp Fingerprint) Parser {
 	for _, f := range registeredParsers {
 		parser, ok := f(fp)
@@ -60,5 +37,5 @@ func selectParser(fp Fingerprint) Parser {
 		}
 		return parser
 	}
-	return nil
+	return selectDefaultParser(fp)
 }
