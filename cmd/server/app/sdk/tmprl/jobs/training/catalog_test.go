@@ -2,8 +2,11 @@ package training_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -65,6 +68,84 @@ type unavailableCatalogClient struct{ client.Client }
 
 func (c unavailableCatalogClient) DescribeWorkflowExecution(context.Context, string, string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	return nil, serviceerror.NewUnavailable("injected outage")
+}
+
+type expiredCatalogClient struct{ client.Client }
+
+func (c expiredCatalogClient) DescribeWorkflowExecution(context.Context, string, string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+	return nil, serviceerror.NewNotFound("workflow history expired")
+}
+
+func TestCatalogHistoricalEvaluation(t *testing.T) {
+	db, _ := newCatalogDatabase(t)
+	ctx := t.Context()
+	e := tmprl.Execution{WorkflowID: "historical-training", RunID: "historical-run"}
+	if err := db.CreateJob(ctx, moxiedb.Job{JobID: "historical-job", Mode: "training"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateAttempt(ctx, moxiedb.Attempt{
+		AttemptID: "historical-attempt", JobID: "historical-job", AttemptNumber: 1,
+		TemporalNamespace: "default", WorkflowID: e.WorkflowID,
+		RunID: sql.NullString{String: e.RunID, Valid: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	observation, err := json.Marshal(job.CatalogObservation{State: job.State{EvaluationAvailable: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpdateAttemptObservation(ctx, "historical-attempt", 0, moxiedb.AttemptObservation{
+		ExecutionStatus: sql.NullString{String: "needs_improvement", Valid: true}, Observation: observation,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	files, err := uploads.New(uploads.Config{Root: filepath.Join(root, "uploads")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(root, "training-jobs", e.RunID, "steps", "training")
+	if err := os.MkdirAll(reportPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reportPath, "evaluation.json"), []byte(`{"base_correct":1,"adapter_correct":2,"total":5,"accepted":false,"answers":[{"prompt":"question","expected":"answer","base_answer":"wrong","adapter_answer":"answer"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := job.Config{Uploads: files, StorageRoot: root, MoxieDB: db, Trainer: &trainer{}}
+	j, err := job.New(expiredCatalogClient{}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := j.Evaluation(ctx, e)
+	if err != nil || report.BaseCorrect != 1 || report.AdapterCorrect != 2 || report.Total != 5 || report.Accepted || len(report.Answers) != 1 || report.Answers[0].Expected != "answer" {
+		t.Fatalf("historical evaluation: %+v, %v", report, err)
+	}
+	// An existing report file must not bypass the catalog's exact identity.
+	for _, other := range []tmprl.Execution{
+		{WorkflowID: "another-workflow", RunID: e.RunID},
+		{WorkflowID: e.WorkflowID, RunID: "another-run"},
+	} {
+		if _, err := j.Evaluation(ctx, other); !errors.Is(err, job.ErrNotFound) {
+			t.Fatalf("unregistered execution %+v: %v", other, err)
+		}
+	}
+	cfg.Namespace = "another-namespace"
+	other, err := job.New(expiredCatalogClient{}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Evaluation(ctx, e); !errors.Is(err, job.ErrNotFound) {
+		t.Fatalf("unregistered namespace: %v", err)
+	}
+	// A file alone does not make an unrecorded evaluation available.
+	if err := db.UpdateAttemptObservation(ctx, "historical-attempt", 1, moxiedb.AttemptObservation{
+		Observation: json.RawMessage(`{"state":{"EvaluationAvailable":false}}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Evaluation(ctx, e); !errors.Is(err, tmprl.ErrInvalidArgument) {
+		t.Fatalf("evaluation not recorded as available: %v", err)
+	}
 }
 
 type delayedCatalogClient struct {

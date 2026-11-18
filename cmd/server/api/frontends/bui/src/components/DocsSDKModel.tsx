@@ -2626,6 +2626,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">When apply_template is true, the returned count includes all template overhead (role markers, separators, generation prompt). This reflects the actual number of tokens that would be fed to the model.</p>
             </div>
 
+            <div className="doc-section" id="method-model-tokenizeids">
+              <h4>Model.TokenizeIDs</h4>
+              <pre className="code-block">
+                <code>func (m *Model) TokenizeIDs(ctx context.Context, input string) ([]int32, error)</code>
+              </pre>
+              <p className="doc-description">TokenizeIDs returns the model vocabulary's token IDs for non-empty input. It does not apply a chat template or add BOS or other special tokens. Model control tokens already present in input (such as formatted Gemma text) are parsed as special tokens, not ordinary text. Whitespace is preserved. Cancellation is checked before and after the synchronous native tokenizer; an in-progress native call cannot be interrupted.</p>
+            </div>
+
             <div className="doc-section" id="method-model-unload">
               <h4>Model.Unload</h4>
               <pre className="code-block">
@@ -3586,6 +3594,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-rerank">Model.Rerank</a></li>
                 <li><a href="#method-model-speech">Model.Speech</a></li>
                 <li><a href="#method-model-tokenize">Model.Tokenize</a></li>
+                <li><a href="#method-model-tokenizeids">Model.TokenizeIDs</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
                 <li><a href="#method-numastrategy-equal">NUMAStrategy.Equal</a></li>
