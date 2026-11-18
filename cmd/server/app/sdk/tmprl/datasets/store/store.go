@@ -50,6 +50,34 @@ type Dataset struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 	Versions      []int      `json:"versions"`
 	Documents     []Document `json:"documents"`
+	// Counts derived from the records on read; snapshots do not store them.
+	TrainingRecords     int `json:"-"`
+	ValidationQuestions int `json:"-"`
+	ValidationNeeded    int `json:"-"`
+	TestQuestions       int `json:"-"`
+	TestNeeded          int `json:"-"`
+}
+
+// count fills the derived counts. Only datasets with fact identities hold
+// evaluation questions, so other datasets need none.
+func (d *Dataset) count(records []training.Record) {
+	d.TrainingRecords, d.ValidationQuestions, d.TestQuestions = 0, 0, 0
+	facts := true
+	for _, r := range records {
+		facts = facts && r.FactID != ""
+		switch {
+		case r.ValidationPrompt:
+			d.ValidationQuestions++
+		case r.IndependentPrompt:
+			d.TestQuestions++
+		default:
+			d.TrainingRecords++
+		}
+	}
+	d.ValidationNeeded, d.TestNeeded = 0, 0
+	if facts && len(records) > 0 {
+		d.ValidationNeeded, d.TestNeeded = training.EvaluationNeeds(d.TrainingRecords)
+	}
 }
 
 // Document identifies a prepared contribution, not the original upload.
@@ -320,10 +348,35 @@ func sameSource(sha string, document Document, source string, pageStart, pageEnd
 	return sha == source && document.PageStart == pageStart && document.PageEnd == pageEnd
 }
 
+// records combines the contributions. An evaluation question can reword a record
+// from another document, so one whose training record was removed or skipped is
+// dropped, and each training record keeps only its first question of each kind.
 func (snapshot datasetSnapshot) records() []training.Record {
+	trained := make(map[string]bool)
+	for _, contribution := range snapshot.Contributions {
+		for _, r := range contribution.Records {
+			if !r.ValidationPrompt && !r.IndependentPrompt {
+				trained[r.FactID] = true
+			}
+		}
+	}
+	type question struct {
+		fact       string
+		validation bool
+	}
+	asked := make(map[question]bool)
 	records := []training.Record{}
 	for _, contribution := range snapshot.Contributions {
-		records = append(records, contribution.Records...)
+		for _, r := range contribution.Records {
+			if r.ValidationPrompt || r.IndependentPrompt {
+				q := question{r.FactID, r.ValidationPrompt}
+				if !trained[r.FactID] || asked[q] {
+					continue
+				}
+				asked[q] = true
+			}
+			records = append(records, r)
+		}
 	}
 	return records
 }
@@ -337,6 +390,7 @@ func (snapshot *datasetSnapshot) advance(operation, digest string) {
 		snapshot.Dataset.Documents = append(snapshot.Dataset.Documents, contribution.Document)
 	}
 	records := snapshot.records()
+	snapshot.Dataset.count(records)
 	snapshot.Dataset.RecordCount = len(records)
 	snapshot.Dataset.TrainingReady = training.TrainingReadiness(records) == nil
 	snapshot.Operation, snapshot.Digest = operation, digest
@@ -406,6 +460,12 @@ func (s *Store) read(ctx context.Context, id string, version int) (datasetSnapsh
 		return datasetSnapshot{}, fmt.Errorf("dataset snapshot identity mismatch")
 	}
 	snapshot.Dataset.Versions = versions
+	// The count and readiness follow the current dataset rules, not the rules a
+	// version was saved under.
+	records := snapshot.records()
+	snapshot.Dataset.count(records)
+	snapshot.Dataset.RecordCount = len(records)
+	snapshot.Dataset.TrainingReady = len(records) > 0 && training.TrainingReadiness(records) == nil
 	return snapshot, nil
 }
 

@@ -36,12 +36,12 @@ func (t *GoMLXTrainer) Train(ctx context.Context, job TrainingJob, publish func(
 }
 
 // Predict sends only prompts to inference, withholding targets and evidence.
-func (t *GoMLXTrainer) Predict(ctx context.Context, job TrainingJob, adapter string, records []Record) ([]string, error) {
+func (t *GoMLXTrainer) Predict(ctx context.Context, job TrainingJob, adapter string, records []Record, answered func(int)) ([]string, error) {
 	questions := make([]providers.Record, len(records))
 	for i, record := range records {
 		questions[i] = providers.Record{Prompt: record.Prompt}
 	}
-	return t.computer.Predict(ctx, computationJob(job), adapter, questions)
+	return t.computer.Predict(ctx, computationJob(job), adapter, questions, answered)
 }
 
 func computationJob(job TrainingJob) providers.TrainingJob {

@@ -3,6 +3,7 @@ package preparation
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 
@@ -92,6 +93,16 @@ type SourceExclusion struct {
 	Reason    string `json:"reason"`
 }
 
+// ExclusionWarning tells a reviewer how many parts of the document preparation
+// left out. Each exclusion's reason is in the result's source exclusions.
+func ExclusionWarning(count int) string {
+	parts := fmt.Sprintf("%d parts of the document were", count)
+	if count == 1 {
+		parts = "1 part of the document was"
+	}
+	return parts + " left out, such as page headers and footers, tables, pictures, or passages too long to use. Records come from the rest of the text."
+}
+
 // PreparationInput preserves durable preparation and checkpoint identity.
 type PreparationInput struct {
 	Request PreparationRequest `json:"request"`
@@ -99,8 +110,9 @@ type PreparationInput struct {
 }
 
 // DocumentExtractor converts a source and identifies its extraction profile.
+// Convert reports pages read so far to its progress function, which may be nil.
 type DocumentExtractor interface {
-	Convert(context.Context, string, providers.DocumentOptions) (providers.Document, error)
+	Convert(ctx context.Context, path string, options providers.DocumentOptions, progress func(pages int)) (providers.Document, error)
 	ExtractionProfile() string
 }
 
@@ -141,4 +153,7 @@ type PreparationContext struct {
 	OpenSource func(context.Context) (io.ReadCloser, error)
 	Extractor  DocumentExtractor
 	Completer  ModelCompleter
+	// DatasetRecords holds the target dataset's base version, so generation
+	// adds only the evaluation questions that dataset still needs.
+	DatasetRecords []training.Record
 }

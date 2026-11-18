@@ -23,8 +23,9 @@ import (
 // File is the shared checkpoint path within the preparation workspace.
 const File = "steps.json"
 
-// Version identifies the passage plan, multi-example recovery and omission policy.
-const Version = 4
+// Version identifies the passage plan, multi-example recovery, omission policy,
+// inline verification and per-dataset evaluation questions.
+const Version = 5
 
 // SafePoint is called only where no work is in flight and File contains the
 // committed cursor/results. A suspension must propagate without wrapping it as
@@ -138,7 +139,7 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 	if state.ReviewID != "" && (input.Review == nil || input.ReviewID != state.ReviewID || !slices.Equal(state.Records[:state.ReviewedCount], input.Review.Records)) {
 		return State{}, false, fmt.Errorf("%w: accepted review changed after generation started", preparation.ErrInvalidArgument)
 	}
-	if state.Next < 0 || state.Next > len(state.Units) || state.EvaluationNext < 0 || state.EvaluationNext > 30 || state.Verified < 0 || state.Verified > len(state.Records) {
+	if state.Next < 0 || state.Next > len(state.Units) || state.EvaluationNext < 0 || state.Verified < 0 || state.Verified > len(state.Records) {
 		return State{}, false, fmt.Errorf("invalid checkpoint bounds")
 	}
 	seen := make(map[string]bool, len(state.Units))
@@ -156,22 +157,26 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 	if state.GenerationAttempts > 3 || state.GenerationRejections > state.GenerationAttempts {
 		return State{}, false, fmt.Errorf("invalid request reservation bounds")
 	}
-	if state.GenerationAttempts > 0 && (state.Next >= len(state.Units) || state.Generated || state.EvaluationNext != 0 || state.Verified != 0) {
+	// Full preparation verifies records while it generates, so only Preview
+	// requires generation to precede verification.
+	verifiedEarly := p.Input.Kind == preparation.PreparationPreview && state.Verified != 0
+	if state.GenerationAttempts > 0 && (state.Next >= len(state.Units) || state.Generated || state.EvaluationNext != 0 || verifiedEarly) {
 		return State{}, false, fmt.Errorf("request reservation does not match pending source batch")
 	}
 	if state.GenerationRejections == 0 && (state.GenerationRejectedPrompt != "" || state.GenerationRejectionReason != "") || state.GenerationRejections > 0 && strings.TrimSpace(state.GenerationRejectedPrompt+state.GenerationRejectionReason) == "" || state.GenerationLastRejected && strings.TrimSpace(state.GenerationRejectionReason) == "" {
 		return State{}, false, fmt.Errorf("inconsistent generation rejection checkpoint")
 	}
-	if state.GenerationRejections > 0 && (state.Generated || state.Next >= len(state.Units) || state.EvaluationNext != 0 || state.Verified != 0) {
+	if state.GenerationRejections > 0 && (state.Generated || state.Next >= len(state.Units) || state.EvaluationNext != 0 || verifiedEarly) {
 		return State{}, false, fmt.Errorf("generation rejection checkpoint has no pending training batch")
 	}
 	if len(state.GenerationDecisions) > 0 {
 		end := min(state.Next+5, len(state.Units))
+		// A record limit shrinks the last batch to the records still needed.
 		validSize := len(state.GenerationDecisions) == end-state.Next
-		if limit := p.Input.Request.MaxQuestions; limit > 0 {
-			validSize = validSize || len(state.GenerationDecisions) == min(end-state.Next, max(0, limit-len(state.Records)))
+		if p.Input.Request.MaxQuestions > 0 {
+			validSize = len(state.GenerationDecisions) <= end-state.Next
 		}
-		if state.GenerationAttempts == 0 || state.Generated || state.EvaluationNext != 0 || state.Verified != 0 || !validSize {
+		if state.GenerationAttempts == 0 || state.Generated || state.EvaluationNext != 0 || verifiedEarly || !validSize {
 			return State{}, false, fmt.Errorf("pending generation decisions do not match the reserved batch")
 		}
 		candidates := slices.Clone(state.Records)
@@ -215,7 +220,7 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 	if state.EvaluationRejections == 0 && state.EvaluationRejectedPrompt != "" || state.EvaluationRejections > 0 && strings.TrimSpace(state.EvaluationRejectedPrompt) == "" {
 		return State{}, false, fmt.Errorf("inconsistent evaluation rejection checkpoint")
 	}
-	if state.EvaluationRejections > 0 && (state.Generated || state.Next != len(state.Units) || state.EvaluationNext >= 30 || state.Verified != 0 || p.Input.Kind != preparation.PreparationFull || p.Input.Request.Goal != preparation.GoalQuestionAnswer || len(state.Records)-state.EvaluationNext < 20) {
+	if state.EvaluationRejections > 0 && (state.Generated || state.Next != len(state.Units) || p.Input.Kind != preparation.PreparationFull || p.Input.Request.Goal != preparation.GoalQuestionAnswer) {
 		return State{}, false, fmt.Errorf("evaluation rejection checkpoint has no pending evaluation question")
 	}
 	if len(state.Records) > 0 {

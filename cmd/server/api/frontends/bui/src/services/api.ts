@@ -60,7 +60,6 @@ import type {
   TrainingEvaluation,
   TrainingRunsResponse,
   ContinueTrainingPreview,
-  StartPreparedTraining,
   TrainingDecisionReceipt,
   PreparationControl,
   PreparationControlReceipt,
@@ -1312,12 +1311,6 @@ class ApiService {
     return this.request(`/training/datasets/${encodeURIComponent(id)}/documents/${encodeURIComponent(documentID)}?base_version=${baseVersion}`, { method: 'DELETE' });
   }
 
-  async downloadPreparationDataset(id: string, version: number): Promise<Blob> {
-    const response = await this.fetch(`${this.baseUrl}/training/datasets/${encodeURIComponent(id)}/versions/${version}/download`, { cache: 'no-store' });
-    if (!response.ok) throw new ApiError(response.status, await this.parseErrorMessage(response));
-    return response.blob();
-  }
-
   async uploadTrainingDataset(file: File, signal?: AbortSignal): Promise<TrainingUpload> {
     const form = new FormData();
     form.append('file', file, file.name);
@@ -1348,19 +1341,12 @@ class ApiService {
     });
   }
 
-  async startPreparedTraining(workflowID: string, runID: string, request: StartPreparedTraining): Promise<TrainingDecisionReceipt> {
-    return this.request<TrainingDecisionReceipt>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/start-training`, {
-      method: 'POST',
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(30_000),
-    });
-  }
-
-  async trainingRuns(nextPageToken = '', signal?: AbortSignal, since = '', filter: { mode?: string; statuses?: string[]; pageSize?: number; order?: 'newest' | 'oldest' } = {}): Promise<TrainingRunsResponse> {
+  async trainingRuns(nextPageToken = '', signal?: AbortSignal, since = '', filter: { mode?: string; targetDatasetID?: string; statuses?: string[]; pageSize?: number; order?: 'newest' | 'oldest' } = {}): Promise<TrainingRunsResponse> {
     const query = new URLSearchParams();
     if (nextPageToken) query.set('next_page_token', nextPageToken);
     if (since) query.set('since', since);
     if (filter.mode) query.set('mode', filter.mode);
+    if (filter.targetDatasetID) query.set('target_dataset_id', filter.targetDatasetID);
     if (filter.pageSize) query.set('page_size', String(filter.pageSize));
     if (filter.order) query.set('order', filter.order);
     for (const status of filter.statuses ?? []) query.append('status', status);
@@ -1405,17 +1391,6 @@ class ApiService {
       signal,
       cache: 'no-store',
     });
-  }
-
-  async downloadTrainingArtifact(workflowID: string, runID: string, artifact: 'adapter' | 'dataset', signal?: AbortSignal): Promise<Blob> {
-    const response = await this.fetch(`${this.baseUrl}/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/${artifact}`, {
-      signal,
-      cache: 'no-store',
-    });
-    if (!response.ok) {
-      throw new ApiError(response.status, await this.parseErrorMessage(response));
-    }
-    return response.blob();
   }
 
 }

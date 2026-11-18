@@ -35,8 +35,9 @@ type extraction struct {
 
 // Run extracts a document and caches it by source identity and extractor settings
 // inside the execution workspace. After successful cache publication, retries do
-// not upload again. Failed or interrupted conversion may be repeated.
-func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, openSource func(context.Context) (io.ReadCloser, error), workspace *os.Root, options ...providers.DocumentOptions) (providers.Document, error) {
+// not upload again. Failed or interrupted conversion may be repeated. Progress,
+// when not nil, receives the pages the extractor has read so far.
+func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, openSource func(context.Context) (io.ReadCloser, error), workspace *os.Root, progress func(pages int), options ...providers.DocumentOptions) (providers.Document, error) {
 	profile, err := extractionProfile(extractor, sourceInfo, options...)
 	if err != nil {
 		return providers.Document{}, err
@@ -93,7 +94,7 @@ func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInf
 		if len(options) > 0 {
 			conversion = options[0]
 		}
-		document, err = extractor.Convert(ctx, path, conversion)
+		document, err = extractor.Convert(ctx, path, conversion, progress)
 		if err != nil {
 			return providers.Document{}, err
 		}

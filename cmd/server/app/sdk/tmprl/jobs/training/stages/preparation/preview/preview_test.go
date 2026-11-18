@@ -59,7 +59,7 @@ func inputFor(t *testing.T, count int, source []string) preparation.StepContext 
 	}
 	t.Cleanup(func() { workspace.Close() })
 	open := func(ctx context.Context) (io.ReadCloser, error) { return store.Open(ctx, file.ID) }
-	if _, err := extract.Run(t.Context(), nil, file, open, workspace); err != nil {
+	if _, err := extract.Run(t.Context(), nil, file, open, workspace, nil); err != nil {
 		t.Fatal(err)
 	}
 	open = func(context.Context) (io.ReadCloser, error) {

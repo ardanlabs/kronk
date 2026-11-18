@@ -77,7 +77,7 @@ func TestGoMLXPredictProtectedInput(t *testing.T) {
 				}
 				return stub, func() error { released++; return nil }, nil
 			}}
-			answers, err := trainer.Predict(ctx, job, adapter, records)
+			answers, err := trainer.Predict(ctx, job, adapter, records, nil)
 			if err != nil || !reflect.DeepEqual(answers, []string{" answer ", " answer "}) {
 				t.Fatalf("Predict: got %q, %v, want two unmodified answers, nil", answers, err)
 			}
@@ -88,6 +88,34 @@ func TestGoMLXPredictProtectedInput(t *testing.T) {
 				t.Errorf("records: got %+v, want %+v", records, original)
 			}
 		})
+	}
+}
+
+// A cut-off or empty answer is kept as given, so evaluation scores it as wrong
+// instead of failing the training run.
+func TestGoMLXPredictKeepsCutOffAnswers(t *testing.T) {
+	responses := []model.Choice{
+		{Message: &model.ResponseMessage{Content: "The answer runs on and"}, FinishReasonPtr: new(model.FinishReasonLength)},
+		{Message: &model.ResponseMessage{Content: " \n\t"}, FinishReasonPtr: new(model.FinishReasonStop)},
+		{Message: &model.ResponseMessage{Content: "no finish reason"}},
+	}
+	chats := 0
+	stub := inferenceStub{
+		cfg: model.Config{PtrContextWindow: new(512)},
+		tokenize: func(context.Context, model.D) (model.TokenizeResponse, error) {
+			return model.TokenizeResponse{Tokens: 1}, nil
+		},
+		chat: func(context.Context, model.D) (model.ChatResponse, error) {
+			chats++
+			return model.ChatResponse{Choices: []model.Choice{responses[chats-1]}}, nil
+		},
+	}
+	trainer := GoMLX{acquire: func(context.Context, TrainingJob, string) (inferenceModel, func() error, error) {
+		return stub, func() error { return nil }, nil
+	}}
+	answers, err := trainer.Predict(t.Context(), TrainingJob{PredictionTokens: 192}, "", []Record{{Prompt: "one"}, {Prompt: "two"}, {Prompt: "three"}}, nil)
+	if err != nil || !reflect.DeepEqual(answers, []string{"The answer runs on and", " \n\t", "no finish reason"}) {
+		t.Fatalf("Predict: got %q, %v, want every answer as given", answers, err)
 	}
 }
 
@@ -104,9 +132,6 @@ func TestGoMLXPredictFailureCleanup(t *testing.T) {
 		{name: "no choices"},
 		{name: "multiple choices", choices: []model.Choice{choice, choice}},
 		{name: "nil message", choices: []model.Choice{{FinishReasonPtr: new(model.FinishReasonStop)}}},
-		{name: "blank answer", choices: []model.Choice{{Message: &model.ResponseMessage{Content: " \n\t"}, FinishReasonPtr: new(model.FinishReasonStop)}}},
-		{name: "truncated", choices: []model.Choice{{Message: choice.Message, FinishReasonPtr: new(model.FinishReasonLength)}}},
-		{name: "missing finish", choices: []model.Choice{{Message: choice.Message}}},
 		{name: "backend", chatErr: backendErr},
 		{name: "tokenizer", tokenErr: backendErr},
 		{name: "acquire", acqErr: backendErr},
@@ -133,7 +158,7 @@ func TestGoMLXPredictFailureCleanup(t *testing.T) {
 				}
 				return stub, func() error { released++; return releaseErr }, nil
 			}}
-			answers, err := trainer.Predict(t.Context(), TrainingJob{PredictionTokens: 192}, "", []Record{{Prompt: "one"}, {Prompt: "two"}, {Prompt: "three"}})
+			answers, err := trainer.Predict(t.Context(), TrainingJob{PredictionTokens: 192}, "", []Record{{Prompt: "one"}, {Prompt: "two"}, {Prompt: "three"}}, nil)
 			if err == nil || answers != nil {
 				t.Fatalf("Predict: got %q, %v, want nil answers and error", answers, err)
 			}
@@ -149,7 +174,7 @@ func TestGoMLXPredictFailureCleanup(t *testing.T) {
 			if (tt.chatErr != nil || tt.tokenErr != nil || tt.acqErr != nil) && !errors.Is(err, backendErr) {
 				t.Errorf("error: got %v, want backend failure preserved", err)
 			}
-			if tt.chatErr == nil && tt.tokenErr == nil && tt.acqErr == nil && !strings.Contains(err.Error(), "missing or truncated") {
+			if tt.chatErr == nil && tt.tokenErr == nil && tt.acqErr == nil && !strings.Contains(err.Error(), "prediction is missing") {
 				t.Errorf("error: got %v, want prediction rejection as well as release failure", err)
 			}
 			if released != wantReleased || chats != wantChats {
@@ -248,7 +273,7 @@ func TestGoMLXPreflightFailureCleanup(t *testing.T) {
 					err = trainer.Validate(t.Context(), TrainingJob{Dataset: TrainingDataset{Test: records}, PredictionTokens: 192})
 				} else {
 					var answers []string
-					answers, err = trainer.Predict(t.Context(), TrainingJob{PredictionTokens: 192}, "", records)
+					answers, err = trainer.Predict(t.Context(), TrainingJob{PredictionTokens: 192}, "", records, nil)
 					if answers != nil {
 						t.Errorf("Predict: got %q, want nil answers", answers)
 					}
@@ -302,7 +327,7 @@ func TestGoMLXPredictionBudget(t *testing.T) {
 			if (err != nil) != wantErr || (wantErr && !errors.Is(err, tmprl.ErrInvalidArgument)) {
 				t.Errorf("Validate: got %v, want invalid argument=%v", err, wantErr)
 			}
-			answers, err := trainer.Predict(t.Context(), job, "", job.Dataset.Test)
+			answers, err := trainer.Predict(t.Context(), job, "", job.Dataset.Test, nil)
 			if (err != nil) != wantErr || (wantErr && !errors.Is(err, tmprl.ErrInvalidArgument)) {
 				t.Errorf("Predict: got %q, %v, want invalid argument=%v", answers, err, wantErr)
 			}

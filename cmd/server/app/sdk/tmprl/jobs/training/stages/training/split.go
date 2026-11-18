@@ -7,6 +7,23 @@ import (
 	"strings"
 )
 
+// Evaluation sizing: a dataset holds back test questions for 5% of its training
+// records, between MinimumTestQuestions and MaximumTestQuestions, and half as many
+// validation questions, at least MinimumValidationQuestions.
+const (
+	MinimumTrainingRecords     = 20
+	MinimumTestQuestions       = 16
+	MaximumTestQuestions       = 128
+	MinimumValidationQuestions = 8
+)
+
+// EvaluationNeeds returns the validation and test questions a dataset with the
+// given number of training records needs.
+func EvaluationNeeds(trainingRecords int) (validation, test int) {
+	test = min(max(trainingRecords*5/100, MinimumTestQuestions), MaximumTestQuestions)
+	return max(MinimumValidationQuestions, test/2), test
+}
+
 // TrainingReadiness checks whether records can be split for training without
 // performing training. Explicit fact-mode evaluation rows stay separate;
 // unflagged exact-answer records are split by evidence without sharing source
@@ -16,17 +33,34 @@ func TrainingReadiness(records []Record) error {
 	return err
 }
 
-// Split validates readiness and allocates records with a fixed seed.
-// Explicit evaluation flags are authoritative; unflagged fact variants and
-// non-fact examples are split without introducing source-group leakage.
+// Split validates readiness and allocates records with a fixed seed. A dataset
+// without a complete evaluation set still trains on its training records when
+// it has at least MinimumTrainingRecords; it then has no validation or test
+// records, so training is not compared with the base model.
 func Split(records []Record) (TrainingDataset, error) {
 	if err := ValidateRecords(records); err != nil {
 		return TrainingDataset{}, err
 	}
+	dataset, err := split(records)
+	if err == nil {
+		return dataset, nil
+	}
+	train := slices.DeleteFunc(slices.Clone(records), func(r Record) bool { return r.ValidationPrompt || r.IndependentPrompt })
+	if len(train) < MinimumTrainingRecords {
+		return TrainingDataset{}, err
+	}
+	return TrainingDataset{Train: train}, nil
+}
+
+// split allocates evaluation records. Explicit evaluation flags are
+// authoritative; unflagged fact variants and non-fact examples are split
+// without introducing source-group leakage.
+func split(records []Record) (TrainingDataset, error) {
 	if len(records) == 0 {
 		return TrainingDataset{}, fmt.Errorf("empty dataset")
 	}
 	dataset := TrainingDataset{}
+	validation, test := 10, 20
 	if records[0].FactID != "" {
 		hasValidation := slices.ContainsFunc(records, func(r Record) bool { return r.ValidationPrompt })
 		hasTest := slices.ContainsFunc(records, func(r Record) bool { return r.IndependentPrompt })
@@ -39,6 +73,10 @@ func Split(records []Record) (TrainingDataset, error) {
 			keys = append(keys, key)
 		}
 		slices.Sort(keys)
+		if hasValidation {
+			// Flagged evaluation questions are sized to the training records.
+			validation, test = EvaluationNeeds(len(keys))
+		}
 		if !hasValidation && len(keys) < 30 {
 			return TrainingDataset{}, fmt.Errorf("unflagged evaluation requires at least 30 independently testable facts")
 		}
@@ -121,8 +159,8 @@ func Split(records []Record) (TrainingDataset, error) {
 			}
 		}
 	}
-	if len(dataset.Train) < 20 || len(dataset.Validation) < 10 || len(dataset.Test) < 20 {
-		return TrainingDataset{}, fmt.Errorf("training splits require 20 train, 10 validation and 20 protected test rows")
+	if len(dataset.Train) < MinimumTrainingRecords || len(dataset.Validation) < validation || len(dataset.Test) < test {
+		return TrainingDataset{}, fmt.Errorf("training splits require %d train, %d validation and %d protected test rows", MinimumTrainingRecords, validation, test)
 	}
 	return dataset, nil
 }

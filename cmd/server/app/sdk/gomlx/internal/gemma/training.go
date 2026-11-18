@@ -70,7 +70,9 @@ func (stopper *earlyStopper) observe(validationLoss float64) bool {
 }
 
 // TrainDataset trains on every training record and measures validation loss
-// after each epoch. It never reads or evaluates the protected test split.
+// after each epoch. Without validation records, an epoch's training loss
+// selects the checkpoint instead. It never reads or evaluates the protected
+// test split.
 func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDataset, config TrainingConfig, progress func(TrainingProgress)) (TrainingResult, error) {
 	if runtime == nil || runtime.base == nil {
 		return TrainingResult{}, fmt.Errorf("gemma runtime is closed")
@@ -101,9 +103,6 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 	}
 	if len(dataset.Training) == 0 {
 		return TrainingResult{}, fmt.Errorf("training split is empty")
-	}
-	if len(dataset.Validation) == 0 {
-		return TrainingResult{}, fmt.Errorf("validation split is empty")
 	}
 	if config.AdapterCheckpointDirectory == "" {
 		return TrainingResult{}, fmt.Errorf("adapter checkpoint directory is required")
@@ -176,9 +175,12 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 		if err := context.Cause(ctx); err != nil {
 			return result, err
 		}
-		validationLoss, err := runtime.evaluate(dataset.Validation)
-		if err != nil {
-			return result, fmt.Errorf("validate epoch %d: %w", epoch, err)
+		validationLoss := weightedLoss / float64(answerTokens)
+		if len(dataset.Validation) > 0 {
+			var err error
+			if validationLoss, err = runtime.evaluate(dataset.Validation); err != nil {
+				return result, fmt.Errorf("validate epoch %d: %w", epoch, err)
+			}
 		}
 		if err := context.Cause(ctx); err != nil {
 			return result, err

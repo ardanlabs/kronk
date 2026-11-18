@@ -68,59 +68,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		if err := checkpoint.SafePoint(ctx, input); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		end := min(state.Verified+5, len(state.Records))
-		// Reviewed examples and held-out questions retain independent batches.
-		if state.Verified < state.ReviewedCount {
-			end = min(end, state.ReviewedCount)
-		} else {
-			for i := state.Verified; i < end; i++ {
-				if state.Records[i].ValidationPrompt || state.Records[i].IndependentPrompt {
-					end = max(state.Verified+1, i)
-					break
-				}
-			}
-		}
-		outcomes, usage, err := run(ctx, p.Completer, p.Input.Request, "", state.Records[state.Verified:end])
-		if err != nil {
-			return tmprl.StepResult[preparation.Artifacts]{}, err
-		}
-		if err := ctx.Err(); err != nil {
-			return tmprl.StepResult[preparation.Artifacts]{}, err
-		}
-		// Check approvals before changing any record, warning or cursor in this batch.
-		for i, outcome := range outcomes {
-			r := state.Records[state.Verified+i]
-			if outcome != "pass" && p.Input.Kind == preparation.PreparationFull && (r.UserApproved || state.Verified+i < state.ReviewedCount) {
-				return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("approved example requires review: %q: %s", r.Prompt, outcome)
-			}
-		}
-		kept := state.Records[:state.Verified]
-		for i, outcome := range outcomes {
-			r := state.Records[state.Verified+i]
-			switch {
-			case outcome == "pass":
-				kept = append(kept, r)
-			case p.Input.Kind == preparation.PreparationPreview:
-				kept = append(kept, r)
-				state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("record %d: %s", i+1, outcome))
-			default:
-				reference := r.FactID
-				for _, unit := range state.Units {
-					if unit.Evidence == r.Evidence {
-						reference = unit.Reference
-						break
-					}
-				}
-				reason := fmt.Sprintf("verification rejected example %q: %s", r.Prompt, outcome)
-				state.Result.Exclusions = append(state.Result.Exclusions, preparation.SourceExclusion{Reference: reference, Reason: reason})
-				state.Result.Warnings = append(state.Result.Warnings, reference+": "+reason)
-			}
-		}
-		state.Result.PromptTokens += usage.PromptTokens
-		state.Result.CompletionTokens += usage.CompletionTokens
-		state.Verified = len(kept)
-		state.Records = append(kept, state.Records[end:]...)
-		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+		if err := Batch(ctx, input, &state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
 		report()
@@ -138,7 +86,8 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		result.Preview = state.Records
 	} else if err := training.TrainingReadiness(state.Records); err == nil {
 		result.TrainingReady = true
-	} else {
+	} else if p.Input.Request.TargetDatasetID == "" {
+		// A saved run's readiness belongs to the combined dataset version.
 		result.Warnings = append(result.Warnings, err.Error())
 	}
 	if err := ctx.Err(); err != nil {
@@ -162,4 +111,64 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 	artifacts.Preparation = &result
 	return tmprl.StepResult[preparation.Artifacts]{Artifacts: artifacts}, nil
+}
+
+// Batch verifies the next batch of unverified records, keeps those that pass,
+// and saves the checkpoint. A rejected approved example fails the run. Generate
+// uses it to replace rejected records while a record limit is unmet.
+func Batch(ctx context.Context, input preparation.StepContext, state *checkpoint.State) error {
+	p := input.Preparation
+	end := min(state.Verified+5, len(state.Records))
+	// Reviewed examples and held-out questions retain independent batches.
+	if state.Verified < state.ReviewedCount {
+		end = min(end, state.ReviewedCount)
+	} else {
+		for i := state.Verified; i < end; i++ {
+			if state.Records[i].ValidationPrompt || state.Records[i].IndependentPrompt {
+				end = max(state.Verified+1, i)
+				break
+			}
+		}
+	}
+	outcomes, usage, err := run(ctx, p.Completer, p.Input.Request, "", state.Records[state.Verified:end])
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Check approvals before changing any record, warning or cursor in this batch.
+	for i, outcome := range outcomes {
+		r := state.Records[state.Verified+i]
+		if outcome != "pass" && p.Input.Kind == preparation.PreparationFull && (r.UserApproved || state.Verified+i < state.ReviewedCount) {
+			return fmt.Errorf("approved example requires review: %q: %s", r.Prompt, outcome)
+		}
+	}
+	kept := state.Records[:state.Verified]
+	for i, outcome := range outcomes {
+		r := state.Records[state.Verified+i]
+		switch {
+		case outcome == "pass":
+			kept = append(kept, r)
+		case p.Input.Kind == preparation.PreparationPreview:
+			kept = append(kept, r)
+			state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("record %d: %s", i+1, outcome))
+		default:
+			reference := r.FactID
+			for _, unit := range state.Units {
+				if unit.Evidence == r.Evidence {
+					reference = unit.Reference
+					break
+				}
+			}
+			reason := fmt.Sprintf("verification rejected example %q: %s", r.Prompt, outcome)
+			state.Result.Exclusions = append(state.Result.Exclusions, preparation.SourceExclusion{Reference: reference, Reason: reason})
+			state.Result.Warnings = append(state.Result.Warnings, reference+": "+reason)
+		}
+	}
+	state.Result.PromptTokens += usage.PromptTokens
+	state.Result.CompletionTokens += usage.CompletionTokens
+	state.Verified = len(kept)
+	state.Records = append(kept, state.Records[end:]...)
+	return tmprl.WriteJSON(input.Workspace, checkpoint.File, state)
 }

@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
-import { FINE_TUNING_MODEL_ID, TESTED_TRAINING_OPTIONS, requestMessage, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
-import { useModelList } from '../contexts/ModelListContext';
+import { DEFAULT_TRAINING_OPTIONS, requestMessage, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
 import { api, ApiError } from '../services/api';
-import type { CatalogModelResponse, PreparationDataset, PreparationOptions, TrainingOptions, TrainingRun } from '../types';
+import type { CatalogModelResponse, PreparationDataset, PreparationOptions, TrainingRun } from '../types';
 import { FieldLabel, ParamTooltip } from './ParamTooltips';
 import DatasetDashboard from './DatasetDashboard';
-import { TrainingJobState } from './TrainingRun';
-
-type View = 'prepare' | 'configure';
 
 // Match the runner's upload lifetime, including navigation away from this page.
 // An uncertain create is never repeated; a confirmed destination is reused.
@@ -16,16 +12,17 @@ const uploadDestinations = new Map<string, { id?: string; uncertain: boolean }>(
 // digits keeps only 0–9, so page fields never hold letters or signs, even when pasted.
 const digits = (value: string) => value.replace(/\D/g, '');
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
-const sourceFileName = (run: TrainingRun) => `${(run.target_dataset_name ?? 'dataset').replace(/[^a-zA-Z0-9._-]/g, '_')}-v${run.prepared_dataset_version}.jsonl`;
 
 export default function FineTuning() {
   const [params] = useSearchParams();
   const view = params.get('view');
-  const workspaceVisible = params.get('workspace') === 'live' || view === 'prepare' || view === 'configure' || view === 'run';
+  const workspaceVisible = params.get('workspace') === 'live' || view === 'prepare';
   const [workspaceVisited, setWorkspaceVisited] = useState(workspaceVisible);
   useEffect(() => { if (workspaceVisible) setWorkspaceVisited(true); }, [workspaceVisible]);
   // History is part of the dashboard now, and every run opens on the dashboard.
   if (view === 'history') return <Navigate replace to="/fine-tuning" />;
+  // Training starts from a finished dataset now.
+  if (view === 'configure' || view === 'run') return <Navigate replace to="/fine-tuning" />;
   if (view === 'prepare' && params.get('preparation') && params.get('run')) {
     const run = new URLSearchParams({ preparation: params.get('preparation')!, run: params.get('run')! });
     return <Navigate replace to={`/fine-tuning?${run}`} />;
@@ -39,12 +36,7 @@ export default function FineTuning() {
 }
 
 function FineTuningWorkspace({ visible }: { visible: boolean }) {
-  const { models, loading: modelsLoading, error: modelsError, loadModels } = useModelList();
-  const {
-    preparedFile, upload, uploading, documents, documentsUploading, submitting, trainingRun, preparationRun, error, watchError, trainingActivity, adopting,
-    chooseInput, addDocuments, removeDocument: removeSource, cancelPreparation, startRun, startPreparations, refreshRun,
-  } = useFineTuningRunner();
-  const [training, setTraining] = useState<TrainingOptions>(TESTED_TRAINING_OPTIONS);
+  const { documents, documentsUploading, submitting, preparationRun, addDocuments, removeDocument: removeSource, cancelPreparation, startPreparations } = useFineTuningRunner();
   const [preparation, setPreparation] = useState<PreparationOptions>({ model: '', goal: 'question_answer', instructions: '', preview_records: 3 });
   const [maxQuestions, setMaxQuestions] = useState('');
   const [limitExamples, setLimitExamples] = useState(false);
@@ -55,7 +47,6 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState('');
   const [catalogAttempt, setCatalogAttempt] = useState(0);
-  const [trainingSetup, setTrainingSetup] = useState(false);
   // Add documents opens this form for one existing dataset; otherwise it creates a new one.
   const [selectedDataset, setSelectedDataset] = useState<PreparationDataset | null>(null);
   const [datasetName, setDatasetName] = useState('');
@@ -67,24 +58,15 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   const [removal, setRemoval] = useState<PreparationDataset['documents'][number] | null>(null);
   const datasetPending = useRef(false);
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedView = searchParams.get('view');
-  const view: View = requestedView === 'configure' || requestedView === 'run' ? 'configure' : 'prepare';
   const preparedInput = useRef<HTMLInputElement>(null);
-  const preparing = view === 'prepare';
-  const datasetID = (preparing && searchParams.get('dataset')) || '';
+  const datasetID = searchParams.get('dataset') || '';
   // Document uploads run on their own, so more documents can be chosen meanwhile.
-  const busy = submitting || datasetBusy || (!preparing && uploading);
+  const busy = submitting || datasetBusy;
   const preparationUnfinished = !!preparationRun && !['completed', 'needs_improvement', 'failed', 'stopped'].includes(preparationRun.status);
-  const preparationActive = preparationUnfinished && preparationRun?.stage !== 'training';
-  // Preparations run side by side; training waits for an unfinished preparation.
-  const startBlocked = !preparing && (preparationUnfinished || adopting);
-  const trainingJob = trainingRun ?? (preparationRun?.stage === 'training' ? preparationRun : null);
-  const showTrainingSetup = !trainingJob || trainingSetup;
   const uploaded = documents.filter((item) => item.upload);
   const uploadFailed = documents.filter((item) => !item.upload && item.error);
   // The same file twice would be prepared twice; the second save would then be rejected.
   const duplicates = new Set(uploaded.filter((item, index) => uploaded.findIndex((other) => other.upload!.sha256 === item.upload!.sha256) !== index).map((item) => item.key));
-  const modelInstalled = !!models?.data.some((model) => model.id === FINE_TUNING_MODEL_ID);
   const preparationModels = catalog.filter((model) => model.downloaded && model.validated
     && model.capabilities?.endpoint === 'chat_completion'
     && !model.capabilities.images && !model.capabilities.audio && !model.capabilities.video
@@ -105,9 +87,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     return [errors.start && { message: `${item.file.name}: ${errors.start}`, field: `fine-page-start-${index}` }, errors.end && { message: `${item.file.name}: ${errors.end}`, field: `fine-page-end-${index}` }].filter((issue) => !!issue);
   });
   const settingsValid = !capError && !pageIssues.length;
-  const ready = preparing
-    ? uploaded.length > 0 && !documentsUploading && !uploadFailed.length && !duplicates.size && settingsValid && !catalogLoading && !catalogError && preparationModelInstalled && !datasetLoading && !datasetError && !creationUncertain && (datasetID ? selectedDataset?.id === datasetID : !!datasetName.trim())
-    : !!upload && modelInstalled;
+  const ready = uploaded.length > 0 && !documentsUploading && !uploadFailed.length && !duplicates.size && settingsValid && !catalogLoading && !catalogError && preparationModelInstalled && !datasetLoading && !datasetError && !creationUncertain && (datasetID ? selectedDataset?.id === datasetID : !!datasetName.trim());
 
   const uploadIDs = uploaded.map((item) => item.upload!.id).join();
   useEffect(() => {
@@ -127,11 +107,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     return () => controller.abort();
   }, [visible, datasetID, datasetAttempt]);
 
-  useEffect(() => { void loadModels(); }, [loadModels]);
-
-
   useEffect(() => {
-    if (!preparing) return;
     let cancelled = false;
     setCatalogLoading(true);
     setCatalogError('');
@@ -140,7 +116,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
       .catch((err) => { if (!cancelled) setCatalogError(err instanceof Error ? err.message : 'Could not load preparation models'); })
       .finally(() => { if (!cancelled) setCatalogLoading(false); });
     return () => { cancelled = true; };
-  }, [preparing, catalogAttempt]);
+  }, [catalogAttempt]);
 
   const readinessIssues: { message: string; field?: string }[] = [];
   if (documentsUploading) readinessIssues.push({ message: 'Wait for the document uploads.', field: 'fine-source' });
@@ -165,14 +141,10 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
 
   const start = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!ready || datasetPending.current || startBlocked) return;
+    if (!ready || datasetPending.current) return;
     datasetPending.current = true;
     setDatasetBusy(true);
     try {
-      if (!preparing) {
-        if (await startRun(training)) setTrainingSetup(false);
-        return;
-      }
       // One destination serves every document. It is created once, even across retries.
       const ids = uploaded.map((item) => item.upload!.id);
       let destination = selectedDataset;
@@ -198,7 +170,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
       // Each document becomes its own run. All start from the same version; each
       // save adds onto the newest version, so the runs do not conflict.
       const target = destination;
-      const runs = await startPreparations(training, (item) => {
+      const runs = await startPreparations(DEFAULT_TRAINING_OPTIONS, (item) => {
         const range = ranges[item.key];
         return {
           ...preparation, target_dataset_id: target.id, base_version: target.version,
@@ -238,97 +210,45 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     }
   };
 
-  // Continue to training names a finished run; its saved dataset version becomes
-  // the training dataset, downloaded and uploaded as training-ready JSONL.
-  const sourceWorkflow = view === 'configure' ? searchParams.get('preparation') : null;
-  const sourceRun = view === 'configure' ? searchParams.get('run') : null;
-  const sourceKey = sourceWorkflow && sourceRun ? `${sourceWorkflow}/${sourceRun}` : '';
-  const [source, setSource] = useState<TrainingRun | null>(null);
-  const [sourceError, setSourceError] = useState('');
-  const [sourceAttempt, setSourceAttempt] = useState(0);
-  const loadedSource = useRef('');
-  useEffect(() => {
-    if (!visible || !sourceKey || loadedSource.current === sourceKey) return;
-    loadedSource.current = sourceKey;
-    setSource(null);
-    setSourceError('');
-    void (async () => {
-      try {
-        const run = await api.trainingRun(sourceWorkflow!, sourceRun!);
-        setSource(run);
-        if (!run.prepared_dataset_id || !run.prepared_dataset_version) throw new Error('This run has no saved dataset version.');
-        const blob = await api.downloadPreparationDataset(run.prepared_dataset_id, run.prepared_dataset_version);
-        await chooseInput(new File([blob], sourceFileName(run), { type: 'application/x-ndjson' }));
-      } catch (err) {
-        loadedSource.current = '';
-        setSourceError(requestMessage(err, 'Could not load this dataset for training.'));
-      }
-    })();
-  }, [visible, sourceKey, sourceAttempt]);
-
   // Every run opens on the dashboard's run screen.
   const showPreparation = (run: TrainingRun, replace = false) => setSearchParams({ preparation: run.workflow_id, run: run.run_id }, { replace });
 
-  const updateTraining = (key: keyof TrainingOptions, value: number) => {
-    setTraining((current) => ({ ...current, [key]: value }));
-  };
-
   return (
-    <div className={`fine-page${preparing ? ' fine-preparing' : ''}`}>
+    <div className="fine-page fine-preparing">
       <div className="page-header fine-page-header">
         <div>
           <h2>Fine-Tuning</h2>
         </div>
       </div>
 
-      <nav className="tabs fine-tabs" aria-label="Fine-tuning views">
-        <Link className={`tab ${preparing ? 'active' : ''}`} to="/fine-tuning">Dashboard</Link>
-        <Link aria-current={visible && view === 'configure' ? 'page' : undefined} className={`tab ${view === 'configure' ? 'active' : ''}`} to="/fine-tuning?view=configure">Configure Training</Link>
-      </nav>
-
-      {preparing && <div className="page-header-with-action prep-heading">
+      <div className="page-header-with-action prep-heading">
         <div>
           <Link className="prep-back" to="/fine-tuning">← Dashboard</Link>
           <h2>{datasetID ? 'Add documents' : 'New dataset'}</h2>
           <p className="page-description">{datasetID ? `Choose documents to add to ${selectedDataset?.name ?? 'this dataset'}, then generate previews to review.` : 'Choose documents and where their records go, then generate previews to review.'}</p>
         </div>
-      </div>}
-      {view === 'configure' && showTrainingSetup && sourceKey && <section className="fine-panel dash-training-source" aria-label="Training dataset">
-        <Link className="prep-back" to={`/fine-tuning?${new URLSearchParams({ preparation: sourceWorkflow!, run: sourceRun! })}`}>← {source ? source.target_dataset_name ?? 'Dataset' : 'Back to the dataset'}</Link>
-        <span className="fine-eyebrow">Training dataset</span>
-        {source?.prepared_dataset_id && source.prepared_dataset_version ? <>
-          <h3>{source.target_dataset_name ?? source.prepared_dataset_id} · version {source.prepared_dataset_version} · {count(source.dataset_record_count, 'record')}</h3>
-          <p className="prep-copy">{source.training_ready ? 'This dataset meets the 50-record minimum for training.' : 'This dataset has fewer than 50 records, the training minimum. Add documents to it before training.'} {upload?.name === sourceFileName(source) ? 'It is loaded as the training dataset below.' : 'Loading it as the training dataset…'}</p>
-        </> : !sourceError && <p className="prep-copy" role="status">Loading the dataset…</p>}
-        {sourceError && <p className="fine-error" role="alert">{sourceError} <button className="btn btn-secondary" type="button" onClick={() => { loadedSource.current = ''; setSourceAttempt((value) => value + 1); }}>Try again</button></p>}
-      </section>}
-
-      {error && view === 'configure' && <div className="fine-error" role="alert">{error}</div>}
-      {modelsError && <div className="fine-error" role="alert">Could not load installed models: {modelsError}</div>}
-      {(preparing || showTrainingSetup) && (
-        <div className="fine-setup-wrapper">
-        {!preparing && preparationRun && !preparationActive && <p className="fine-action-note fine-independent-training">Train with a prepared dataset independently of your document job. <button className="btn btn-secondary" type="button" onClick={() => showPreparation(preparationRun)}>View Document Preparation</button></p>}
+      </div>
+      <div className="fine-setup-wrapper">
         <form className="fine-configure-view" onSubmit={start}>
           <div className="fine-preparation-fields">
           <section className="fine-panel fine-configure-intro" id="fine-source" tabIndex={-1}>
             <div className="fine-panel-heading">
-              <div><span>{preparing ? 'Step 1' : 'Required'}</span><h3>{preparing ? 'Source documents' : 'Choose Training Dataset'}</h3></div>
-              <span className={`fine-status ${(preparing ? uploaded.length && !documentsUploading : upload) ? 'fine-status-completed' : 'fine-status-stopped'}`}>{preparing ? documentsUploading ? 'Uploading…' : uploaded.length ? count(uploaded.length, 'document') : 'Document needed' : upload ? 'Uploaded' : uploading ? 'Uploading…' : 'Dataset needed'}</span>
+              <div><span>Step 1</span><h3>Source documents</h3></div>
+              <span className={`fine-status ${uploaded.length && !documentsUploading ? 'fine-status-completed' : 'fine-status-stopped'}`}>{documentsUploading ? 'Uploading…' : uploaded.length ? count(uploaded.length, 'document') : 'Document needed'}</span>
             </div>
-            <p className="fine-panel-copy">{preparing ? 'Choose one or more PDF, DOCX, Markdown, or text documents to turn into grounded records. Each document is prepared as its own run, with its own preview to review.' : 'Choose a training-ready JSONL file. The training service validates its contents when you select Start.'}</p>
+            <p className="fine-panel-copy">Choose one or more PDF, DOCX, Markdown, or text documents to turn into grounded records. Each document is prepared as its own run, with its own preview to review.</p>
             <div className="form-group fine-file-field">
-              <FieldLabel htmlFor="fine-prepared-dataset" tooltipKey={preparing ? 'fineTuningSource' : 'fineTuningDataset'}>{preparing ? 'Source documents (at least one)' : 'Training-Ready JSONL'}</FieldLabel>
-              <input ref={preparedInput} className="fine-hidden-input" id="fine-prepared-dataset" type="file" multiple={preparing} accept={preparing ? '.pdf,.docx,.md,.txt' : '.jsonl,application/x-ndjson'} disabled={busy} onChange={(event) => {
+              <FieldLabel htmlFor="fine-prepared-dataset" tooltipKey="fineTuningSource">Source documents (at least one)</FieldLabel>
+              <input ref={preparedInput} className="fine-hidden-input" id="fine-prepared-dataset" type="file" multiple accept=".pdf,.docx,.md,.txt" disabled={busy} onChange={(event) => {
                 const files = [...(event.target.files ?? [])];
                 if (files.length) {
                   setStartNotice('');
-                  if (preparing) addDocuments(files);
-                  else void chooseInput(files[0]);
+                  addDocuments(files);
                 }
                 event.currentTarget.value = '';
               }} />
             </div>
-            {preparing ? <>
+            <>
               {documents.length > 0 && <ul className="fine-doc-list" aria-label="Source documents">
                 {documents.map((item, index) => {
                   const range = ranges[item.key] ?? { use: false, start: '', end: '' };
@@ -367,26 +287,10 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
                 {documentsUploading && <button className="btn btn-danger" type="button" onClick={cancelPreparation}>Cancel uploads</button>}
               </div>
               <p className="fine-action-note">PDF/DOCX need a server-side document extractor. Text and Markdown can be read directly.</p>
-            </> : upload ? (
-              <div className="fine-dataset-ready">
-                <div><strong>{upload.name}</strong><span>Stored · {(upload.size_bytes / 1024).toFixed(1)} KiB · not yet validated for training</span></div>
-                <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => void chooseInput(null)}>Change dataset</button>
-              </div>
-            ) : (
-              <div className="fine-actions">
-                {uploading ? (
-                  <>
-                    <p role="status">Uploading {preparedFile?.name}…</p>
-                    <button className="btn btn-danger" type="button" onClick={cancelPreparation}>Cancel Upload</button>
-                  </>
-                ) : (
-                  <button className="btn btn-primary" type="button" disabled={busy} onClick={() => preparedInput.current?.click()}>Choose JSONL Dataset</button>
-                )}
-              </div>
-            )}
+            </>
           </section>
 
-          {preparing && <section className="fine-panel" id="fine-destination-section" tabIndex={-1} aria-label="Save to dataset">
+          <section className="fine-panel" id="fine-destination-section" tabIndex={-1} aria-label="Save to dataset">
               <div className="fine-panel-heading"><div><span>Step 2</span><h3>{datasetID ? 'Adding to dataset' : 'Name your dataset'}</h3></div></div>
               {!datasetID && <div className="form-group">
                 <FieldLabel htmlFor="fine-dataset-name" tooltipKey="fineTuningDatasetName">Dataset name (required)</FieldLabel>
@@ -419,10 +323,9 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
                   </div>
                 </div>}
               </div>}
-          </section>}
+          </section>
 
-          {preparing && (
-            <section className="fine-panel fine-preparation-settings" aria-label="Preparation settings">
+          <section className="fine-panel fine-preparation-settings" aria-label="Preparation settings">
               <div className="fine-panel-heading"><div><span>Step 3</span><h3>Preparation settings</h3></div></div>
               <p className="fine-panel-copy">Choose an installed model to generate and verify records.</p>
               {catalogError && <div className="fine-error" role="alert">Could not load preparation models: {catalogError} <button className="btn btn-secondary" type="button" onClick={() => setCatalogAttempt((attempt) => attempt + 1)}>Retry Catalog</button></div>}
@@ -467,8 +370,8 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
                   <input id="fine-max-questions" className="form-input" type="number" min={1} step={1} required value={maxQuestions} disabled={busy} aria-invalid={!!capError} aria-describedby={`fine-cap-help${capError ? ' fine-cap-error' : ''}`} onChange={(event) => setMaxQuestions(event.target.value)} />
                   {capError && <p id="fine-cap-error" className="fine-error">{capError}</p>}
                 </>}
-                <p id="fine-cap-help" className="fine-action-note">Applies only to this document, including preview and evaluation records. Verification may yield fewer records.</p>
-                <details className="fine-recipe-details"><summary>What makes a dataset ready for training?</summary><p>Training needs at least 50 usable records: 20 training, 10 validation, and 20 protected test records, with valid fact coverage and splits. A cap of 20 tests preparation only. Preparation does not start training.</p></details>
+                <p id="fine-cap-help" className="fine-action-note">Counts verified records from this document, including reviewed records and the evaluation questions Kronk adds. Rejected records are replaced while passages remain.</p>
+                <details className="fine-recipe-details"><summary>What makes a dataset ready for training?</summary><p>Training needs at least 20 training records. Kronk also adds evaluation questions that check the trained model against the base model: test questions for 5% of the training records (16 to 128) and half as many validation questions (at least 8). With a record limit they count toward it, so a new dataset needs a limit of 44 to get both; with less room it trains without that check. Preparation does not start training.</p></details>
               </div>
 
               <details className="fine-recipe-details">
@@ -479,86 +382,25 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
                 </div>
               </details>
             </section>
-          )}
 
-          {!preparing && <>
-          <section className="fine-panel">
-            <div className="fine-panel-heading"><div><span>Required</span><h3>Base Model</h3></div></div>
-            <p className="fine-panel-copy">Uses the same base model as the earlier successful run. Adapter quality is evaluated separately for every job.</p>
-            <div className="fine-supported-model">
-              <div><strong>Gemma 3 1B IT · Q8_0</strong><code>{FINE_TUNING_MODEL_ID}</code></div>
-              <span className={`fine-status ${modelInstalled ? 'fine-status-completed' : 'fine-status-stopped'}`}>{modelsLoading ? 'Checking' : modelInstalled ? 'Installed' : 'Not installed'}</span>
-            </div>
-          </section>
-
-          <section className="fine-panel fine-recipe-panel">
-            <div className="fine-panel-heading"><div><span>Settings</span><h3>Training Configuration</h3></div></div>
-            <p className="fine-panel-copy">The training service validates these settings when you start a standalone training run.</p>
-            <div className="fine-recipe-columns">
-              <div className="form-group">
-                <FieldLabel htmlFor="fine-maximum-epochs" tooltipKey="fineTuningMaximumEpochs">Maximum Epochs</FieldLabel>
-                <input id="fine-maximum-epochs" className="form-input" type="number" required step={1} value={training.maximum_epochs} disabled={busy} onChange={(event) => updateTraining('maximum_epochs', event.target.valueAsNumber)} />
-              </div>
-              <div className="form-group">
-                <FieldLabel htmlFor="fine-learning-rate" tooltipKey="fineTuningLearningRate">Learning Rate</FieldLabel>
-                <input id="fine-learning-rate" className="form-input" type="number" required step="any" value={training.learning_rate} disabled={busy} onChange={(event) => updateTraining('learning_rate', event.target.valueAsNumber)} />
-              </div>
-              <div className="form-group">
-                <FieldLabel htmlFor="fine-batch-size" tooltipKey="fineTuningBatchSize">Batch Size</FieldLabel>
-                <input id="fine-batch-size" className="form-input" type="number" required step={1} value={training.batch_size} disabled={busy} onChange={(event) => updateTraining('batch_size', event.target.valueAsNumber)} />
-              </div>
-            </div>
-            <details className="fine-recipe-details">
-              <summary>Advanced Settings</summary>
-              <div className="fine-recipe-columns">
-                <div className="form-group">
-                  <FieldLabel htmlFor="fine-lora-rank" tooltipKey="fineTuningLoRARank">LoRA Rank</FieldLabel>
-                  <input id="fine-lora-rank" className="form-input" type="number" required step={1} value={training.lora_rank} disabled={busy} onChange={(event) => updateTraining('lora_rank', event.target.valueAsNumber)} />
-                </div>
-                <div className="form-group">
-                  <FieldLabel htmlFor="fine-lora-alpha" tooltipKey="fineTuningLoRAAlpha">LoRA Alpha</FieldLabel>
-                  <input id="fine-lora-alpha" className="form-input" type="number" required step="any" value={training.lora_alpha} disabled={busy} onChange={(event) => updateTraining('lora_alpha', event.target.valueAsNumber)} />
-                </div>
-                <div className="form-group">
-                  <FieldLabel htmlFor="fine-random-seed" tooltipKey="fineTuningShuffleSeed">Random Seed</FieldLabel>
-                  <input id="fine-random-seed" className="form-input" type="number" required step={1} value={training.seed} disabled={busy} onChange={(event) => updateTraining('seed', event.target.valueAsNumber)} />
-                </div>
-              </div>
-              <div className="fine-actions"><button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setTraining(TESTED_TRAINING_OPTIONS)}>Reset Training Settings</button></div>
-            </details>
-          </section>
-          </>}
-
-          {preparing && <section className="fine-panel fine-preview-readiness" id="fine-preview-readiness" tabIndex={-1} aria-label="Preview readiness">
+          <section className="fine-panel fine-preview-readiness" id="fine-preview-readiness" tabIndex={-1} aria-label="Preview readiness">
               <h3>{ready && !busy ? `Ready to generate ${previews}` : `Before you generate ${previews}`}</h3>
               {startNotice && <p className="fine-action-note" role="status">{startNotice}</p>}
               <p className="fine-action-note">Review generated examples first. Accept and build dataset continues preparation after review; it does not start training.{uploaded.length > 1 ? ' Each document has its own preview to review, and each saves its own dataset version.' : ''}</p>
               {readinessIssues.length > 0 && <ul className="fine-readiness">
                 {readinessIssues.map((issue) => <li key={issue.message}>{issue.field ? <button type="button" className="fine-readiness-link" onClick={() => goToField(issue.field!)}>{issue.message}</button> : issue.message}</li>)}
               </ul>}
-            </section>}
-            {preparing && <p className="fine-action-note">New records are saved after verification. Existing records are unchanged. No training starts, and Gemma is not required.</p>}
+            </section>
+            <p className="fine-action-note">New records are saved after verification. Existing records are unchanged. No training starts, and Gemma is not required.</p>
           </div>
-          {preparing ? <div className="fine-preview-action-bar" aria-label="Generate preview">
-              <div aria-live="polite"><strong>{ready && !busy && !startBlocked ? `Ready to generate ${previews}` : `${readinessIssues.length} ${readinessIssues.length === 1 ? 'requirement' : 'requirements'} remaining`}</strong>
+          <div className="fine-preview-action-bar" aria-label="Generate preview">
+              <div aria-live="polite"><strong>{ready && !busy ? `Ready to generate ${previews}` : `${readinessIssues.length} ${readinessIssues.length === 1 ? 'requirement' : 'requirements'} remaining`}</strong>
                 {readinessIssues[0] && (readinessIssues[0].field ? <button className="fine-readiness-link" type="button" onClick={() => goToField(readinessIssues[0].field!)}>{readinessIssues[0].message}</button> : <span>{readinessIssues[0].message}</span>)}
               </div>
-              <button className="btn btn-primary" type="submit" aria-describedby="fine-preview-readiness" disabled={!ready || busy || startBlocked}>{submitting ? 'Submitting…' : `Generate ${previews}`}</button>
-            </div> : <section className="fine-panel fine-generation-summary">
-            <div><h3>{ready ? 'Ready to Submit' : 'Complete the Training Configuration'}</h3><p>{upload ? `${upload.name} will be submitted for Gemma 3 1B training.` : 'Choose a prepared JSONL dataset and install the Gemma 3 1B model.'}</p></div>
-            <button className="btn btn-primary" type="submit" disabled={!ready || busy || !!trainingActivity || adopting}>{submitting ? 'Submitting…' : 'Start Training'}</button>
-          </section>}
+              <button className="btn btn-primary" type="submit" aria-describedby="fine-preview-readiness" disabled={!ready || busy}>{submitting ? 'Submitting…' : `Generate ${previews}`}</button>
+            </div>
         </form>
-        </div>
-      )}
-
-      {view === 'configure' && !showTrainingSetup && trainingJob && (
-        <div className="fine-train-view">
-          {watchError && <div className="fine-error" role="alert">{watchError}</div>}
-          {visible && <TrainingJobState run={trainingJob} onRefresh={() => void refreshRun(trainingJob)} view="training" />}
-          {['completed', 'needs_improvement', 'failed', 'stopped'].includes(trainingJob.status) && <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => { void chooseInput(null); setTrainingSetup(true); }}>Configure Another Training</button>}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

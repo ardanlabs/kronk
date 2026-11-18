@@ -28,7 +28,7 @@ func (trainer) Train(context.Context, training.TrainingJob, func(tmprl.Progress)
 	panic("unexpected training")
 }
 
-func (trainer) Predict(context.Context, training.TrainingJob, string, []training.Record) ([]string, error) {
+func (trainer) Predict(context.Context, training.TrainingJob, string, []training.Record, func(int)) ([]string, error) {
 	panic("unexpected prediction")
 }
 
@@ -117,6 +117,22 @@ func TestRunRejectsUnreadyDataset(t *testing.T) {
 		var app *temporal.ApplicationError
 		if !errors.As(err, &app) || !app.NonRetryable() {
 			t.Fatalf("expected nonretryable rejection, got %v", err)
+		}
+		if len(records) < 2 {
+			if app.Type() != "training-records-insufficient" {
+				t.Fatalf("insufficient input was not identified: %s", app.Type())
+			}
+			data, err := root.ReadFile("requirements.json")
+			var evidence struct {
+				Code     string `json:"code"`
+				Count    int    `json:"count"`
+				Required int    `json:"required"`
+			}
+			if err != nil || json.Unmarshal(data, &evidence) != nil || evidence.Count != len(records) || evidence.Required != 20 || evidence.Code != "training-records-insufficient" {
+				t.Fatalf("missing record-count evidence: %s (%v)", data, err)
+			}
+		} else if app.Type() != "invalid-training" {
+			t.Fatalf("duplicate prompts must not be diagnosed as a record-count failure: %s", app.Type())
 		}
 		if _, err := root.Stat("dataset.json"); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("invalid split persisted: %v", err)

@@ -24,6 +24,7 @@ type CatalogObservation struct {
 	RecordCount    int   `json:"record_count"`
 	TrainingReady  bool  `json:"training_ready"`
 	SkippedRecords int   `json:"skipped_records,omitzero"`
+	NotCompared    bool  `json:"not_compared,omitzero"`
 }
 
 type submitCommand struct {
@@ -75,6 +76,9 @@ func toDBJob(namespace string, run tmprl.Run[Request, Artifacts]) moxiedb.Job {
 		row.SourceUploadID = sql.NullString{String: input.Prepare.DatasetID, Valid: input.Prepare.DatasetID != ""}
 		row.TargetDatasetID = sql.NullString{String: input.Prepare.TargetDatasetID, Valid: input.Prepare.TargetDatasetID != ""}
 		row.BaseDatasetVersion = sql.NullInt64{Int64: int64(input.Prepare.BaseVersion), Valid: row.TargetDatasetID.Valid}
+	} else if saved := input.SavedDataset; saved != nil {
+		row.TargetDatasetID = sql.NullString{String: saved.ID, Valid: true}
+		row.BaseDatasetVersion = sql.NullInt64{Int64: int64(saved.Version), Valid: true}
 	} else {
 		row.SourceUploadID = sql.NullString{String: input.DatasetID, Valid: input.DatasetID != ""}
 	}
@@ -190,7 +194,8 @@ func (j *Job) observe(ctx context.Context, a moxiedb.Attempt, run tmprl.Run[Requ
 		return nil
 	}
 	state := Describe(run)
-	projection := CatalogObservation{State: state}
+	state.Issues = j.runIssues(run)
+	projection := CatalogObservation{State: state, NotCompared: run.Artifacts.Training.NotCompared}
 	if output := run.Artifacts.Preparation; output != nil {
 		projection.Prepared = run.Request.Prepare != nil && output.DatasetID == run.Request.Prepare.DatasetID && output.RecordsPath != ""
 		projection.RecordCount, projection.TrainingReady = output.RecordCount, output.TrainingReady
@@ -199,7 +204,8 @@ func (j *Job) observe(ctx context.Context, a moxiedb.Attempt, run tmprl.Run[Requ
 	projection.State.Definition, projection.State.Decisions = nil, nil
 	// Only the whitelisted FailureReason is kept, never failure text or raw types.
 	projection.State.Error, projection.State.WorkerHost, projection.State.FailureTypes = "", "", nil
-	projection.State.Request = Request{PreparationOnly: run.Request.PreparationOnly}
+	// Training options and the saved dataset are shown with the run; the model path is not.
+	projection.State.Request = Request{PreparationOnly: run.Request.PreparationOnly, Training: run.Request.Training, SavedDataset: run.Request.SavedDataset}
 	projection.State.Artifacts = Artifacts{}
 	projection.State.Stages = slices.Clone(run.Stages)
 	for i := range projection.State.Stages {

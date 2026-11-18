@@ -30,7 +30,17 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 	if !exists {
 		p := input.Preparation
-		document, err := Run(ctx, p.Extractor, p.Source, p.OpenSource, input.Workspace, providers.DocumentOptions{PageStart: p.Input.Request.PageStart, PageEnd: p.Input.Request.PageEnd})
+		pages := providers.DocumentOptions{PageStart: p.Input.Request.PageStart, PageEnd: p.Input.Request.PageEnd}
+		// A page range has a known total; a whole document reports pages read without one.
+		total := 0
+		if pages.PageStart > 0 {
+			total = pages.PageEnd - pages.PageStart + 1
+		}
+		var progress func(int)
+		if input.Publish != nil {
+			progress = func(read int) { input.Publish(tmprl.Progress{Completed: read, Total: total}) }
+		}
+		document, err := Run(ctx, p.Extractor, p.Source, p.OpenSource, input.Workspace, progress, pages)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
@@ -54,7 +64,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		}
 		state.Result.Exclusions = exclusions
 		if len(exclusions) > 0 {
-			state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("%d structural/resource source exclusions; see source_exclusions", len(exclusions)))
+			state.Result.Warnings = append(state.Result.Warnings, preparation.ExclusionWarning(len(exclusions)))
 		}
 		if p.Input.Kind == preparation.PreparationPreview {
 			count := min(p.Input.Request.PreviewRecords, len(units))

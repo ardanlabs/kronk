@@ -90,17 +90,15 @@ func (s *Store) Inspect(ctx context.Context, id string, version int) (SnapshotIn
 		return SnapshotInfo{}, fmt.Errorf("invalid dataset metadata: %s/%d", id, version)
 	}
 	info := SnapshotInfo{Dataset: dataset, Path: filepath.ToSlash(filepath.Join(id, strconv.Itoa(dataset.Version)+".json")), Operation: snapshot.Operation, Digest: snapshot.Digest}
-	count := 0
 	for i, contribution := range snapshot.Contributions {
 		doc := contribution.Document
 		if doc != dataset.Documents[i] || doc.RecordCount != len(contribution.Records) || doc.ID == "" || doc.Name == "" || !validSHA(contribution.SHA256) || !((doc.PageStart == 0 && doc.PageEnd == 0) || (doc.PageStart > 0 && doc.PageEnd >= doc.PageStart)) {
 			return SnapshotInfo{}, fmt.Errorf("invalid dataset contribution: %s/%d", id, version)
 		}
-		count += len(contribution.Records)
 		info.Documents = append(info.Documents, DocumentInfo{Document: doc, SHA256: contribution.SHA256})
 	}
 	records := snapshot.records()
-	if count != dataset.RecordCount || training.ValidateRecords(records) != nil || dataset.TrainingReady != (len(records) > 0 && training.TrainingReadiness(records) == nil) {
+	if training.ValidateRecords(records) != nil {
 		return SnapshotInfo{}, fmt.Errorf("invalid dataset records: %s/%d", id, version)
 	}
 	root, err := os.OpenRoot(s.root)

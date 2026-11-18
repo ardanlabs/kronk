@@ -174,7 +174,8 @@ func (t *GoMLX) Train(ctx context.Context, job TrainingJob, publish func(tmprl.P
 }
 
 // Predict answers independent prompts using the base model or supplied adapter.
-func (t *GoMLX) Predict(ctx context.Context, job TrainingJob, adapter string, records []Record) (answers []string, err error) {
+// After each answer, answered, when not nil, receives the number answered so far.
+func (t *GoMLX) Predict(ctx context.Context, job TrainingJob, adapter string, records []Record, answered func(int)) (answers []string, err error) {
 	if job.PredictionTokens < 1 {
 		return nil, fmt.Errorf("%w: prediction token budget must be positive", tmprl.ErrInvalidArgument)
 	}
@@ -196,10 +197,15 @@ func (t *GoMLX) Predict(ctx context.Context, job TrainingJob, adapter string, re
 		if err != nil {
 			return nil, err
 		}
-		if len(response.Choices) != 1 || response.Choices[0].Message == nil || response.Choices[0].FinishReason() != model.FinishReasonStop || strings.TrimSpace(response.Choices[0].Message.Content) == "" {
-			return nil, fmt.Errorf("protected prediction is missing or truncated")
+		if len(response.Choices) != 1 || response.Choices[0].Message == nil {
+			return nil, fmt.Errorf("protected prediction is missing")
 		}
+		// An answer cut off at the token budget or left empty is kept as given:
+		// it cannot match its target, so it counts as wrong instead of failing.
 		answers = append(answers, response.Choices[0].Message.Content)
+		if answered != nil {
+			answered(len(answers))
+		}
 	}
 	return answers, nil
 }

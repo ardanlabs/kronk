@@ -19,14 +19,19 @@ import (
 const maxRequestAttempts uint32 = 3
 
 // Step generates examples and held-out questions with durable batch checkpoints.
-type Step struct{}
+type Step struct {
+	// Verify verifies the next batch of unverified records. Full preparation
+	// sets it so rejected records are replaced up to the record limit; Preview
+	// leaves it nil and the verify step checks every record afterwards.
+	Verify func(context.Context, preparation.StepContext, *checkpoint.State) error
+}
 
 // Name identifies the generation step within the preparation stage.
 func (Step) Name() string { return "generate" }
 
 // Execute resumes generation without repeating committed batches. It never
-// verifies records or publishes a dataset; verification owns those decisions.
-func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.StepResult[preparation.Artifacts], error) {
+// publishes a dataset; the verify step owns publication.
+func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.StepResult[preparation.Artifacts], error) {
 	state, _, err := checkpoint.Load(ctx, input, false)
 	if err != nil {
 		return tmprl.StepResult[preparation.Artifacts]{}, err
@@ -73,11 +78,58 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			input.Publish(progress)
 		}
 	}
+	// The dataset's base version decides which evaluation questions it still
+	// needs. Datasets without fact identities cannot hold evaluation questions.
+	var base []training.Record
+	baseKeys := make(map[string]bool)
+	baseValidation, baseTest := make(map[string]bool), make(map[string]bool)
+	for _, r := range p.DatasetRecords {
+		baseKeys[training.Key(r.Prompt)] = true
+		switch {
+		case r.ValidationPrompt:
+			baseValidation[r.FactID] = true
+		case r.IndependentPrompt:
+			baseTest[r.FactID] = true
+		default:
+			base = append(base, r)
+		}
+	}
+	evaluate := p.Input.Kind == preparation.PreparationFull && p.Input.Request.Goal == preparation.GoalQuestionAnswer && !slices.ContainsFunc(p.DatasetRecords, func(r training.Record) bool { return r.FactID == "" })
+	missing := func(trainingRecords int) (validation, test int) {
+		if !evaluate || trainingRecords < training.MinimumTrainingRecords {
+			return 0, 0
+		}
+		validation, test = training.EvaluationNeeds(trainingRecords)
+		return max(0, validation-len(baseValidation)), max(0, test-len(baseTest))
+	}
+	// The record limit covers this run's training records and the evaluation
+	// questions the dataset then needs. Without room for both, the run saves
+	// training records only.
+	target := limit
+	for t := limit; t >= 1; t-- {
+		if validation, test := missing(len(base) + t); len(base)+t >= training.MinimumTrainingRecords && t+validation+test <= limit {
+			target = t
+			break
+		}
+	}
+	// verifyAll verifies pending records so rejected ones are replaced while
+	// passages or evaluation candidates remain.
+	verifyAll := func() error {
+		for s.Verify != nil && state.Verified < len(state.Records) {
+			if err := checkpoint.SafePoint(ctx, input); err != nil {
+				return err
+			}
+			if err := s.Verify(ctx, input, &state); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	commitBatch := func(end int) error {
 		for _, decision := range state.GenerationDecisions {
 			records := decision.Records
-			if limit > 0 {
-				records = records[:min(len(records), max(0, limit-len(state.Records)))]
+			if target > 0 {
+				records = records[:min(len(records), max(0, target-len(state.Records)))]
 			}
 			state.Records = append(state.Records, records...)
 			switch {
@@ -90,15 +142,24 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 			}
 		}
 		state.Next = end
-		if limit > 0 && len(state.Records) >= limit {
-			state.Next = len(state.Units)
-			state.Result.Warnings = append(state.Result.Warnings, "Document question cap reached; remaining source coverage and evaluation questions may be omitted")
-		}
 		state.GenerationAttempts = 0
 		state.GenerationRejections, state.GenerationRejectedPrompt, state.GenerationRejectionReason, state.GenerationLastRejected = 0, "", "", false
 		state.GenerationDecisions = nil
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return err
+		}
+		if target > 0 && len(state.Records) >= target {
+			// Verified records count toward the limit; rejected ones are replaced.
+			if err := verifyAll(); err != nil {
+				return err
+			}
+			if len(state.Records) >= target {
+				state.Next = len(state.Units)
+				state.Result.Warnings = append(state.Result.Warnings, "Record limit reached; the remaining passages were not used")
+				if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+					return err
+				}
+			}
 		}
 		report(tmprl.Progress{Completed: state.Next, Total: len(state.Units), Message: "Generated batch saved; verification still required"})
 		return nil
@@ -108,15 +169,15 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		if err := checkpoint.SafePoint(ctx, input); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		if limit > 0 && len(state.Records) >= limit {
+		if target > 0 && len(state.Records) >= target {
 			if err := commitBatch(state.Next); err != nil {
 				return tmprl.StepResult[preparation.Artifacts]{}, err
 			}
-			break
+			continue
 		}
 		batchSize := 5
-		if limit > 0 {
-			batchSize = min(batchSize, limit-len(state.Records))
+		if target > 0 {
+			batchSize = min(batchSize, target-len(state.Records))
 		}
 		// A resumed request keeps its original passage boundaries.
 		if len(state.GenerationDecisions) > 0 {
@@ -222,7 +283,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		}
 		// The envelope was validated and these candidates passed grounding and
 		// integrity checks. Unneeded candidates must not block a capped run.
-		if limit > 0 && candidates >= limit {
+		if target > 0 && candidates >= target {
 			if err := commitBatch(end); err != nil {
 				return tmprl.StepResult[preparation.Artifacts]{}, err
 			}
@@ -249,44 +310,99 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	if len(state.Records) == 0 {
 		return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError("no supported examples were generated; source exclusions are saved in the preparation checkpoint", "preparation-no-examples", nil)
 	}
-	training := slices.DeleteFunc(slices.Clone(state.Records), func(r training.Record) bool { return r.ValidationPrompt || r.IndependentPrompt })
-	if p.Input.Kind == preparation.PreparationFull && p.Input.Request.Goal == preparation.GoalQuestionAnswer && len(training) >= 20 {
-		report(tmprl.Progress{Completed: state.EvaluationNext, Total: 30, Message: "Generating evaluation questions"})
-		for state.EvaluationNext < 30 && (limit == 0 || len(state.Records) < limit) {
-			if err := checkpoint.SafePoint(ctx, input); err != nil {
-				return tmprl.StepResult[preparation.Artifacts]{}, err
+	if err := verifyAll(); err != nil {
+		return tmprl.StepResult[preparation.Artifacts]{}, err
+	}
+	// Evaluation questions reword training records from any document in the
+	// dataset: validation questions first, then test questions, one of each kind
+	// per record at most. A rejected question is replaced from the next record.
+	facts := slices.DeleteFunc(slices.Clone(state.Records), func(r training.Record) bool {
+		return r.ValidationPrompt || r.IndependentPrompt || baseKeys[training.Key(r.Prompt)]
+	})
+	facts = append(facts, base...)
+	needValidation, needTest := missing(len(facts))
+	asked := func() (validation, test int) {
+		for _, r := range state.Records {
+			switch {
+			case r.ValidationPrompt:
+				validation++
+			case r.IndependentPrompt:
+				test++
 			}
-			index := state.EvaluationNext
-			r, usage, err := EvaluationRecord(ctx, p.Completer, p.Input.Request, training[index%20], state.Records, state.EvaluationRejections, state.EvaluationRejectedPrompt)
-			if canceled := ctx.Err(); canceled != nil {
-				return tmprl.StepResult[preparation.Artifacts]{}, canceled
-			}
-			if err != nil {
-				if duplicate, ok := errors.AsType[*duplicateQuestion](err); ok {
-					state.EvaluationRejections++
-					state.EvaluationRejectedPrompt = duplicate.prompt
-					state.Result.PromptTokens += usage.PromptTokens
-					state.Result.CompletionTokens += usage.CompletionTokens
-					if saveErr := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); saveErr != nil {
-						return tmprl.StepResult[preparation.Artifacts]{}, saveErr
-					}
-				}
-				return tmprl.StepResult[preparation.Artifacts]{}, err
-			}
-			r.SourceDocument = p.Source.ID
-			r.UserApproved = false
-			r.ValidationPrompt = index < 10
-			r.IndependentPrompt = index >= 10
-			state.Records = append(state.Records, r)
-			state.Result.PromptTokens += usage.PromptTokens
-			state.Result.CompletionTokens += usage.CompletionTokens
-			state.EvaluationNext++
-			state.EvaluationRejections, state.EvaluationRejectedPrompt = 0, ""
-			if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
-				return tmprl.StepResult[preparation.Artifacts]{}, err
-			}
-			report(tmprl.Progress{Completed: state.EvaluationNext, Total: 30, Message: "Generating evaluation questions"})
 		}
+		return validation, test
+	}
+	// A partial evaluation set cannot split, so it is added only when it fits.
+	if validation, test := asked(); limit > 0 && len(state.Records)-validation-test+needValidation+needTest > limit {
+		needValidation, needTest = 0, 0
+	}
+	type slot struct {
+		fact       training.Record
+		validation bool
+	}
+	var slots []slot
+	for _, f := range facts {
+		if !baseValidation[f.FactID] {
+			slots = append(slots, slot{f, true})
+		}
+	}
+	for _, f := range facts {
+		if !baseTest[f.FactID] {
+			slots = append(slots, slot{f, false})
+		}
+	}
+	if needValidation+needTest > 0 {
+		validation, test := asked()
+		report(tmprl.Progress{Completed: validation + test, Total: needValidation + needTest, Message: "Generating evaluation questions"})
+	}
+	for state.EvaluationNext < len(slots) && (limit == 0 || len(state.Records) < limit) {
+		validation, test := asked()
+		if validation >= needValidation && test >= needTest {
+			break
+		}
+		next := slots[state.EvaluationNext]
+		if next.validation && validation >= needValidation || !next.validation && test >= needTest {
+			state.EvaluationNext++
+			continue
+		}
+		if err := checkpoint.SafePoint(ctx, input); err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+		// A run record that repeats a dataset question is skipped when saved.
+		previous := append(slices.Clone(p.DatasetRecords), slices.DeleteFunc(slices.Clone(state.Records), func(r training.Record) bool { return baseKeys[training.Key(r.Prompt)] })...)
+		r, usage, err := EvaluationRecord(ctx, p.Completer, p.Input.Request, next.fact, previous, state.EvaluationRejections, state.EvaluationRejectedPrompt)
+		if canceled := ctx.Err(); canceled != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, canceled
+		}
+		if err != nil {
+			if duplicate, ok := errors.AsType[*duplicateQuestion](err); ok {
+				state.EvaluationRejections++
+				state.EvaluationRejectedPrompt = duplicate.prompt
+				state.Result.PromptTokens += usage.PromptTokens
+				state.Result.CompletionTokens += usage.CompletionTokens
+				if saveErr := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); saveErr != nil {
+					return tmprl.StepResult[preparation.Artifacts]{}, saveErr
+				}
+			}
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+		r.SourceDocument = p.Source.ID
+		r.UserApproved = false
+		r.ValidationPrompt = next.validation
+		r.IndependentPrompt = !next.validation
+		state.Records = append(state.Records, r)
+		state.Result.PromptTokens += usage.PromptTokens
+		state.Result.CompletionTokens += usage.CompletionTokens
+		state.EvaluationNext++
+		state.EvaluationRejections, state.EvaluationRejectedPrompt = 0, ""
+		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+		if err := verifyAll(); err != nil {
+			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+		validation, test = asked()
+		report(tmprl.Progress{Completed: validation + test, Total: needValidation + needTest, Message: "Generating evaluation questions"})
 	}
 	if !state.Generated {
 		state.Generated = true

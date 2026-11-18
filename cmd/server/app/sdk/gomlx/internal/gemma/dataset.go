@@ -80,9 +80,6 @@ func prepareDataset(ctx context.Context, contract Dataset, tokenizer Tokenizer, 
 	if len(contract.Train) == 0 {
 		return PreparedDataset{}, fmt.Errorf("prepare Gemma dataset: training split is empty")
 	}
-	if len(contract.Validation) == 0 {
-		return PreparedDataset{}, fmt.Errorf("prepare Gemma dataset: validation split is empty")
-	}
 	trainingConversations, validationConversations := contract.TrainingConversations, contract.ValidationConversations
 	total := len(contract.Train) + len(contract.Validation) + len(trainingConversations) + len(validationConversations)
 	completed := 0

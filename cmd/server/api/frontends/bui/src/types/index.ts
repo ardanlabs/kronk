@@ -1430,7 +1430,10 @@ export type NewTrainingRun = {
   model: string;
   training: TrainingOptions;
   preparation_only?: boolean;
-} & ({ dataset_id: string; prepare?: never } | { prepare: PreparationOptions & { dataset_id: string }; dataset_id?: never });
+} & ({ dataset_id: string; prepare?: never; saved_dataset?: never }
+  | { prepare: PreparationOptions & { dataset_id: string }; dataset_id?: never; saved_dataset?: never }
+  // saved_dataset trains on a saved dataset version, read by the server.
+  | { saved_dataset: { id: string; version: number }; dataset_id?: never; prepare?: never });
 
 export interface PreparationDataset {
   id: string;
@@ -1442,6 +1445,12 @@ export interface PreparationDataset {
   updated_at: string;
   versions: number[];
   documents: { id: string; name: string; record_count: number; page_start: number; page_end: number }[];
+  // Training records, and the evaluation questions the dataset holds and needs.
+  training_records: number;
+  validation_questions: number;
+  validation_needed: number;
+  test_questions: number;
+  test_needed: number;
 }
 
 // Statuses and ordered stages/steps come from the job runner.
@@ -1462,11 +1471,6 @@ export interface ContinueTrainingPreview {
   checkpoint_id: string;
   submission_id: string;
   records: TrainingPreviewRecord[];
-}
-
-export interface StartPreparedTraining {
-  checkpoint_id: string;
-  submission_id: string;
 }
 
 export interface TrainingDecisionReceipt {
@@ -1501,6 +1505,12 @@ export interface TrainingRun {
   workflow_id: string;
   run_id: string;
   preparation_only: boolean;
+  // A training run's dataset version, its settings, and its evaluation result.
+  training_dataset_id?: string;
+  training_dataset_name?: string;
+  training_dataset_version?: number;
+  training_settings?: TrainingOptions & { model?: string };
+  evaluation_result?: 'accepted' | 'not_compared' | 'needs_improvement';
   prepared_dataset_id?: string;
   prepared_dataset_version?: number;
   target_dataset_id?: string;
@@ -1521,7 +1531,10 @@ export interface TrainingRun {
   dataset_available: boolean;
   dataset_record_count: number;
   skipped_records?: number;
-  failure_reason?: 'dataset-document-exists' | 'dataset-questions-exist' | 'dataset-changed' | 'preparation-no-examples';
+  issues?: { code: string; count: number; required?: number }[];
+  failure_reason?: 'dataset-document-exists' | 'dataset-questions-exist' | 'dataset-changed' | 'preparation-no-examples'
+    | 'preparation-no-source-units' | 'preparation-request-budget-exhausted' | 'preparation-no-verified-examples' | 'preparation-checkpoint-version' | 'invalid-training'
+    | 'preparation-extractor-unavailable' | 'preparation-page-range' | 'preparation-extraction-failed' | 'training-records-insufficient';
   training_ready: boolean;
   started_at: string;
   updated_at?: string;
@@ -1538,7 +1551,8 @@ export interface TrainingEvaluation {
   adapter_correct: number;
   total: number;
   accepted: boolean;
-  answers: { prompt: string; expected: string; base_answer: string; adapter_answer: string }[];
+  checks?: { code: string; actual: number; required: number; passed: boolean }[];
+  answers: { prompt: string; expected: string; base_answer: string; adapter_answer: string; adapter_passed?: boolean }[];
 }
 
 export interface TrainingStage {

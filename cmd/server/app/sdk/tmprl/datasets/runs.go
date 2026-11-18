@@ -20,19 +20,23 @@ import (
 // It is not a persisted snapshot or an HTTP response schema.
 type State struct {
 	training.State
-	JobID                  string
-	AttemptID              string
-	ObservationRevision    int64
-	ObservedAt             time.Time
-	PendingActions         []PendingAction
-	DatasetAvailable       bool
-	DatasetRecordCount     int
-	SkippedRecordCount     int // Records not saved because the dataset already had their question.
-	TrainingReady          bool
+	JobID               string
+	AttemptID           string
+	ObservationRevision int64
+	ObservedAt          time.Time
+	PendingActions      []PendingAction
+	DatasetAvailable    bool
+	DatasetRecordCount  int
+	SkippedRecordCount  int // Records not saved because the dataset already had their question.
+	TrainingReady       bool
+	// Mode is preparation, training, or preparation_and_training. NotCompared
+	// marks a training accepted without evaluation questions.
+	Mode                   string
+	NotCompared            bool
 	PreparedDatasetID      string
 	PreparedDatasetVersion int
-	// Run identity known without the live request: the dataset it adds to,
-	// the version it started from, and the uploaded source document.
+	// Run identity known without the live request: the dataset it adds to or,
+	// for training, trains on; that dataset's version; and the uploaded source document.
 	TargetDatasetID   string
 	TargetDatasetName string
 	BaseVersion       int
@@ -71,9 +75,12 @@ func (s *Service) RunsAvailable() bool { return s.job != nil }
 func (s *Service) CatalogAvailable() bool { return s.db != nil || s.RunsAvailable() }
 
 func (s *Service) describe(ctx context.Context, run training.State) State {
-	state := State{State: run}
+	state := State{State: run, Mode: mode(run.Request), NotCompared: run.Artifacts.Training.NotCompared}
 	if prepare := run.Request.Prepare; prepare != nil {
 		state.TargetDatasetID, state.BaseVersion, state.SourceUploadID = prepare.TargetDatasetID, prepare.BaseVersion, prepare.DatasetID
+	}
+	if saved := run.Request.SavedDataset; saved != nil {
+		state.TargetDatasetID, state.BaseVersion = saved.ID, saved.Version
 	}
 	s.label(ctx, &state)
 	if prepared := run.Artifacts.Preparation; prepared != nil {
@@ -136,15 +143,9 @@ func (s *Service) ListRuns(ctx context.Context, options RunFilter) ([]State, []b
 		}
 		states := make([]State, 0, len(runs))
 		for _, run := range runs {
-			mode, target := "training", ""
-			if run.Request.Prepare != nil {
-				mode, target = "preparation_and_training", run.Request.Prepare.TargetDatasetID
-				if run.Request.PreparationOnly {
-					mode = "preparation"
-				}
-			}
-			if (options.Mode == "" || options.Mode == mode) && (options.TargetDatasetID == "" || options.TargetDatasetID == target) {
-				states = append(states, s.describe(ctx, run))
+			state := s.describe(ctx, run)
+			if (options.Mode == "" || options.Mode == state.Mode) && (options.TargetDatasetID == "" || options.TargetDatasetID == state.TargetDatasetID) {
+				states = append(states, state)
 			}
 		}
 		return states, next, nil
@@ -184,6 +185,17 @@ func (s *Service) ListRuns(ctx context.Context, options RunFilter) ([]State, []b
 		states = append(states, state)
 	}
 	return states, next, nil
+}
+
+// mode names a run's kind as the catalog records it.
+func mode(r training.Request) string {
+	switch {
+	case r.Prepare == nil:
+		return "training"
+	case r.PreparationOnly:
+		return "preparation"
+	}
+	return "preparation_and_training"
 }
 
 func (f RunFilter) validate() error {
@@ -274,6 +286,10 @@ func (s *Service) catalogRun(ctx context.Context, e tmprl.Execution) (State, err
 	if s.job != nil && liveErr == nil {
 		live.JobID, live.AttemptID, live.ObservationRevision = state.JobID, state.AttemptID, state.ObservationRevision
 		live.ObservedAt, live.PendingActions = state.ObservedAt, state.PendingActions
+		// The saved version's readiness follows the dataset's current rule, as listed.
+		if state.PreparedDatasetID != "" {
+			live.DatasetRecordCount, live.TrainingReady = state.DatasetRecordCount, state.TrainingReady
+		}
 		return live, nil
 	}
 	state.StateStale, state.RemainingSeconds = true, 0
@@ -290,7 +306,8 @@ func (s *Service) fromCatalog(ctx context.Context, entry moxiedb.CatalogEntry) (
 	}
 	state := State{State: observation.State, JobID: entry.Job.JobID, AttemptID: a.AttemptID,
 		ObservationRevision: a.ObservationRevision, ObservedAt: a.ObservedAt.Time,
-		DatasetAvailable: observation.Prepared, DatasetRecordCount: observation.RecordCount, SkippedRecordCount: observation.SkippedRecords, TrainingReady: observation.TrainingReady}
+		DatasetAvailable: observation.Prepared, DatasetRecordCount: observation.RecordCount, SkippedRecordCount: observation.SkippedRecords, TrainingReady: observation.TrainingReady,
+		Mode: entry.Job.Mode, NotCompared: observation.NotCompared}
 	state.WorkflowID, state.RunID = a.WorkflowID, a.RunID.String
 	job := entry.Job
 	state.TargetDatasetID, state.BaseVersion, state.SourceUploadID = job.TargetDatasetID.String, int(job.BaseDatasetVersion.Int64), job.SourceUploadID.String

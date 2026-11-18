@@ -1,26 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { requestMessage, retryDelay, stepLabel } from '../contexts/FineTuningRunnerContext';
+import { requestMessage, retryDelay, stepLabel, trainingPath } from '../contexts/FineTuningRunnerContext';
 import { api, ApiError } from '../services/api';
 import type { TrainingRun } from '../types';
-import { active, Badge, datasetName, date, failedStep, PreparationRunView, Progress, records, remaining, reviewable, runKey, runMeta, version } from './PreparationRuns';
+import { active, Badge, datasetName, date, failedStep, PreparationRunView, Progress, records, remaining, reviewable, runKey, version } from './PreparationRuns';
+import { trainingLabel, TrainingRunScreen, TrainingSetup } from './TrainingRun';
 import './PreparationRuns.css';
 import './DatasetDashboard.css';
 
-// The Dataset Dashboard lists preparation runs ten per page and opens each on its
-// own screen. A finished dataset leads on to training.
+// The Fine-Tuning dashboard lists preparation runs ten per page and opens each on its
+// own screen. A finished dataset leads on to training, which opens from that dataset.
 
 const PAGE_SIZE = 10;
 // The status filter runs on the server before paging.
 const filters: [string, string, string[]][] = [
-  ['all', 'All runs', []], ['active', 'In progress', ['queued', 'running', 'recovering', 'pause_requested', 'paused', 'waiting']],
-  ['review', 'Needs review', ['waiting']], ['finished', 'Closed', ['completed', 'failed', 'stopped']],
+  ['all', 'All', []], ['queued', 'Queued', ['queued']], ['running', 'Running', ['running', 'recovering']],
+  ['paused', 'Paused', ['pause_requested', 'paused']], ['review', 'Waiting for review', ['waiting']],
+  ['completed', 'Completed', ['completed', 'needs_improvement']], ['failed', 'Failed', ['failed']], ['stopped', 'Stopped', ['stopped']],
 ];
 
-function StepCell({ run }: { run: TrainingRun }) {
+// StepCell says where a run is. A saved version also links to its latest training.
+function StepCell({ run, training }: { run: TrainingRun; training?: TrainingRun }) {
   const eta = remaining(run);
   if (run.status === 'completed' || run.status === 'needs_improvement') return run.prepared_dataset_version
-    ? <><span className="prep-main dash-done-text"><span aria-hidden="true">✓ </span>Dataset ready</span><span className="prep-sub">{records(run.dataset_record_count)} in version {run.prepared_dataset_version} · {run.training_ready ? 'ready for training' : 'below the 50-record training minimum'}</span></>
+    ? <><span className="prep-main dash-done-text"><span aria-hidden="true">✓ </span>Dataset ready</span><span className="prep-sub">{records(run.dataset_record_count)} in version {run.prepared_dataset_version} · {run.training_ready ? 'ready for training' : 'needs 20 training records to train'}</span>{training && <Link className="dash-train-link" to={trainingPath(training)}>{trainingLabel(training)}</Link>}</>
     : <><span className="prep-main">Finished</span><span className="prep-sub">No saved version</span></>;
   if (run.status === 'failed') return <><span className="prep-main">Failed during {stepLabel(failedStep(run)?.name ?? run.step).toLowerCase()}</span><span className="prep-sub">Open for details</span></>;
   if (run.status === 'stopped') return <><span className="prep-main">Stopped</span><span className="prep-sub">Cancelled · cannot resume</span></>;
@@ -30,21 +33,50 @@ function StepCell({ run }: { run: TrainingRun }) {
   return <><span className="prep-main">{stepLabel(run.step)}</span>{run.status === 'recovering' ? <span className="prep-sub">Resuming from saved progress</span> : <Progress run={run} />}{eta && <span className="dash-eta">{eta}</span>}</>;
 }
 
-function Tabs() {
-  return <nav className="tabs fine-tabs" aria-label="Fine-tuning views">
-    <Link className="tab active" aria-current="page" to="/fine-tuning">Dashboard</Link>
-    <Link className="tab" to="/fine-tuning?view=configure">Configure Training</Link>
-  </nav>;
-}
-
 export default function DatasetDashboard({ visible }: { visible: boolean }) {
   const [params] = useSearchParams();
-  const selected = params.get('preparation') && params.get('run') ? { workflow: params.get('preparation')!, run: params.get('run')! } : null;
-  return <div className="fine-page prep-workspace">
+  const run = params.get('run');
+  const preparation = run && params.get('preparation');
+  const training = run && params.get('training');
+  return <div className={`fine-page prep-workspace${params.get('view') === 'train' ? ' fine-preparing' : ''}`}>
     <div className="page-header fine-page-header"><div><h2>Fine-Tuning</h2></div></div>
-    <Tabs />
-    {selected ? <RunScreen key={`${selected.workflow}/${selected.run}`} workflowID={selected.workflow} runID={selected.run} visible={visible} /> : <RunList visible={visible} />}
+    {params.get('view') === 'train' ? <TrainingSetup key={params.toString()} visible={visible} />
+      : training ? <TrainingRunScreen key={`${training}/${run}`} workflowID={training} runID={run} visible={visible} />
+        : preparation ? <RunScreen key={`${preparation}/${run}`} workflowID={preparation} runID={run} visible={visible} />
+          : <RunList visible={visible} />}
   </div>;
+}
+
+// useLatestTrainings maps each dataset version to its newest training run, and keeps
+// them current while one is in progress.
+function useLatestTrainings(visible: boolean, revision: unknown) {
+  const [latest, setLatest] = useState<Map<string, TrainingRun>>(new Map());
+  useEffect(() => {
+    if (!visible) return;
+    const controller = new AbortController();
+    void (async () => {
+      while (!controller.signal.aborted) {
+        let running = true;
+        try {
+          const page = await api.trainingRuns('', controller.signal, '', { mode: 'training', pageSize: 50, order: 'newest' });
+          if (controller.signal.aborted) return;
+          const next = new Map<string, TrainingRun>();
+          for (const item of page.runs ?? []) {
+            const key = `${item.training_dataset_id}@${item.training_dataset_version}`;
+            if (item.training_dataset_id && !next.has(key)) next.set(key, item);
+          }
+          setLatest(next);
+          running = [...next.values()].some(active);
+        } catch {
+          // The link is secondary; keep the last answer and try again.
+        }
+        if (!running) return;
+        await retryDelay(controller.signal);
+      }
+    })();
+    return () => controller.abort();
+  }, [visible, revision]);
+  return latest;
 }
 
 function RunList({ visible }: { visible: boolean }) {
@@ -98,11 +130,12 @@ function RunList({ visible }: { visible: boolean }) {
 
   const rows = list?.runs ?? [];
   const first = page * PAGE_SIZE + 1;
+  const trainings = useLatestTrainings(visible, list);
 
   return <>
     <div className="page-header-with-action prep-heading">
-      <div><h2 ref={heading} tabIndex={-1}>Preparation runs</h2><p className="page-description">Each row is one run that turns documents into verified records for a dataset. Open a run to follow it or see its result.</p></div>
-      <div className="prep-actions"><button className="btn btn-secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Refresh</button><Link className="btn btn-primary" to="/fine-tuning?view=prepare">+ New dataset</Link></div>
+      <div><h2 ref={heading} tabIndex={-1}>Dashboard</h2><p className="page-description">Each row is one run that turns documents into verified records for a dataset. Open a run to follow it or see its result.</p></div>
+      <div className="prep-actions"><Link className="btn btn-primary" to="/fine-tuning?view=prepare">+ New dataset</Link></div>
     </div>
     <div className="dash-filter">
       <label htmlFor="dash-filter">Sort by</label>
@@ -113,7 +146,7 @@ function RunList({ visible }: { visible: boolean }) {
     {error && <div className="prep-load-error" role="alert"><span>Could not load preparation runs: {error} Retrying automatically.</span><button className="btn btn-secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Try again</button></div>}
     {!list && !error && <p className="prep-copy" role="status">Loading preparation runs…</p>}
     {list && <div className="catalog-table-wrap prep-table-wrap"><table className="catalog-table prep-table dash-table">
-      <caption className="prep-sr-only">Preparation runs, page {page + 1}</caption>
+      <caption className="prep-sr-only">Dataset preparation, page {page + 1}</caption>
       <thead><tr><th scope="col">Dataset</th><th scope="col">Status</th><th scope="col">Step</th><th scope="col" aria-sort={newestFirst ? 'descending' : 'ascending'}><button className="dash-sort-header" type="button" onClick={() => { setNewestFirst(!newestFirst); restart(); }}>Date created<span className="efficiency-sort-ind active" aria-hidden="true">{newestFirst ? '▼' : '▲'}</span><span className="prep-sr-only">, {newestFirst ? 'newest first' : 'oldest first'}. Select to reverse.</span></button></th><th scope="col"><span className="prep-sr-only">Open run</span></th></tr></thead>
       <tbody>
         {rows.map((run) => {
@@ -121,12 +154,12 @@ function RunList({ visible }: { visible: boolean }) {
           return <tr key={runKey(run)}>
             <td><Link className="prep-run-link" to={path}>{datasetName(run)}</Link><span className="prep-sub">{version(run)}</span></td>
             <td data-label="Status"><Badge run={run} />{run.state_stale && active(run) && <span className="prep-sub prep-stale-tag">Last known status</span>}</td>
-            <td data-label="Step"><StepCell run={run} /></td>
+            <td data-label="Step"><StepCell run={run} training={trainings.get(`${run.prepared_dataset_id}@${run.prepared_dataset_version}`)} /></td>
             <td data-label="Date created">{date(run.started_at)}</td>
             <td className="prep-row-action"><Link className={`btn ${reviewable(run) ? 'btn-primary' : 'btn-secondary'}`} aria-label={`Open ${datasetName(run)}, created ${date(run.started_at)}`} to={path}>Open</Link></td>
           </tr>;
         })}
-        {!rows.length && <tr><td colSpan={5}><div className="empty-state">{filter === 'all' ? <><h3>No preparation runs yet</h3><p>Choose + New dataset to start one.</p></> : <><h3>No runs match this filter</h3><p>Choose All runs to see every preparation run.</p></>}</div></td></tr>}
+        {!rows.length && <tr><td colSpan={5}><div className="empty-state">{filter === 'all' ? <><h3>No preparation runs yet</h3><p>Choose + New dataset to start one.</p></> : <><h3>No runs with this status</h3><p>Choose All to see every preparation run.</p></>}</div></td></tr>}
       </tbody>
     </table></div>}
     {list && (page > 0 || list.next) && <nav className="dash-pager" aria-label="Pages">
@@ -145,7 +178,8 @@ function RunScreen({ workflowID, runID, visible }: { workflowID: string; runID: 
   const [attempt, setAttempt] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
 
-  // Runs in progress refresh every few seconds; finished runs load once.
+  // A working run refreshes every second so its progress moves; other runs in progress
+  // every few seconds; finished runs load once.
   useEffect(() => {
     if (!visible) return;
     const controller = new AbortController();
@@ -156,7 +190,7 @@ function RunScreen({ workflowID, runID, visible }: { workflowID: string; runID: 
         if (controller.signal.aborted) return;
         setRun(next);
         setError(null);
-        if (active(next)) timer = setTimeout(load, 3000);
+        if (active(next)) timer = setTimeout(load, ['running', 'recovering', 'queued'].includes(next.status) ? 1000 : 3000);
       } catch (err) {
         if (controller.signal.aborted) return;
         const missing = err instanceof ApiError && err.status === 404;
@@ -169,17 +203,13 @@ function RunScreen({ workflowID, runID, visible }: { workflowID: string; runID: 
   }, [visible, workflowID, runID, attempt]);
 
   useEffect(() => {
-    if (visible) heading.current?.focus();
+    if (visible) (run ? document.getElementById('run-card-title') : heading.current)?.focus();
   }, [visible, !!run]);
 
   const refresh = () => setAttempt((value) => value + 1);
   return <>
     <Link className="prep-back" to="/fine-tuning">← Dashboard</Link>
     {run ? <>
-      <div className="page-header-with-action prep-heading">
-        <div><h2 ref={heading} tabIndex={-1}>{datasetName(run)}</h2><p className="page-description">{runMeta(run)}</p></div>
-        <div className="prep-actions"><Badge run={run} /><button className="btn btn-secondary" type="button" onClick={refresh}>Refresh</button></div>
-      </div>
       {error && <p className="prep-warning" role="status">Could not refresh this run: {error.text} Retrying automatically. <button className="prep-inline-link" type="button" onClick={refresh}>Try again</button></p>}
       <PreparationRunView run={run} visible={visible} onRefresh={refresh} />
     </> : error?.missing ? <section className="fine-panel"><h2 ref={heading} tabIndex={-1}>Run not found</h2><p>This preparation run does not exist or is no longer available.</p><Link className="btn btn-secondary" to="/fine-tuning">Back to dashboard</Link></section>
