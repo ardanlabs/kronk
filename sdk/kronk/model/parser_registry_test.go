@@ -217,6 +217,24 @@ func TestBuiltinParser_PublicToolSchema(t *testing.T) {
 	if len(failed) != 1 || failed[0].Status != 2 || failed[0].Raw != raw || failed[0].Error == "" {
 		t.Errorf("invalid call: got %+v, want retained raw output and parse error", failed)
 	}
+
+	sm := parser.NewStateMachine()
+	sm.Classify(`<tool_call>{"name":"lookup","arguments":{}}`)
+	streamer := sm.(ToolCallDeltaStreamer)
+	deltas := streamer.ToolCallDeltas()
+	if len(deltas) != 1 || deltas[0].ID == "" || deltas[0].Index != 0 || deltas[0].Type != "function" || deltas[0].Function.Name != "lookup" {
+		t.Fatalf("tool deltas: got %+v, want lookup identity", deltas)
+	}
+	if started := streamer.StartedToolCalls(); !reflect.DeepEqual(started, deltas) {
+		t.Errorf("started calls: got %+v, want %+v", started, deltas)
+	}
+	if got := streamer.ToolCallDeltas(); len(got) != 0 {
+		t.Errorf("drained deltas: got %+v, want none", got)
+	}
+	sm.Reset()
+	if got := streamer.StartedToolCalls(); len(got) != 0 {
+		t.Errorf("started calls after reset: got %+v, want none", got)
+	}
 }
 
 func TestBuiltinParser_ConditioningAndReuse(t *testing.T) {
