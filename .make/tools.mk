@@ -274,31 +274,3 @@ test-adversarial: ## Run adversarial probes and print the triage prompt
 	echo; \
 	cat .tools/adversarial/adversarial-triage.md; \
 	exit $$status
-
-# ==============================================================================
-
-# OpenCode coding-agent benchmark against a separately managed Kronk server.
-# Eligible models use /BENCHMARK entries in zarf/kms/tools_model_config.yaml.
-# Start its server with make server-for-tools.
-TICTACTOE_HOST ?= http://localhost:11435
-TICTACTOE_MODEL ?= all
-TICTACTOE_STEPS ?= 40
-TICTACTOE_TIMEOUT ?= 15m
-TICTACTOE_SUBMISSIONS ?= 3
-TICTACTOE_FEEDBACK ?= true
-TICTACTOE_RUN ?=
-
-benchmark-tic-tac-toe:
-	go run ./.tools/tic-tac-toe-benchmark \
-		-host "$(TICTACTOE_HOST)" \
-		-model "$(TICTACTOE_MODEL)" \
-		-attempts "$(TICTACTOE_SUBMISSIONS)" \
-		-feedback=$(TICTACTOE_FEEDBACK) \
-		-steps "$(TICTACTOE_STEPS)" \
-		-timeout "$(TICTACTOE_TIMEOUT)"
-
-benchmark-tic-tac-toe-list:
-	go run ./.tools/tic-tac-toe-benchmark -list
-
-benchmark-tic-tac-toe-report:
-	go run ./.tools/tic-tac-toe-benchmark -report -run "$(TICTACTOE_RUN)"

@@ -484,7 +484,7 @@ those contracts. Multi-GPU and classic full-drafter coverage remain out of scope
 
 ## Running, collecting and judging evidence
 
-Quick-check, reliability, and the tic-tac-toe benchmark share
+Quick-check and reliability share
 `zarf/kms/tools_model_config.yaml`. `make server-for-tools` loads that dedicated
 configuration from the current checkout; restart the tools server after changing
 it. Normal server targets retain `zarf/kms/model_config.yaml` and its `/AGENT` entries.

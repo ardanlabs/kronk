@@ -306,38 +306,6 @@ which is untracked. Clone them there before triaging, or drop those two sources 
 the prompt and accept that a defect below the Kronk boundary can only be localized to
 the binding call site.
 
-#### 20.4.3 OpenCode coding benchmark
-
-`.tools/tic-tac-toe-benchmark` evaluates coding agents against a separately
-managed Kronk server through `opencode run`. Workload v1 has two steps: the basic
-tic-tac-toe game, then an undo extension unlocked only after the basic game passes.
-Each step allows up to three submissions by default, sharing the same program and
-OpenCode session so the model can repair failures using deterministic grader evidence.
-Acceptance checks cover source requirements, build, vet, helper behavior, and interactive
-gameplay in a pseudo-terminal; feedback reports observations, not suggested fixes.
-
-Start the tools server with `make server-for-tools`. Eligible models come exclusively
-from `zarf/kms/tools_model_config.yaml`, with sufix `/BENCHMARK`.
-The harness warms each model before its submissions and unloads it before continuing
-to the next model. Warm-up time and tokens are excluded from agent measurements.
-
-```shell
-make benchmark-tic-tac-toe-list
-make benchmark-tic-tac-toe
-make benchmark-tic-tac-toe \
-    TICTACTOE_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK \
-    TICTACTOE_SUBMISSIONS=3
-make benchmark-tic-tac-toe-report
-```
-
-Results are retained beneath the gitignored
-`.tools/tic-tac-toe-benchmark/runs/YYYY-MM-DD/run-<unique>/`, without clearing
-previous runs. Each submission preserves its generated program, OpenCode event stream,
-stderr, and grader evidence. The aggregate plain-text `report.txt` has separate step
-columns and can be copied into the manually maintained `history.txt`. See
-`.tools/tic-tac-toe-benchmark/README.md` for all runtime knobs and replay commands.
-This is not part of `make test`.
-
 ### 20.5 Request and Model Lifecycle
 
 #### 20.5.1 Server request flow

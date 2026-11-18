@@ -6239,16 +6239,6 @@ make test-adversarial ARGS="-l"                  # list groups and their tiers`}
           <h5>Triaging the findings</h5>
           <p>A finding is a flagged probe, not a proven defect: the probe itself can be wrong, and the cause may sit in yzma or llama.cpp rather than in Kronk. <code>make test-adversarial</code> prints a triage prompt after every run — including the exit-1 run that produced findings — which hands the report to a coding agent for verification. The authoritative prompt is <code>.tools/adversarial/adversarial-triage.md</code>. Follow it to correlate flagged requests with server logs, check the probe's assumptions, and trace ownership before calling a finding a defect. Report confirmed mechanisms separately from unproven findings.</p>
           <p>The yzma and llama.cpp trees the prompt cites are working checkouts under <code>.extras/</code>, which is untracked. Clone them there before triaging, or drop those two sources from the prompt and accept that a defect below the Kronk boundary can only be localized to the binding call site.</p>
-          <h4 id="2043-opencode-coding-benchmark">20.4.3 OpenCode coding benchmark</h4>
-          <p><code>.tools/tic-tac-toe-benchmark</code> evaluates coding agents against a separately managed Kronk server through <code>opencode run</code>. Workload v1 has two steps: the basic tic-tac-toe game, then an undo extension unlocked only after the basic game passes. Each step allows up to three submissions by default, sharing the same program and OpenCode session so the model can repair failures using deterministic grader evidence. Acceptance checks cover source requirements, build, vet, helper behavior, and interactive gameplay in a pseudo-terminal; feedback reports observations, not suggested fixes.</p>
-          <p>Start the tools server with <code>make server-for-tools</code>. Eligible models come exclusively from <code>zarf/kms/tools_model_config.yaml</code>, with sufix <code>/BENCHMARK</code>. The harness warms each model before its submissions and unloads it before continuing to the next model. Warm-up time and tokens are excluded from agent measurements.</p>
-          <pre className="code-block"><code className="language-shell">{`make benchmark-tic-tac-toe-list
-make benchmark-tic-tac-toe
-make benchmark-tic-tac-toe \\
-    TICTACTOE_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/BENCHMARK \\
-    TICTACTOE_SUBMISSIONS=3
-make benchmark-tic-tac-toe-report`}</code></pre>
-          <p>Results are retained beneath the gitignored <code>.tools/tic-tac-toe-benchmark/runs/YYYY-MM-DD/run-&lt;unique&gt;/</code>, without clearing previous runs. Each submission preserves its generated program, OpenCode event stream, stderr, and grader evidence. The aggregate plain-text <code>report.txt</code> has separate step columns and can be copied into the manually maintained <code>history.txt</code>. See <code>.tools/tic-tac-toe-benchmark/README.md</code> for all runtime knobs and replay commands. This is not part of <code>make test</code>.</p>
           <h3 id="205-request-and-model-lifecycle">20.5 Request and Model Lifecycle</h3>
           <h4 id="2051-server-request-flow">20.5.1 Server request flow</h4>
           <p>The stable request path is:</p>
