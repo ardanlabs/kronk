@@ -71,7 +71,8 @@ test-speech: install-libraries ## Run speech configuration, memory, and native l
 	@echo ========== RUN SPEECH TESTS ==========
 	unset KRONK_TEST_HOSTED KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
-	go test -v -p=1 -count=1 -timeout 20m -run Speech ./sdk/kronk/model ./sdk/kronk/modelprofile ./sdk/kronk/vram ./sdk/kronk/pool
+	go test -v -p=1 -count=1 -timeout 20m ./sdk/kronk/model/internal/speech && \
+	go test -v -p=1 -count=1 -timeout 20m -run Speech ./sdk/kronk/model ./sdk/kronk/modelprofile ./sdk/kronk/modelprofile/arch ./sdk/kronk/vram ./sdk/kronk/pool
 
 # Run the native Malina SDK and model-server integration tests explicitly.
 # These tests require stable-diffusion.cpp and the sd-1.5 model, and are not

@@ -109,7 +109,7 @@ func testSpeechPoolLifecycle(t *testing.T, mp models.Path) {
 		if len(wav) < 44 || string(wav[:4]) != "RIFF" || string(wav[8:12]) != "WAVE" ||
 			binary.LittleEndian.Uint16(wav[20:22]) != 1 || binary.LittleEndian.Uint16(wav[22:24]) != 1 ||
 			binary.LittleEndian.Uint16(wav[34:36]) != 16 || response.SampleRate != 24000 ||
-			response.Samples <= 0 || int64(len(wav)) != 44+2*response.Samples {
+			response.Samples <= 0 || response.Stereo || len(wav) != 44+2*response.Samples {
 			t.Fatalf("invalid pooled WAV: rate=%d samples=%d bytes=%d", response.SampleRate, response.Samples, len(wav))
 		}
 		t.Logf("pooled WAV: rate=%d samples=%d bytes=%d", response.SampleRate, response.Samples, len(wav))

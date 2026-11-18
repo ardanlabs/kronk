@@ -178,10 +178,102 @@ func TestFromBytesSpeechDecoderMemory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// An extra 64 speaker elements occupy 256 bytes in both the shared voice
-	// and the selected helper's reference copy. Native graph dimensions stay fixed.
-	if changed.ComputeMemory.WorkspaceCPU-single.ComputeMemory.WorkspaceCPU != 512 || changed.ComputeBufferEst != single.ComputeBufferEst {
+	// An extra 64 speaker elements occupy 256 bytes in the materialized
+	// preset, shared last reference and helper copy. Graphs stay fixed.
+	if changed.ComputeMemory.WorkspaceCPU-single.ComputeMemory.WorkspaceCPU != 768 || changed.ComputeBufferEst != single.ComputeBufferEst {
 		t.Fatalf("Chatterbox reference tensor sizing: got %+v, baseline %+v", changed.ComputeMemory, single.ComputeMemory)
+	}
+	// Public estimates retain one bounded WAV/bitmap and flow payload per
+	// slot, but only one shared preprocessing/readback workload.
+	wantSlot := int64(8*1024*1024 + 4*30*16000 + 4*(250+80*500+192))
+	if got := multiple.ComputeMemory.WorkspaceCPU - single.ComputeMemory.WorkspaceCPU; got != 3*wantSlot {
+		t.Fatalf("reference slot payload: got %d, want %d", got, 3*wantSlot)
+	}
+	readback := slices.Clone(tensors)
+	var f32Bytes int64
+	for layer := range 3 {
+		in := int64(256)
+		if layer == 0 {
+			in = 40
+		}
+		for _, row := range []struct {
+			kind string
+			dims []int64
+		}{
+			{"weight_ih", []int64{in, 1024}}, {"weight_hh", []int64{256, 1024}},
+			{"bias_ih", []int64{1024}}, {"bias_hh", []int64{1024}},
+		} {
+			readback = append(readback, gguf.TensorInfo{Name: fmt.Sprintf("a.ve.lstm.%s_l%d", row.kind, layer), Dims: row.dims, GGMLType: 1})
+			elements := int64(1)
+			for _, dim := range row.dims {
+				elements *= dim
+			}
+			f32Bytes += 4 * elements
+		}
+	}
+	readback = append(readback,
+		gguf.TensorInfo{Name: "a.ve.proj.weight", Dims: []int64{256, 256}, GGMLType: 1},
+		gguf.TensorInfo{Name: "a.ve.proj.bias", Dims: []int64{256}, GGMLType: 1},
+		gguf.TensorInfo{Name: "a.cenc.spkr_enc.weight", Dims: []int64{256, 1024}, GGMLType: 1},
+		gguf.TensorInfo{Name: "a.cenc.spkr_enc.bias", Dims: []int64{1024}, GGMLType: 1},
+	)
+	f32Bytes += 4 * (256*256 + 256 + 256*1024 + 1024)
+	for _, slots := range []int64{1, 4} {
+		withReadback, err := FromBytes(deepseek41Header(t, metadata, readback), 555371392, Config{ComputeBackend: "metal", Slots: slots})
+		if err != nil {
+			t.Fatal(err)
+		}
+		baseline := single
+		if slots == 4 {
+			baseline = multiple
+		}
+		// All F32 vectors coexist, but only the largest F16 conversion
+		// temporary is live. None of these readbacks is per helper.
+		if got := withReadback.ComputeMemory.WorkspaceCPU - baseline.ComputeMemory.WorkspaceCPU; got != f32Bytes+2*256*1024 {
+			t.Errorf("%d slots readback: got %d, want %d", slots, got, f32Bytes+2*256*1024)
+		}
+		if withReadback.ComputeBufferEst != baseline.ComputeBufferEst {
+			t.Error("host LSTM readback changed shared GPU arenas")
+		}
+	}
+	for i := range readback {
+		readback[i].GGMLType = 0
+	}
+	f32Readback, err := FromBytes(deepseek41Header(t, metadata, readback), 555371392, Config{ComputeBackend: "metal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f32Readback.ComputeMemory.WorkspaceCPU - single.ComputeMemory.WorkspaceCPU; got != f32Bytes {
+		t.Errorf("F32 readback: got %d, want %d without F16 conversion scratch", got, f32Bytes)
+	}
+	withConvs := append(slices.Clone(tensors),
+		gguf.TensorInfo{Name: "a.spk.head.layer1.0.conv1.weight", Dims: []int64{3, 3, 32, 32}},
+		gguf.TensorInfo{Name: "a.spk.xvector.tdnn.linear.weight", Dims: []int64{5, 320, 128}},
+	)
+	for _, slots := range []int64{1, 4} {
+		encoded, err := FromBytes(deepseek41Header(t, metadata, withConvs), 555371392, Config{ComputeBackend: "metal", Slots: slots})
+		if err != nil {
+			t.Fatal(err)
+		}
+		baseline := single
+		if slots == 4 {
+			baseline = multiple
+		}
+		wantGraph := int64(4*3001*40*(3*3*32+2*32+8*32) + 4*1501*(5*320+2*320+8*128))
+		if got := encoded.ComputeMemory.WorkspaceGPU - baseline.ComputeMemory.WorkspaceGPU; got != wantGraph {
+			t.Errorf("%d slots encoder convolutions: got %d, want %d", slots, got, wantGraph)
+		}
+	}
+	// Short embedded flow references do not shrink accepted user-reference
+	// copies or flow positional scratch. Only preset materialization shrinks.
+	smallPreset := slices.Clone(tensors)
+	smallPreset[1].Dims, smallPreset[2].Dims = []int64{125}, []int64{80, 250}
+	smaller, err := FromBytes(deepseek41Header(t, metadata, smallPreset), 555371392, Config{ComputeBackend: "metal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if single.ComputeMemory.WorkspaceCPU-smaller.ComputeMemory.WorkspaceCPU != 4*(125+80*250) || single.ComputeBufferEst != smaller.ComputeBufferEst {
+		t.Fatal("short preset shrank accepted reference workload")
 	}
 	tensors[1].Dims[0] = 251
 	if _, err := FromBytes(deepseek41Header(t, metadata, tensors), 555371392, cfg); err == nil {
@@ -288,6 +380,96 @@ func TestFromBytesQwen3TTSDecoderMemory(t *testing.T) {
 	if delta < 3*5218948 || delta > 20<<20 || multiple.ModelWeightsGPU != single.ModelWeightsGPU {
 		t.Fatalf("Qwen decoder slot scaling: got GPU delta %d", delta)
 	}
+	// Retained WAV/24 kHz bitmap plus the existing codec-window and generated
+	// waveform buffers scale per slot, while reference preprocessing is shared.
+	wantHostDelta := int64(3 * (8*1024*1024 + 4*30*24000 + 4*72*1920 + 256*1024 + 24*512*1920 + 128))
+	if got := multiple.ComputeMemory.WorkspaceCPU - single.ComputeMemory.WorkspaceCPU; got != wantHostDelta {
+		t.Fatalf("Qwen retained reference slot scaling: got %d, want %d", got, wantHostDelta)
+	}
+	t.Run("bounded reference encoder", func(t *testing.T) {
+		icl := slices.Clone(tensors)
+		icl = append(icl,
+			gguf.TensorInfo{Name: "a.gen.enc.quant.rest.codebook.weight", Dims: []int64{256, 2048, 15}},
+			gguf.TensorInfo{Name: "a.seanet.conv_in.weight", Dims: []int64{7, 1, 64}},
+			gguf.TensorInfo{Name: "a.seanet.conv_out.weight", Dims: []int64{3, 1024, 512}},
+			gguf.TensorInfo{Name: "a.downsample.conv.weight", Dims: []int64{4, 512, 512}},
+			gguf.TensorInfo{Name: "a.gen.enc.tfm.blk.0.attn_q.weight", Dims: []int64{512, 512}},
+			gguf.TensorInfo{Name: "a.gen.enc.tfm.blk.0.ffn_up.weight", Dims: []int64{512, 2048}},
+			gguf.TensorInfo{Name: "a.gen.enc.quant.first.codebook.weight", Dims: []int64{256, 2048}},
+		)
+		for block, stride := range []int64{4, 5, 6, 8} {
+			channels := int64(64) << block
+			icl = append(icl,
+				gguf.TensorInfo{Name: fmt.Sprintf("a.seanet.blk.%d.res_conv1.weight", block), Dims: []int64{3, channels, channels / 2}},
+				gguf.TensorInfo{Name: fmt.Sprintf("a.seanet.blk.%d.res_conv2.weight", block), Dims: []int64{1, channels / 2, channels}},
+				gguf.TensorInfo{Name: fmt.Sprintf("a.seanet.blk.%d.scale_conv.weight", block), Dims: []int64{2 * stride, channels, 2 * channels}},
+			)
+		}
+		iclHeader := deepseek41Header(t, metadata, icl)
+		full, err := FromBytes(iclHeader, 669081472, Config{ComputeBackend: "metal"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if full.ComputeBufferEst <= single.ComputeBufferEst || full.ComputeBufferCPU <= single.ComputeBufferCPU || full.SlotMemory != 0 {
+			t.Fatal("optional encoder did not add shared graph and host work")
+		}
+		// Orphan encoder tensors without the native marker do not enable ICL.
+		withoutMarker := append(slices.Clone(icl[:len(tensors)]), icl[len(tensors)+1:]...)
+		old, err := FromBytes(deepseek41Header(t, metadata, withoutMarker), 669081472, Config{ComputeBackend: "metal"})
+		if err != nil || old.ComputeBufferEst != single.ComputeBufferEst || old.ComputeBufferCPU != single.ComputeBufferCPU {
+			t.Fatalf("old projector paid for absent reference capability: %+v, %v", old, err)
+		}
+		many, err := FromBytes(iclHeader, 669081472, Config{ComputeBackend: "metal", Slots: 4})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if many.ComputeMemory.WorkspaceGPU-full.ComputeMemory.WorkspaceGPU != multiple.ComputeMemory.WorkspaceGPU-single.ComputeMemory.WorkspaceGPU {
+			t.Fatal("ICL encoding graphs were multiplied by slots")
+		}
+		// 375 frames x 16 codebooks x I32, copied per helper. The shared
+		// last-reference and serialized row/mask scratch do not scale.
+		wantExtra := int64(3 * 4 * 375 * 16)
+		gotExtra := many.ComputeMemory.WorkspaceCPU - full.ComputeMemory.WorkspaceCPU - (multiple.ComputeMemory.WorkspaceCPU - single.ComputeMemory.WorkspaceCPU)
+		if gotExtra != wantExtra {
+			t.Errorf("ICL copied reference scaling: got %d, want %d", gotExtra, wantExtra)
+		}
+		wider := slices.Clone(icl)
+		wider[len(tensors)+5].Dims = []int64{512, 3072}
+		wide, err := FromBytes(deepseek41Header(t, metadata, wider), 669081472, Config{ComputeBackend: "metal"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if wide.ComputeMemory.WorkspaceGPU-full.ComputeMemory.WorkspaceGPU != 16*750*1024 || wide.ComputeBufferCPU != full.ComputeBufferCPU {
+			t.Fatal("reference transformer width did not change only shared graph allowance")
+		}
+		for _, backend := range []string{"metal", "cuda"} {
+			gpu, err := FromBytes(iclHeader, 669081472, Config{ComputeBackend: backend})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cpu, err := FromBytes(iclHeader, 669081472, Config{ComputeBackend: backend, GPULayers: -1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			difference := cpu.ComputeBufferCPU - gpu.ComputeBufferCPU - gpu.ComputeBufferEst
+			if cpu.TotalVRAM != 0 || difference < 0 || difference > 1 {
+				t.Fatalf("%s ICL CPU placement lost workspace: difference %d", backend, difference)
+			}
+			short, err := FromBytes(iclHeader, 669081472, Config{ComputeBackend: backend, Speech: &SpeechConfig{MaxFrames: 1}})
+			if err != nil || short.ComputeBufferEst != gpu.ComputeBufferEst || short.ComputeBufferCPU >= gpu.ComputeBufferCPU {
+				t.Fatalf("%s short generation shrank reference graphs: %+v, %v", backend, short, err)
+			}
+			if backend != "metal" && (gpu.ComputeBufferEst <= full.ComputeBufferEst || gpu.ComputeBufferCPU <= full.ComputeBufferCPU) {
+				t.Fatal("non-Metal ICL omitted provisional allowance")
+			}
+		}
+		// The marker cannot enable a graph whose convolution dimensions are
+		// unavailable; otherwise a new bundle would silently under-reserve.
+		icl[len(tensors)+1].Dims = []int64{7, 0, 64}
+		if _, err := FromBytes(deepseek41Header(t, metadata, icl), 669081472, Config{}); err == nil {
+			t.Fatal("accepted malformed optional reference encoder")
+		}
+	})
 	cfg.Speech = &SpeechConfig{MaxFrames: 71}
 	short, err := FromBytes(header, 669081472, cfg)
 	if err != nil || short.ComputeBufferEst != multiple.ComputeBufferEst || short.ComputeBufferCPU >= multiple.ComputeBufferCPU {

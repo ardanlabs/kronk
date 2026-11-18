@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -154,13 +155,13 @@ func testSpeechModelLifecycle(t *testing.T, mp models.Path) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(resp.Audio) < 44 || resp.SampleRate != 24000 || resp.Samples <= 0 {
+				if len(resp.Audio) < 44 || resp.SampleRate != 24000 || resp.Samples <= 0 || resp.Stereo {
 					t.Fatalf("speech: got rate=%d samples=%d bytes=%d", resp.SampleRate, resp.Samples, len(resp.Audio))
 				}
 				wav := resp.Audio
 				if string(wav[:4]) != "RIFF" || string(wav[8:12]) != "WAVE" || binary.LittleEndian.Uint32(wav[4:8]) != uint32(len(wav)-8) ||
 					binary.LittleEndian.Uint16(wav[20:22]) != 1 || binary.LittleEndian.Uint16(wav[22:24]) != 1 ||
-					binary.LittleEndian.Uint16(wav[34:36]) != 16 || int64(len(wav)) != 44+2*resp.Samples {
+					binary.LittleEndian.Uint16(wav[34:36]) != 16 || len(wav) != 44+2*resp.Samples {
 					t.Fatal("speech is not a complete PCM16 mono WAV")
 				}
 				references[i] = resp
@@ -302,6 +303,182 @@ func testSpeechModelLifecycle(t *testing.T, mp models.Path) {
 			t.Errorf("load: got %v, want ErrSpeechUnsupported", err)
 		}
 	})
+}
+
+// TestSpeechReferenceLifecycle exercises conditioning through the public handle,
+// including rejection, sequence reuse, overlapping conditioned/default requests,
+// and cancellation. The generated clip keeps the fixture self-contained.
+func TestSpeechReferenceLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("native speech lifecycle skipped in short mode")
+	}
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"ggml-org/chatterbox-turbo-Q8_0", "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0"} {
+		t.Run(id, func(t *testing.T) {
+			mp, err := mdls.FullPath(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			krn, err := kronk.NewWithContext(t.Context(), model.WithModelFiles(mp.ModelFiles), model.WithProjFile(mp.ProjFile), model.WithNSeqMax(2))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := krn.Unload(context.Background()); err != nil {
+					t.Error(err)
+				}
+			})
+			const referenceText = "The little bird is singing."
+			recording, err := krn.Speech(t.Context(), model.SpeechRequest{Input: referenceText})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plain := model.SpeechRequest{Input: "The train arrives at noon."}
+			baseline, err := krn.Speech(t.Context(), plain)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := plain
+			req.Reference.Audio = recording.Audio
+			conditioned, err := krn.Speech(t.Context(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if conditioned.SampleRate != 24000 || conditioned.Samples <= 0 || conditioned.Stereo || len(conditioned.Audio) != 44+2*conditioned.Samples || bytes.Equal(conditioned.Audio, baseline.Audio) {
+				t.Fatal("reference conditioning did not produce distinct, complete speech")
+			}
+			// Extra RIFF chunks must not change the interpreted recording.
+			padded := req
+			padded.Reference.Audio = append(bytes.Clone(recording.Audio), []byte("JUNK\x03\x00\x00\x00abc\x00")...)
+			binary.LittleEndian.PutUint32(padded.Reference.Audio[4:8], uint32(len(padded.Reference.Audio)-8))
+			withMetadata, err := krn.Speech(t.Context(), padded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			compareSpeechAudio(t, "reference WAV metadata", withMetadata, conditioned)
+			// Exercise the accepted duration/rate boundary, not just rejection
+			// beyond it. Repeating generated PCM avoids another fixture.
+			limit := make([]byte, 44+2*30*48000)
+			copy(limit, recording.Audio[:44])
+			for offset := 44; offset < len(limit); {
+				offset += copy(limit[offset:], recording.Audio[44:])
+			}
+			binary.LittleEndian.PutUint32(limit[4:8], uint32(len(limit)-8))
+			binary.LittleEndian.PutUint32(limit[24:28], 48000)
+			binary.LittleEndian.PutUint32(limit[28:32], 96000)
+			binary.LittleEndian.PutUint32(limit[40:44], uint32(len(limit)-44))
+			if response, err := krn.Speech(t.Context(), model.SpeechRequest{Input: plain.Input, Reference: model.SpeechReference{Audio: limit}}); err != nil || response.Samples <= 0 {
+				t.Fatalf("30-second 48 kHz reference: samples=%d err=%v", response.Samples, err)
+			}
+
+			invalid := []model.SpeechRequest{
+				{Input: plain.Input, Reference: model.SpeechReference{Text: referenceText}},
+				{Input: plain.Input, Reference: model.SpeechReference{Audio: []byte("not audio")}},
+				{Input: plain.Input, Voice: "preset", Reference: req.Reference},
+				{Input: plain.Input, Language: "unknown"},
+				{Input: plain.Input, Reference: model.SpeechReference{Audio: recording.Audio, Text: "bad\x00transcript"}},
+				{Input: plain.Input, Reference: model.SpeechReference{Audio: recording.Audio[:len(recording.Audio)-1]}},
+			}
+			// A well-formed one-sample WAV passes container validation but
+			// cannot supply speaker features. Its native preparation failure
+			// must not stop the engine or contaminate subsequent requests.
+			tooShort := bytes.Clone(recording.Audio[:46])
+			binary.LittleEndian.PutUint32(tooShort[4:8], uint32(len(tooShort)-8))
+			binary.LittleEndian.PutUint32(tooShort[24:28], 8000)
+			binary.LittleEndian.PutUint32(tooShort[28:32], 16000)
+			binary.LittleEndian.PutUint32(tooShort[40:44], 2)
+			binary.LittleEndian.PutUint16(tooShort[44:46], 8192)
+			invalid = append(invalid, model.SpeechRequest{Input: plain.Input, Reference: model.SpeechReference{Audio: tooShort}})
+			oversized := make([]byte, 44+2*(30*8000+1))
+			copy(oversized, recording.Audio[:44])
+			binary.LittleEndian.PutUint32(oversized[4:8], uint32(len(oversized)-8))
+			binary.LittleEndian.PutUint32(oversized[24:28], 8000)
+			binary.LittleEndian.PutUint32(oversized[28:32], 16000)
+			binary.LittleEndian.PutUint32(oversized[40:44], uint32(len(oversized)-44))
+			invalid = append(invalid, model.SpeechRequest{Input: plain.Input, Reference: model.SpeechReference{Audio: oversized}})
+			qwen := krn.ModelInfo().Architecture == "qwen3tts"
+			if !qwen {
+				invalid = append(invalid,
+					model.SpeechRequest{Input: plain.Input, Language: "en"},
+					model.SpeechRequest{Input: plain.Input, Reference: model.SpeechReference{Audio: recording.Audio, Text: referenceText}},
+				)
+			}
+			for _, input := range invalid {
+				if response, err := krn.Speech(t.Context(), input); !errors.Is(err, model.ErrInvalidRequest) || len(response.Audio) != 0 {
+					t.Fatalf("invalid request: got %v and %d audio bytes", err, len(response.Audio))
+				}
+			}
+			if qwen {
+				english, err := krn.Speech(t.Context(), model.SpeechRequest{Input: plain.Input, Language: "EN"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				compareSpeechAudio(t, "explicit English", english, baseline)
+				spanish, err := krn.Speech(t.Context(), model.SpeechRequest{Input: plain.Input, Language: "es"})
+				if err != nil || spanish.Samples <= 0 || bytes.Equal(spanish.Audio, baseline.Audio) {
+					t.Fatalf("Spanish conditioning: samples=%d err=%v", spanish.Samples, err)
+				}
+				withText := req
+				withText.Reference.Text = referenceText
+				response, err := krn.Speech(t.Context(), withText)
+				if err != nil || response.Samples <= 0 {
+					t.Fatalf("reference transcript: samples=%d err=%v", response.Samples, err)
+				}
+				data, err := gguf.ReadHeaderBytes(mp.ProjFile)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, tensors, err := gguf.ParseHeaderAndTensors(data, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				hasEncoder := false
+				for _, tensor := range tensors {
+					hasEncoder = hasEncoder || tensor.Name == "a.gen.enc.quant.rest.codebook.weight"
+				}
+				if hasEncoder && bytes.Equal(response.Audio, conditioned.Audio) {
+					t.Fatal("reference encoder ignored transcript conditioning")
+				}
+				if !hasEncoder {
+					t.Log("decoder has no reference codec encoder; verifying speaker-only fallback, not ICL")
+					compareSpeechAudio(t, "legacy decoder transcript fallback", response, conditioned)
+				}
+			}
+			var wg sync.WaitGroup
+			requests := []model.SpeechRequest{plain, req, req, plain}
+			outputs, failures := make([]model.SpeechResponse, len(requests)), make([]error, len(requests))
+			for i, request := range requests {
+				wg.Go(func() { outputs[i], failures[i] = krn.Speech(t.Context(), request) })
+			}
+			wg.Wait()
+			for i := range requests {
+				if failures[i] != nil {
+					t.Fatal(failures[i])
+				}
+				expected := baseline
+				if len(requests[i].Reference.Audio) > 0 {
+					expected = conditioned
+				}
+				compareSpeechAudio(t, fmt.Sprintf("conditioned overlap %d", i), outputs[i], expected)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+			defer cancel()
+			if response, err := krn.Speech(ctx, req); !errors.Is(err, context.DeadlineExceeded) || len(response.Audio) != 0 {
+				t.Fatalf("reference cancellation: bytes=%d err=%v", len(response.Audio), err)
+			}
+			after, err := krn.Speech(t.Context(), plain)
+			if err != nil {
+				t.Fatal(err)
+			}
+			compareSpeechAudio(t, "default after reference cancellation", after, baseline)
+		})
+	}
 }
 
 // compareSpeechAudio retains exact equality checks but reports metadata and

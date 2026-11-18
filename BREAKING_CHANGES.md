@@ -3,6 +3,7 @@
 ## Index
 
 - [v1.33.3](#v1333)
+  - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
 - [v1.33.2](#v1332)
   - [Responses Reasoning Output](#v1332-responses-reasoning-output)
   - [Structured-Output Schema Validation](#v1332-structured-output-schema-validation)
@@ -56,6 +57,16 @@
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
 ## v1.33.3
+
+### v1.33.3: Speech Response Numeric Types
+
+`model.SpeechResponse.SampleRate` changes from `int32` to `int`, and `Samples`
+changes from `int64` to `int`. Use `int` variables when constructing or consuming
+responses, or explicitly convert at boundaries that require fixed-width values.
+`SampleRate` is samples per second per channel; `Samples` counts samples per
+channel, excluding the WAV header. Duration and generated audio are unchanged.
+Response literals should use named fields; the new `Stereo bool` field is false
+for existing mono speech models.
 
 ## v1.33.2
 
