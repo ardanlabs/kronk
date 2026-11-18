@@ -150,6 +150,10 @@ type Input struct {
 	speechEmbeddingBytes  int64                    // Encoded embedding readback during lazy helper initialization.
 	speechCodecStateBytes int64                    // F32 persistent codec state per active helper.
 	speechSamplesPerFrame int64                    // Waveform expansion derived from decoder convolution strides.
+	kokoroFFNLength       int64                    // Encoder intermediate width; weights are shared across layers.
+	kokoroGraphBytes      int64                    // Provisional observed/source-liveness decoder graph allowance.
+	kokoroHostBytes       int64                    // Serialized CPU prosody, LSTM readback, harmonic and ISTFT scratch.
+	kokoroOutputSamples   int64                    // Single-segment waveform bound at Kronk's fixed speed 1.0.
 }
 
 // Result contains the calculated VRAM requirements.

@@ -2,7 +2,6 @@ package speech
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -27,24 +26,13 @@ var ErrContextLimit = errors.New("speech text and voice conditioning exceed the 
 // ErrFrameLimit indicates that generation did not reach EOS within its frame cap.
 var ErrFrameLimit = errors.New("speech frame limit reached")
 
-// Output contains caller-owned WAV audio and its per-channel sample metadata.
-type Output struct {
-	Audio      []byte
-	SampleRate int
-	Samples    int
-	Stereo     bool
-}
-
-// AutoregressiveConfig supplies borrowed native handles and immutable sequence
-// settings. The handles and default speaker reference must outlive the protocol.
-type AutoregressiveConfig struct {
-	Model          llama.Model
-	Context        llama.Context
-	Memory         llama.Memory
-	Decoder        mtmd.Context
-	Input          mtmd.HelperGenAudioInput
-	SuppressTokens []llama.Token
-	MaxFrames      int
+func prepareAutoregressivePrompt(vocab llama.Vocab, prompt Prompt, referenceTokens int, input *mtmd.HelperGenAudioInput) (int, error) {
+	n := len(llama.Tokenize(vocab, prompt.Text, false, true))
+	if n == 0 || n+referenceTokens+1+prompt.MaxFrames > AutoregressiveContextWindow {
+		return 0, ErrContextLimit
+	}
+	input.SetPrompt(prompt.Text)
+	return n, nil
 }
 
 // Autoregressive owns one sequence's helper, sampler, and generation state for
@@ -68,7 +56,7 @@ type Autoregressive struct {
 
 // NewAutoregressive creates a sequence pipeline. Free releases its owned native
 // resources; the supplied backbone and decoder remain owned by the caller.
-func NewAutoregressive(ctx context.Context, log applog.Logger, cfg AutoregressiveConfig) (*Autoregressive, error) {
+func NewAutoregressive(ctx context.Context, log applog.Logger, cfg ExecutionConfig) (*Autoregressive, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -165,18 +153,11 @@ func (a *Autoregressive) Step(ctx context.Context, promptTokens int) (Output, bo
 		if err := ctx.Err(); err != nil {
 			return Output{}, false, false, err
 		}
-		output, err := mtmd.HelperGenAudioGetOutput(a.helper)
+		output, err := readMonoOutput(a.helper)
 		if err != nil {
 			return Output{}, false, true, err
 		}
-		data, rate, samples := output.Data, output.SampleRate, output.NSamples
-		if len(data) < 44 || samples <= 0 || rate <= 0 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" ||
-			binary.LittleEndian.Uint16(data[20:22]) != 1 || binary.LittleEndian.Uint16(data[22:24]) != 1 ||
-			binary.LittleEndian.Uint32(data[24:28]) != uint32(rate) || binary.LittleEndian.Uint16(data[34:36]) != 16 ||
-			samples != int64((len(data)-44)/2) || int64(binary.LittleEndian.Uint32(data[40:44])) != samples*2 {
-			return Output{}, false, true, errors.New("speech decoder returned invalid PCM16 mono WAV")
-		}
-		return Output{Audio: data, SampleRate: int(rate), Samples: int(samples)}, true, false, nil
+		return output, true, false, nil
 	}
 	if next == nil {
 		return Output{}, false, true, errors.New("speech generation ended without EOS")

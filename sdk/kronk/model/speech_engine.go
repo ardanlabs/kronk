@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speech"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
@@ -22,16 +23,8 @@ var errSpeechEngineStopped = errors.New("speech engine stopped")
 // request types or shared engine state. Its errors reject the current request.
 type speechModel interface {
 	Validate(language, referenceText string) (string, error)
-	Prepare(vocab llama.Vocab, language, referenceText string, input *mtmd.HelperGenAudioInput) (int, error)
-}
-
-// speechExecution advances one sequence without owning its job or scheduling.
-// Only the engine owner calls these methods after initialization.
-type speechExecution interface {
-	Start(input *mtmd.HelperGenAudioInput) error
-	Step(ctx context.Context, promptTokens int) (speech.Output, bool, bool, error)
-	Reset() error
-	Free()
+	Prepare(ctx context.Context, vocab llama.Vocab, prompt speech.Prompt, input *mtmd.HelperGenAudioInput) (int, error)
+	NewExecution(ctx context.Context, log applog.Logger, cfg speech.ExecutionConfig) (speech.Execution, error)
 }
 
 // speechEngine owns scheduling, jobs, and the shared default voice. Model owns
@@ -40,6 +33,7 @@ type speechExecution interface {
 type speechEngine struct {
 	adapter   speechModel
 	voice     mtmd.Bitmap
+	voiceName string
 	slots     []speechSlot
 	model     *Model
 	maxFrames int // Immutable load-time resource limit.
@@ -53,7 +47,7 @@ type speechEngine struct {
 }
 
 type speechSlot struct {
-	execution speechExecution
+	execution speech.Execution
 	input     mtmd.HelperGenAudioInput
 	job       *speechJob
 	started   bool
@@ -86,15 +80,6 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 		return fmt.Errorf("parse speech model header: %w", err)
 	}
 	profile := arch.ResolveWithTensors(metadata, tensors)
-	var adapter speechModel
-	switch profile.ComputeKind {
-	case modelprofile.ComputeQwen3TTSBackbone:
-		adapter = &speech.Qwen3TTS{}
-	case modelprofile.ComputeChatterboxTurboBackbone:
-		adapter = &speech.ChatterboxTurbo{}
-	default:
-		return fmt.Errorf("%w: no speech runtime for architecture %q", ErrSpeechUnsupported, m.modelInfo.Architecture)
-	}
 
 	cfg, err := ResolveSpeechConfig(m.cfg)
 	if err != nil {
@@ -121,7 +106,7 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 	if err != nil {
 		return fmt.Errorf("init speech context: %w", err)
 	}
-	engine := speechEngine{adapter: adapter}
+	engine := speechEngine{}
 	defer func() {
 		if err != nil {
 			engine.free()
@@ -150,8 +135,29 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 		}
 	}
 	input.SpeakerRef = engine.voice
+	engine.voiceName = voiceName
 	vocab := llama.ModelGetVocab(m.model)
 	suppressed := copySuppressTokens(vocab)
+
+	// Model and protocol selection happens only at composition. Scheduling and
+	// request preparation use their contracts without model-family branches.
+	switch profile.ComputeKind {
+	case modelprofile.ComputeQwen3TTSBackbone:
+		engine.adapter = &speech.Qwen3TTS{}
+	case modelprofile.ComputeChatterboxTurboBackbone:
+		engine.adapter = &speech.ChatterboxTurbo{}
+	case modelprofile.ComputeKokoroBackbone:
+		engine.adapter, err = speech.NewKokoro(m.model, cfg.SpeechMaxFrames(), modelMetaArrayCount, modelMetaArrayString)
+	default:
+		return fmt.Errorf("%w: no speech runtime for architecture %q", ErrSpeechUnsupported, m.modelInfo.Architecture)
+	}
+	if err != nil {
+		kind := ErrSpeechUnsupported
+		if errors.Is(err, speech.ErrInvalidConfig) {
+			kind = ErrInvalidRequest
+		}
+		return fmt.Errorf("init speech model: %w: %w", kind, err)
+	}
 
 	for i := range cfg.NSeqMax() {
 		if err := ctx.Err(); err != nil {
@@ -159,7 +165,7 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 		}
 		slot := speechSlot{input: input}
 		slot.input.SeqID = llama.SeqId(i)
-		execution, err := speech.NewAutoregressive(ctx, m.log, speech.AutoregressiveConfig{
+		execution, err := engine.adapter.NewExecution(ctx, m.log, speech.ExecutionConfig{
 			Model:          m.model,
 			Context:        lctx,
 			Memory:         mem,
@@ -204,16 +210,20 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 
 func (e *speechEngine) prepare(slot *speechSlot) error {
 	req := slot.job.request
-	tokens := llama.Tokenize(e.model.vocab, req.Input, false, true)
-	slot.job.promptTokens = len(tokens)
 	input := slot.input
-	referenceTokens, err := e.adapter.Prepare(e.model.vocab, req.Language, req.Reference.Text, &input)
+	voiceName := req.Voice
+	if voiceName == "" || voiceName == "default" {
+		voiceName = e.voiceName
+	}
+	prompt := speech.Prompt{
+		Text: req.Input, Language: req.Language, Voice: voiceName,
+		ReferenceText: req.Reference.Text, MaxFrames: e.maxFrames,
+	}
+	promptTokens, err := e.adapter.Prepare(slot.job.ctx, e.model.vocab, prompt, &input)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
-	if len(tokens) == 0 || len(tokens)+referenceTokens+1+e.maxFrames > speech.AutoregressiveContextWindow {
-		return fmt.Errorf("%w: speech text exceeds the context budget", ErrInvalidRequest)
-	}
+	slot.job.promptTokens = promptTokens
 	if len(req.Reference.Audio) > 0 {
 		if !mtmd.SupportAudio(e.model.mtmdMetaCtx) {
 			return fmt.Errorf("%w: speech decoder has no reference audio encoder", ErrInvalidRequest)
@@ -239,7 +249,6 @@ func (e *speechEngine) prepare(slot *speechSlot) error {
 	if err := slot.job.ctx.Err(); err != nil {
 		return err
 	}
-	input.SetPrompt(req.Input)
 	if err := slot.execution.Start(&input); err != nil {
 		// Reference preprocessing can reject an otherwise valid WAV (for
 		// example, a clip too short for the speaker encoder). No backbone

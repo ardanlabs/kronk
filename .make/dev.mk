@@ -67,11 +67,12 @@ test-gh: test-gh-only lint vuln-check diff ## Run CI tests and static checks
 
 # Requires make install-speak-models fixtures.
 # Run packages serially after installing libraries, as with the main test suite.
+# Model-specific native smoke tests are gated by the speech_integration tag.
 test-speech: install-libraries ## Run speech configuration, memory, and native lifecycle tests
 	@echo ========== RUN SPEECH TESTS ==========
 	unset KRONK_TEST_HOSTED KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
-	go test -v -p=1 -count=1 -timeout 20m ./sdk/kronk/model/internal/speech && \
+	go test -v -p=1 -count=1 -timeout 20m -tags speech_integration ./sdk/kronk/model/internal/speech && \
 	go test -v -p=1 -count=1 -timeout 20m -run Speech ./sdk/kronk/model ./sdk/kronk/modelprofile ./sdk/kronk/modelprofile/arch ./sdk/kronk/vram ./sdk/kronk/pool
 
 # Run the native Malina SDK and model-server integration tests explicitly.

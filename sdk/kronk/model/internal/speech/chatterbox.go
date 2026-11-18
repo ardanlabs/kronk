@@ -1,8 +1,10 @@
 package speech
 
 import (
+	"context"
 	"errors"
 
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -10,6 +12,11 @@ import (
 // ChatterboxTurbo accepts speaker references but not language selection
 // or transcripts. Native speaker-reference preparation is shared by the engine.
 type ChatterboxTurbo struct{}
+
+// NewExecution creates Chatterbox's externally sampled autoregressive protocol.
+func (*ChatterboxTurbo) NewExecution(ctx context.Context, log applog.Logger, cfg ExecutionConfig) (Execution, error) {
+	return NewAutoregressive(ctx, log, cfg)
+}
 
 // Validate rejects conditioning that Chatterbox does not support.
 func (*ChatterboxTurbo) Validate(language, referenceText string) (string, error) {
@@ -19,7 +26,7 @@ func (*ChatterboxTurbo) Validate(language, referenceText string) (string, error)
 	return language, nil
 }
 
-// Prepare requires no extra native settings or transcript-token budget.
-func (*ChatterboxTurbo) Prepare(llama.Vocab, string, string, *mtmd.HelperGenAudioInput) (int, error) {
-	return 0, nil
+// Prepare checks the autoregressive text budget without transcript conditioning.
+func (*ChatterboxTurbo) Prepare(_ context.Context, vocab llama.Vocab, prompt Prompt, input *mtmd.HelperGenAudioInput) (int, error) {
+	return prepareAutoregressivePrompt(vocab, prompt, 0, input)
 }

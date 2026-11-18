@@ -28,11 +28,12 @@ func FetchHeaderBytes(ctx context.Context, rawURL string) ([]byte, int64, error)
 	return data, fileSize, nil
 }
 
-// ReadHeaderBytes reads up to the first HeaderFetchSize bytes of a
-// local GGUF file. No magic validation is performed; callers that want
-// it should pair the result with IsValidHeaderBytes. Smaller files
-// (e.g. test fixtures or a fully-cached header that happens to equal
-// HeaderFetchSize) are read in full.
+// ReadHeaderBytes reads the first HeaderFetchSize bytes of a local GGUF
+// file, extending the read when its metadata and tensor descriptors need
+// more space (up to 256 MiB). Smaller files are read in full. Non-GGUF
+// bytes are returned unchanged; callers can use IsValidHeaderBytes to
+// validate the magic. Remote headers cached at HeaderFetchSize cannot be
+// extended without the original model file.
 func ReadHeaderBytes(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -45,7 +46,27 @@ func ReadHeaderBytes(path string) ([]byte, error) {
 		return nil, fmt.Errorf("read-gguf-header-bytes: read: %w", err)
 	}
 
-	return data, nil
+	if len(data) < HeaderFetchSize || !IsValidHeaderBytes(data) {
+		return data, nil
+	}
+
+	// Scan without retaining metadata values. In particular, large string
+	// arrays must not be materialized just to locate the tensor directory.
+	extent, err := localHeaderExtent(f)
+	if err != nil {
+		return nil, fmt.Errorf("read-gguf-header-bytes: scan: %w", err)
+	}
+	if extent <= int64(len(data)) {
+		return data, nil
+	}
+
+	header := make([]byte, extent)
+	copy(header, data)
+	if _, err := f.ReadAt(header[len(data):], int64(len(data))); err != nil {
+		return nil, fmt.Errorf("read-gguf-header-bytes: read extended header: %w", err)
+	}
+
+	return header, nil
 }
 
 // WriteHeaderBytes validates the GGUF magic on data and writes it to

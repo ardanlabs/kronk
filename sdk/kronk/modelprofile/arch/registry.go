@@ -22,6 +22,7 @@ var architectureAdapters = []architectureAdapter{
 	KimiK3{},
 	QwenHybrid{},
 	Qwen3TTS{},
+	Kokoro{},
 	DeepSeek41{},
 	SharedKVCompanion{},
 	OwnKVCompanion{},

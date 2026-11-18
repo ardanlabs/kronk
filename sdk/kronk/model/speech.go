@@ -23,16 +23,15 @@ var ErrSpeechLimit = errors.New("speech frame limit reached")
 
 // SpeechConfig configures speech generation limits. It does not select the
 // model's runtime; speech models are identified from their model bundle.
-// The initial runtime uses 2,048 context tokens per sequence, 512-token logical
-// and physical batches, and partitioned F16 KV cache. Incompatible overrides,
-// IMC, speculative decoding, and adapters are rejected during model loading.
 // NSeqMax controls overlapping requests (default one); native execution remains
-// serialized. Chat sampling settings do not configure speech generation.
+// serialized. Models validate their own limits and supported settings during
+// loading. Chat sampling settings do not configure speech generation.
 type SpeechConfig struct {
-	// MaxFrames limits generated speech frames. Zero uses 512. The initial
+	// MaxFrames limits autoregressive speech frames. Zero uses 512. The
 	// supported range is 1 through 512. Frames are model-specific units, not
 	// samples or seconds. Exhausting the limit fails the request rather than
-	// returning successful truncated audio.
+	// returning successful truncated audio. Models without a frame budget may
+	// reject overrides instead of applying an autoregressive output limit.
 	MaxFrames int
 }
 
@@ -40,9 +39,8 @@ type SpeechConfig struct {
 // no reference. Audio must be a PCM16 little-endian mono WAV at 8–48 kHz,
 // no longer than 30 seconds and at most 8 MiB including container metadata.
 // Text is an optional nonblank UTF-8 transcript of Audio, at most 64 KiB;
-// it is supported only by Qwen3-TTS. A decoder with a reference encoder uses
-// the transcript for in-context conditioning; older decoders fall back to
-// speaker-embedding conditioning. The caller must not modify Audio until
+// support for recordings and transcripts depends on the loaded model bundle.
+// Unsupported conditioning is rejected. The caller must not modify Audio until
 // Speech returns. Use recordings you own or have permission to use.
 type SpeechReference struct {
 	Audio []byte // Encoded speaker recording, not a filename or base64.
@@ -51,15 +49,16 @@ type SpeechReference struct {
 
 // SpeechRequest supplies text and optional conditioning for speech generation.
 // Input must be nonblank UTF-8 without NUL bytes, at most 64 KiB, and fit the
-// context window together with voice conditioning and the full frame budget.
+// loaded model's text and conditioning budget after any required normalization.
 // Empty Voice or "default" uses default model conditioning; other names must
 // be presets in the loaded decoder. A bundle need not contain a named preset.
 // Reference audio replaces default conditioning and cannot be combined with a
-// named preset. Language is supported only by Qwen3-TTS; empty uses English.
+// named preset. Supported languages, conditioning, and defaults depend on the
+// model bundle; unsupported controls are rejected.
 type SpeechRequest struct {
 	Input     string          // Text to speak.
 	Voice     string          // Preset voice name; empty or "default" uses default conditioning.
-	Language  string          // Qwen language name or two-letter code; empty uses English.
+	Language  string          // Model-supported language name or code; empty uses its default.
 	Reference SpeechReference // Optional; the zero value preserves default/preset conditioning.
 }
 
