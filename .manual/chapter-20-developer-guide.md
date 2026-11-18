@@ -258,10 +258,12 @@ than copying their current values into new documentation.
 #### 20.4.2 Server adversarial probes
 
 `.tools/adversarial/adversarial.sh` is an adversarial probe harness that exercises a running
-Kronk server's HTTP API: constrained decoding, the MTP/speculative decode path, the
+Kronk server's HTTP API: constrained decoding, tool-call parsing, the
 Anthropic and Responses translations, logprobs, and parameter validation. It treats
 "returned 200 and quietly ignored what was asked" as a defect, and a probe that cannot
 assert an invariant reports `NO SIGNAL` rather than `PASS`.
+It does not establish MTP execution from a model name, measure memory leaks, or replace
+the reliability and lifecycle tools' state, scheduling, and recovery assertions.
 
 ```shell
 make test-adversarial
@@ -272,21 +274,75 @@ and takes tens of minutes. Pass arguments through `ARGS`:
 
 ```shell
 make test-adversarial ARGS="--tier=smoke"        # contract probes only, minutes
-make test-adversarial ARGS="--tier=all"          # deep plus soak and TTL eviction
+make test-adversarial ARGS="--tier=all"          # deep plus mixed HTTP soak
 make test-adversarial ARGS="stream structured"   # only these probe groups
+make test-adversarial ARGS="determinism"         # opt-in reproducibility diagnostics
+make test-adversarial ARGS="evict"               # opt-in TTL probe; requires pool TTL
 make test-adversarial ARGS="-l"                  # list groups and their tiers
 ```
 
-The script probes an existing server by default. Set `SERVER=1` to have the script
-start and stop its own server. `HOST`, `MODEL`, `THINK`, `TIMEOUT`, `SERVER_CMD`, and
-`KEEP_ALL` are the other tuning knobs; run `.tools/adversarial/adversarial.sh -h` for the full
-list and current defaults.
+The script requires Bash 3.2+, curl, jq, and Python 3. It probes an existing server by
+default. Set `SERVER=1` to have the script start and stop its own server. Set
+`KRONK_TOKEN` to a bearer token when authentication is enabled; it applies to preflight,
+ordinary requests, and SSE. The token is not stored in reports. For an existing server,
+set `SERVERLOG` to its local log file to collect request-correlated evidence. Both raw
+JSON logs and the formatted output from `make kronk-server` are supported.
+Only records appended during the run whose trace IDs match the harness are scanned.
+Untraced/native stderr remains manual evidence; absent correlated logs do not prove
+that the server was healthy. The truncation group reports incomplete coverage when
+its final buffered-tool records are missing. Observed atomic parser rejection is not
+silent tool-output loss. Cancellation during buffered generation can be established
+by a client timeout plus correlated generated-token and canceled-execution telemetry;
+initial SSE headers or an assistant-role delta alone do not establish it. This does
+not prove that every slot was released or that cache state is correct.
+
+`HOST`, `MODEL`, `THINK`, `TIMEOUT`, `SERVER_CMD`, and `KEEP_ALL` are other tuning knobs;
+run `.tools/adversarial/adversarial.sh -h` for the full list and current defaults.
 
 Results land under `.tools/adversarial/output` (ignored by Git, overridable with `OUT`):
-`findings.txt` holds a result line per probe, a verdict block, and the full
-request/response of every flagged call, and `kronk-server.log` holds the server's own
-log when the script manages the server. Exit status is `0` when nothing is flagged,
-`1` when there are findings, and `2` when the run could not proceed.
+`findings.txt` holds result lines, verdicts, and clipped evidence excerpts.
+`summary.json` records the completed run's result, selected groups, findings,
+coverage gaps, warnings, tool hash, and request trace IDs. `server-events.jsonl` contains
+correlated log records normalized to JSON; `server-evidence.json` records log findings,
+resolved coverage gaps, source record locations, and the analyzer hash. For a live run,
+record line numbers are relative to the recorded log byte offset. `kronk-server.log` holds the original log when the script
+manages the server. `.work/` retains exact request bodies, endpoints, responses, SSE,
+HTTP/transport status, trace IDs, and console output. `KEEP_ALL=0` removes these captures
+only after a clean run without warnings. Use a distinct `OUT` for each run: reusing it
+replaces prior results. Captures can contain prompts and generated content; review
+them before sharing.
+
+Exit status is `0` for selected checks passed, `1` for findings, `2` when the run could
+not proceed, and `3` for no findings but incomplete coverage. Findings take precedence
+over incomplete coverage. Output variation across independent requests, canary latency,
+and cache eviction are diagnostics, not automatic server defects. Such warnings remain
+visible in the report and summary without changing the exit status.
+
+If a server log becomes available after the run, reprocess the saved evidence without
+contacting the server or rerunning inference:
+
+```shell
+python3 .tools/adversarial/server_evidence.py \
+  --run .tools/adversarial/output \
+  --server-log .tools/adversarial/output/kronk.log \
+  --out "$HOME/kronk-adversarial-reprocessed"
+```
+
+`--run` must contain `summary.json` and its retained captures. `--server-log` can be
+either supported format. Choose a new `--out` directory; an existing destination is
+rejected, even when empty. The original run is unchanged. The new report references
+the original captures, preserves prior findings, and adds server evidence to resolve
+only demonstrated coverage gaps. It records source paths and hashes and uses the same
+verdict exit statuses as the harness. Keep the original captures with the reprocessed
+report. Raw JSON logs are preferred when lossless prompt/output log payloads are needed;
+formatted fields containing unbalanced brackets cannot always be recovered.
+
+Harness regression tests use a fake HTTP server, without loading models or contacting
+Kronk:
+
+```shell
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .tools/adversarial -p 'test_*.py' -v
+```
 
 This is a deliberate human/integration run, not part of `make test` and not an agent
 default — see [20.9.1](#2091-required-go-post-edit-sequence).
