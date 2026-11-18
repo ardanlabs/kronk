@@ -1,0 +1,75 @@
+// Package gpt implements the Parser for GPT-OSS models, which use the
+// OpenAI Harmony chat-template markers (<|channel|>, <|message|>, <|return|>,
+// <|call|>, <|end|>, <|start|>, <|constrain|>).
+//
+// Reasoning, completion, and tool-call routing all hinge on the same
+// <|channel|> marker (e.g. "analysis" → reasoning, "final" → completion,
+// a functions recipient on the role or an analysis/commentary channel → tool
+// call). Because the marker is shared,
+// the stateMachine here cannot be assembled from independent reasoning and
+// tool-call plugins; it must be a single state machine, which is why
+// GPT-OSS is its own parser rather than a parser-only variant of standard.
+package gpt
+
+import (
+	"context"
+	"strings"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers"
+)
+
+// name is the canonical name returned by Parser.Name.
+const name = "gpt-oss"
+
+// Parser implements parsers.Parser for GPT-OSS.
+type Parser struct{}
+
+// New returns a Parser value if the fingerprint indicates GPT-OSS, otherwise
+// returns false. Detection uses the chat template's Harmony markers.
+func New(fp parsers.Fingerprint) (parsers.Parser, bool) {
+	// Beam shares Harmony framing but uses XML parameters rather than JSON.
+	if strings.EqualFold(fp.Architecture, "beam") ||
+		strings.Contains(fp.ChatTemplate, "<|constrain|>xml") && strings.Contains(fp.ChatTemplate, "rfl:parameter") {
+		return Parser{}, false
+	}
+
+	// GPT-OSS chat templates contain Harmony markers.
+	if containsHarmonyMarkers(fp.ChatTemplate) {
+		return Parser{}, true
+	}
+
+	return Parser{}, false
+}
+
+// Name returns the parser identifier.
+func (Parser) Name() string { return name }
+
+// NewStateMachine returns a fresh per-slot streaming state machine.
+func (Parser) NewStateMachine() parsers.StateMachine {
+	return &stateMachine{status: parsers.ChannelNone}
+}
+
+// ToolCall extracts JSON tool calls from the GPT-OSS Harmony format and
+// parses each one. The format is "[.NAME <|message|>]JSON" repeated; this
+// function recovers the pairs and turns each into a JSON object that the
+// shared JSON parser can decode.
+func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []parsers.ResponseToolCall {
+	return parseGPTToolCall(ctx, log, buf)
+}
+
+// containsHarmonyMarkers reports whether a chat template carries the
+// GPT-OSS Harmony tokens. XML-Harmony templates are excluded by New.
+func containsHarmonyMarkers(template string) bool {
+	for _, marker := range []string{
+		"<|channel|>",
+		"<|message|>",
+		"<|return|>",
+		"<|call|>",
+	} {
+		if strings.Contains(template, marker) {
+			return true
+		}
+	}
+	return false
+}

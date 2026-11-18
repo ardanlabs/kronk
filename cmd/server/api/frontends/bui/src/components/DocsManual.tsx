@@ -6092,8 +6092,8 @@ result, err := mln.Generate(ctx, params)`}</code></pre>
               </tr>
               <tr>
                 <td>Tool/reasoning parser</td>
-                <td><code>sdk/kronk/parsers/&lt;family&gt;/</code> and registry contract in <code>sdk/kronk/model/</code></td>
-                <td>parser registration and model-family selection</td>
+                <td><code>sdk/kronk/model/internal/parsers/&lt;family&gt;/</code> and public contract in <code>sdk/kronk/model/</code></td>
+                <td>internal parser contract, model-owned selection, and JSON repair</td>
                 <td>parser-family tests and registry tests</td>
               </tr>
               <tr>
@@ -6202,7 +6202,7 @@ result, err := mln.Generate(ctx, params)`}</code></pre>
           <ul>
             <li><strong>&lt;code&gt;sdk/kronk/&lt;/code&gt;</strong> is the public language-model handle and API surface. A <code>kronk.Kronk</code> owns <strong>one primary loaded model</strong> and a semaphore governing admission to that handle. Its low-level model may also own draft or MTP resources. The handle exposes chat, streaming, Responses, embeddings, reranking, tokenization, model information, and unload behavior. It is not a model pool.</li>
             <li><strong>&lt;code&gt;sdk/kronk/model/&lt;/code&gt;</strong> owns low-level llama/yzma inference: model/context creation, prompt planning, batch slots, sequence IDs, prefill/decode, media handling, IMC, samplers, parser interfaces, and draft/MTP behavior. Changes here must preserve cross-slot isolation and native-resource cleanup on every exit path.</li>
-            <li><strong>&lt;code&gt;sdk/kronk/parsers/&lt;/code&gt;</strong> contains model-family parser plug-ins. Family packages own streaming state machines and extraction/normalization of reasoning and tool calls. The model package owns the registry contract and selection boundary; parser packages should not reach into batch-engine state.</li>
+            <li><strong>&lt;code&gt;sdk/kronk/model/internal/parsers/&lt;/code&gt;</strong> contains built-in model-family parsers. Family packages own streaming state machines and extraction/normalization of reasoning and tool calls. The model package owns default selection, custom-parser registration, and conversion between the internal contract and public model types. Parser packages do not import the parent model package or reach into batch-engine state. Shared JSON repair lives alongside them in <code>sdk/kronk/model/internal/jsonrepair/</code>.</li>
             <li><strong>&lt;code&gt;sdk/kronk/observ/&lt;/code&gt;</strong>, <code>sdk/kronk/vram/</code>, <code>sdk/kronk/gguf/</code>, and <code>sdk/kronk/hf/</code> own their named concerns. Prefer these boundaries to embedding format or resource calculations in request handlers.</li>
           </ul>
           <h4 id="2033-pools-and-shared-resources">20.3.3 Pools and shared resources</h4>
@@ -6330,7 +6330,7 @@ make test-adversarial ARGS="-l"                  # list groups and their tiers`}
           <p>Prompt planning converts normalized messages and parameters into the exact work the engine will execute. The plan, cache identity, token accounting, and decode positions must agree. Text-only plans can compare rendered/tokenized prefixes directly and may take optimized exact-hit paths. Media plans carry more than text tokens: ordered media parts, placeholder/embedding expansion, positions, and render-affecting metadata are part of identity and execution.</p>
           <p>Do not treat a media prompt as text with an attachment ignored by caching. A text prefix match is insufficient if image/audio/video content, ordering, sizing, or model projection changes. Media prefill must align embeddings and positions with the same sequence that receives surrounding text. A media-anchor advance stages replacement state separately, so decode or snapshot failure leaves that anchor's prior published snapshot authoritative. Do not claim the same preservation for an LRU rebuild: prompt planning intentionally resets the selected session before rebuilding it.</p>
           <h4 id="2063-parser-registry-ownership">20.6.3 Parser registry ownership</h4>
-          <p>Parser implementations live under <code>sdk/kronk/parsers/</code>, grouped by model family. The registry interface and registration entry point live in <code>sdk/kronk/model/</code>. A parser plug-in supplies factories/state machines for its advertised family and must tolerate stream chunk boundaries: tags, JSON, reasoning delimiters, and tool arguments may span chunks. It must keep request state per parser instance and produce equivalent logical results for streaming and non-streaming input.</p>
+          <p>Built-in parser implementations live under <code>sdk/kronk/model/internal/parsers/</code>, grouped by model family. Their shared contract is independent of the parent model package. The public custom-parser interface, registration entry point, and built-in selection live in <code>sdk/kronk/model/</code>; loading a model requires no caller registration of defaults. Custom factories registered before loading models are tried first, in registration order, followed by the built-ins with the fallback last. A parser plug-in supplies factories/state machines for its advertised family and must tolerate stream chunk boundaries: tags, JSON, reasoning delimiters, and tool arguments may span chunks. It must keep request state per parser instance and produce equivalent logical results for streaming and non-streaming input.</p>
           <p>To add or change a parser, edit the family package, update registration/selection only where necessary, and test fragmented as well as complete input. Keep generic JSON repair separate from family recognition. Unknown families need an intentional fallback or error; registration order must not create accidental model-family selection.</p>
           <h4 id="2064-responses-normalization">20.6.4 Responses normalization</h4>
           <p>The Responses API adapts to the chat/inference pipeline in <code>sdk/kronk/response.go</code>. Normalization has a compatibility-sensitive mutation contract:</p>
@@ -6407,7 +6407,7 @@ staticcheck ./path/to/changed/package`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`export GITHUB_WORKSPACE="$(pwd -P)"`}</code></pre>
           <p><code>GITHUB_WORKSPACE</code> must be the absolute repository root. Then run a package test or a specific test, for example:</p>
           <pre className="code-block"><code className="language-shell">{`go test -count=1 ./sdk/kronk/model
-go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></pre>
+go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/model/internal/parsers/qwen`}</code></pre>
           <p>Agents must <strong>never prescribe or run a full repository test run</strong>, and must <strong>never launch tests from &lt;code&gt;sdk/kronk/tests&lt;/code&gt;</strong>. Those suites require managed libraries/models and belong to CI or deliberate human integration runs. Commands such as <code>make test</code> and <code>make test-adversarial</code> (<a href="#2042-server-adversarial-probes">20.4.2</a>) exist as broad human/CI-maintainer context, but they are not the agent default. Do not use a broad command merely because focused ownership is unclear; inspect the owner.</p>
           <h4 id="2092-choosing-effective-checks">20.9.2 Choosing effective checks</h4>
           <ul>

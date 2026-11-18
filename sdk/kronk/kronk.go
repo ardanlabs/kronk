@@ -45,12 +45,6 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 		return nil, fmt.Errorf("new: the Init() function has not been called")
 	}
 
-	// Ensure the parser-plugin registry has the built-in parsers
-	// wired in before the model loads. Idempotent — callers that
-	// pre-registered a custom parser before this call keep precedence
-	// (selectParser walks registrations in order).
-	registerDefaultParsers()
-
 	// -------------------------------------------------------------------------
 
 	cfg := model.NewConfig(opts...)

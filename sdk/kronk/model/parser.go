@@ -25,9 +25,9 @@ import (
 // use across slots — except for NewStateMachine, which returns a fresh,
 // slot-owned state machine on every call.
 //
-// Plugins live under sdk/kronk/parsers/<name>/ and are wired into the
-// model package via RegisterParser at server bootstrap (no init()
-// registration — every parser is explicitly enumerated at startup).
+// Built-in implementations live under model/internal/parsers/<name>/ and
+// are selected by the model package. Applications may register custom parsers
+// through RegisterParser before loading models; custom parsers take precedence.
 // =============================================================================
 
 func channelName(channel Channel) string {
@@ -116,8 +116,8 @@ type ToolCallDeltaStreamer interface {
 }
 
 // Parser is the plugin interface implemented by each model lineage.
-// Implementations live in sdk/kronk/parsers/<name>/ and are registered
-// at startup via RegisterParser.
+// Built-in implementations are model-internal. Applications implement this
+// interface to add custom parsers through RegisterParser.
 type Parser interface {
 	// Name returns the parser identifier (e.g. "fallback", "gpt-oss").
 	// Used for logging and as the override key in model configs.

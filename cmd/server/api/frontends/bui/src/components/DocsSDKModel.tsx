@@ -70,7 +70,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func RegisterParser(f ParserFactory)</code>
               </pre>
-              <p className="doc-description">RegisterParser appends a parser factory to the registry. Call once per parser at server bootstrap, before any models are loaded. Order matters: the catch-all parser (fallback) must be registered last so the more specific parsers get first chance to claim.</p>
+              <p className="doc-description">RegisterParser appends a custom parser factory to the registry. Call once per parser at application bootstrap, before any models are loaded. Custom parsers are tried in registration order, ahead of all built-in parsers. A custom catch-all prevents subsequent factories and built-ins from running.</p>
             </div>
 
             <div className="doc-section" id="func-speculativecontextcount">
@@ -1129,7 +1129,7 @@ export default function DocsSDKModel() {
 	ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall
 }`}</code>
               </pre>
-              <p className="doc-description">Parser is the plugin interface implemented by each model lineage. Implementations live in sdk/kronk/parsers/&lt;name&gt;/ and are registered at startup via RegisterParser.</p>
+              <p className="doc-description">Parser is the plugin interface implemented by each model lineage. Built-in implementations are model-internal. Applications implement this interface to add custom parsers through RegisterParser.</p>
             </div>
 
             <div className="doc-section" id="type-parserfactory">

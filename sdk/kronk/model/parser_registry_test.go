@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -19,9 +21,7 @@ func withCleanRegistry(t *testing.T) {
 	})
 }
 
-// fakeParser is a minimal Parser used to verify registry dispatch
-// without pulling in real parser packages (which would create import
-// cycles).
+// fakeParser is a minimal custom Parser used to verify registry dispatch.
 type fakeParser struct {
 	name string
 }
@@ -127,27 +127,26 @@ func TestSelectParser_FallsThroughToCatchAll(t *testing.T) {
 	}
 }
 
-// TestSelectParser_NoClaimsReturnsNil verifies the no-catch-all case
-// returns nil rather than panicking.
-func TestSelectParser_NoClaimsReturnsNil(t *testing.T) {
+// TestSelectParser_CustomDeclinesUsesBuiltins verifies callers do not need
+// to register the standard model-family parsers themselves.
+func TestSelectParser_CustomDeclinesUsesBuiltins(t *testing.T) {
 	withCleanRegistry(t)
 
-	RegisterParser(claimingFactory("qwen", "qwen"))
-	// Intentionally NO catch-all.
+	RegisterParser(claimingFactory("custom", "custom"))
 
-	got := selectParser(Fingerprint{ModelName: "Llama-3"})
-	if got != nil {
-		t.Errorf("selectParser on unmatched fingerprint = %+v, want nil", got)
+	got := selectParser(Fingerprint{ChatTemplate: "<|python_tag|>"})
+	if got == nil || got.Name() != "llama" {
+		t.Errorf("selectParser: got %v, want built-in llama", got)
 	}
 }
 
-// TestSelectParser_EmptyRegistry verifies an unconfigured registry yields
-// nil rather than panicking.
+// TestSelectParser_EmptyRegistry verifies an unknown model has a fallback
+// even when the caller has registered no parsers.
 func TestSelectParser_EmptyRegistry(t *testing.T) {
 	withCleanRegistry(t)
 
-	if got := selectParser(Fingerprint{}); got != nil {
-		t.Errorf("selectParser on empty registry = %+v, want nil", got)
+	if got := selectParser(Fingerprint{}); got == nil || got.Name() != "fallback" {
+		t.Errorf("selectParser: got %v, want built-in fallback", got)
 	}
 }
 
@@ -166,5 +165,103 @@ func TestSelectParser_RegistrationOrderMattersForOverlap(t *testing.T) {
 	}
 	if got.Name() != "first" {
 		t.Errorf("selected = %q, want first", got.Name())
+	}
+}
+
+func TestSelectParser_BuiltinPrecedence(t *testing.T) {
+	withCleanRegistry(t)
+
+	for _, tt := range []struct {
+		name string
+		fp   Fingerprint
+		want string
+	}{
+		{"XML Harmony before Qwen", Fingerprint{Architecture: "qwen2", ChatTemplate: "<|channel|> <|constrain|>xml rfl:parameter"}, "beam"},
+		{"JSON Harmony before Qwen", Fingerprint{Architecture: "qwen2", ChatTemplate: "<|channel|> <|constrain|>json"}, "gpt-oss"},
+		{"Qwen lineage", Fingerprint{Architecture: "qwen3"}, "qwen"},
+		{"unknown lineage", Fingerprint{Architecture: "unknown"}, "fallback"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := selectParser(tt.fp)
+			if got == nil || got.Name() != tt.want {
+				t.Fatalf("selectParser: got %v, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuiltinParser_PublicToolSchema(t *testing.T) {
+	withCleanRegistry(t)
+	parser := selectParser(Fingerprint{Architecture: "qwen3"})
+	tools := []D{{"type": "function", "function": D{
+		"name": "lookup", "parameters": D{"properties": D{
+			"id": D{"type": "integer"}, "enabled": D{"type": "boolean"},
+		}},
+	}}}
+	calls := parser.(ToolCallSchemaParser).ToolCallWithSchema(t.Context(), nil,
+		"<function=lookup>\n<parameter=id>\n9007199254740993\n</parameter>\n<parameter=enabled>\ntrue\n</parameter>\n</function>", tools)
+	if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "lookup" {
+		t.Fatalf("ToolCallWithSchema: got %+v, want one valid lookup call", calls)
+	}
+	want := ToolCallArguments{"id": json.Number("9007199254740993"), "enabled": true}
+	if !reflect.DeepEqual(calls[0].Function.Arguments, want) {
+		t.Errorf("arguments: got %#v, want %#v", calls[0].Function.Arguments, want)
+	}
+	encoded, err := json.Marshal(calls[0].Function.Arguments)
+	if err != nil || string(encoded) != `"{\"enabled\":true,\"id\":9007199254740993}"` {
+		t.Errorf("argument wire encoding: got %s, %v, want JSON string with exact integer", encoded, err)
+	}
+
+	raw := `<tool_call>{"name":"lookup","arguments":[]}</tool_call>`
+	failed := parser.ToolCall(t.Context(), nil, raw)
+	if len(failed) != 1 || failed[0].Status != 2 || failed[0].Raw != raw || failed[0].Error == "" {
+		t.Errorf("invalid call: got %+v, want retained raw output and parse error", failed)
+	}
+}
+
+func TestBuiltinParser_ConditioningAndReuse(t *testing.T) {
+	withCleanRegistry(t)
+	parser := selectParser(Fingerprint{ChatTemplate: "<|python_tag|>"})
+	sm := parser.NewStateMachine()
+	tools := []D{{"type": "function", "function": D{"name": "lookup"}}}
+	sm.(ToolAwareStateMachine).SetTools(tools)
+	raw := `{"name":"lookup","parameters":{"id":7}}`
+	sm.Classify(raw)
+	result := sm.(StateMachineFlusher).Flush()
+	if result.Channel != ChannelTool || result.Content != raw {
+		t.Fatalf("declared tool: got %+v, want tool content %q", result, raw)
+	}
+	sm.Reset()
+	result, _ = sm.Classify(raw)
+	if result.Channel != ChannelAnswer || result.Content != raw {
+		t.Errorf("reused slot without tools: got %+v, want answer content %q", result, raw)
+	}
+
+	beam := selectParser(Fingerprint{Architecture: "beam"})
+	params := Params{ReasoningEffort: ReasoningEffortNone, MaxTokens: 37, Grammar: "root ::= \"x\""}
+	want := params
+	want.ReasoningEffort = ReasoningEffortMinimal
+	if got := beam.(ParamsAdjuster).AdjustParams(params); !reflect.DeepEqual(got, want) {
+		t.Errorf("AdjustParams: got %+v, want %+v", got, want)
+	}
+}
+
+func TestBuiltinParser_VocabEOG(t *testing.T) {
+	withCleanRegistry(t)
+	parser := selectParser(Fingerprint{ChatTemplate: "<|channel|> <|constrain|>json"})
+	sm := parser.NewStateMachine()
+	raw := `<|start|>assistant to=functions.lookup<|channel|>commentary<|constrain|>json<|message|>{"city":"London"}`
+	if _, eog := sm.Classify(raw); eog {
+		t.Fatal("Classify: got EOG before native end marker")
+	}
+	sm.(VocabEOGConsumer).ConsumeVocabEOG("<|call|>")
+	result := sm.(StateMachineFlusher).Flush()
+	calls := parser.ToolCall(t.Context(), nil, result.Content)
+	if result.Channel != ChannelTool || len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "lookup" || calls[0].Function.Arguments["city"] != "London" {
+		t.Fatalf("native EOG: got result %+v, calls %+v, want completed lookup call", result, calls)
+	}
+	sm.Reset()
+	if got := sm.(StateMachineFlusher).Flush(); got != (Result{}) {
+		t.Errorf("Flush after Reset: got %+v, want no retained output", got)
 	}
 }
