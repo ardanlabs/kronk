@@ -6,10 +6,8 @@
 # First startup or deleted containers require exporting the original passwords.
 # Empty Temporal schemas are initialized once; normal starts never upgrade them.
 
-tuning-up: export MOXIE_POSTGRES_PASSWORD ?= $(or $(shell docker inspect moxie-postgres --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^POSTGRES_PASSWORD=//p'),$(error Export MOXIE_POSTGRES_PASSWORD before first startup or after container removal))
-tuning-up: export TEMPORAL_DB_PASSWORD ?= $(or $(shell docker inspect moxie-temporal --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^POSTGRES_PWD=//p'),$(error Export TEMPORAL_DB_PASSWORD before first startup or after container removal))
-
 tuning-up:
+	. .env 2>/dev/null || true && \
 	docker compose -f zarf/docker/compose.yaml up -d --wait docling temporal && docker compose -f zarf/docker/compose.yaml run --rm --no-deps moxie-schema && docker compose -f zarf/docker/compose.yaml run --rm --no-deps temporal-namespace
 
 # Stop without removing PostgreSQL history or Docling scratch files.
