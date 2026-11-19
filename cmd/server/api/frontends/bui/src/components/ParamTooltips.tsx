@@ -254,6 +254,9 @@ export const PARAM_TOOLTIPS = {
   imageGeneratorSeed: 'Positive values reproduce a result. Values of 0 or below choose a random seed for each generation.',
   imageGeneratorStrength: 'How much the generated result may depart from the uploaded image. Lower values preserve more of the source; 1 allows the largest transformation.',
 
+  // Security
+  speechEndpoint: 'Allows text-to-speech requests to /v1/audio/speech. This permission and its rate limit are independent of audio transcription and translation.',
+
   // Decision
   decisionModel: 'Decision-capable model from the catalog. It must be downloaded and pass integrity validation before it can evaluate questions.',
   decisionState: 'The customer message included in the shared state evaluated by every question.',

@@ -99,6 +99,44 @@ func Test_API_SpeechContracts(t *testing.T) {
 		})
 	}
 	test.Run(t, table, "speech-authorization")
+
+	limited, err := test.Sec.GenerateToken(false, map[string]auth.RateLimit{
+		"speech":         {Limit: 1, Window: auth.RateDay},
+		"transcriptions": {Limit: 1, Window: auth.RateDay},
+	}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table = nil
+	for _, tc := range []struct {
+		name, path, token string
+		status            int
+		code              errs.ErrCode
+	}{
+		{"speech cannot transcribe", "/v1/audio/transcriptions", token, 403, errs.PermissionDenied},
+		{"speech cannot translate", "/v1/audio/translations", token, 403, errs.PermissionDenied},
+		{"first speech reaches validation", "/v1/audio/speech", limited, 400, errs.InvalidArgument},
+		{"second speech rate limited", "/v1/audio/speech", limited, 429, errs.TooManyRequests},
+		{"transcription has independent quota", "/v1/audio/transcriptions", limited, 400, errs.InvalidArgument},
+		{"translation shares transcription quota", "/v1/audio/translations", limited, 429, errs.TooManyRequests},
+		{"unlimited speech still allowed", "/v1/audio/speech", token, 400, errs.InvalidArgument},
+	} {
+		table = append(table, apitest.Table{
+			Name: tc.name, URL: tc.path, Method: http.MethodPost, Token: tc.token,
+			Input: struct{}{}, StatusCode: tc.status,
+			GotResp: &errs.Error{}, ExpResp: tc.code, ResponseCmpFunc: jsonContentType,
+			CmpFunc: func(got, exp any) string {
+				g := got.(*errs.Error)
+				if !g.Code.Equal(exp.(errs.ErrCode)) || g.Message == "" {
+					return fmt.Sprintf("got %+v, want error code %s with a message", g, exp)
+				}
+				return ""
+			},
+		})
+	}
+	// Authorized invalid bodies consume quota before validation, without
+	// loading models. Keep these requests ordered to check each boundary.
+	test.Run(t, table, "speech-grants-and-limits")
 }
 
 func speechToken(t *testing.T, test *apitest.Test, admin bool, endpoint string) string {

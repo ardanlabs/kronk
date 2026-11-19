@@ -63,9 +63,13 @@ func TestMasterTokenInferenceEndpoints(t *testing.T) {
 		t.Fatalf("Authenticate(master.jwt) error = %v", err)
 	}
 
-	for _, endpoint := range []string{"decision", "transcriptions", "image-generations"} {
-		if _, exists := claims.Endpoints[endpoint]; !exists {
+	for _, endpoint := range []string{"decision", "transcriptions", "image-generations", "speech"} {
+		limit, exists := claims.Endpoints[endpoint]
+		if !exists {
 			t.Errorf("master token endpoint %q is missing", endpoint)
+		}
+		if limit.Limit != 0 || !limit.Window.Equal(auth.RateUnlimited) {
+			t.Errorf("master token endpoint %q: got %+v, want unlimited", endpoint, limit)
 		}
 	}
 }
@@ -118,6 +122,8 @@ func TestInferenceEndpointGrants(t *testing.T) {
 		{name: "decision", grant: "decision", deny: "chat-completions"},
 		{name: "audio transcription", grant: "transcriptions", deny: "image-generations"},
 		{name: "image generation", grant: "image-generations", deny: "transcriptions"},
+		{name: "speech", grant: "speech", deny: "transcriptions"},
+		{name: "transcription without speech", grant: "transcriptions", deny: "speech"},
 	}
 
 	for _, tt := range tests {
