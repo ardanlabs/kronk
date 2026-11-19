@@ -2,16 +2,10 @@ package decisionapp
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
@@ -273,26 +267,6 @@ func TestDecodeDecisionRequestRejectsInvalidWireShapes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := decodeDecisionRequest(strings.NewReader(tt.input)); err == nil {
 				t.Fatal("decodeDecisionRequest: got nil error, want error")
-			}
-		})
-	}
-}
-
-func TestDecisionRoutes(t *testing.T) {
-	app := web.NewApp(func(context.Context, string, ...any) {})
-	Routes(app, Config{
-		AuthorizationMode: auth.Open,
-		InferenceTimeout:  time.Minute,
-	})
-
-	for _, path := range []string{"/v1/systemone", "/v1/decide"} {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
-			resp := httptest.NewRecorder()
-			app.ServeHTTP(resp, req)
-
-			if resp.Code != http.StatusBadRequest {
-				t.Errorf("status: got %d, want %d", resp.Code, http.StatusBadRequest)
 			}
 		})
 	}

@@ -888,8 +888,18 @@ command merely because focused ownership is unclear; inspect the owner.
   as unavailable if prerequisites are absent rather than substituting unrelated tests.
 - Pool changes: engine tests plus the affected typed pool's reservation/load tests.
   Include failure and cancellation, not only warm acquisition.
-- Route changes: domain tests and a server build. Use the relevant API test only when
-  its server/model prerequisites are available.
+- Route changes: HTTP request/response tests belong in the service's API test package,
+  not its domain package. This includes tests using `httptest.NewRequest` or a test
+  HTTP server. Kronk endpoint tests live in `cmd/server/api/services/kronk/tests`;
+  MCP endpoint tests live in `cmd/server/api/services/mcp/tests`. Exercise bound routes
+  and assert HTTP status, headers, and bodies instead of calling private handlers.
+  Model-free Kronk tests can bind the production mux with test-owned dependencies;
+  JWT and native inference tests use the `apitest` shared-pool harness. Keep pure
+  parsing, conversion, and stream-state unit tests in the owning domain package.
+  Using a response recorder as an output buffer for a stream-state unit test does
+  not make it an HTTP request test. Run focused API tests only when their server/model
+  prerequisites are available, plus a server build. Keep optional model-backed
+  coverage explicitly gated; do not make new fixtures an implicit CI requirement.
 - CLI changes: command package tests, `go install ./cmd/kronk`, and one safe invocation.
 - Bucky changes: package tests; transcription integration only with installed Whisper
   libraries/model. Streaming changes require close/cancellation coverage.

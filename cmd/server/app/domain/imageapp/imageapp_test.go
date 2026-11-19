@@ -1,78 +1,9 @@
 package imageapp
 
 import (
-	"bufio"
-	"context"
-	"encoding/json"
 	"image"
-	"mime/multipart"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
-
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
-
-func TestProgressEvents(t *testing.T) {
-	progress := malinaprogress.New()
-	app := web.NewApp(func(context.Context, string, ...any) {})
-	Routes(app, Config{
-		MalinaProgress:    progress,
-		AuthorizationMode: auth.Open,
-	})
-	server := httptest.NewServer(app)
-	defer server.Close()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v1/images/events", nil)
-	if err != nil {
-		t.Fatalf("NewRequestWithContext() error = %v", err)
-	}
-	response, err := server.Client().Do(request)
-	if err != nil {
-		t.Fatalf("Do() error = %v", err)
-	}
-	defer response.Body.Close()
-	defer cancel()
-
-	if got := response.Header.Get("Content-Type"); got != "text/event-stream" {
-		t.Errorf("Content-Type: got %q, want %q", got, "text/event-stream")
-	}
-	reader := bufio.NewReader(response.Body)
-	connected := readProgressEvent(t, reader)
-	if connected.Scope != "global" || connected.Status != "connected" {
-		t.Errorf("connected event: got %+v, want global connected event", connected)
-	}
-
-	progress.Publish(2, 8, 0.25)
-	update := readProgressEvent(t, reader)
-	if update.Scope != "global" || update.Status != "progress" || update.Step != 2 || update.Steps != 8 || update.Percent != 25 || update.SecondsPerStep != 0.25 {
-		t.Errorf("progress event: got %+v, want global step 2 of 8 at 25 percent", update)
-	}
-}
-
-func readProgressEvent(t *testing.T, reader *bufio.Reader) progressEvent {
-	t.Helper()
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			t.Fatalf("ReadString() error = %v", err)
-		}
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		var event progressEvent
-		if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data: "))), &event); err != nil {
-			t.Fatalf("Unmarshal() error = %v", err)
-		}
-		return event
-	}
-}
 
 func TestGenerationRequestDefaults(t *testing.T) {
 	req := generationRequest{Model: "sd-1.5", Prompt: "lighthouse"}
@@ -155,34 +86,6 @@ func TestEditParams(t *testing.T) {
 	}
 	if params.Strength != 0.6 {
 		t.Errorf("Strength: got %v, want 0.6", params.Strength)
-	}
-}
-
-func TestParseEditRequestOptions(t *testing.T) {
-	r := httptest.NewRequest("POST", "/v1/images/edits", nil)
-	r.MultipartForm = &multipart.Form{Value: map[string][]string{
-		"model":           {"sd-1.5"},
-		"prompt":          {"watercolor"},
-		"negative_prompt": {"blurry"},
-		"size":            {"768x512"},
-		"steps":           {"30"},
-		"cfg_scale":       {"4.5"},
-		"seed":            {"42"},
-		"strength":        {"0.6"},
-	}}
-
-	req, strength, err := parseEditRequest(r)
-	if err != nil {
-		t.Fatalf("parseEditRequest() error = %v", err)
-	}
-	if req.Model != "sd-1.5" || req.Prompt != "watercolor" || req.NegativePrompt != "blurry" || req.Size != "768x512" {
-		t.Errorf("request strings: got %+v", req)
-	}
-	if req.Steps == nil || *req.Steps != 30 || req.CFGScale == nil || *req.CFGScale != 4.5 || req.Seed == nil || *req.Seed != 42 {
-		t.Errorf("request controls: got %+v", req)
-	}
-	if strength != 0.6 {
-		t.Errorf("strength: got %v, want 0.6", strength)
 	}
 }
 
