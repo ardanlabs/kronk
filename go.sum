@@ -26,7 +26,6 @@ cloud.google.com/go/monitoring v1.32.1 h1:DzNqsbCCyMJ+Oq+McBHaR5qqqxCvdNCIgfJug/
 cloud.google.com/go/monitoring v1.32.1/go.mod h1:JkJhVXtTcGh6KQuvProJ9olvu2p37Ay29CinCDFKHHg=
 cloud.google.com/go/storage v1.71.0 h1:vv4wBFygNlKtSmDMcCIz/ATVv9iIJMkZGjk17uzXMv4=
 cloud.google.com/go/storage v1.71.0/go.mod h1:axUlps/Uy9usUkUNd14db8SbV7s+dNV+BU/xkvPmzrU=
-<<<<<<< HEAD
 cloud.google.com/go/trace v1.17.0 h1:7+RAkTVGq3rmO2G74BdhpP1Bvbk3rFWzGt1MfMfHBt8=
 cloud.google.com/go/trace v1.17.0/go.mod h1:GTuZUt8sliPaEYVumjlXAjc4ClYld/nxWBALepV7Mx4=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.63.0 h1:IRqLaCkFN7i+bo7eZFIITa2HP2aXZQvU0VQBEqgUrDs=
@@ -35,18 +34,8 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0.63.0/go.mod h1:2YwTTZvg1Nhk8hvfr9RsA80ehY7dU4bJWWem7ailECQ=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.63.0 h1:BvrXkC8g/MqI7lyJt0Jddjuo1hm+NlNx4theSFfhfw8=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.63.0/go.mod h1:O5gqO+rsDs9p6eDe5MNSLfSIcoiw1iGqkyQbiiFCWhU=
-=======
-cloud.google.com/go/trace v1.16.0 h1:GmQovzFc5F0CNfl0VLgL64aoTtu7xsM0YajW2GlG9+E=
-cloud.google.com/go/trace v1.16.0/go.mod h1:r+bdAn16dKLSV1G2D5v3e58IlQlizfxWrUfjx7kM7X0=
-github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.62.0 h1:5y2LR2pripbccOte6BpZ+guv5O5W0OQIfKvUYZrGaAQ=
-github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.62.0/go.mod h1:b3f7EifFRqkVt142USoGIP62uUeZm7ALCPrs1ZjWXYo=
-github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0.62.0 h1:tRsXhJnn0w0TNwJpVrB94wsrimzjWKFzdQlUhRdNUzc=
-github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0.62.0/go.mod h1:ifhe5teRNcbxg9p353DhOkOgczzL/IBLYFqT1cm1zpM=
-github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0 h1:aPMa5qZU9dp4fU34o+jQgVIPFIOi20oxYg8TLigmZLg=
-github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0/go.mod h1:sg6Wqbl0BKKZ5zKnQj2q0qic/3ziF894SCx1LpbX37Y=
 github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ4pzQ=
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
->>>>>>> 184afe13 (configuration questions with TUI)
 github.com/agnivade/levenshtein v1.2.2 h1:fI8RgiztYX1Nn5pBHHqQ9EMCCklhrmXqPRIedFmx5M4=
 github.com/agnivade/levenshtein v1.2.2/go.mod h1:QVVI16kDrtSuwcpd0p1+xMC6Z/VfhtCyDIjcwga4/DU=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
@@ -371,8 +360,8 @@ go.yaml.in/yaml/v3 v3.0.6 h1:zcDfvjXEqTQmpjniUBLc91xYJMB2c4QOFxEF/LCEckM=
 go.yaml.in/yaml/v3 v3.0.6/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/crypto v0.59.0 h1:xS2jhqYbzNrpvkWP2YTDf4TJwBy3ykR03i8vFDxEc7c=
 golang.org/x/crypto v0.59.0/go.mod h1:veDyUwATGs3c+vN3VfTbzViMGXeTBk3WyhBOkn+F/4U=
-golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e h1:HgI6W1OolKK6tcV74is+rl9SMT0njsHlp0TbQiGXI/A=
-golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e/go.mod h1:DBoxwWhjaW8DJJw/YeM4zpeOKMC1FMXSblsYy+1mFSw=
+golang.org/x/exp v0.0.0-20261113113407-e3970619a1a4 h1:lfvjMWyv5q5oJgIhGfBDf7Szvu8POtgSpMy2XbXlEFs=
+golang.org/x/exp v0.0.0-20261113113407-e3970619a1a4/go.mod h1:J3U+E8RzytcGvwz+uJuAP4zULJ2TkAQBnmPZMexpdXs=
 golang.org/x/image v0.48.0 h1:1AvuPcuoOTJpA7s4VZ5umrb90T3So0rkB/bSGmxkxik=
 golang.org/x/image v0.48.0/go.mod h1:mmtg64iqJKGqEgy+r13dfybl85tmxUd2lMnmaiSdWYY=
 golang.org/x/mod v0.43.0 h1:MFuq5J6s35W9D3IjkwyWc9vHh0nENOrt5K8Iof4ofmg=
