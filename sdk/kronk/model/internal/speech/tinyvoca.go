@@ -69,10 +69,15 @@ func (*TinyVoca) Validate(language, referenceText string) (string, error) {
 	}
 }
 
+// SupportsVoice accepts Tiny-Voca's two speaker presets.
+func (*TinyVoca) SupportsVoice(name string) bool {
+	return name == "M2" || name == "F2"
+}
+
 // Prepare renders English to space-separated, stressed phoneme symbols. The
 // total limit bounds retained sentence states and output, not raw text length.
 func (t *TinyVoca) Prepare(ctx context.Context, _ llama.Vocab, prompt Prompt, input *mtmd.HelperGenAudioInput) (int, error) {
-	if prompt.Voice != "M2" && prompt.Voice != "F2" {
+	if !t.SupportsVoice(prompt.Voice) {
 		return 0, fmt.Errorf("unsupported Tiny-Voca voice %q: use M2 or F2", prompt.Voice)
 	}
 	phonemes, err := t.renderer.Render(ctx, prompt.Text, prompt.Language, prompt.Voice, t.g2p)

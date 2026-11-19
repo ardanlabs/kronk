@@ -1316,7 +1316,7 @@ export default function DocsSDKModel() {
 	Reference SpeechReference // Optional; the zero value preserves default/preset conditioning.
 }`}</code>
               </pre>
-              <p className="doc-description">SpeechRequest supplies text and optional conditioning for speech generation. Input must be nonblank UTF-8 without NUL bytes, at most 64 KiB, and fit the loaded model's text and conditioning budget after any required normalization. Empty Voice or "default" uses default model conditioning; other names must be presets in the loaded decoder. A bundle need not contain a named preset. Reference audio replaces default conditioning and cannot be combined with a named preset. Supported languages, conditioning, and defaults depend on the model bundle; unsupported controls are rejected.</p>
+              <p className="doc-description">SpeechRequest supplies text and optional conditioning for speech generation. Input must be nonblank UTF-8 without NUL bytes, at most 64 KiB, and fit the loaded model's text and conditioning budget after any required normalization. Empty Voice or "default" uses default model conditioning; other names must be presets in the loaded decoder. A bundle need not contain a named preset. Unknown voices return ErrInvalidRequest listing the supported presets and the "default" alias. Presets requiring unsupported languages are not listed. Reference audio replaces default conditioning and cannot be combined with a named preset. Supported languages, conditioning, and defaults depend on the model bundle; unsupported controls are rejected.</p>
             </div>
 
             <div className="doc-section" id="type-speechresponse">

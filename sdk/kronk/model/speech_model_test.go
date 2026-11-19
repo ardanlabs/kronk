@@ -72,6 +72,83 @@ func TestResolveSpeechConfig(t *testing.T) {
 	}
 }
 
+// TestSpeechVoices checks the public voice contract across all supported bundles.
+func TestSpeechVoices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("native speech voices skipped in short mode")
+	}
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id       string
+		presets  []string
+		rejected []string
+	}{
+		{id: "ggml-org/chatterbox-turbo-Q8_0"},
+		{id: "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0"},
+		{id: "ggml-org/Kokoro-82M-F32", presets: []string{"af_heart", "bf_emma"}, rejected: []string{"ff_siwis", "af_missing"}},
+		{id: "ggml-org/tiny-voca-F32", presets: []string{"M2", "F2"}, rejected: []string{"m2"}},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			mp, err := mdls.FullPath(tc.id)
+			if err != nil || len(mp.ModelFiles) == 0 || mp.ProjFile == "" {
+				t.Fatalf("missing speech fixture %s: %v; run make install-speak-models", tc.id, err)
+			}
+			krn, err := kronk.NewWithContext(t.Context(), model.WithModelFiles(mp.ModelFiles), model.WithProjFile(mp.ProjFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := krn.Unload(context.Background()); err != nil {
+					t.Error(err)
+				}
+			})
+			const input = "Your turn!"
+			baseline, err := krn.Speech(t.Context(), model.SpeechRequest{Input: input})
+			if err != nil || len(baseline.Audio) <= 44 {
+				t.Fatalf("default conditioning: got %v, bytes=%d", err, len(baseline.Audio))
+			}
+			for _, voice := range append([]string{"not-a-voice"}, tc.rejected...) {
+				resp, err := krn.Speech(t.Context(), model.SpeechRequest{Input: input, Voice: voice})
+				if !errors.Is(err, model.ErrInvalidRequest) || len(resp.Audio) != 0 {
+					t.Fatalf("voice %q: got %v, bytes=%d, want invalid request without audio", voice, err, len(resp.Audio))
+				}
+				_, choices, ok := strings.Cut(err.Error(), "supported voices: ")
+				if !ok {
+					t.Fatalf("voice %q: error does not list supported voices: %v", voice, err)
+				}
+				for _, preset := range append([]string{"default"}, tc.presets...) {
+					if !strings.Contains(choices, fmt.Sprintf("%q", preset)) {
+						t.Errorf("voice %q: choices %s missing %q", voice, choices, preset)
+					}
+				}
+				for _, rejected := range append([]string{"not-a-voice"}, tc.rejected...) {
+					if strings.Contains(choices, fmt.Sprintf("%q", rejected)) {
+						t.Errorf("voice %q: choices %s include unsupported %q", voice, choices, rejected)
+					}
+				}
+			}
+			for _, voice := range append([]string{"default"}, tc.presets...) {
+				resp, err := krn.Speech(t.Context(), model.SpeechRequest{Input: input, Voice: voice})
+				if err != nil || len(resp.Audio) <= 44 {
+					t.Fatalf("voice %q after rejected requests: got %v, bytes=%d", voice, err, len(resp.Audio))
+				}
+				if voice == "default" && !bytes.Equal(resp.Audio, baseline.Audio) {
+					t.Error("default alias differs from empty voice after rejected requests")
+				}
+			}
+			if active := krn.ActiveStreams(); active != 0 {
+				t.Errorf("completed speech: got active=%d, want 0", active)
+			}
+		})
+	}
+}
+
 // TestSpeechModelLifecycle exercises both speech bundles installed by
 // make install-test-models. Missing fixtures fail rather than skip.
 func TestSpeechModelLifecycle(t *testing.T) {

@@ -52,6 +52,8 @@ type SpeechReference struct {
 // loaded model's text and conditioning budget after any required normalization.
 // Empty Voice or "default" uses default model conditioning; other names must
 // be presets in the loaded decoder. A bundle need not contain a named preset.
+// Unknown voices return ErrInvalidRequest listing the supported presets and
+// the "default" alias. Presets requiring unsupported languages are not listed.
 // Reference audio replaces default conditioning and cannot be combined with a
 // named preset. Supported languages, conditioning, and defaults depend on the
 // model bundle; unsupported controls are rejected.
