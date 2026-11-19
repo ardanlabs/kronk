@@ -35,14 +35,14 @@ func TestInferenceAndBatchSeqMetrics(t *testing.T) {
 			want:   0,
 		},
 		{
-			name:   "inference_request_duration_seconds",
-			labels: map[string]string{"model_id": modelID, "operation": "embedding", "runtime": "batchseq"},
+			name:   "gen_ai_server_request_duration_seconds",
+			labels: map[string]string{"gen_ai_operation_name": "embeddings", "gen_ai_request_model": modelID, "error_type": "", "runtime": "batchseq", "gen_ai_provider_name": "kronk"},
 			value:  func(m *dto.Metric) float64 { return float64(m.GetHistogram().GetSampleCount()) },
 			want:   1,
 		},
 		{
-			name:   "usage_tokens_total",
-			labels: map[string]string{"model_id": modelID, "kind": "prompt"},
+			name:   "gen_ai_client_inference_usage_input_tokens_total",
+			labels: map[string]string{"gen_ai_operation_name": "embeddings", "gen_ai_request_model": modelID, "gen_ai_provider_name": "kronk", "gen_ai_token_modality": "text"},
 			value:  func(m *dto.Metric) float64 { return m.GetCounter().GetValue() },
 			want:   7,
 		},
