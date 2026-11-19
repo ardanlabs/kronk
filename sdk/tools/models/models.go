@@ -13,6 +13,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -318,6 +319,26 @@ func (m *Models) MarkValidated(modelID string) error {
 	}
 
 	return nil
+}
+
+// ModelAnalysis reads a GGUF model file and produces an analysis with
+// recommended runtime settings based on the model's architecture and
+// the available system hardware.
+func (m *Models) ModelAnalysis(modelID string) (Analysis, error) {
+	return m.ModelAnalysisWithConfig(modelID, ModelConfig{})
+}
+
+// ModelAnalysisWithConfig reads a GGUF model file and produces an analysis
+// while treating explicitly configured sizing values as fixed constraints.
+func (m *Models) ModelAnalysisWithConfig(modelID string, constraints ModelConfig) (Analysis, error) {
+	info, err := m.ModelInformation(modelID)
+	if err != nil {
+		return Analysis{}, fmt.Errorf("model-analysis: %w", err)
+	}
+
+	devs := devices.List()
+
+	return AnalyzeWithConfig(info, devs, constraints)
 }
 
 // =============================================================================

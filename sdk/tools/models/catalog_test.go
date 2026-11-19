@@ -214,6 +214,8 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 	wantEndpoints := map[string]string{
 		"nomic-ai/nomic-embed-text-v1.5.Q8_0":           "embeddings",
 		"gpustack/bge-reranker-v2-m3-Q8_0":              "rerank",
+		"ggml-org/jina-embeddings-v2-base-en-q8_0":      "embeddings",
+		"second-state/all-MiniLM-L6-v2-Q8_0":            "embeddings",
 		"openjev/OpenJev-Q4_K_M":                        "decision",
 		"chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0": "decision",
 		"ggml-org/OpenJev-Q4_K_M":                       "decision",

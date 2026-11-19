@@ -3,6 +3,7 @@ package commands
 
 import (
 	"github.com/ardanlabs/kronk/cmd/kronk/bucky"
+	"github.com/ardanlabs/kronk/cmd/kronk/config"
 	"github.com/ardanlabs/kronk/cmd/kronk/devices"
 	"github.com/ardanlabs/kronk/cmd/kronk/diagnose"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/catalog"
@@ -47,6 +48,6 @@ See the manual for installation, environment settings, security, and service wor
 	cmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, libraries, catalog, model_config)")
 	cmd.AddCommand(libs.Cmd, model.Cmd, catalog.Cmd, bucky.Cmd, malina.Cmd)
 	cmd.AddCommand(server.Cmd, service.NewSystemdCommand(), service.NewLaunchdCommand(), service.NewWindowsCommand(start.NewCommand()))
-	cmd.AddCommand(security.Cmd, devices.Cmd, diagnose.Cmd, launch.Cmd)
+	cmd.AddCommand(security.Cmd, devices.Cmd, diagnose.Cmd, launch.Cmd, config.Cmd)
 	return cmd
 }

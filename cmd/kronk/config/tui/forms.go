@@ -1,0 +1,500 @@
+package tui
+
+import (
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/ardanlabs/kronk/cmd/kronk/config/questions"
+	"github.com/ardanlabs/kronk/cmd/kronk/config/source"
+	kronkserver "github.com/ardanlabs/kronk/cmd/server/api/services/kronk"
+)
+
+func (a *app) newPickForm() *huh.Form {
+	choices := a.pickChoices()
+	rows := make([]pickRow, len(choices))
+	var w pickWidths
+	for i, c := range choices {
+		rows[i] = newPickRow(c)
+		w.id = max(w.id, len(rows[i].idText))
+		w.source = max(w.source, len(rows[i].sourceText))
+		w.kind = max(w.kind, len(rows[i].kindText))
+		w.size = max(w.size, len(rows[i].sizeText))
+	}
+
+	opts := make([]huh.Option[string], 0, len(choices))
+	for i, c := range choices {
+		opts = append(opts, huh.NewOption(a.pickLabel(rows[i], w), c.ID))
+	}
+
+	// The question is in pickHeading; / is listed in the key help. huh shows
+	// the search where the title goes, and only for a field with a title: the
+	// empty one keeps that line, blank until / opens the search.
+	sel := huh.NewSelect[string]().
+		TitleFunc(func() string { return "" }, nil).
+		Options(opts...).
+		Height(16).
+		Value(&a.picked)
+	sel.WithTheme(a.searchTheme())
+
+	return a.newForm(huh.NewGroup(sel))
+}
+
+// searchTheme is the form theme for the picker's list: a space after the
+// search's / prompt. A select keeps the first theme it gets, so the form's
+// theme doesn't replace it.
+func (a *app) searchTheme() huh.Theme {
+	return huh.ThemeFunc(func(bool) *huh.Styles {
+		st := *a.colors.form()
+		st.Focused.TextInput.Prompt = st.Focused.TextInput.Prompt.PaddingRight(1)
+		return &st
+	})
+}
+
+// clearSearch closes the picker's search and clears it with one esc. huh
+// would keep the text as a filter after the first esc and clear it on a
+// second one, which shows it as "/text" until then.
+func (a *app) clearSearch(esc tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	m, cmd := a.updateForm(esc)
+	if a.step == stepPick && a.fieldUsesEsc() {
+		_, clear := a.updateForm(esc)
+		return a, tea.Batch(cmd, clear)
+	}
+	return m, cmd
+}
+
+// pickHeading is the picker's question. It is drawn above the form: while
+// the list is searched, huh shows the search text where a field's title goes.
+// It has the focused field's border, so it reads as part of the list.
+func (a *app) pickHeading() string {
+	st := a.theme.Theme(false)
+	return st.Focused.Base.Render(a.groupLine() + "\n" + st.Focused.Title.Render(a.pickQuestion()))
+}
+
+// backKeyMap shows esc as the "back" key in the form help. Esc is handled by
+// the app (see back); the binding itself stays on shift+tab, which still
+// works but is not listed.
+func backKeyMap() *huh.KeyMap {
+	km := huh.NewDefaultKeyMap()
+	km.Input.Prev.SetHelp("esc", "back")
+	km.Select.Prev.SetHelp("esc", "back")
+	km.Text.Prev.SetHelp("esc", "back")
+	km.MultiSelect.Prev.SetHelp("esc", "back")
+	km.MultiSelect.Toggle.SetHelp("space", "toggle")
+
+	// The picker's search: esc closes and clears it at once (clearSearch).
+	km.Select.Filter.SetHelp("/", "search")
+	km.Select.SetFilter.SetHelp("esc", "clear search")
+	return km
+}
+
+// newForm builds a form with the app's theme and esc listed as back in its
+// key help. It gets the window size right away: without it the form asks for
+// the size in Init and pads its groups only when the answer comes, so the
+// first frame jumps.
+func (a *app) newForm(groups ...*huh.Group) *huh.Form {
+	f := huh.NewForm(groups...).WithTheme(a.theme).WithKeyMap(backKeyMap()).WithShowHelp(true)
+	if a.width > 0 {
+		f.Update(a.formSize())
+	}
+	return f
+}
+
+// formSize is the window size message the forms get: narrower when the
+// answers column is on screen.
+func (a *app) formSize() tea.WindowSizeMsg {
+	// The form gets the rows under what the step draws above it; huh scrolls
+	// a list that is taller.
+	h := a.bodyHeight() - lipgloss.Height(a.aboveForm()) + 1
+	return tea.WindowSizeMsg{Width: min(a.formWidth(), maxFormWidth), Height: max(h, minFormHeight)}
+}
+
+// minFormHeight keeps a question and a few options on a very short terminal.
+const minFormHeight = 8
+
+// maxFormWidth keeps the forms' text at a length that reads well on wide
+// terminals.
+const maxFormWidth = 100
+
+// pickRow is one picker line split into columns.
+type pickRow struct {
+	idText, sourceText, kindText, sizeText string
+	notes                                  []string
+}
+
+// pickWidths is the widest value of each picker column.
+type pickWidths struct {
+	id, source, kind, size int
+}
+
+func newPickRow(c source.Choice) pickRow {
+	r := pickRow{idText: c.ID, sourceText: "catalog", kindText: string(c.Group()), sizeText: "-"}
+	switch {
+	case c.Installed:
+		r.sourceText = "installed"
+	case c.Incomplete:
+		r.sourceText = "incomplete"
+	}
+	if c.Size > 0 {
+		r.sizeText = source.FormatBytes(uint64(c.Size))
+	}
+	if c.InFile {
+		r.notes = append(r.notes, "in config")
+	}
+
+	return r
+}
+
+// pickLabel pads each column before styling it, so ANSI codes don't break
+// the alignment.
+func (a *app) pickLabel(r pickRow, w pickWidths) string {
+	// Installed is green, ready to use; an incomplete download stands out:
+	// it needs pulling again.
+	src := a.st.muted
+	switch r.sourceText {
+	case "installed":
+		src = a.st.ok
+	case "incomplete":
+		src = a.st.warn
+	}
+	label := fmt.Sprintf("%-*s  %s", w.id, r.idText, src.Render(fmt.Sprintf("%-*s", w.source, r.sourceText)))
+
+	// The kind of model only tells something in All models: a group's list
+	// has one kind, named in the heading.
+	if a.group == groupAll {
+		label += "  " + a.st.muted.Render(fmt.Sprintf("%-*s", w.kind, r.kindText))
+	}
+	label += "  " + a.st.muted.Render(fmt.Sprintf("%*s", w.size, r.sizeText))
+	if len(r.notes) > 0 {
+		label += "  " + a.st.muted.Render(strings.Join(r.notes, " · "))
+	}
+
+	return label
+}
+
+func (a *app) newQuestionsForm() *huh.Form {
+	f, ans := a.facts, a.ans
+
+	// a.qs is already in the order the questions are asked.
+	var hg []*huh.Group
+	for _, q := range a.qs {
+		q := q.For(f)
+		open := func() bool { return ans.Applies(f, q) }
+		hg = append(hg, huh.NewGroup(withAnswersKey(a.field(q))).WithHideFunc(func() bool { return !open() }))
+
+		if q.HasOther() {
+			otherDesc := "Writes " + a.keyPath(q.Key)
+			if n := a.facts.Analysis.Model.BlockCount; q.Key == "ngpu-layers" && n > 0 {
+				otherDesc = fmt.Sprintf("The model has %d layers. ", n) + otherDesc
+			}
+			other := huh.NewInput().
+				Key(q.Key + "/other").
+				Title(upperFirst(q.Title)).
+				Description(otherDesc).
+				Placeholder("a value").
+				Validate(q.Validate).
+				Value(ans.Other[q.Key])
+
+			hg = append(hg, huh.NewGroup(withAnswersKey(other)).WithHideFunc(func() bool {
+				return !open() || *ans.Sel[q.Key] != questions.OtherValue
+			}))
+		}
+	}
+
+	return a.newForm(hg...)
+}
+
+// field builds the form field for one question.
+func (a *app) field(q questions.Question) huh.Field {
+	desc := a.describe(q)
+
+	if q.Secret && a.ans.Value(q.Key) == questions.ClearSecretValue {
+		return huh.NewSelect[string]().
+			Key(q.Key).
+			Title(upperFirst(q.Title)).
+			Description(desc).
+			Options(huh.NewOption("Remove saved value", questions.ClearSecretValue), huh.NewOption("Keep saved value", "")).
+			Value(a.ans.Sel[q.Key])
+	}
+
+	if q.Kind == questions.KindMulti {
+		var opts []huh.Option[string]
+		// Keep configured GPU order: tensor shares and primary GPU indices
+		// refer to it. Also retain devices absent from this machine.
+		selected := *a.ans.Multi[q.Key]
+		for _, value := range selected {
+			label := value + " (from file)"
+			if o, ok := q.Option(a.facts, value); ok {
+				label = o.Label
+			}
+			opts = append(opts, huh.NewOption(label, value))
+		}
+		for _, o := range q.Options(a.facts) {
+			if !slices.Contains(selected, o.Value) {
+				opts = append(opts, huh.NewOption(o.Label, o.Value))
+			}
+		}
+		return huh.NewMultiSelect[string]().
+			Key(q.Key).
+			Title(upperFirst(q.Title)).
+			Description(desc).
+			Options(opts...).
+			Height(16).
+			Value(a.ans.Multi[q.Key])
+	}
+
+	if q.Kind == questions.KindVars || q.Kind == questions.KindAdapters {
+		return huh.NewText().
+			Key(q.Key).
+			Title(upperFirst(q.Title)).
+			DescriptionFunc(func() string { return a.describe(q) }, a.ans.Sel["template"]).
+			Placeholder(upperFirst(q.Def(a.facts)) + " (default)").
+			Lines(4).
+			CharLimit(4000).
+			Validate(q.Validate).
+			Value(a.ans.Sel[q.Key])
+	}
+
+	if q.Options == nil {
+		// A secret's hint says whether the file has one, not a default. A
+		// required input has no default.
+		placeholder := q.Def(a.facts)
+		if !q.Secret && !q.Required {
+			placeholder += " (default)"
+		}
+		validate := q.Validate
+		if q.Required {
+			validate = func(s string) error {
+				if strings.TrimSpace(s) == "" {
+					return fmt.Errorf("enter a value")
+				}
+				return q.Validate(s)
+			}
+		}
+
+		in := huh.NewInput().
+			Key(q.Key).
+			Title(upperFirst(q.Title)).
+			Description(desc).
+			Placeholder(upperFirst(placeholder)).
+			Validate(validate).
+			Value(a.ans.Sel[q.Key])
+		if q.Secret || q.Kind == questions.KindPassword {
+			in = in.EchoMode(huh.EchoModePassword)
+		}
+		return in
+	}
+
+	// The first option keeps the key out of the file. When the default is
+	// one of the options, that option's label names it.
+	options := q.Options(a.facts)
+	def := questions.DefaultLabel(q, a.facts)
+
+	var opts []huh.Option[string]
+	if !q.Required {
+		opts = append(opts, huh.NewOption(upperFirst(def)+" (default)", ""))
+	}
+	for _, o := range options {
+		if o.Value == q.Same {
+			continue
+		}
+		opts = append(opts, huh.NewOption(upperFirst(o.Label), o.Value))
+	}
+	if !q.HasOther() && *a.ans.Sel[q.Key] == questions.OtherValue {
+		opts = append(opts, huh.NewOption("Existing: "+a.ans.Value(q.Key), questions.OtherValue))
+	}
+	if q.HasOther() {
+		label := "Other value…"
+		if q.OtherLabel != "" {
+			label = q.OtherLabel
+		}
+		opts = append(opts, huh.NewOption(label, questions.OtherValue))
+	}
+
+	return huh.NewSelect[string]().
+		Key(q.Key).
+		Title(upperFirst(q.Title)).
+		Description(desc).
+		Options(opts...).
+		Value(a.ans.Sel[q.Key])
+}
+
+// upperFirst capitalizes the first letter of a title, label or hint. It is
+// display only; the values written to the file keep their case.
+func upperFirst(s string) string {
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
+}
+
+func (a *app) describe(q questions.Question) string {
+	// What the setting does, then what is known about this model.
+	var about []string
+	if q.About != "" {
+		about = append(about, upperFirst(q.About))
+	}
+	if note := questions.ContextNote(a.facts); q.Key == "context-window" && note != "" {
+		about = append(about, note)
+	}
+	if n := a.facts.Analysis.Model.BlockCount; q.Key == "moe.keep-experts-top-n" && n > 0 {
+		about = append(about, fmt.Sprintf("The model has %d layers.", n))
+	}
+	if q.Kind == questions.KindAdapters && len(a.facts.Adapters) > 0 {
+		about = append(about, "In the lora folder: "+strings.Join(a.facts.Adapters, ", "))
+	}
+	if v := a.facts.Template(a.ans.Value("template")).Custom(); q.Kind == questions.KindVars && len(v) > 0 {
+		about = append(about, "The chat template also reads: "+strings.Join(v, ", "))
+	}
+
+	// Blocks are set apart by a blank line: about, tip, the keys written.
+	var blocks []string
+	if q.Secret {
+		help := "Ctrl+X clears the saved secret; an empty answer keeps it."
+		if a.ans.Value(q.Key) == questions.ClearSecretValue {
+			help = "The saved secret will be removed. Ctrl+X keeps it instead."
+		}
+		about = append(about, help)
+	}
+	if len(about) > 0 {
+		blocks = append(blocks, a.st.value.Render(strings.Join(about, "\n")))
+	}
+	if q.Tip != "" {
+		blocks = append(blocks, a.st.ok.Bold(true).Render("Tip:")+" "+a.st.value.Render(q.Tip))
+	}
+
+	// The default is shown once: in a list's "(default)" option, or
+	// as an input's placeholder.
+	keys := make([]string, 0, len(q.Keys()))
+	for _, k := range q.Keys() {
+		keys = append(keys, a.keyPath(k))
+	}
+	if q.Key == questions.KeyRopeScaling {
+		keys = []string{"context-window, or rope-scaling-type, rope-freq-scale and yarn-orig-ctx"}
+	}
+	blocks = append(blocks, a.st.muted.Render("Writes:")+" "+a.st.value.Render(strings.Join(keys, ", ")))
+
+	return strings.Join(blocks, "\n\n")
+}
+
+// keyPath is the key as it appears in the file: server settings sit under
+// kms:, model settings under the model's entry.
+func (a *app) keyPath(key string) string {
+	if a.server {
+		return "kms." + key
+	}
+	return key
+}
+
+func (a *app) newSectionsForm() *huh.Form {
+	settings := kronkserver.Settings()
+
+	var opts []huh.Option[string]
+	for _, sec := range questions.ServerSections(settings) {
+		var n, set int
+		for _, st := range settings {
+			if questions.ServerSection(st.Key) != sec {
+				continue
+			}
+			n++
+			if _, ok := a.existing[st.Key]; ok {
+				set++
+			}
+		}
+
+		label := questions.SectionLabel(sec) + a.st.muted.Render(fmt.Sprintf("  %d %s", n, nouns(n, "setting")))
+		if set > 0 {
+			label += a.st.muted.Render(fmt.Sprintf(" · %d in the file", set))
+		}
+		opts = append(opts, huh.NewOption(label, sec))
+	}
+
+	sel := huh.NewMultiSelect[string]().
+		Title("Which server settings do you want to change?").
+		Description("Space selects, enter continues. Sections with values in the file start selected.").
+		Options(opts...).
+		Value(&a.sections)
+
+	return a.newForm(huh.NewGroup(sel))
+}
+
+// reviewOptions are the review's actions; ctrl+o changes answers. When the
+// answers don't fit, the fixes come first, then keep: save anyway.
+func (a *app) reviewOptions() []huh.Option[string] {
+	if len(a.problems) > 0 {
+		return []huh.Option[string]{huh.NewOption("Quit…", actQuit)}
+	}
+
+	var opts []huh.Option[string]
+	for i, x := range a.fixes {
+		opts = append(opts, huh.NewOption(x.Label(), actFix+strconv.Itoa(i)))
+	}
+
+	save := "Save to " + shortPath(a.path)
+	if a.notFitting() {
+		save = "Keep it and save to " + shortPath(a.path)
+	}
+	if a.quitAfterSave {
+		save += " and quit"
+	}
+	return append(opts,
+		huh.NewOption(save, actSave),
+		huh.NewOption("Save to another file…", actOther),
+		huh.NewOption("Quit…", actQuit),
+	)
+}
+
+// reviewFormHeight is the rows the review's menu takes: the blank line above
+// it, title, description and the blank line after it, the options and a
+// wrapped save path, then the blank line and the key help.
+func (a *app) reviewFormHeight() int {
+	options := 1 // quit
+	if len(a.problems) == 0 {
+		options = len(a.fixes) + 3
+	}
+	return options + 8
+}
+
+// notFitting reports whether the memory check says the answers don't fit.
+func (a *app) notFitting() bool {
+	return len(a.fixes) > 0 || (a.check != nil && !a.check.Recommended.Fits)
+}
+
+func (a *app) newReviewForm() *huh.Form {
+	title, desc := "Save this entry?", "Or change answers first: ctrl+o lists them."
+	switch {
+	case len(a.problems) > 0:
+		// Without a save option the file path below is never asked.
+		title, desc = "Fix the answers above before saving.", "Kronk would refuse them when it loads the model. ctrl+o lists the answers to change them."
+	case a.notFitting():
+		title, desc = "It doesn't fit in memory.", "Pick a change that fits, or keep the answers and save."
+	case a.server:
+		title = "Save these settings?"
+	}
+
+	sel := huh.NewSelect[string]().
+		Key(keyAction).
+		Title(title).
+		Description(desc).
+		Options(a.reviewOptions()...).
+		Value(&a.action)
+
+	path := huh.NewInput().
+		Title("File path").
+		Description("An existing file, or a new one to create.").
+		Placeholder("./model_config.yaml").
+		Validate(validFile).
+		Value(&a.otherPath)
+
+	return a.newForm(
+		huh.NewGroup(withAnswersKey(sel)),
+		huh.NewGroup(path).WithHideFunc(func() bool { return a.action != actOther }),
+	)
+}

@@ -8,6 +8,11 @@ kronk-diagnose: ## Diagnose the host and installed library bundles
 
 # ------------------------------------------------------------------------------
 
+kronk-config: ## Write model_config.yaml through interactive questions
+	go run cmd/kronk/main.go config
+
+# ------------------------------------------------------------------------------
+
 kronk-libs: ## Install pinned llama.cpp libraries through the server
 	go run cmd/kronk/main.go libs
 

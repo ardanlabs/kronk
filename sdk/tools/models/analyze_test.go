@@ -964,12 +964,12 @@ func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 	// Companion MTP must reserve the full physical tray regardless of a smaller
 	// request; ordinary text must actually use that smaller compute estimate.
 	constraints := ModelConfig{PtrContextWindow: new(8192), PtrNSeqMax: new(3), PtrPhysicalBatchSize: new(512)}
-	small, err := analyzeModelWithConfig(info, devs, constraints)
+	small, err := AnalyzeWithConfig(info, devs, constraints)
 	if err != nil {
 		t.Fatal(err)
 	}
 	constraints.PtrPhysicalBatchSize = new(2048)
-	large, err := analyzeModelWithConfig(info, devs, constraints)
+	large, err := AnalyzeWithConfig(info, devs, constraints)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -977,12 +977,12 @@ func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 		t.Fatal("ordinary text physical size did not reduce the memory estimate")
 	}
 	info.HasMTP = true
-	mtpLarge, err := analyzeModelWithConfig(info, devs, constraints)
+	mtpLarge, err := AnalyzeWithConfig(info, devs, constraints)
 	if err != nil {
 		t.Fatal(err)
 	}
 	constraints.PtrPhysicalBatchSize = new(512)
-	mtpSmall, err := analyzeModelWithConfig(info, devs, constraints)
+	mtpSmall, err := AnalyzeWithConfig(info, devs, constraints)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1114,9 +1114,9 @@ func TestAnalyzeUsesSelectedDevices(t *testing.T) {
 		},
 	}
 
-	analysis, err := analyzeModelWithConfig(info, devs, ModelConfig{Devices: []string{"CUDA0"}})
+	analysis, err := AnalyzeWithConfig(info, devs, ModelConfig{Devices: []string{"CUDA0"}})
 	if err != nil {
-		t.Fatalf("analyzeModelWithConfig failed: %v", err)
+		t.Fatalf("AnalyzeWithConfig failed: %v", err)
 	}
 	if analysis.System.GPUName != "CUDA0" || analysis.System.GPUFreeBytes != 8_000_000_000 {
 		t.Fatalf("selected GPU: got %s/%d, want CUDA0/8000000000", analysis.System.GPUName, analysis.System.GPUFreeBytes)

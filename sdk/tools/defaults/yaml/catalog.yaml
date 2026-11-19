@@ -286,8 +286,8 @@ models:
     sequence_processing: Attention-only
     capabilities:
       mtp: false
-      endpoint: rerank
-      rerank: true
+      endpoint: embeddings
+      embedding: true
     resolved_at: 2026-07-30T01:18:36.132801Z
   gpustack/bge-reranker-v2-m3-Q8_0:
     provider: gpustack
@@ -488,8 +488,8 @@ models:
     sequence_processing: Attention-only
     capabilities:
       mtp: false
-      endpoint: rerank
-      rerank: true
+      endpoint: embeddings
+      embedding: true
     resolved_at: 2026-07-30T01:18:32.85876Z
   ukisai/Swift-Qwen3.8-27B-Q8_0:
     provider: ukisai

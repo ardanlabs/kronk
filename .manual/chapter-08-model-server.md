@@ -94,6 +94,9 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
 kronk libs --local
 ```
 
+`kronk config` always works on local files; see
+[Editing the file with kronk config](https://www.kronkai.com/manual#editing-the-file-with-kronk-config).
+
 Local mode is useful for initial setup, offline administration, and installing
 models into a stopped server's data directory. Use server-backed mode when
 administering a remote host or when browser progress needs to observe the
@@ -384,6 +387,182 @@ KRONK_POOL_MODEL_CONFIG_FILE=./my-model_config.yaml kronk server start
 The file format, variants, configuration keys, and tuning workflow are
 documented in [Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration). The repository's
 commented reference file is `zarf/kms/model_config.yaml`.
+
+### Editing the file with kronk config
+
+`kronk config` is an interactive terminal tool that writes this file. It asks
+questions, shows the result, and saves it. It works on local files and does not
+need a running server.
+
+```shell
+kronk config
+```
+
+Existing settings are filled in when an entry is opened, including model
+variants. Settings not already in the file start on their defaults; leaving
+those defaults writes nothing, so Kronk's defaults and AutoTune still apply.
+Esc goes back one question. In a multi-select list, `[ ]` means unselected
+and `[x]` means selected: press Space to select items, then Enter to continue.
+
+Press `ctrl+q` or `ctrl+c` while editing to quit. When there are pending
+changes, choose **Save and quit**, **Discard and quit**, or **Continue
+editing** (the default). Saving still validates the answers; invalid answers
+must be corrected, and memory warnings still need review. A failed save
+keeps the changes open instead of quitting. With no pending changes, quitting
+exits immediately.
+
+Colors follow the terminal's background, also when it switches between light
+and dark while the tool runs. When a light terminal shows faint, hard to read
+text, the terminal didn't report its background (this can happen through tmux
+or ssh): run `kronk config --theme light`, or `--theme dark` for the opposite
+case. A fixed `--theme` doesn't follow switches.
+
+Each question says what the setting does, gives a tip on when to change it,
+and names the key it writes. In a terminal at least 120 columns wide, an
+answers column on the right lists every question asked so far and the ones
+still ahead, with the answer to each; defaults are marked `(default)`. At any
+size, `ctrl+o` opens that list full screen. Enter on an answer opens that
+question, and the questions go on from there to the review, as usual. During
+the questions, the list ends with a **Review and save** button: it goes
+straight to the review, and the questions not reached keep their answers (the
+values in the file, or the defaults). A question that still needs an answer
+opens first. Esc closes the list.
+
+#### Start
+
+1. **This machine or another one.** It decides the files offered next and,
+   for a model, the hardware the questions and the memory check use.
+2. **Config file.** For this machine, the file the server reads comes first
+   (`KRONK_POOL_MODEL_CONFIG_FILE`, otherwise
+   `<base-path>/models/model_config.yaml`), then `model_config*.yaml` files in
+   the current directory. For another machine, the file to copy there:
+   `model_config.yaml` in the current directory (new when it doesn't exist
+   yet), then the other `model_config*.yaml` files there; the file this
+   machine's server reads is not offered. Any other path, including a new
+   file, also works.
+3. **A model or the server settings.**
+4. **The hardware** (models only). This machine's GPUs, GPU memory, and RAM
+   are detected through llama.cpp, so its libraries must be installed. For
+   another machine, enter its GPU count, GPU type, memory per GPU, and RAM;
+   the libraries are not needed.
+
+These first questions have the same answers list as the model questions:
+beside them in a wide terminal, and full screen with `ctrl+o`, where Enter on
+an answer goes back to that question.
+5. **The model.** First the kind of model: chat, embeddings, rerank,
+   decision, audio (whisper) or image, each with its number of models, or
+   **All models** to search every kind. Then the models of that kind; press
+   `/` to search. Installed models come first, then the catalog. A model whose
+   download never finished is listed as `incomplete` and treated as a catalog
+   model. A catalog chat model is configured from its GGUF header alone, which
+   is fetched and cached; any catalog or incomplete model is offered for
+   download after saving. When a chat model already has entries in the file,
+   pick the one to change or add a variant (`model/NAME`).
+
+A box then shows the model's architecture, the machine, and what AutoTune picks
+for the model on that hardware. When AutoTune's pick may not fit the target GPU,
+the box warns under it with the memory it needs; the review checks the answers
+themselves.
+
+#### Model questions
+
+Questions that do not apply to the model or the machine are skipped. For
+example, MoE questions are skipped for a dense model, and multi-GPU questions
+for a machine with one GPU. `enable_thinking` and `reasoning_effort` are asked
+only when the chat template the server would use reads them: the `template`
+answer, a `.jinja` file in the `jinja` folder, or the GGUF's own template.
+`numa` is asked when part of the model runs on the CPU, unless this machine
+has a single NUMA node.
+
+The GGUF metadata tells whether the model generates text. Embedding, rerank
+and decision models don't, so they are only asked the loading, memory and
+throughput settings: not sampling, thinking, the chat template, its
+variables, speculation or the conversation cache.
+
+For a model with a projector (mmproj), the inputs it takes come from the
+projector's own header (`clip.has_vision_encoder`, `clip.has_audio_encoder`),
+read from the local file or fetched for a catalog model. The box shows them,
+the projector questions name them, and `image-token-budget` is asked only when
+the projector takes images. When the header can't be read, the projector
+questions are all asked.
+
+| Group | Settings |
+| ----- | -------- |
+| Essentials | `context-window`, with the YaRN keys when it is longer than the training context; `nseq-max` |
+| Behavior | `template`, `enable_thinking`, `reasoning_effort`, `chat-template-kwargs` |
+| Sampling | `temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`, `repeat_penalty`, `frequency_penalty`, `presence_penalty` |
+| Memory and GPU | `cache-type-k`, `cache-type-v`, `ngpu-layers`, `offload-kqv`, `moe`, `numa`, `flash-attention`, `swa-full`, `load-mode`, `lazy-mode` |
+| Multiple GPUs | `devices`, `split-mode`, `main-gpu`, `tensor-split` |
+| Throughput | `queue-depth`, `admission-timeout`, `prefill-batch-size`, `kv-cache-mode`, `nthreads`, `nthreads-batch`, `incremental-cache`, `cache-min-tokens`, `imc-session-capacity` |
+| Features | `speculation`, `draft-model`, `adapters`, `proj-on-cpu`, `proj-device`, `image-token-budget`, `image-batch-token-capacity`, `insecure-logging` |
+| Audio (`bucky-models`) | `nseq-max`, `queue-depth`, `admission-timeout`, `nthreads` |
+| Image (`malina-models`) | `concurrency`, `queue-depth`, `admission-timeout`, `cpu-threads` |
+
+Template variables are one `name=value` per line, with YAML values. Adapters
+are one per line: an ID from the `lora` folder or an absolute `.gguf` path,
+with an optional `=scale`; an empty local `lora` folder does not hide this
+question. Generation and batch CPU thread counts can be set independently.
+The KV precision choices include `f8_e4m3` for models and backends that support
+FP8. A separate draft model has its own GPU selection, primary GPU, layer
+offload count, and tensor split. Image batch capacity reserves room for
+complete image chunks without changing the image detail budget.
+
+The tool does not ask for settings that a request sets better (`seed`, DRY,
+XTC, `grammar`) or that AutoTune or the GGUF own (`physical-batch-size`,
+`rope-freq-base`, the YaRN factors, `op-offload`, `tensor-buft-overrides`).
+Add them to the file by hand when needed.
+
+#### Server settings
+
+Pick the sections to change: web server, auth, authorization, MCP, downloads,
+tracing, model pool, or runtime. Sections with values in the file start
+selected. The questions are generated from the server's configuration, so a
+new `kms` key is asked without changes to the tool. `base-path` is not asked,
+because the server finds this file through it.
+
+Secrets are masked and never shown; an empty answer keeps the value in the
+file. On a secret question, `ctrl+x` marks the saved value for removal;
+press it again to keep the value instead. Removal takes effect only after
+saving. The admin password is entered as a password and written as its SHA-256.
+
+#### Review and save
+
+The review shows the changes and the entry or `kms` section exactly as it will
+be written. To change an answer, `ctrl+o` opens the same list; the questions
+go on from the picked one, and **Review and save** in the list comes back to
+the review without walking through the rest. Esc goes back to the last
+question, and esc again walks back through them. For a chat model the review also:
+
+- runs the memory check with the answers on the chosen hardware. When the
+  answers do not fit, it offers the fixes that do fit, each with the memory it
+  needs: a smaller context, a `q8_0` KV cache, fewer requests at the same time,
+  or `q8_0` with a smaller context. Keeping the answers is also possible.
+- lists combinations that Kronk refuses when it loads the model, such as a
+  quantized V cache with flash attention disabled, or fewer cached
+  conversations than admitted requests. Saving waits until they are changed.
+
+Saving rewrites only that entry or the `kms` section; other entries, sections,
+and comments are kept. The result is checked before it replaces the file, and
+the previous file is kept as `<file>.bak`.
+
+Restart the server to apply the changes. A file written for another machine
+goes to that machine as `~/.kronk/models/model_config.yaml`, or is selected
+there with `KRONK_POOL_MODEL_CONFIG_FILE`.
+
+When the model is not installed yet, the tool then shows its pull command
+(`kronk model pull --local <id>`, or the `kronk bucky` / `kronk malina`
+command for audio and image models) with two buttons: **Copy command**,
+and **Install now**, the default, which downloads it with progress (Esc
+cancels). Esc skips both and goes to **All done!**, where Esc comes back
+here while the model is still not downloaded (`q` quits). A config for
+another machine only offers the copy, to run there. The configuration is saved
+first, so a cancelled or failed download keeps it.
+
+**All done!** then sums up the file, its backup, the entry written (or that
+Kronk's defaults apply when there was nothing to write), where the model is
+installed or the command still to run, and how the server picks up the file.
+**Configure another model** starts over with the same file and machine;
+**Exit configuration tool**, the default, quits, as does `q`.
 
 ## 8.6 Catalog Operations
 
