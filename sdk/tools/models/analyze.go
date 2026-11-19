@@ -142,34 +142,14 @@ type RuntimeRecommendation struct {
 // point (no disk or hardware I/O) shared by the catalog-based ModelAnalysis and
 // path-based callers such as the SDK auto-tune flow in kronk.New.
 func Analyze(info ModelInfo, devs devices.Devices) (Analysis, error) {
-	return analyzeModelWithConfig(info, devs, ModelConfig{})
+	return AnalyzeWithConfig(info, devs, ModelConfig{})
 }
 
 // AnalyzeWithConfig is Analyze with explicitly configured sizing values
 // treated as fixed constraints. devs may describe a machine other than this
 // one, for example when writing a config for another server.
 func AnalyzeWithConfig(info ModelInfo, devs devices.Devices, constraints ModelConfig) (Analysis, error) {
-	return analyzeModelWithConfig(info, devs, constraints)
-}
-
-// ModelAnalysis reads a GGUF model file and produces an analysis with
-// recommended runtime settings based on the model's architecture and
-// the available system hardware.
-func (m *Models) ModelAnalysis(modelID string) (Analysis, error) {
-	return m.ModelAnalysisWithConfig(modelID, ModelConfig{})
-}
-
-// ModelAnalysisWithConfig reads a GGUF model file and produces an analysis
-// while treating explicitly configured sizing values as fixed constraints.
-func (m *Models) ModelAnalysisWithConfig(modelID string, constraints ModelConfig) (Analysis, error) {
-	info, err := m.ModelInformation(modelID)
-	if err != nil {
-		return Analysis{}, fmt.Errorf("model-analysis: %w", err)
-	}
-
-	devs := devices.List()
-
-	return analyzeModelWithConfig(info, devs, constraints)
+	return analyzeModelWithConfigAndBudget(info, devs, constraints, nil)
 }
 
 // =============================================================================
@@ -177,13 +157,7 @@ func (m *Models) ModelAnalysisWithConfig(modelID string, constraints ModelConfig
 
 // analyzeModel performs the analysis given parsed model info and hardware.
 func analyzeModel(info ModelInfo, devs devices.Devices) (Analysis, error) {
-	return analyzeModelWithConfig(info, devs, ModelConfig{})
-}
-
-// analyzeModelWithConfig performs the analysis while treating explicitly set
-// AutoTune-owned values as fixed constraints.
-func analyzeModelWithConfig(info ModelInfo, devs devices.Devices, cfg ModelConfig) (Analysis, error) {
-	return analyzeModelWithConfigAndBudget(info, devs, cfg, nil)
+	return AnalyzeWithConfig(info, devs, ModelConfig{})
 }
 
 func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg ModelConfig, budget *AutoTuneBudget) (Analysis, error) {
