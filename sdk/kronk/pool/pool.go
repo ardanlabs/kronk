@@ -254,6 +254,7 @@ func customModelID(key string) (string, error) {
 	} else {
 		modelID = strings.TrimSuffix(key, "/custom/accuracy")
 		modelID = strings.TrimSuffix(modelID, "/custom/efficiency")
+		modelID = strings.TrimSuffix(modelID, "/custom/preparation")
 		if before, _, found := strings.Cut(modelID, "/playground/"); found {
 			modelID = before
 		}

@@ -131,6 +131,12 @@ Common settings can be supplied as flags or environment variables:
 | `--media-backends-enabled` | `KRONK_MEDIA_BACKENDS_ENABLED` | `true` | Download and load the Bucky and Malina native backends during server startup |
 | `--allow-upgrade` | `KRONK_ALLOW_UPGRADE` | `false` | Opt in to automatic native-library upgrades |
 | `--llama-log` | `KRONK_LLAMA_LOG` | `0` | Enable or disable llama.cpp logging |
+| `--moxie-enabled` | `KRONK_MOXIE_ENABLED` | `false` | Enable Moxie fine-tuning storage and Temporal workers |
+| `--moxie-address` | `KRONK_MOXIE_ADDRESS` | `127.0.0.1:7233` | Temporal server address |
+| `--moxie-namespace` | `KRONK_MOXIE_NAMESPACE` | `default` | Temporal namespace |
+| `--moxie-models` | `KRONK_MOXIE_MODELS` | unset | Comma-separated approved training model IDs |
+| `--moxie-root` | `KRONK_MOXIE_ROOT` | `~/.moxie` | Moxie storage directory |
+| `--moxie-database-url` | `KRONK_MOXIE_DATABASE_URL` | unset | Optional PostgreSQL connection URL; empty uses file storage |
 
 Most server configuration flags map to environment variables, but names follow
 the server's configuration hierarchy rather than a universal text conversion.
@@ -148,6 +154,46 @@ kronk server start --help
 Keep tokens and passwords in protected environment or secret-manager settings,
 not shared shell scripts. `--insecure-logging` can expose prompts and model
 configuration and should be limited to controlled debugging.
+
+### Moxie fine-tuning
+
+Moxie is disabled by default. Disabled Moxie does not initialize its storage or
+dataset catalog, connect to its database, or start Temporal workers. Other Kronk
+inference services remain available.
+
+To enable it with an approved training model:
+
+```shell
+kronk server start --moxie-enabled --moxie-models=ggml-org/gemma-3-1b-it-Q8_0
+```
+
+The Temporal server must be reachable at `--moxie-address` and the configured
+namespace must exist. Moxie also requires a nonempty approved-model list. Missing
+model downloads do not block startup or empty dashboard histories; the model
+must be downloaded before submitting training that uses it.
+
+The equivalent `model_config.yaml` settings are all under `kms.moxie`:
+
+```yaml
+kms:
+  moxie:
+    enabled: true
+    address: 127.0.0.1:7233
+    namespace: default
+    models:
+      - ggml-org/gemma-3-1b-it-Q8_0
+    root: ""
+    database-url: ""
+```
+
+An empty `root` uses `~/.moxie`. To use PostgreSQL, provide the connection URL
+through `KRONK_MOXIE_DATABASE_URL` and initialize its schema with
+`make tuning-up` from the repository before starting Kronk. Keep database
+credentials out of shared command lines and configuration files.
+
+There is no separate `kms.training` configuration block or training enable
+switch. Move older `kms.training` settings into `kms.moxie`, and change the
+environment-variable prefix from `KRONK_TRAINING_` to `KRONK_MOXIE_`.
 
 ### Runtime selection and overrides
 

@@ -1,5 +1,5 @@
-// Package trainapp provides the HTTP API for training jobs.
-package trainapp
+// Package moxieapp provides the HTTP API for training jobs.
+package moxieapp
 
 import (
 	"context"

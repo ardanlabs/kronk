@@ -65,6 +65,14 @@ func configure(cmd *cobra.Command) {
 	cmd.Flags().String("tempo-service-name", "", "Tempo service name")
 	cmd.Flags().Float64("tempo-probability", -1, "Tempo sampling probability (0.0-1.0)")
 
+	// Moxie fine-tuning settings
+	cmd.Flags().Bool("moxie-enabled", false, "Enable Moxie fine-tuning storage and Temporal workers")
+	cmd.Flags().String("moxie-address", "", "Temporal server address for Moxie (default: 127.0.0.1:7233)")
+	cmd.Flags().String("moxie-namespace", "", "Temporal namespace for Moxie (default: default)")
+	cmd.Flags().StringSlice("moxie-models", nil, "Approved model IDs for training (comma separated)")
+	cmd.Flags().String("moxie-root", "", "Moxie data directory (default: ~/.moxie)")
+	cmd.Flags().String("moxie-database-url", "", "PostgreSQL connection URL for Moxie (empty uses file storage)")
+
 	// Catalog settings
 	cmd.Flags().String("model-config-file", "", "Special config file for model specific config")
 

@@ -116,7 +116,7 @@ There are no stage-specific provider subpackages or compatibility aliases.
   not claim that execution has already stopped or that committed outputs are gone.
 - Host infrastructure can still use `job.Jobs().Wait`, `Pause`, `Resume`, `History`
   and `Subscribe`. Foundation owns their actual execution semantics.
-- `trainapp` receives the host-owned datasets service explicitly. Preparation and
+- `moxieapp` receives the host-owned datasets service explicitly. Preparation and
   shared run operations go through `datasets.Service`, which calls this job.
   Training authorization/evaluation/adapter handlers retain their training API.
   HTTP does not discover storage through the job or interpret Temporal errors.

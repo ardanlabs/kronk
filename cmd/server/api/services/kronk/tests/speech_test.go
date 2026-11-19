@@ -149,7 +149,7 @@ func Test_API_SpeechContracts(t *testing.T) {
 			}
 			table = append(table, apitest.Table{
 				Name: format, URL: "/v1/audio/speech", Method: http.MethodPost, Token: token,
-				RawBody:    []byte(fmt.Sprintf(`{"model":"test/missing","input":"Hello","voice":"default","response_format":%q}`, format)),
+				RawBody:    fmt.Appendf(nil, `{"model":"test/missing","input":"Hello","voice":"default","response_format":%q}`, format),
 				StatusCode: status, GotResp: &errs.Error{}, ResponseCmpFunc: jsonContentType,
 				CmpFunc: func(got, _ any) string {
 					g := got.(*errs.Error)

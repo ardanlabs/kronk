@@ -16,6 +16,8 @@ type KMSCompleter struct {
 }
 
 // NewKMSCompleter constructs a model-pool-backed structured completer.
+// Preparation uses a separate pool entry with a 16K context window and IMC off,
+// leaving normal inference settings unchanged.
 // Temporal owns retries; each completion makes a single model request.
 func NewKMSCompleter(modelPool *pool.Pool) (*KMSCompleter, error) {
 	if modelPool == nil {
@@ -24,7 +26,13 @@ func NewKMSCompleter(modelPool *pool.Pool) (*KMSCompleter, error) {
 
 	c := KMSCompleter{
 		chat: func(ctx context.Context, modelID string, request model.D) (model.ChatResponse, int, error) {
-			krn, err := modelPool.AquireModel(ctx, modelID)
+			cfg, err := modelPool.ResolvedKronkConfig(modelID)
+			if err != nil {
+				return model.ChatResponse{}, 0, fmt.Errorf("resolve completion model: %w", err)
+			}
+			cfg.PtrContextWindow = new(16384)
+			cfg.PtrIncrementalCache = new(false)
+			krn, err := modelPool.AquireCustom(ctx, modelID+"/custom/preparation", cfg)
 			if err != nil {
 				return model.ChatResponse{}, 0, fmt.Errorf("acquire completion model: %w", err)
 			}

@@ -14,6 +14,7 @@ func TestCustomModelID(t *testing.T) {
 	}{
 		{name: "accuracy", key: "owner/model/custom/accuracy", want: "owner/model"},
 		{name: "efficiency profile", key: "owner/model/profile/custom/efficiency", want: "owner/model/profile"},
+		{name: "preparation", key: "owner/model/custom/preparation", want: "owner/model"},
 		{name: "playground", key: "owner/model/playground/session", want: "owner/model"},
 		{name: "training", key: "owner/model/training/run", want: "owner/model"},
 		{name: "training profile", key: "owner/model/profile/training/session", want: "owner/model/profile"},

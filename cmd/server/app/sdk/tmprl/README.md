@@ -18,7 +18,7 @@ job's public API.
 - `jobs/training/` owns plan/model/review/control rules, execution observations,
   report/adapter readiness and ETA. It calls foundation for execution and uses
   `datasets/store` to save results, never the parent datasets service.
-- `app/domain/trainapp` owns HTTP authorization, decoding, conversion, polling
+- `app/domain/moxieapp` owns HTTP authorization, decoding, conversion, polling
   response timing/revisions, and downloads. Preparation follows HTTP → datasets →
   Jobs → foundation/Temporal. Training authorization, evaluation and adapter
   endpoints remain on the training path. Existing mixed run URLs are unchanged;

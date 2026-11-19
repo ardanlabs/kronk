@@ -62,6 +62,7 @@ func TestNewConfigAuthorizationMode(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	unsetEnv(t, "KRONK_HF_TOKEN")
 	unsetEnv(t, "KRONK_LLAMA_LOG")
+	unsetEnv(t, "KRONK_MOXIE_ENABLED")
 
 	path := filepath.Join(t.TempDir(), "model_config.yaml")
 	data := []byte(`version: 2
@@ -78,14 +79,13 @@ kms:
     mode: authenticated
   mcp:
     enabled: false
-  training:
+  moxie:
     enabled: true
     address: yaml-temporal.example:7233
     namespace: moxie
     models:
       - huggingface/model-a
       - huggingface/model-b
-  moxie:
     root: /yaml/moxie
     database-url: postgres://yaml:yaml-secret@localhost/moxiedb
   pool:
@@ -106,7 +106,7 @@ kms:
 	t.Setenv("KRONK_LIB_DOWNLOAD_ENABLED", "false")
 	t.Setenv("KRONK_MEDIA_BACKENDS_ENABLED", "false")
 	t.Setenv("KRONK_LIB_VERIFY_ENABLED", "true")
-	t.Setenv("KRONK_TRAINING_ADDRESS", "env-temporal.example:7233")
+	t.Setenv("KRONK_MOXIE_ADDRESS", "env-temporal.example:7233")
 	t.Setenv("KRONK_MOXIE_DATABASE_URL", "postgres://env:private-test-password@localhost/moxiedb")
 
 	cfg, err := loadConfig(false)
@@ -123,11 +123,15 @@ kms:
 	if cfg.MCP.Enabled {
 		t.Error("MCP.Enabled: got true, want false")
 	}
-	if !cfg.Training.Enabled || cfg.Training.Address != "env-temporal.example:7233" || cfg.Training.Namespace != "moxie" || len(cfg.Training.Models) != 2 || cfg.Training.Models[0] != "huggingface/model-a" || cfg.Training.Models[1] != "huggingface/model-b" {
-		t.Errorf("Training: unexpected configuration %+v", cfg.Training)
+	if !cfg.Moxie.Enabled || cfg.Moxie.Address != "env-temporal.example:7233" || cfg.Moxie.Namespace != "moxie" || len(cfg.Moxie.Models) != 2 || cfg.Moxie.Models[0] != "huggingface/model-a" || cfg.Moxie.Models[1] != "huggingface/model-b" {
+		t.Error("unexpected Moxie worker configuration")
 	}
-	if cfg.Moxie.Root != "/yaml/moxie" || !strings.Contains(cfg.Moxie.DatabaseURL, "private-test-password") {
+	if !cfg.Moxie.Enabled || cfg.Moxie.Root != "/yaml/moxie" || !strings.Contains(cfg.Moxie.DatabaseURL, "private-test-password") {
 		t.Fatal("Moxie YAML defaults or environment precedence changed")
+	}
+	t.Setenv("KRONK_MOXIE_ENABLED", "false")
+	if overridden, err := loadConfig(false); err != nil || overridden.Moxie.Enabled {
+		t.Fatalf("Moxie environment override: got enabled=%t error=%v, want false and nil", overridden.Moxie.Enabled, err)
 	}
 	printed, err := conf.String(&cfg)
 	if err != nil || strings.Contains(printed, "private-test-password") || strings.Contains(printed, "yaml-secret") {
@@ -233,24 +237,32 @@ func TestLoadConfigVersionOneCompatibility(t *testing.T) {
 	}
 }
 
-func TestTrainingConfig(t *testing.T) {
-	cfg := newConfig().Training
+func TestMoxieConfig(t *testing.T) {
+	cfg := newConfig().Moxie
 	if cfg.Enabled || cfg.Address != "127.0.0.1:7233" || cfg.Namespace != "default" || len(cfg.Models) != 0 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	for _, test := range []struct {
 		name      string
-		cfg       trainingConfig
+		enabled   bool
+		address   string
+		namespace string
+		models    []string
 		wantError bool
 	}{
-		{"disabled", trainingConfig{}, false},
-		{"enabled", trainingConfig{Enabled: true, Address: "localhost:7233", Namespace: "default", Models: []string{"huggingface/model"}}, false},
-		{"no-models", trainingConfig{Enabled: true, Address: "localhost:7233", Namespace: "default"}, true},
-		{"no-address", trainingConfig{Enabled: true, Namespace: "default", Models: []string{"huggingface/model"}}, true},
-		{"no-namespace", trainingConfig{Enabled: true, Address: "localhost:7233", Models: []string{"huggingface/model"}}, true},
+		{"disabled", false, "", "", nil, false},
+		{"enabled", true, "localhost:7233", "default", []string{"huggingface/model"}, false},
+		{"no-models", true, "localhost:7233", "default", nil, true},
+		{"no-address", true, "", "default", []string{"huggingface/model"}, true},
+		{"no-namespace", true, "localhost:7233", "", []string{"huggingface/model"}, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := validateTrainingConfig(test.cfg); (err != nil) != test.wantError {
+			cfg := newConfig()
+			cfg.Moxie.Enabled = test.enabled
+			cfg.Moxie.Address = test.address
+			cfg.Moxie.Namespace = test.namespace
+			cfg.Moxie.Models = test.models
+			if err := validateMoxieConfig(cfg); (err != nil) != test.wantError {
 				t.Fatalf("validation: %v, want error %t", err, test.wantError)
 			}
 		})
@@ -397,6 +409,35 @@ func TestMoxieRoot(t *testing.T) {
 	}
 	if newConfig().Moxie.DatabaseURL != "" {
 		t.Fatal("SQL mode must remain explicit")
+	}
+	if newConfig().Moxie.Enabled {
+		t.Fatal("Moxie must be disabled by default")
+	}
+}
+
+func TestStartMoxieOptIn(t *testing.T) {
+	for name, enabled := range map[string]bool{"disabled": false, "enabled": true} {
+		t.Run(name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "moxie")
+			// Disabled Moxie ignores invalid settings; enabled Moxie validates
+			// them before initializing storage or contacting any service.
+			cfg := newConfig()
+			cfg.Moxie.Enabled = enabled
+			cfg.Moxie.Root = root
+			cfg.Moxie.DatabaseURL = "invalid-database-url"
+			got, stop, err := startMoxie(t.Context(), nil, cfg, nil, nil)
+			if (err != nil) != enabled {
+				t.Fatalf("Moxie validation: got %v, want error=%t", err, enabled)
+			}
+			t.Cleanup(stop)
+			if got.Uploads != nil || got.Datasets != nil || got.Job != nil {
+				t.Fatalf("Moxie services: got %+v, want no resources", got)
+			}
+			_, err = os.Stat(root)
+			if !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("Moxie directory: got %v, want no directory", err)
+			}
+		})
 	}
 }
 

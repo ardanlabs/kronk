@@ -11,6 +11,7 @@
   - [SWA Cache Default and MTP Physical Batches](#v1333-swa-cache-default-and-mtp-physical-batches)
   - [Multi-GPU AutoTune Batch Default](#v1333-multi-gpu-autotune-batch-default)
   - [Inference Metrics](#v1333-inference-metrics)
+  - [Moxie Startup Opt-In](#v1333-moxie-startup-opt-in)
   - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
   - [Internal Parser Packages](#v1333-internal-parser-packages)
   - [Shared ffmpeg Package](#v1333-shared-ffmpeg-package)
@@ -244,6 +245,21 @@ responses, or explicitly convert at boundaries that require fixed-width values.
 channel, excluding the WAV header. Duration and generated audio are unchanged.
 Response literals should use named fields; the new `Stereo bool` field is false
 for existing mono speech models.
+
+### v1.33.3: Moxie Startup Opt-In
+
+Moxie fine-tuning services now default to disabled. Set `KRONK_MOXIE_ENABLED=true`
+or `kms.moxie.enabled: true` in `model_config.yaml` to enable them.
+
+All fine-tuning settings now belong to `kms.moxie`. Move `enabled`, `address`,
+`namespace`, and `models` from `kms.training` into `kms.moxie`, alongside `root`
+and `database-url`. Rename `KRONK_TRAINING_*` environment variables to
+`KRONK_MOXIE_*`. There is no separate training enable switch.
+
+When disabled, Kronk does not initialize Moxie storage or dataset catalogs,
+connect to its database, or start Temporal workers. Enabling Moxie starts its
+storage and workers together and requires a Temporal address, namespace, and
+approved model IDs. Model weights need not already be downloaded at startup.
 
 ### v1.33.3: Internal Parser Packages
 

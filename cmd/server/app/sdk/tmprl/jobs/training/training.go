@@ -39,6 +39,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
@@ -112,21 +113,24 @@ func Describe(run tmprl.Run[Request, Artifacts]) State {
 }
 
 // Config supplies worker-local training resources, not execution policies.
-// Models maps approved identifiers to GGUF paths. Trainer defaults to GoMLX.
+// Models maps approved identifiers to GGUF paths. Empty paths are resolved from
+// ModelCatalog when training is submitted or executed, not at worker startup.
+// Trainer defaults to GoMLX.
 // ModelPool supplies KMS inference for the default trainer and completer.
 type Config struct {
-	TaskQueue   string
-	Namespace   string
-	Uploads     *uploads.Store
-	Datasets    *datasetstore.Store
-	MoxieDB     *moxiedb.DB
-	StorageRoot string
-	Models      map[string]string
-	Trainer     optimization.Trainer
-	ModelPool   *pool.Pool
-	Extractor   preparation.DocumentExtractor
-	Completer   preparation.ModelCompleter
-	Log         applog.Logger
+	TaskQueue    string
+	Namespace    string
+	Uploads      *uploads.Store
+	Datasets     *datasetstore.Store
+	MoxieDB      *moxiedb.DB
+	StorageRoot  string
+	Models       map[string]string
+	ModelCatalog *models.Models
+	Trainer      optimization.Trainer
+	ModelPool    *pool.Pool
+	Extractor    preparation.DocumentExtractor
+	Completer    preparation.ModelCompleter
+	Log          applog.Logger
 }
 
 // Job validates training submissions and connects stage resources to the runner.
@@ -161,8 +165,11 @@ func New(c client.Client, cfg Config) (*Job, error) {
 	}
 	cfg.Models = maps.Clone(cfg.Models)
 	for id, path := range cfg.Models {
-		if strings.TrimSpace(id) == "" || path == "" {
+		if strings.TrimSpace(id) == "" || path == "" && cfg.ModelCatalog == nil {
 			return nil, fmt.Errorf("%w: model identifiers and paths are required", tmprl.ErrInvalidArgument)
+		}
+		if path == "" {
+			continue
 		}
 		absolute, err := filepath.Abs(path)
 		if err != nil {
@@ -477,8 +484,14 @@ func (j *Job) OpenDataset(ctx context.Context, e tmprl.Execution) (io.ReadCloser
 
 func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 	r.ID, r.Model, r.DatasetID = strings.TrimSpace(r.ID), strings.TrimSpace(r.Model), strings.TrimSpace(r.DatasetID)
-	if len(r.ID) > 200 || !r.PreparationOnly && j.cfg.Models[r.Model] == "" {
+	_, approved := j.cfg.Models[r.Model]
+	if len(r.ID) > 200 || !r.PreparationOnly && !approved {
 		return Request{}, fmt.Errorf("%w: approved model and ID of at most 200 bytes are required", tmprl.ErrInvalidArgument)
+	}
+	if !r.PreparationOnly {
+		if _, err := j.modelPath(r.Model); err != nil {
+			return Request{}, err
+		}
 	}
 	inputs := 0
 	for _, selected := range []bool{r.Prepare != nil, r.DatasetID != "", r.SavedDataset != nil} {
@@ -671,6 +684,29 @@ func (j *Job) records(ctx context.Context, request Request, artifacts Artifacts,
 	return records, nil
 }
 
+// modelPath resolves approved models against the current catalog so a download
+// becomes available without restarting the worker.
+func (j *Job) modelPath(id string) (string, error) {
+	path, approved := j.cfg.Models[id]
+	if !approved {
+		return "", fmt.Errorf("%w: training model %q is not approved", tmprl.ErrInvalidArgument, id)
+	}
+	if path != "" {
+		return path, nil
+	}
+	resolved, err := j.cfg.ModelCatalog.FullPath(id)
+	if errors.Is(err, models.ErrModelNotFound) {
+		return "", fmt.Errorf("%w: training model %q is not downloaded; download it using HF Pull", tmprl.ErrInvalidArgument, id)
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolving training model %q: %w", id, err)
+	}
+	if len(resolved.ModelFiles) != 1 || resolved.ModelFiles[0] == "" {
+		return "", fmt.Errorf("%w: training model %q must resolve to one GGUF file", tmprl.ErrInvalidArgument, id)
+	}
+	return resolved.ModelFiles[0], nil
+}
+
 // trainingContext resolves immutable inputs and borrows foundation's workspace.
 // It does not own activity identity, heartbeats, retries, or completed-step commits.
 func (j *Job) trainingContext(ctx context.Context, input tmprl.StepContext[Request, Artifacts]) (optimization.StepContext, error) {
@@ -679,7 +715,10 @@ func (j *Job) trainingContext(ctx context.Context, input tmprl.StepContext[Reque
 	if err != nil {
 		return optimization.StepContext{}, err
 	}
-	modelPath := j.cfg.Models[r.Request.Model]
+	modelPath, err := j.modelPath(r.Request.Model)
+	if err != nil {
+		return optimization.StepContext{}, err
+	}
 	file, err := os.Open(modelPath)
 	if err != nil {
 		return optimization.StepContext{}, err

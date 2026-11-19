@@ -1,4 +1,4 @@
-package trainapp
+package moxieapp
 
 import (
 	"bytes"

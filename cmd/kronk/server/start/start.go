@@ -185,6 +185,14 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	addString("tempo-service-name", "KRONK_TEMPO_SERVICE_NAME")
 	addFloat("tempo-probability", "KRONK_TEMPO_PROBABILITY")
 
+	// Moxie fine-tuning settings
+	addBool("moxie-enabled", "KRONK_MOXIE_ENABLED")
+	addString("moxie-address", "KRONK_MOXIE_ADDRESS")
+	addString("moxie-namespace", "KRONK_MOXIE_NAMESPACE")
+	addStringSlice("moxie-models", "KRONK_MOXIE_MODELS")
+	addString("moxie-root", "KRONK_MOXIE_ROOT")
+	addString("moxie-database-url", "KRONK_MOXIE_DATABASE_URL")
+
 	// Pool settings
 	addString("model-config-file", "KRONK_POOL_MODEL_CONFIG_FILE")
 	addInt("budget-percent", "KRONK_POOL_BUDGET_PERCENT")

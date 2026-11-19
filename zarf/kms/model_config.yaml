@@ -203,8 +203,8 @@ kms:
   download:
     enabled: true
   insecure-logging: true
-  training:
-    enabled: true
+  moxie:
+    enabled: false
     address: 127.0.0.1:7233
     namespace: default
     models:

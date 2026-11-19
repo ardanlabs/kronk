@@ -1,4 +1,4 @@
-package trainapp_test
+package moxieapp_test
 
 import (
 	"bytes"
@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/domain/trainapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/moxieapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
@@ -72,10 +72,10 @@ func testAPI(t *testing.T, c *mocks.Client) (*web.App, *uploads.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
+	log := logger.New(io.Discard, logger.LevelInfo, "moxieapp-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
 	service := datasets.New(datasets.Config{Files: job.Datasets(), Job: job, Uploads: store})
-	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: service, AuthorizationMode: auth.Open})
+	moxieapp.Routes(api, moxieapp.Config{Job: job, Uploads: store, Datasets: service, AuthorizationMode: auth.Open})
 	return api, store
 }
 
@@ -149,7 +149,7 @@ func TestCatalogHTTPWithoutWorker(t *testing.T) {
 	}
 	log := logger.New(io.Discard, logger.LevelInfo, "catalog-http-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	trainapp.Routes(api, trainapp.Config{Datasets: service, AuthorizationMode: auth.Open})
+	moxieapp.Routes(api, moxieapp.Config{Datasets: service, AuthorizationMode: auth.Open})
 	get := func(path string) *httptest.ResponseRecorder {
 		t.Helper()
 		w := httptest.NewRecorder()
@@ -177,7 +177,7 @@ func TestCatalogHTTPWithoutWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := get("/v1/training/runs?mode=preparation&status=waiting&page_size=1")
-	var page trainapp.Runs
+	var page moxieapp.Runs
 	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func testPreparationDatasetRoutes(t *testing.T, db *moxiedb.DB) {
 	if err := service.Initialize(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	trainapp.Routes(api, trainapp.Config{Datasets: service, AuthorizationMode: auth.Open})
+	moxieapp.Routes(api, moxieapp.Config{Datasets: service, AuthorizationMode: auth.Open})
 	request := func(method, path, body string, status int) *httptest.ResponseRecorder {
 		t.Helper()
 		w := httptest.NewRecorder()
@@ -240,7 +240,7 @@ func testPreparationDatasetRoutes(t *testing.T, db *moxiedb.DB) {
 		return w
 	}
 	created := request(http.MethodPost, "/v1/training/datasets", `{"name":"Harbor"}`, http.StatusOK)
-	var dataset trainapp.Dataset
+	var dataset moxieapp.Dataset
 	if err := json.Unmarshal(created.Body.Bytes(), &dataset); err != nil || dataset.Name != "Harbor" || dataset.Version != 1 {
 		t.Fatalf("create: %+v, %v", dataset, err)
 	}
@@ -280,7 +280,7 @@ func testPreparationDatasetRoutes(t *testing.T, db *moxiedb.DB) {
 		{"?version=3", 3, 0, false},
 	} {
 		response := request(http.MethodGet, path+test.query, "", http.StatusOK)
-		var snapshot trainapp.Dataset
+		var snapshot moxieapp.Dataset
 		if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil || snapshot.Version != test.version || snapshot.RecordCount != test.count || snapshot.TrainingRecords != test.count || snapshot.TrainingReady != test.ready {
 			t.Fatalf("snapshot %s: %+v, %v", test.query, snapshot, err)
 		}
@@ -344,7 +344,7 @@ func TestUploadOnlyRoutes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			log := logger.New(io.Discard, logger.LevelInfo, "upload-only-test", nil)
 			api := web.NewApp(log.Info, mid.Errors(log))
-			trainapp.Routes(api, trainapp.Config{Uploads: test.store, AuthorizationMode: auth.Open})
+			moxieapp.Routes(api, moxieapp.Config{Uploads: test.store, AuthorizationMode: auth.Open})
 			w := httptest.NewRecorder()
 			api.ServeHTTP(w, uploadRequest(t, map[string][]string{"file": {"harbor.txt"}}, "The harbor opens at dawn."))
 			if w.Code != test.status {
@@ -378,7 +378,7 @@ func TestUpload(t *testing.T) {
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("upload: %d %s", w.Code, w.Body)
 	}
-	var got trainapp.Upload
+	var got moxieapp.Upload
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func TestUploadValidation(t *testing.T) {
 			}
 			log := logger.New(io.Discard, logger.LevelInfo, "upload-test", nil)
 			api := web.NewApp(log.Info, mid.Errors(log))
-			trainapp.Routes(api, trainapp.Config{Uploads: store, AuthorizationMode: auth.Open})
+			moxieapp.Routes(api, moxieapp.Config{Uploads: store, AuthorizationMode: auth.Open})
 			w := httptest.NewRecorder()
 			api.ServeHTTP(w, uploadRequest(t, test.fields, test.data))
 			if w.Code != test.status {
@@ -484,7 +484,7 @@ func TestReadState(t *testing.T) {
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("response: %d %s", w.Code, w.Body)
 	}
-	var got trainapp.Run
+	var got moxieapp.Run
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -553,11 +553,11 @@ func TestReadSavedDatasetTraining(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("response: %d %s", w.Code, w.Body)
 			}
-			var got trainapp.Run
+			var got moxieapp.Run
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			wantSettings := trainapp.TrainingOptions{MaximumEpochs: 4, BatchSize: 2, LearningRate: 0.0003, Seed: 7, LoRARank: 8, LoRAAlpha: 16}
+			wantSettings := moxieapp.TrainingOptions{MaximumEpochs: 4, BatchSize: 2, LearningRate: 0.0003, Seed: 7, LoRARank: 8, LoRAAlpha: 16}
 			if got.TrainingDatasetID != "dataset-AAAAAAAAAAAAAAAAAAAAAAAAAA" || got.TrainingDatasetVersion != 3 || got.TrainingSettings != wantSettings || got.EvaluationResult != test.want {
 				t.Fatalf("training run: %+v", got)
 			}
@@ -609,7 +609,7 @@ func TestReadProgressEstimate(t *testing.T) {
 			c.On("DescribeWorkflowExecution", mock.Anything, e.WorkflowID, e.RunID).Return(description, nil)
 			w := httptest.NewRecorder()
 			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
-			var got trainapp.Run
+			var got moxieapp.Run
 			if w.Code != http.StatusOK {
 				t.Fatalf("response: %d %s", w.Code, w.Body)
 			}
@@ -679,7 +679,7 @@ func TestDownloadDataset(t *testing.T) {
 			}
 			w = httptest.NewRecorder()
 			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
-			var run trainapp.Run
+			var run moxieapp.Run
 			if err := json.Unmarshal(w.Body.Bytes(), &run); err != nil || w.Code != http.StatusOK || run.DatasetAvailable != available || run.TrainingReady != ready {
 				t.Fatalf("dataset state: %+v, %v (%d)", run, err, w.Code)
 			}
@@ -765,7 +765,7 @@ func TestDownloadAdapter(t *testing.T) {
 			}
 			w = httptest.NewRecorder()
 			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
-			var run trainapp.Run
+			var run moxieapp.Run
 			wantAvailable := name == "published" || name == "foreign reference" || name == "missing file"
 			if err := json.Unmarshal(w.Body.Bytes(), &run); err != nil || w.Code != http.StatusOK || run.AdapterAvailable != wantAvailable {
 				t.Fatalf("adapter availability: %+v, %v (%d); want %t", run, err, w.Code, wantAvailable)
@@ -856,9 +856,9 @@ func TestReadEvaluation(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			want := trainapp.Evaluation{
+			want := moxieapp.Evaluation{
 				ScoreKind: "normalized_exact_match", BaseCorrect: 4, AdapterCorrect: 12, Total: 20,
-				Answers: []trainapp.EvaluationAnswer{{Prompt: "When does the harbor open?", Expected: "The harbor opens at dawn.", BaseAnswer: "At dawn.", AdapterAnswer: "The harbor opens at sunset."}},
+				Answers: []moxieapp.EvaluationAnswer{{Prompt: "When does the harbor open?", Expected: "The harbor opens at dawn.", BaseAnswer: "At dawn.", AdapterAnswer: "The harbor opens at sunset."}},
 			}
 			wantStatus := http.StatusOK
 			switch name {
@@ -869,7 +869,7 @@ func TestReadEvaluation(t *testing.T) {
 				state.Status = optimization.StatusNeedsImprovement
 			case "diagnostics":
 				state.Status = optimization.StatusNeedsImprovement
-				want.Checks = []trainapp.AcceptanceCheck{{Code: "answer-score", Actual: 12, Required: 14, Passed: false}}
+				want.Checks = []moxieapp.AcceptanceCheck{{Code: "answer-score", Actual: 12, Required: 14, Passed: false}}
 				want.Answers[0].AdapterPassed = new(false)
 			case "not ready":
 				state.Artifacts.Training.Report = ""
@@ -895,7 +895,7 @@ func TestReadEvaluation(t *testing.T) {
 				t.Fatalf("evaluation: %d %s", w.Code, w.Body)
 			}
 			if wantStatus == http.StatusOK {
-				var got trainapp.Evaluation
+				var got moxieapp.Evaluation
 				if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || !reflect.DeepEqual(got, want) {
 					t.Fatalf("report: %+v, %v; want %+v", got, err, want)
 				}
@@ -907,7 +907,7 @@ func TestReadEvaluation(t *testing.T) {
 			}
 			w = httptest.NewRecorder()
 			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
-			var run trainapp.Run
+			var run moxieapp.Run
 			if err := json.Unmarshal(w.Body.Bytes(), &run); err != nil || w.Code != http.StatusOK || run.EvaluationAvailable != (name != "not ready") {
 				t.Fatalf("availability: %+v, %v (%d)", run, err, w.Code)
 			}
@@ -931,11 +931,11 @@ func TestRunIssueEvidence(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, statePath, nil))
-			var got trainapp.Run
+			var got moxieapp.Run
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusOK {
 				t.Fatalf("run diagnostics: %d %s (%v)", w.Code, w.Body, err)
 			}
-			want := []trainapp.RunIssue{{Code: "grounding", Count: 2}, {Code: "task_quality", Count: 1}, {Code: "preparation-omissions", Count: 1}}
+			want := []moxieapp.RunIssue{{Code: "grounding", Count: 2}, {Code: "task_quality", Count: 1}, {Code: "preparation-omissions", Count: 1}}
 			if status == tmprl.StatusRunning {
 				want = nil
 			}
@@ -1202,9 +1202,9 @@ func readyTrainingAPI(t *testing.T, c *mocks.Client) (*web.App, *tmprl.Run[train
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
+	log := logger.New(io.Discard, logger.LevelInfo, "moxieapp-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
-	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthorizationMode: auth.Open})
+	moxieapp.Routes(api, moxieapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthorizationMode: auth.Open})
 	state := &tmprl.Run[training.Request, training.Artifacts]{
 		Status: tmprl.StatusWaiting, Stage: "preparation",
 		Checkpoint: &tmprl.Checkpoint{ID: "run-2/preparation//start-training", Name: "start-training", Stage: "preparation"},
@@ -1465,25 +1465,25 @@ func TestContinuePreviewRejectsBody(t *testing.T) {
 func TestContinuePreviewRejectsReview(t *testing.T) {
 	for _, test := range []struct {
 		name string
-		edit func(*trainapp.ContinuePreview)
+		edit func(*moxieapp.ContinuePreview)
 	}{
-		{"blank checkpoint", func(r *trainapp.ContinuePreview) { r.CheckpointID = " " }},
-		{"long checkpoint", func(r *trainapp.ContinuePreview) { r.CheckpointID = strings.Repeat("c", 513) }},
-		{"blank submission", func(r *trainapp.ContinuePreview) { r.SubmissionID = " " }},
-		{"long submission", func(r *trainapp.ContinuePreview) { r.SubmissionID = strings.Repeat("s", 201) }},
-		{"wrong checkpoint", func(r *trainapp.ContinuePreview) { r.CheckpointID = "another-run/preparation/preview/preview-review" }},
-		{"changed evidence", func(r *trainapp.ContinuePreview) { r.Records[0].Evidence = "The harbor opens at noon." }},
-		{"changed source", func(r *trainapp.ContinuePreview) { r.Records[0].SourceDocument = "another-upload" }},
-		{"reordered", func(r *trainapp.ContinuePreview) { r.Records[0], r.Records[1] = r.Records[1], r.Records[0] }},
-		{"missing record", func(r *trainapp.ContinuePreview) { r.Records = r.Records[:1] }},
-		{"null records", func(r *trainapp.ContinuePreview) { r.Records = nil }},
-		{"blank prompt", func(r *trainapp.ContinuePreview) { r.Records[0].Prompt = " " }},
-		{"blank target", func(r *trainapp.ContinuePreview) { r.Records[0].Target = " " }},
-		{"duplicate prompts", func(r *trainapp.ContinuePreview) { r.Records[0].Prompt = r.Records[1].Prompt }},
+		{"blank checkpoint", func(r *moxieapp.ContinuePreview) { r.CheckpointID = " " }},
+		{"long checkpoint", func(r *moxieapp.ContinuePreview) { r.CheckpointID = strings.Repeat("c", 513) }},
+		{"blank submission", func(r *moxieapp.ContinuePreview) { r.SubmissionID = " " }},
+		{"long submission", func(r *moxieapp.ContinuePreview) { r.SubmissionID = strings.Repeat("s", 201) }},
+		{"wrong checkpoint", func(r *moxieapp.ContinuePreview) { r.CheckpointID = "another-run/preparation/preview/preview-review" }},
+		{"changed evidence", func(r *moxieapp.ContinuePreview) { r.Records[0].Evidence = "The harbor opens at noon." }},
+		{"changed source", func(r *moxieapp.ContinuePreview) { r.Records[0].SourceDocument = "another-upload" }},
+		{"reordered", func(r *moxieapp.ContinuePreview) { r.Records[0], r.Records[1] = r.Records[1], r.Records[0] }},
+		{"missing record", func(r *moxieapp.ContinuePreview) { r.Records = r.Records[:1] }},
+		{"null records", func(r *moxieapp.ContinuePreview) { r.Records = nil }},
+		{"blank prompt", func(r *moxieapp.ContinuePreview) { r.Records[0].Prompt = " " }},
+		{"blank target", func(r *moxieapp.ContinuePreview) { r.Records[0].Target = " " }},
+		{"duplicate prompts", func(r *moxieapp.ContinuePreview) { r.Records[0].Prompt = r.Records[1].Prompt }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			api, _ := reviewAPI(t, new(mocks.Client))
-			var request trainapp.ContinuePreview
+			var request moxieapp.ContinuePreview
 			if err := json.Unmarshal([]byte(continueBody), &request); err != nil {
 				t.Fatal(err)
 			}
@@ -1667,7 +1667,7 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 					t.Errorf("auth server: %v", err)
 				}
 			})
-			log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
+			log := logger.New(io.Discard, logger.LevelInfo, "moxieapp-test", nil)
 			client, err := authclient.New(log, "passthrough:///auth", authclient.WithDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 				return listener.DialContext(ctx)
 			}))
@@ -1693,7 +1693,7 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 							t.Skip("set MOXIE_UPLOAD_TESTS=1 to run upload regressions")
 						}
 						api := web.NewApp(log.Info, mid.Errors(log))
-						trainapp.Routes(api, trainapp.Config{Uploads: store, AuthClient: client, AuthorizationMode: mode})
+						moxieapp.Routes(api, moxieapp.Config{Uploads: store, AuthClient: client, AuthorizationMode: mode})
 						w := httptest.NewRecorder()
 						api.ServeHTTP(w, uploadRequest(t, map[string][]string{"file": {"harbor.txt"}}, "The harbor opens at dawn."))
 						if w.Code != test.status {
@@ -1711,7 +1711,7 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 						}
 					})
 					api := web.NewApp(log.Info, mid.Errors(log))
-					trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthClient: client, AuthorizationMode: mode})
+					moxieapp.Routes(api, moxieapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthClient: client, AuthorizationMode: mode})
 					for _, method := range []string{http.MethodGet, http.MethodPost} {
 						path := statePath
 						if method == http.MethodPost {
@@ -1782,7 +1782,7 @@ func preparedDataset(t *testing.T, api *web.App) string {
 	if w.Code != http.StatusOK {
 		t.Fatalf("upload: %d %s", w.Code, w.Body)
 	}
-	var file trainapp.Upload
+	var file moxieapp.Upload
 	if err := json.Unmarshal(w.Body.Bytes(), &file); err != nil {
 		t.Fatal(err)
 	}
@@ -1810,7 +1810,7 @@ func TestCreateTraining(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("response: %d %s", w.Code, w.Body)
 	}
-	var got trainapp.Run
+	var got moxieapp.Run
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -1835,7 +1835,7 @@ func TestCreatePreparation(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("upload: %d %s", w.Code, w.Body)
 	}
-	var file trainapp.Upload
+	var file moxieapp.Upload
 	if err := json.Unmarshal(w.Body.Bytes(), &file); err != nil {
 		t.Fatal(err)
 	}
@@ -1859,7 +1859,7 @@ func TestCreatePreparation(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("response: %d %s", w.Code, w.Body)
 	}
-	var got trainapp.Run
+	var got moxieapp.Run
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -1867,7 +1867,7 @@ func TestCreatePreparation(t *testing.T) {
 		t.Fatalf("unexpected submitted state: %+v", got)
 	}
 	// Settings echo the job's normalized request, not the raw HTTP input.
-	wantSettings := trainapp.RunSettings{Model: "catalog/qwen", Goal: "question_answer", Instructions: "Answer briefly.", PageStart: 11, PageEnd: 25, MaxQuestions: 50}
+	wantSettings := moxieapp.RunSettings{Model: "catalog/qwen", Goal: "question_answer", Instructions: "Answer briefly.", PageStart: 11, PageEnd: 25, MaxQuestions: 50}
 	if got.SourceDocument != "source.pdf" || got.Settings != wantSettings {
 		t.Fatalf("run identity: source %q, settings %+v", got.SourceDocument, got.Settings)
 	}
@@ -1903,10 +1903,10 @@ func TestCreatePreparationRejectsDocumentInDataset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := logger.New(io.Discard, logger.LevelInfo, "trainapp-test", nil)
+	log := logger.New(io.Discard, logger.LevelInfo, "moxieapp-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
 	service := datasets.New(datasets.Config{Files: job.Datasets(), Job: job})
-	trainapp.Routes(api, trainapp.Config{Job: job, Uploads: store, Datasets: service, AuthorizationMode: auth.Open})
+	moxieapp.Routes(api, moxieapp.Config{Job: job, Uploads: store, Datasets: service, AuthorizationMode: auth.Open})
 	file, err := store.Put(t.Context(), uploads.Input{Name: "harbor.md"}, strings.NewReader("The harbor opens at dawn."))
 	if err != nil {
 		t.Fatal(err)
@@ -2089,7 +2089,7 @@ func TestRunControlsHTTP(t *testing.T) {
 			}}, nil)
 			log := logger.New(io.Discard, logger.LevelInfo, "controls-http-test", nil)
 			api := web.NewApp(log.Info, mid.Errors(log))
-			trainapp.Routes(api, trainapp.Config{Job: job, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job, DB: db}), AuthorizationMode: auth.Open})
+			moxieapp.Routes(api, moxieapp.Config{Job: job, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job, DB: db}), AuthorizationMode: auth.Open})
 			for _, test := range []struct {
 				action, command, id string
 				revision            int64
@@ -2124,7 +2124,7 @@ func TestRunControlsHTTP(t *testing.T) {
 							t.Fatalf("control response: %d %s", w.Code, w.Body)
 						}
 						if test.code == http.StatusOK {
-							var got trainapp.ControlReceipt
+							var got moxieapp.ControlReceipt
 							if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.RequestID != test.id || got.Action != test.command || got.Revision != test.revision+1 || strings.Contains(w.Body.String(), `"status"`) {
 								t.Fatalf("receipt fabricated state or lost identity: %s %v", w.Body, err)
 							}
@@ -2190,7 +2190,7 @@ func TestListTrainingRuns(t *testing.T) {
 	log := logger.New(io.Discard, logger.LevelInfo, "datasets-runs-test", nil)
 	api := web.NewApp(log.Info, mid.Errors(log))
 	// Run reads must go through datasets, not require an HTTP-owned training job.
-	trainapp.Routes(api, trainapp.Config{Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthorizationMode: auth.Open})
+	moxieapp.Routes(api, moxieapp.Config{Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthorizationMode: auth.Open})
 	state := tmprl.Run[training.Request, training.Artifacts]{
 		Status: tmprl.StatusPaused, Request: training.Request{Model: "/private/model"},
 		Stages: []tmprl.StageState{{Name: "training", Status: tmprl.StatusPaused, Steps: []tmprl.StepState{{Name: "train", Status: tmprl.StatusPaused, Attempt: 2}}}},
@@ -2216,7 +2216,7 @@ func TestListTrainingRuns(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("response: %d %s", w.Code, w.Body)
 	}
-	var got trainapp.Runs
+	var got moxieapp.Runs
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -2231,7 +2231,7 @@ func TestListTrainingRuns(t *testing.T) {
 	}).Return(&workflowservice.ListWorkflowExecutionsResponse{}, nil).Once()
 	w = httptest.NewRecorder()
 	api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/training/runs?page_size=7&next_page_token="+got.NextPageToken, nil))
-	var last trainapp.Runs
+	var last moxieapp.Runs
 	if err := json.Unmarshal(w.Body.Bytes(), &last); err != nil {
 		t.Fatal(err)
 	}
@@ -2275,7 +2275,7 @@ func TestTrainingLongPoll(t *testing.T) {
 	c.On("ListWorkflow", mock.Anything, mock.Anything).Return(&workflowservice.ListWorkflowExecutionsResponse{}, nil).Once()
 	w := httptest.NewRecorder()
 	api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/training/runs", nil))
-	var baseline trainapp.Runs
+	var baseline moxieapp.Runs
 	if err := json.Unmarshal(w.Body.Bytes(), &baseline); err != nil {
 		t.Fatal(err)
 	}
@@ -2306,7 +2306,7 @@ func TestTrainingLongPoll(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("job change did not release long poll")
 	}
-	var changed trainapp.Runs
+	var changed moxieapp.Runs
 	if err := json.Unmarshal(w.Body.Bytes(), &changed); err != nil {
 		t.Fatal(err)
 	}
@@ -2342,7 +2342,7 @@ func TestPreviewLongPoll(t *testing.T) {
 			c.On("ListWorkflow", mock.Anything, mock.Anything).Return(page(), nil).Once()
 			w := httptest.NewRecorder()
 			api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/training/runs", nil))
-			var baseline trainapp.Runs
+			var baseline moxieapp.Runs
 			if err := json.Unmarshal(w.Body.Bytes(), &baseline); err != nil || w.Code != http.StatusOK || baseline.Revision == "" {
 				t.Fatalf("baseline: %d %s, %v", w.Code, w.Body, err)
 			}
@@ -2371,7 +2371,7 @@ func TestPreviewLongPoll(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("Preview/checkpoint change did not release long poll")
 			}
-			var changed trainapp.Runs
+			var changed moxieapp.Runs
 			if err := json.Unmarshal(w.Body.Bytes(), &changed); err != nil || w.Code != http.StatusOK || changed.Revision == baseline.Revision || len(changed.Runs) != 1 {
 				t.Fatalf("changed state: %d %s, %v", w.Code, w.Body, err)
 			}
@@ -2392,7 +2392,7 @@ func TestTrainingLongPollCancellation(t *testing.T) {
 	c.On("ListWorkflow", mock.Anything, mock.Anything).Return(&workflowservice.ListWorkflowExecutionsResponse{}, nil)
 	w := httptest.NewRecorder()
 	api.ServeHTTP(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/training/runs", nil))
-	var baseline trainapp.Runs
+	var baseline moxieapp.Runs
 	if err := json.Unmarshal(w.Body.Bytes(), &baseline); err != nil {
 		t.Fatal(err)
 	}

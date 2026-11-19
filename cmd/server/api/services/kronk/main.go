@@ -21,7 +21,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
-	"github.com/ardanlabs/kronk/cmd/server/app/domain/trainapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/moxieapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
@@ -49,7 +49,6 @@ import (
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/worker"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -106,10 +105,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	}
 	if err := validateTimeoutConfig(cfg.Web.InferenceTimeout, cfg.Web.WriteTimeout); err != nil {
 		return err
-	}
-	if err := validateTrainingConfig(cfg.Training); err != nil {
-		log.Error(ctx, "startup", "status", "fine-tuning disabled", "ERROR", err)
-		cfg.Training.Enabled = false
 	}
 
 	// -------------------------------------------------------------------------
@@ -617,14 +612,20 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	if cfg.Web.Admin.Enabled {
 		options = append(options, mux.WithFileServer(true, static, "static", "/admin/", []string{"admin/api", "v1"}))
 	}
-	// Fine-tuning never stops the server: when it cannot start, the server runs without it.
-	trainConfig, stopTraining, err := startTraining(ctx, log, cfg.Training, cfg.Moxie.Root, cfg.Moxie.DatabaseURL, models, p)
+
+	// -------------------------------------------------------------------------
+	// Moxie Fine-Tuning
+
+	moxieConfig, stopMoxie, err := startMoxie(ctx, log, cfg, models, p)
 	if err != nil {
 		log.Error(ctx, "startup", "status", "fine-tuning unavailable", "ERROR", err)
 	}
-	defer stopTraining()
+	defer stopMoxie()
 
-	webAPI := mux.WebAPI(cfgMux, build.Routes(build.Config{Training: trainConfig}), options...)
+	// -------------------------------------------------------------------------
+	// Bind Routes and Run
+
+	webAPI := mux.WebAPI(cfgMux, build.Routes(build.Config{Moxie: moxieConfig}), options...)
 
 	api := http.Server{
 		Addr:         cfg.Web.APIHost,
@@ -644,6 +645,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	if err != nil {
 		return fmt.Errorf("listening for API requests: %w", err)
 	}
+
 	defer listener.Close()
 	if ready != nil {
 		ready()
@@ -716,26 +718,29 @@ func registerIMCSessionMetrics(p *pool.Pool) (func(), error) {
 	})
 }
 
-var logo = `
-██╗  ██╗██████╗  ██████╗ ███╗   ██╗██╗  ██╗    ███╗   ███╗███████╗
-██║ ██╔╝██╔══██╗██╔═══██╗████╗  ██║██║ ██╔╝    ████╗ ████║██╔════╝
-█████╔╝ ██████╔╝██║   ██║██╔██╗ ██║█████╔╝     ██╔████╔██║███████╗
-██╔═██╗ ██╔══██╗██║   ██║██║╚██╗██║██╔═██╗     ██║╚██╔╝██║╚════██║
-██║  ██╗██║  ██║╚██████╔╝██║ ╚████║██║  ██╗    ██║ ╚═╝ ██║███████║
-╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝    ╚═╝     ╚═╝╚══════╝                                                                                         
-`
-
-// startTraining starts fine-tuning: its storage, dataset catalog, Temporal
-// worker, and job catalog. On failure it undoes what it started and returns
+// startMoxie starts fine-tuning: its storage, dataset catalog, Temporal
+// worker, and job catalog only when Moxie is enabled.
+// On failure it undoes what it started and returns
 // the error, so the server runs without fine-tuning. stop shuts down what
 // started, in reverse order.
-func startTraining(ctx context.Context, log *logger.Logger, cfg trainingConfig, moxiePath, databaseURL string, catalog *models.Models, p *pool.Pool) (_ trainapp.Config, stop func(), err error) {
+func startMoxie(ctx context.Context, log *logger.Logger, serverCfg config, catalog *models.Models, p *pool.Pool) (_ moxieapp.Config, stop func(), err error) {
+	cfg := serverCfg.Moxie
+
+	if !cfg.Enabled {
+		return moxieapp.Config{}, func() {}, nil
+	}
+
+	if err := validateMoxieConfig(serverCfg); err != nil {
+		return moxieapp.Config{}, func() {}, err
+	}
+
 	var cleanup []func()
 	stop = func() {
 		for _, c := range slices.Backward(cleanup) {
 			c()
 		}
 	}
+
 	defer func() {
 		if err != nil {
 			stop()
@@ -743,78 +748,82 @@ func startTraining(ctx context.Context, log *logger.Logger, cfg trainingConfig, 
 		}
 	}()
 
-	root, err := moxieRoot(moxiePath)
+	root, err := moxieRoot(cfg.Root)
 	if err != nil {
-		return trainapp.Config{}, stop, err
+		return moxieapp.Config{}, stop, err
 	}
+
 	var database *moxiedb.DB
-	if databaseURL != "" {
-		database, err = moxiedb.Open(ctx, databaseURL)
+	if cfg.DatabaseURL != "" {
+		database, err = moxiedb.Open(ctx, cfg.DatabaseURL)
 		if err != nil {
-			return trainapp.Config{}, stop, fmt.Errorf("opening Moxie database: %w", err)
+			return moxieapp.Config{}, stop, fmt.Errorf("opening Moxie database: %w", err)
 		}
 		cleanup = append(cleanup, func() { database.Close() })
 		if err := database.CheckSchema(ctx); err != nil {
-			return trainapp.Config{}, stop, fmt.Errorf("checking Moxie schema; run make tuning-up: %w", err)
+			return moxieapp.Config{}, stop, fmt.Errorf("checking Moxie schema; run make tuning-up: %w", err)
 		}
 	}
+
 	store, err := uploads.New(uploads.Config{Root: filepath.Join(root, "uploads")})
 	if err != nil {
-		return trainapp.Config{}, stop, fmt.Errorf("initializing training uploads: %w", err)
+		return moxieapp.Config{}, stop, fmt.Errorf("initializing training uploads: %w", err)
 	}
+
 	datasetFiles, err := datasetstore.New(datasetstore.Config{Root: filepath.Join(root, "preparation-datasets")})
 	if err != nil {
-		return trainapp.Config{}, stop, fmt.Errorf("initializing preparation datasets: %w", err)
+		return moxieapp.Config{}, stop, fmt.Errorf("initializing preparation datasets: %w", err)
 	}
-	trainConfig := trainapp.Config{Uploads: store}
-	var trainingWorkers []worker.Worker
-	if cfg.Enabled {
-		approvedModels := make(map[string]string, len(cfg.Models))
-		for _, id := range cfg.Models {
-			path, err := catalog.FullPath(id)
-			if err != nil {
-				return trainapp.Config{}, stop, fmt.Errorf("resolving approved training model %q: %w", id, err)
-			}
-			if len(path.ModelFiles) != 1 || path.ModelFiles[0] == "" {
-				return trainapp.Config{}, stop, fmt.Errorf("approved training model %q must resolve to one GGUF file", id)
-			}
-			approvedModels[id] = path.ModelFiles[0]
-		}
-		dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		temporalClient, err := client.DialContext(dialCtx, client.Options{HostPort: cfg.Address, Namespace: cfg.Namespace})
-		cancel()
-		if err != nil {
-			return trainapp.Config{}, stop, fmt.Errorf("connecting training Temporal client: %w", err)
-		}
-		cleanup = append(cleanup, temporalClient.Close)
-		extractor, err := providers.NewDoclingExtractor("", nil)
-		if err != nil {
-			return trainapp.Config{}, stop, fmt.Errorf("initializing document extractor: %w", err)
-		}
-		job, err := training.New(temporalClient, training.Config{
-			Uploads: store, Datasets: datasetFiles, MoxieDB: database, StorageRoot: root,
-			Namespace: cfg.Namespace,
-			Models:    approvedModels, ModelPool: p.Kronk, Extractor: extractor, Log: log.Info,
-		})
-		if err != nil {
-			return trainapp.Config{}, stop, fmt.Errorf("initializing training job: %w", err)
-		}
-		trainingWorkers = job.Workers()
-		trainConfig.Job = job
+
+	trainConfig := moxieapp.Config{Uploads: store}
+
+	approvedModels := make(map[string]string, len(cfg.Models))
+	for _, id := range cfg.Models {
+		approvedModels[id] = ""
 	}
+
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	temporalClient, err := client.DialContext(dialCtx, client.Options{HostPort: cfg.Address, Namespace: cfg.Namespace})
+	cancel()
+	if err != nil {
+		return moxieapp.Config{}, stop, fmt.Errorf("connecting training Temporal client: %w", err)
+	}
+
+	cleanup = append(cleanup, temporalClient.Close)
+
+	extractor, err := providers.NewDoclingExtractor("", nil)
+	if err != nil {
+		return moxieapp.Config{}, stop, fmt.Errorf("initializing document extractor: %w", err)
+	}
+
+	job, err := training.New(temporalClient, training.Config{
+		Uploads: store, Datasets: datasetFiles, MoxieDB: database, StorageRoot: root,
+		Namespace: cfg.Namespace,
+		Models:    approvedModels, ModelCatalog: catalog, ModelPool: p.Kronk, Extractor: extractor, Log: log.Info,
+	})
+	if err != nil {
+		return moxieapp.Config{}, stop, fmt.Errorf("initializing training job: %w", err)
+	}
+
+	trainingWorkers := job.Workers()
+	trainConfig.Job = job
+
 	trainConfig.Datasets = datasets.New(datasets.Config{
 		Files: datasetFiles, Job: trainConfig.Job, DB: database, Uploads: store, Namespace: cfg.Namespace,
 	})
+
 	// A damaged dataset version affects only that dataset.
 	if err := trainConfig.Datasets.Initialize(ctx); err != nil {
 		log.Error(ctx, "startup", "status", "initializing datasets", "ERROR", err)
 	}
+
 	for _, w := range trainingWorkers {
 		if err := w.Start(); err != nil {
-			return trainapp.Config{}, stop, fmt.Errorf("starting training worker: %w", err)
+			return moxieapp.Config{}, stop, fmt.Errorf("starting training worker: %w", err)
 		}
 		cleanup = append(cleanup, w.Stop)
 	}
+
 	if len(trainingWorkers) > 0 {
 		cleanup = append(cleanup, func() {
 			// Running preparation units finish and save before the worker stops,
@@ -829,6 +838,7 @@ func startTraining(ctx context.Context, log *logger.Logger, cfg trainingConfig, 
 		})
 		log.Info(ctx, "startup", "status", "training worker started", "namespace", cfg.Namespace)
 	}
+
 	if database != nil && trainConfig.Job != nil {
 		catalogCtx, cancelCatalog := context.WithCancel(ctx)
 		catalogDone := make(chan struct{})
@@ -841,5 +851,15 @@ func startTraining(ctx context.Context, log *logger.Logger, cfg trainingConfig, 
 			<-catalogDone
 		})
 	}
+
 	return trainConfig, stop, nil
 }
+
+var logo = `
+██╗  ██╗██████╗  ██████╗ ███╗   ██╗██╗  ██╗    ███╗   ███╗███████╗
+██║ ██╔╝██╔══██╗██╔═══██╗████╗  ██║██║ ██╔╝    ████╗ ████║██╔════╝
+█████╔╝ ██████╔╝██║   ██║██╔██╗ ██║█████╔╝     ██╔████╔██║███████╗
+██╔═██╗ ██╔══██╗██║   ██║██║╚██╗██║██╔═██╗     ██║╚██╔╝██║╚════██║
+██║  ██╗██║  ██║╚██████╔╝██║ ╚████║██║  ██╗    ██║ ╚═╝ ██║███████║
+╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝    ╚═╝     ╚═╝╚══════╝                                                                                         
+`
