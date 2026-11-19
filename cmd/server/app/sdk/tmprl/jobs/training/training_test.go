@@ -39,6 +39,50 @@ import (
 	"go.temporal.io/sdk/temporal"
 )
 
+func TestFailureLog(t *testing.T) {
+	stamp := time.Date(2026, 11, 18, 15, 26, 3, 0, time.UTC)
+	for _, test := range []struct {
+		kind string
+		want string
+	}{
+		{"SyntaxError", "The structured response could not be read as valid JSON."},
+		{"UnmarshalTypeError", "The structured response contained a value of the wrong type."},
+		{"timeout:HEARTBEAT", "The worker stopped reporting progress before the heartbeat deadline."},
+		{"timeout:START_TO_CLOSE", "The step exceeded its execution time limit."},
+		{"preparation-extractor-unavailable", "The document conversion service (Docling) was unavailable."},
+		{"training-records-insufficient", "The dataset has too few training records."},
+		{"private-unknown-type", "An internal error stopped this step. Its recorded error has no public diagnostic category."},
+	} {
+		t.Run(test.kind, func(t *testing.T) {
+			run := tmprl.Run[job.Request, job.Artifacts]{Status: tmprl.StatusFailed,
+				Error: "private token /private/model.gguf SyntaxError timeout:HEARTBEAT", FailureTypes: []string{"wrapError", test.kind},
+				Stages: []tmprl.StageState{{Name: "preparation", Steps: []tmprl.StepState{
+					{Name: "extract", Status: tmprl.StatusCompleted, Attempt: 1, ClosedAt: stamp},
+					{Name: "preview", Status: tmprl.StatusFailed, Attempt: 3, StartedAt: stamp.Add(time.Second), ClosedAt: stamp.Add(9 * time.Second)},
+					{Name: "generate", Status: tmprl.StatusQueued},
+				}}}}
+			log := job.Describe(run).FailureLog
+			if len(log) != 3 || log[0].Code != "step-completed" || log[0].Message != "Document extraction completed." || !log[0].Time.Equal(stamp) || log[1].Code != "step-started" || log[2].Step != "preview" || log[2].Attempt != 3 || !log[2].Time.Equal(stamp.Add(9*time.Second)) || log[2].Message != test.want {
+				t.Fatalf("incorrect public failure log: %+v", log)
+			}
+			data, err := json.Marshal(log)
+			if err != nil || strings.Contains(string(data), "private") || strings.Contains(string(data), "token") {
+				t.Fatalf("unsafe log %s: %v", data, err)
+			}
+			for _, status := range []tmprl.Status{tmprl.StatusRunning, tmprl.StatusCompleted, tmprl.StatusStopped, optimization.StatusNeedsImprovement} {
+				run.Status = status
+				if log := job.Describe(run).FailureLog; len(log) != 0 {
+					t.Fatalf("%s is not an execution failure: %+v", status, log)
+				}
+			}
+		})
+	}
+	legacy := job.Describe(tmprl.Run[job.Request, job.Artifacts]{Status: tmprl.StatusFailed}).FailureLog
+	if len(legacy) != 1 || legacy[0].Code != "unclassified-failure" || !legacy[0].Time.IsZero() || legacy[0].Attempt != 0 || legacy[0].Message != "The saved run does not contain a recoverable failure cause." {
+		t.Fatalf("legacy evidence must not be invented: %+v", legacy)
+	}
+}
+
 type trainer struct {
 	mode     string
 	attempts atomic.Int32
@@ -485,7 +529,7 @@ func testPreparationOnlySavedDataset(t *testing.T, db *moxiedb.DB) {
 		t.Fatalf("an all-repeated run must fail with its reason: status %s reason %q", repeated.Status, state.FailureReason)
 	}
 	if db != nil {
-		// The saved status keeps the fixed reason but never the failure text or raw types.
+		// The saved status keeps the public log, never raw failure text or types.
 		rows, _, err := service.ListRuns(ctx, datasets.RunFilter{PageSize: 50, Mode: "preparation"})
 		if err != nil {
 			t.Fatal(err)
@@ -493,6 +537,10 @@ func testPreparationOnlySavedDataset(t *testing.T, db *moxiedb.DB) {
 		i := slices.IndexFunc(rows, func(r datasets.State) bool { return r.Execution == repeated.Execution })
 		if i < 0 || rows[i].FailureReason != "dataset-questions-exist" || rows[i].Error != "" || rows[i].FailureTypes != nil {
 			t.Fatalf("catalog failure: %+v", rows)
+		}
+		log := rows[i].FailureLog
+		if len(log) == 0 || log[len(log)-1].Code != "dataset-questions-exist" || log[len(log)-1].Message != "Every generated question already exists in the dataset." {
+			t.Fatalf("catalog lost the failure log: %+v", log)
 		}
 	}
 	partial, state := prepare(content+"\n\n", 8)

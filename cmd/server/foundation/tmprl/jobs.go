@@ -37,6 +37,10 @@ type StepContext[R, A any] struct {
 	// committing progress and before starting another unit. An error must be
 	// returned unchanged; it may suspend this activity without completing it.
 	SafePoint func(context.Context, string) error
+	// PausePoint waits in the current activity while paused, preserving memory.
+	// Call between computation units and return errors without starting more work.
+	// Unlike SafePoint, this is not a durable checkpoint or worker release.
+	PausePoint func(context.Context) error
 }
 
 // StepHandler executes application computation without scheduling Temporal work.
@@ -155,6 +159,9 @@ func (j *Jobs[R, A]) Submit(ctx context.Context, id string, input JobInput[R]) (
 	}
 	if input.ControlStage != "" && (len(input.Job.Stages) != 1 || input.Job.Stages[0].Name != input.ControlStage) {
 		return Run[R, A]{}, fmt.Errorf("%w: ordered controls require a single matching stage", ErrInvalidArgument)
+	}
+	if input.PauseInPlace && input.ControlStage == "" {
+		return Run[R, A]{}, fmt.Errorf("%w: in-place pause requires ordered controls", ErrInvalidArgument)
 	}
 	queue := j.cfg.TaskQueue
 	if j.cfg.Queue != nil {

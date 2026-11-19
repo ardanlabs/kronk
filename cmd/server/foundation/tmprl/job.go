@@ -22,7 +22,7 @@ var errReleaseWorker = errors.New("release idle job worker")
 
 // QueuedJob constructs the initial snapshot for a validated submitted plan.
 func QueuedJob[R, A any](input JobInput[R]) Run[R, A] {
-	state := Run[R, A]{Request: input.Request, Definition: input.Job, Status: StatusQueued, ControlStage: input.ControlStage}
+	state := Run[R, A]{Request: input.Request, Definition: input.Job, Status: StatusQueued, ControlStage: input.ControlStage, PauseInPlace: input.PauseInPlace}
 	for _, stage := range input.Job.Stages {
 		entry := StageState{Name: StageName(stage.Name), Status: StatusQueued}
 		for _, step := range stage.Steps {
@@ -114,6 +114,27 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 			return Run[R, A]{}, err
 		}
 	}
+	if input.PauseInPlace {
+		// Only the active activity may acknowledge reaching an in-memory pause
+		// point. A delayed acknowledgement cannot reinstate an older Pause.
+		if err := workflow.SetUpdateHandler(work, names.Control+".paused", func(ctx workflow.Context, stage, step string, revision int64) (bool, error) {
+			if !paused || state.ControlRevision != revision || string(state.Stage) != stage || state.Step != step ||
+				(state.Status != StatusPauseRequested && state.Status != StatusPaused) {
+				return false, nil
+			}
+			previous := state
+			state.Status = StatusPaused
+			state.ControlAcknowledgedRevision = revision
+			state.ControlCheckpoint = "" // Memory is retained, not persisted as a computation checkpoint.
+			if err := PersistRun(ctx, names.Memo, &state); err != nil {
+				state = previous
+				return false, err
+			}
+			return true, nil
+		}); err != nil {
+			return Run[R, A]{}, err
+		}
+	}
 	checkpointEnabled := false
 	for _, stage := range input.Job.Stages {
 		checkpointEnabled = checkpointEnabled || stage.WaitAfter != ""
@@ -179,7 +200,7 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 	// or after host shutdown. Only the first reservation is bounded by the queue
 	// timeout, and stage budgets count active time. Older histories replay with
 	// the reservation behavior they recorded.
-	idle := input.ControlStage != "" && workflow.GetVersion(work, "preparation-idle-release", workflow.DefaultVersion, 1) == 1
+	idle := input.ControlStage != "" && !input.PauseInPlace && workflow.GetVersion(work, "preparation-idle-release", workflow.DefaultVersion, 1) == 1
 	reservedOnce := false
 	stageIndex, stepIndex := 0, 0
 	for attempt := 1; attempt <= input.Job.SessionAttempts; {
@@ -465,7 +486,7 @@ func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state 
 		if step.StartedAt.IsZero() {
 			step.StartedAt = workflow.Now(ctx)
 		}
-		safePoints := state.ControlStage == plan.Name && workflow.GetVersion(ctx, "preparation-safe-points", workflow.DefaultVersion, 1) == 1
+		safePoints := state.ControlStage == plan.Name && !state.PauseInPlace && workflow.GetVersion(ctx, "preparation-safe-points", workflow.DefaultVersion, 1) == 1
 		if !safePoints || step.Attempt == 0 {
 			step.Attempt = 1
 		}
@@ -487,7 +508,7 @@ func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state 
 			StartToCloseTimeout: policy.Timeout, HeartbeatTimeout: policy.HeartbeatTimeout, WaitForCancellation: true,
 			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: maximumAttempts, InitialInterval: policy.Retry.InitialInterval, BackoffCoefficient: policy.Retry.BackoffCoefficient, MaximumInterval: policy.Retry.MaximumInterval},
 		})
-		request := StepRequest[R, A]{Execution: state.Execution, Key: state.RunID + "/" + plan.Name + "/" + policy.Name, Stage: plan.Name, Step: policy.Name, Request: state.Request, Artifacts: state.Artifacts, Decisions: state.Decisions, SafePoints: safePoints, ResumeCheckpoint: resumeCheckpoint}
+		request := StepRequest[R, A]{Execution: state.Execution, Key: state.RunID + "/" + plan.Name + "/" + policy.Name, Stage: plan.Name, Step: policy.Name, Request: state.Request, Artifacts: state.Artifacts, Decisions: state.Decisions, SafePoints: safePoints, PauseInPlace: state.PauseInPlace, ResumeCheckpoint: resumeCheckpoint}
 		var output StepResult[A]
 		if err := workflow.ExecuteActivity(stepCtx, names.Activity, request).Get(ctx, &output); err != nil {
 			if suspended, ok := errors.AsType[*temporal.ApplicationError](err); safePoints && ctx.Err() == nil && ok && (suspended.Type() == "step-suspended" || idle && suspended.Type() == "step-drained") {

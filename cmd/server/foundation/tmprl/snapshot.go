@@ -56,11 +56,13 @@ func (j *Jobs[R, A]) reconcileRun(state *Run[R, A], info *workflowpb.WorkflowExe
 		state.Status, state.Stage, state.Step = StatusStopped, "", ""
 	case enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED:
 		state.Status = StatusFailed
+		state.FailureTypes = []string{"workflow-terminated"}
 		if state.Error == "" {
 			state.Error = "job terminated"
 		}
 	case enumspb.WORKFLOW_EXECUTION_STATUS_TIMED_OUT:
 		state.Status = StatusFailed
+		state.FailureTypes = []string{"workflow-timeout"}
 		if state.Error == "" {
 			state.Error = "job workflow timed out"
 		}
@@ -140,13 +142,16 @@ func (j *Jobs[R, A]) enrichRun(state *Run[R, A], description *workflowservice.De
 	return nil
 }
 
-// failureTypes lists the application error types in a failure chain. Callers
-// classify failures by these fixed types instead of by message text.
+// failureTypes lists application types and structured timeout categories in a
+// failure chain. Callers classify these identities, never private message text.
 func failureTypes(failure *failurepb.Failure) []string {
 	var types []string
 	for ; failure != nil; failure = failure.GetCause() {
 		if info := failure.GetApplicationFailureInfo(); info != nil {
 			types = append(types, info.GetType())
+		}
+		if info := failure.GetTimeoutFailureInfo(); info != nil {
+			types = append(types, "timeout:"+strings.TrimPrefix(enumspb.TimeoutType_name[int32(info.GetTimeoutType())], "TIMEOUT_TYPE_"))
 		}
 	}
 	return types

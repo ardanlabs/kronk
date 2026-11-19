@@ -41,6 +41,9 @@ type JobInput[R any] struct {
 	// ControlStage opts new executions into ordered controls for this stage.
 	// Empty preserves the legacy signal protocol and workflow history.
 	ControlStage string `json:"control_stage,omitzero"`
+	// PauseInPlace retains the activity and its in-memory computation state at
+	// cooperative pause points. Paused time still counts toward its deadlines.
+	PauseInPlace bool `json:"pause_in_place,omitzero"`
 }
 
 // Run contains durable state. R and A are application-owned requests and artifacts.
@@ -67,6 +70,7 @@ type Run[R, A any] struct {
 	UpdatedAt                   time.Time    `json:"updated_at,omitzero"`
 	StateStale                  bool         `json:"state_stale,omitzero"`
 	ControlStage                string       `json:"control_stage,omitzero"`
+	PauseInPlace                bool         `json:"pause_in_place,omitzero"`
 	ControlRevision             int64        `json:"control_revision,omitzero"`
 	ControlAction               string       `json:"control_action,omitzero"`
 	ControlAcknowledgedRevision int64        `json:"control_acknowledged_revision,omitzero"`
@@ -135,6 +139,7 @@ type StepRequest[R, A any] struct {
 	Artifacts        A          `json:"artifacts"`
 	Decisions        []Decision `json:"decisions,omitzero"`
 	SafePoints       bool       `json:"safe_points,omitzero"`
+	PauseInPlace     bool       `json:"pause_in_place,omitzero"`
 	ResumeCheckpoint string     `json:"resume_checkpoint,omitzero"`
 }
 

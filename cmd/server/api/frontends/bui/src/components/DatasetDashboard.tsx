@@ -23,7 +23,7 @@ const filters: [string, string, string[]][] = [
 function StepCell({ run, training }: { run: TrainingRun; training?: TrainingRun }) {
   const eta = remaining(run);
   if (run.status === 'completed' || run.status === 'needs_improvement') return run.prepared_dataset_version
-    ? <><span className="prep-main dash-done-text"><span aria-hidden="true">✓ </span>Dataset ready</span><span className="prep-sub">{records(run.dataset_record_count)} in version {run.prepared_dataset_version} · {run.training_ready ? 'ready for training' : 'needs 20 training records to train'}</span>{training && <Link className="dash-train-link" to={trainingPath(training)}>{trainingLabel(training)}</Link>}</>
+    ? <><span className="prep-main dash-done-text"><span aria-hidden="true">✓ </span>Completed</span><span className="prep-sub">{records(run.dataset_record_count)} in version {run.prepared_dataset_version} · {run.training_ready ? 'ready for training' : 'needs 20 training records to train'}</span>{training && <Link className="dash-train-link" to={trainingPath(training)}>{trainingLabel(training)}</Link>}</>
     : <><span className="prep-main">Finished</span><span className="prep-sub">No saved version</span></>;
   if (run.status === 'failed') return <><span className="prep-main">Failed during {stepLabel(failedStep(run)?.name ?? run.step).toLowerCase()}</span><span className="prep-sub">Open for details</span></>;
   if (run.status === 'stopped') return <><span className="prep-main">Stopped</span><span className="prep-sub">Cancelled · cannot resume</span></>;

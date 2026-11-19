@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -65,6 +66,70 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 	}
 	var sample Progress
 	var progressMu sync.Mutex
+	var pausePoint func(context.Context) error
+	if input.PauseInPlace {
+		pausePoint = func(ctx context.Context) error {
+			waited := false
+			for {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				rpc, cancel := context.WithTimeout(ctx, 5*time.Second)
+				value, queryErr := j.client.QueryWorkflow(rpc, input.WorkflowID, input.RunID, j.cfg.Names.Query)
+				var run Run[R, A]
+				if queryErr == nil {
+					queryErr = value.Get(&run)
+				}
+				if queryErr == nil {
+					if run.Execution != input.Execution || run.ControlStage != input.Stage || string(run.Stage) != input.Stage || run.Step != input.Step || run.Status.Terminal() {
+						cancel()
+						return fmt.Errorf("pause point execution is not active")
+					}
+					if run.ControlAction != "pause" {
+						cancel()
+						if waited {
+							progressMu.Lock()
+							sample = Progress{} // Paused/offline time must not inflate the next ETA.
+							progressMu.Unlock()
+						}
+						return ctx.Err()
+					}
+					if run.Status != StatusPaused {
+						handle, err := j.client.UpdateWorkflow(rpc, client.UpdateWorkflowOptions{
+							WorkflowID: input.WorkflowID, RunID: input.RunID,
+							UpdateID:     fmt.Sprintf("pause-point/%s/%d", input.Key, run.ControlRevision),
+							UpdateName:   j.cfg.Names.Control + ".paused",
+							Args:         []any{input.Stage, input.Step, run.ControlRevision},
+							WaitForStage: client.WorkflowUpdateStageCompleted,
+						})
+						if err == nil {
+							var acknowledged bool
+							queryErr = handle.Get(rpc, &acknowledged)
+						} else {
+							queryErr = err
+						}
+					}
+				}
+				cancel()
+				// Keep optimizer state on a temporary control outage; do not start
+				// another unit using a stale observation or restart optimization.
+				if queryErr != nil && !waited {
+					log.Warn("waiting for job control service", "error", queryErr)
+				}
+				waited = true
+				timer := time.NewTimer(time.Second)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return ctx.Err()
+				case <-timer.C:
+				}
+			}
+		}
+		if err := pausePoint(ctx); err != nil {
+			return output, err
+		}
+	}
 	var safePoint func(context.Context, string) error
 	var lastCheckpoint string
 	if input.SafePoints {
@@ -128,7 +193,8 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 	}
 	output, err = implementation.Execute(ctx, StepContext[R, A]{
 		Request: input, Workspace: workspace,
-		SafePoint: safePoint,
+		SafePoint:  safePoint,
+		PausePoint: pausePoint,
 		Publish: func(progress Progress) {
 			progressMu.Lock()
 			defer progressMu.Unlock()
@@ -149,6 +215,11 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 	}
 	if err := ctx.Err(); err != nil {
 		return output, err
+	}
+	if pausePoint != nil {
+		if err := pausePoint(ctx); err != nil {
+			return output, err
+		}
 	}
 	if safePoint != nil {
 		if err := safePoint(ctx, lastCheckpoint); err != nil {

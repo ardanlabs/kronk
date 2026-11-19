@@ -48,12 +48,13 @@ type TrainingDataset struct {
 
 // TrainingJob supplies worker-local computation inputs and disposable storage.
 type TrainingJob struct {
-	ModelID          string          `json:"model_id"`
-	Model            string          `json:"model"`
-	Training         Training        `json:"training"`
-	Dataset          TrainingDataset `json:"dataset"`
-	Workdir          string          `json:"workdir"`
-	PredictionTokens int             `json:"prediction_tokens"`
+	ModelID          string                      `json:"model_id"`
+	Model            string                      `json:"model"`
+	Training         Training                    `json:"training"`
+	Dataset          TrainingDataset             `json:"dataset"`
+	Workdir          string                      `json:"workdir"`
+	PredictionTokens int                         `json:"prediction_tokens"`
+	PausePoint       func(context.Context) error `json:"-"`
 }
 
 // TrainingCandidate identifies a trained checkpoint and its selection metrics.
@@ -139,7 +140,7 @@ func (t *GoMLX) Train(ctx context.Context, job TrainingJob, publish func(tmprl.P
 	for _, r := range job.Dataset.Validation {
 		dataset.Validation = append(dataset.Validation, engine.Record{Prompt: r.Prompt, Target: r.Target})
 	}
-	prepared, prepareErr := runtime.PrepareDataset(ctx, dataset, kmsTokenizer{krn}, func(p engine.TokenizationProgress) {
+	prepared, prepareErr := runtime.PrepareDataset(ctx, dataset, kmsTokenizer{model: krn, pausePoint: job.PausePoint}, func(p engine.TokenizationProgress) {
 		publish(tmprl.Progress{Stage: "train", Completed: p.Completed, Total: p.Total, Message: "Tokenizing " + p.Split})
 	})
 	if err := errors.Join(prepareErr, release()); err != nil {
@@ -151,6 +152,7 @@ func (t *GoMLX) Train(ctx context.Context, job TrainingJob, publish func(tmprl.P
 		LearningRate: job.Training.LearningRate, Seed: uint64(job.Training.Seed),
 		EarlyStoppingPatience: 3, MinimumValidationImprovement: 0.0001,
 		AdapterCheckpointDirectory: filepath.Join(job.Workdir, "epochs"),
+		PausePoint:                 job.PausePoint,
 	}, func(p engine.TrainingProgress) {
 		publish(tmprl.Progress{Stage: "train", Completed: p.CompletedSteps, Total: p.TotalSteps, Message: fmt.Sprintf("Training epoch %d", p.Epoch)})
 	})
@@ -159,6 +161,11 @@ func (t *GoMLX) Train(ctx context.Context, job TrainingJob, publish func(tmprl.P
 	}
 	if err := ctx.Err(); err != nil {
 		return TrainingCandidate{}, err
+	}
+	if job.PausePoint != nil {
+		if err := job.PausePoint(ctx); err != nil {
+			return TrainingCandidate{}, err
+		}
 	}
 	path := filepath.Join(job.Workdir, "candidate.gguf")
 	if err := runtime.ExportBestAdapter(result, path); err != nil {
@@ -188,6 +195,11 @@ func (t *GoMLX) Predict(ctx context.Context, job TrainingJob, adapter string, re
 		return nil, err
 	}
 	for _, record := range records {
+		if job.PausePoint != nil {
+			if err := job.PausePoint(ctx); err != nil {
+				return nil, err
+			}
+		}
 		// Targets never enter inference; every question is independent.
 		response, err := krn.Chat(ctx, model.D{
 			"messages":    []model.D{{"role": "user", "content": record.Prompt}},
@@ -248,9 +260,17 @@ func validateContext(ctx context.Context, krn inferenceModel, dataset TrainingDa
 	return nil
 }
 
-type kmsTokenizer struct{ model inferenceModel }
+type kmsTokenizer struct {
+	model      inferenceModel
+	pausePoint func(context.Context) error
+}
 
 func (t kmsTokenizer) Tokenize(ctx context.Context, text string) ([]int32, error) {
+	if t.pausePoint != nil {
+		if err := t.pausePoint(ctx); err != nil {
+			return nil, err
+		}
+	}
 	return t.model.TokenizeIDs(ctx, text)
 }
 

@@ -23,6 +23,8 @@ type TrainingConfig struct {
 	AdapterCheckpointDirectory   string
 	RetainedCheckpointEpochs     []int
 	PersistCheckpoint            func(TrainingResult) error
+	// PausePoint waits between optimizer batches while retaining the live trainer.
+	PausePoint func(context.Context) error
 }
 
 // EpochMetrics reports the measured losses after one complete epoch.
@@ -154,6 +156,11 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 			if err := context.Cause(ctx); err != nil {
 				return result, err
 			}
+			if config.PausePoint != nil {
+				if err := config.PausePoint(ctx); err != nil {
+					return result, err
+				}
+			}
 			end := min(start+config.BatchSize, len(order))
 			batch := make([]TrainingRecord, end-start)
 			activeTokens := 0
@@ -174,6 +181,11 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 		}
 		if err := context.Cause(ctx); err != nil {
 			return result, err
+		}
+		if config.PausePoint != nil {
+			if err := config.PausePoint(ctx); err != nil {
+				return result, err
+			}
 		}
 		validationLoss := weightedLoss / float64(answerTokens)
 		if len(dataset.Validation) > 0 {

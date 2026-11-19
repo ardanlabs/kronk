@@ -38,6 +38,8 @@ func Routes(webApp *web.App, cfg Config) {
 	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preview/continue", api.continuePreview, access.Administration(), api.requireRuns)
 	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preparation/pause", api.pausePreparation, access.Administration(), api.requireRuns)
 	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preparation/continue", api.continuePreparation, access.Administration(), api.requireRuns)
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/training/pause", api.pauseTraining, access.Administration(), api.requireJob)
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/training/resume", api.resumeTraining, access.Administration(), api.requireJob)
 	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/start-training", api.startTraining, access.Administration(), api.requireJob)
 	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/stop", api.stop, access.Administration(), api.requireRuns)
 	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs", api.query, access.Management(), api.requireCatalog)

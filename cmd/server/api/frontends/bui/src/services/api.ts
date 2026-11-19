@@ -1303,8 +1303,8 @@ class ApiService {
     return this.request('/training/datasets', { method: 'POST', body: JSON.stringify({ name }) });
   }
 
-  async preparationDataset(id: string, signal?: AbortSignal): Promise<PreparationDataset> {
-    return this.request(`/training/datasets/${encodeURIComponent(id)}`, { signal, cache: 'no-store' });
+  async preparationDataset(id: string, signal?: AbortSignal, version?: number): Promise<PreparationDataset> {
+    return this.request(`/training/datasets/${encodeURIComponent(id)}${version ? `?version=${version}` : ''}`, { signal, cache: 'no-store' });
   }
 
   async removePreparationDocument(id: string, documentID: string, baseVersion: number): Promise<PreparationDataset> {
@@ -1366,6 +1366,14 @@ class ApiService {
   async stopTrainingRun(workflowID: string, runID: string): Promise<void> {
     await this.request<void>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/stop`, {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000),
+    });
+  }
+
+  async controlTraining(workflowID: string, runID: string, action: 'pause' | 'resume', control: PreparationControl): Promise<PreparationControlReceipt> {
+    return this.request<PreparationControlReceipt>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/training/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(control),
       signal: AbortSignal.timeout(30_000),
     });
   }

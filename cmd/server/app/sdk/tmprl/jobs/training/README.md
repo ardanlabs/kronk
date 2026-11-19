@@ -244,8 +244,26 @@ One reserved worker executes all steps serially. Additional workers can run
 other jobs. Workers recovering jobs on another machine must share the durable
 execution storage root and have access to the same uploads. Upload storage is
 accessed through `Store.Get` and `Store.Open`; application code does not depend on
-its directory layout. Legacy/combined/training pauses take effect between steps;
+its directory layout. Legacy and combined runs pause between steps;
 cancellation is cooperative. Incomplete provider work can repeat on retry.
+
+## Training Pause, Resume, and Stop
+
+New SQL-backed training-only runs support Pause and Resume from the training run
+page. Pause finishes the current optimizer batch, tokenization call, or evaluation
+answer before acknowledging Paused. A request receipt alone does not mean that
+computation has paused. Resume continues the same operation with its optimizer
+state intact, without repeating completed batches. Resume can also withdraw a
+pending Pause request.
+
+While paused, training retains its worker, model memory, and live optimizer state.
+Keep the server running; this is not a disk checkpoint that supports resuming
+across a server restart. Run and activity timeouts continue to apply. Preparation's
+durable suspension and worker-release behavior is unchanged.
+
+Stop cancels either running or paused training cooperatively. The run becomes
+Stopped only after cancellation is observed; a stopped run cannot resume. Earlier
+saved dataset versions and adapters are unchanged.
 
 ## Preparation safe-point suspension (milestone 3B.2)
 
