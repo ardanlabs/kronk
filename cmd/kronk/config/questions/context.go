@@ -38,6 +38,14 @@ func fixContext(f source.Facts, a *Answers, existing map[string]any, out []confi
 		return out
 	}
 
+	// Existing extended contexts may have manually tuned YaRN parameters.
+	// Recompute them only when the context or scaling answer changes.
+	if _, had := existing["context-window"]; had && !slices.ContainsFunc(out, func(c configfile.Change) bool {
+		return c.Key == "context-window" || c.Key == KeyRopeScaling
+	}) {
+		return out
+	}
+
 	train := f.Analysis.Model.TrainingContext
 
 	if a.Value(KeyRopeScaling) == "yarn" {

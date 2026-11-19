@@ -22,7 +22,7 @@ const (
 // Chat returns the chat model questions in the order they are asked.
 func Chat() []Question {
 	// f32 is left out: more memory than f16 for no gain.
-	cacheTypes := fixed(option{"f16", "f16"}, option{"bf16", "bf16"}, option{"q8_0", "q8_0"}, option{"q5_1", "q5_1"},
+	cacheTypes := fixed(option{"f16", "f16"}, option{"bf16", "bf16"}, option{"f8_e4m3", "f8_e4m3"}, option{"q8_0", "q8_0"}, option{"q5_1", "q5_1"},
 		option{"q5_0", "q5_0"}, option{"q4_1", "q4_1"}, option{"q4_0", "q4_0"})
 
 	return []Question{
@@ -203,7 +203,9 @@ func Chat() []Question {
 			Tip:     "Values are less sensitive than keys, so a lower value precision costs less quality.",
 			Options: cacheTypes,
 			Def:     text("same as keys"),
-			show:    func(_ source.Facts, a *Answers) bool { return a.Value("cache-type-k") != "" },
+			show: func(_ source.Facts, a *Answers) bool {
+				return a.Value("cache-type-k") != "" || a.Value("cache-type-v") != ""
+			},
 		},
 		{
 			Key: "ngpu-layers", Group: gMemory, Kind: kindInt, min: -1,
@@ -375,10 +377,17 @@ func Chat() []Question {
 			show:    func(f source.Facts, a *Answers) bool { return requests(f, a) > 1 },
 		},
 		{
-			Key: "nthreads", also: []string{"nthreads-batch"}, Group: gThroughput, Kind: kindInt, min: 1,
+			Key: "nthreads", Group: gThroughput, Kind: kindInt, min: 1,
 			Title: "How many CPU threads?",
 			About: "Threads for the layers or experts that run on the CPU.",
 			Tip:   "Use the number of physical cores. More threads than cores is usually slower.",
+			Def:   text("all CPU cores, at least 4"),
+			show:  cpuWork,
+		},
+		{
+			Key: "nthreads-batch", Group: gThroughput, Kind: kindInt, min: 1,
+			Title: "How many CPU threads for batch processing?",
+			About: "Independent thread count for processing prompts on the CPU.",
 			Def:   text("all CPU cores, at least 4"),
 			show:  cpuWork,
 		},
@@ -441,7 +450,38 @@ func Chat() []Question {
 				return opts
 			},
 			Def:  text(""),
-			show: func(_ source.Facts, a *Answers) bool { return a.Value("speculation") == "classic" },
+			show: classicDraft,
+		},
+		{
+			Key: "draft-model.devices", Group: gFeatures, Kind: KindMulti, generation: true,
+			Title:   "Which GPUs should the draft model use?",
+			About:   "Space selects. None selected uses all available GPUs.",
+			Options: gpuOptions,
+			Def:     text("all"),
+			show:    classicDraft,
+		},
+		{
+			Key: "draft-model.main-gpu", Group: gFeatures, Kind: kindInt, min: 0, generation: true,
+			Title: "Primary GPU for the draft model?",
+			About: "Its position among the draft model's selected GPUs: 0 is the first.",
+			Def:   text("0"),
+			show:  classicDraft,
+		},
+		{
+			Key: "draft-model.ngpu-layers", Group: gFeatures, Kind: kindInt, min: -1, generation: true,
+			Title:   "How many draft model layers go on the GPU?",
+			About:   "Independent of the target model's layer placement.",
+			Options: fixed(option{"All layers", "0"}, option{"None (CPU only)", "-1"}),
+			Def:     text("all layers"),
+			Same:    "0",
+			show:    classicDraft,
+		},
+		{
+			Key: "draft-model.tensor-split", Group: gFeatures, Kind: kindFloatList, generation: true,
+			Title: "How much of the draft model goes on each GPU?",
+			About: "Shares in draft GPU order, comma separated, e.g. 0.6, 0.4.",
+			Def:   text("automatic, by free memory"),
+			show:  classicDraft,
 		},
 		{
 			Key: "draft-model.ndraft", Group: gFeatures, Kind: kindInt, min: 1, generation: true,
@@ -459,7 +499,7 @@ func Chat() []Question {
 			Title: "LoRA adapters to load?",
 			About: "One per line: an adapter from the lora folder, or an absolute path. Add =scale for strength, e.g. style=0.8.",
 			Def:   text("none"),
-			show:  func(f source.Facts, _ *Answers) bool { return len(f.Adapters) > 0 },
+			show:  always,
 		},
 		{
 			Key: "proj-on-cpu", Group: gFeatures, Kind: kindBool,
@@ -487,7 +527,28 @@ func Chat() []Question {
 			Def:   text("the projector's own value"),
 			show:  func(f source.Facts, _ *Answers) bool { return f.Images() },
 		},
+		{
+			Key: "image-batch-token-capacity", Group: gFeatures, Kind: kindInt, min: 0,
+			Title: "Image batch capacity floor (tokens)?",
+			About: "Reserves room for complete image chunks without changing image detail or text prefill size. 0 adds no floor.",
+			Def:   text("0 (no additional floor)"),
+			show:  func(f source.Facts, _ *Answers) bool { return f.Images() },
+		},
+		{
+			Key: "insecure-logging", Group: gFeatures, Kind: kindBool,
+			Title:   "Log sensitive data for this model?",
+			About:   "Can expose messages and model configuration in logs. Enable only when needed for debugging.",
+			Options: yesNo,
+			Def:     text("no"),
+			Same:    "false",
+			show:    always,
+		},
 	}
+}
+
+func classicDraft(_ source.Facts, a *Answers) bool {
+	spec := a.Value("speculation")
+	return spec == "classic" || ((spec == "" || spec == "auto") && a.Value("draft-model.model-id") != "")
 }
 
 // multiGPU reports whether the machine has more than one GPU and the model

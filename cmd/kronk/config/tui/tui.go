@@ -35,6 +35,7 @@ const (
 	stepDownloading // the model is downloading
 	stepDone
 	stepFailed
+	stepQuit
 )
 
 // Review actions.
@@ -153,10 +154,14 @@ type app struct {
 
 	list list
 
-	savedPath string
-	backup    string
-	pull      pull
-	done      buttons // All done's buttons
+	savedPath      string
+	backup         string
+	pull           pull
+	done           buttons // All done's buttons
+	quitFrom       step
+	quit           buttons
+	quitAfterSave  bool
+	quitAfterCheck bool
 }
 
 // list is the answers list while it has the keys (ctrl+o).
@@ -285,19 +290,43 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		switch a.step {
+		case stepQuit:
+			return a.quitKey(msg)
 		case stepFailed:
 			return a, tea.Quit
 		case stepDone:
 			return a.doneKey(msg)
-		case stepLoading, stepFacts, stepCheck, stepSaving:
-			if msg.String() == "ctrl+c" {
+		case stepLoading, stepFacts:
+			if msg.String() == "ctrl+c" || msg.String() == "ctrl+q" {
 				return a, tea.Quit
+			}
+		case stepCheck:
+			if msg.String() == "ctrl+c" || msg.String() == "ctrl+q" {
+				a.quitAfterCheck = true
+			}
+		case stepSaving:
+			if msg.String() == "ctrl+c" || msg.String() == "ctrl+q" {
+				a.quitAfterSave = true
 			}
 		case stepDownloading:
 			return a.pullKey(msg)
 		case stepOffer:
 			return a.offerKey(msg)
 		case stepStart, stepSections, stepGroup, stepPick, stepVariant, stepQuestions, stepReview:
+			if msg.String() == "ctrl+q" || msg.String() == "ctrl+c" {
+				return a.requestQuit()
+			}
+			if msg.String() == "ctrl+x" && a.step == stepQuestions {
+				key := focusedKey(a.currentForm())
+				if q, ok := a.ans.ByKey[key]; ok && q.Secret {
+					value := questions.ClearSecretValue
+					if a.ans.Value(key) == value {
+						value = ""
+					}
+					*a.ans.Sel[key] = value
+					return a.reopen(stepQuestions)
+				}
+			}
 			if a.list.open {
 				return a.listKey(msg)
 			}
@@ -361,6 +390,11 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.check = &msg.analysis
 			a.fixes = msg.fixes
 		}
+		if a.quitAfterCheck {
+			a.quitAfterCheck = false
+			a.startReview()
+			return a.requestQuit()
+		}
 		return a.startReview()
 
 	case savedMsg:
@@ -369,6 +403,9 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.startReview()
 		}
 		a.savedPath, a.backup = msg.path, msg.backup
+		if a.quitAfterSave {
+			return a, tea.Quit
+		}
 		if a.needsPull() {
 			return a.offerPull()
 		}
@@ -400,7 +437,7 @@ func (a *app) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch form.State {
 	case huh.StateAborted:
-		return a, tea.Quit
+		return a.requestQuit()
 
 	case huh.StateCompleted:
 		a.formErr = nil

@@ -77,7 +77,7 @@ func TestRemovedQuestions(t *testing.T) {
 	a := NewAnswers(Chat())
 	for _, key := range []string{
 		"sampling-parameters.repeat_last_n", "sampling-parameters.dry_multiplier", "sampling-parameters.xtc_probability",
-		"sampling-parameters.seed", "physical-batch-size", "image-batch-token-capacity",
+		"sampling-parameters.seed", "physical-batch-size",
 	} {
 		if _, ok := a.ByKey[key]; ok {
 			t.Errorf("%s is left to requests or AutoTune and must not be asked", key)

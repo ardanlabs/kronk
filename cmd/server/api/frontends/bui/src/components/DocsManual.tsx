@@ -2306,7 +2306,8 @@ malina-models:
           <h3 id="editing-the-file-with-kronk-config">Editing the file with kronk config</h3>
           <p><code>kronk config</code> is an interactive terminal tool that writes this file. It asks questions, shows the result, and saves it. It works on local files and does not need a running server.</p>
           <pre className="code-block"><code className="language-shell">{`kronk config`}</code></pre>
-          <p>Every question starts on its default. Leaving the default writes nothing, so Kronk's defaults and AutoTune still apply. Esc goes back one question.</p>
+          <p>Existing settings are filled in when an entry is opened, including model variants. Settings not already in the file start on their defaults; leaving those defaults writes nothing, so Kronk's defaults and AutoTune still apply. Esc goes back one question. In a multi-select list, <code>[ ]</code> means unselected and <code>[x]</code> means selected: press Space to select items, then Enter to continue.</p>
+          <p>Press <code>ctrl+q</code> or <code>ctrl+c</code> while editing to quit. When there are pending changes, choose <strong>Save and quit</strong>, <strong>Discard and quit</strong>, or <strong>Continue editing</strong> (the default). Saving still validates the answers; invalid answers must be corrected, and memory warnings still need review. A failed save keeps the changes open instead of quitting. With no pending changes, quitting exits immediately.</p>
           <p>Colors follow the terminal's background, also when it switches between light and dark while the tool runs. When a light terminal shows faint, hard to read text, the terminal didn't report its background (this can happen through tmux or ssh): run <code>kronk config --theme light</code>, or <code>--theme dark</code> for the opposite case. A fixed <code>--theme</code> doesn't follow switches.</p>
           <p>Each question says what the setting does, gives a tip on when to change it, and names the key it writes. In a terminal at least 120 columns wide, an answers column on the right lists every question asked so far and the ones still ahead, with the answer to each; defaults are marked <code>(default)</code>. At any size, <code>ctrl+o</code> opens that list full screen. Enter on an answer opens that question, and the questions go on from there to the review, as usual. During the questions, the list ends with a <strong>Review and save</strong> button: it goes straight to the review, and the questions not reached keep their answers (the values in the file, or the defaults). A question that still needs an answer opens first. Esc closes the list.</p>
           <h4 id="start">Start</h4>
@@ -2355,11 +2356,11 @@ malina-models:
               </tr>
               <tr>
                 <td>Throughput</td>
-                <td><code>queue-depth</code>, <code>admission-timeout</code>, <code>prefill-batch-size</code>, <code>kv-cache-mode</code>, <code>nthreads</code>, <code>incremental-cache</code>, <code>cache-min-tokens</code>, <code>imc-session-capacity</code></td>
+                <td><code>queue-depth</code>, <code>admission-timeout</code>, <code>prefill-batch-size</code>, <code>kv-cache-mode</code>, <code>nthreads</code>, <code>nthreads-batch</code>, <code>incremental-cache</code>, <code>cache-min-tokens</code>, <code>imc-session-capacity</code></td>
               </tr>
               <tr>
                 <td>Features</td>
-                <td><code>speculation</code>, <code>draft-model</code>, <code>adapters</code>, <code>proj-on-cpu</code>, <code>proj-device</code>, <code>image-token-budget</code></td>
+                <td><code>speculation</code>, <code>draft-model</code>, <code>adapters</code>, <code>proj-on-cpu</code>, <code>proj-device</code>, <code>image-token-budget</code>, <code>image-batch-token-capacity</code>, <code>insecure-logging</code></td>
               </tr>
               <tr>
                 <td>Audio (<code>bucky-models</code>)</td>
@@ -2371,11 +2372,11 @@ malina-models:
               </tr>
             </tbody>
           </table>
-          <p>Template variables are one <code>name=value</code> per line, with YAML values. Adapters are one per line: an ID from the <code>lora</code> folder or an absolute <code>.gguf</code> path, with an optional <code>=scale</code>.</p>
+          <p>Template variables are one <code>name=value</code> per line, with YAML values. Adapters are one per line: an ID from the <code>lora</code> folder or an absolute <code>.gguf</code> path, with an optional <code>=scale</code>; an empty local <code>lora</code> folder does not hide this question. Generation and batch CPU thread counts can be set independently. The KV precision choices include <code>f8_e4m3</code> for models and backends that support FP8. A separate draft model has its own GPU selection, primary GPU, layer offload count, and tensor split. Image batch capacity reserves room for complete image chunks without changing the image detail budget.</p>
           <p>The tool does not ask for settings that a request sets better (<code>seed</code>, DRY, XTC, <code>grammar</code>) or that AutoTune or the GGUF own (<code>physical-batch-size</code>, <code>rope-freq-base</code>, the YaRN factors, <code>op-offload</code>, <code>tensor-buft-overrides</code>). Add them to the file by hand when needed.</p>
           <h4 id="server-settings">Server settings</h4>
           <p>Pick the sections to change: web server, auth, authorization, MCP, downloads, tracing, model pool, or runtime. Sections with values in the file start selected. The questions are generated from the server's configuration, so a new <code>kms</code> key is asked without changes to the tool. <code>base-path</code> is not asked, because the server finds this file through it.</p>
-          <p>Secrets are masked and never shown; an empty answer keeps the value in the file. The admin password is typed in clear and written as its SHA-256.</p>
+          <p>Secrets are masked and never shown; an empty answer keeps the value in the file. On a secret question, <code>ctrl+x</code> marks the saved value for removal; press it again to keep the value instead. Removal takes effect only after saving. The admin password is entered as a password and written as its SHA-256.</p>
           <h4 id="review-and-save">Review and save</h4>
           <p>The review shows the changes and the entry or <code>kms</code> section exactly as it will be written. To change an answer, <code>ctrl+o</code> opens the same list; the questions go on from the picked one, and <strong>Review and save</strong> in the list comes back to the review without walking through the rest. Esc goes back to the last question, and esc again walks back through them. For a chat model the review also:</p>
           <ul>

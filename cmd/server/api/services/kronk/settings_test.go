@@ -61,3 +61,24 @@ func TestCheckKMS(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckKMSAdminSessionDuration(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		duration string
+		wantErr  bool
+	}{
+		{name: "negative", duration: "-1s", wantErr: true},
+		{name: "zero", duration: "0s", wantErr: true},
+		{name: "below minimum", duration: "999ms", wantErr: true},
+		{name: "minimum", duration: "1s"},
+		{name: "nondefault", duration: "36h"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			kms := map[string]any{"web": map[string]any{"admin": map[string]any{"session-duration": tt.duration}}}
+			if err := CheckKMS(kms); (err != nil) != tt.wantErr {
+				t.Errorf("CheckKMS duration %q: got %v, want error %t", tt.duration, err, tt.wantErr)
+			}
+		})
+	}
+}

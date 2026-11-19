@@ -32,7 +32,31 @@ func Diff(qs []Question, f source.Facts, a *Answers, existing map[string]any) ([
 		}
 
 		for _, key := range q.Keys() {
+			// A separate answer takes precedence over a coupled default,
+			// even when that answer already matches the file.
+			if key != q.Key {
+				if next, ok := a.ByKey[key]; ok && a.Applies(f, next) && a.Value(key) != "" {
+					continue
+				}
+				if old, ok := existing[q.Key]; ok && raw != "" {
+					v, err := q.parse(raw)
+					if err != nil {
+						return nil, fmt.Errorf("%s: %w", q.Key, err)
+					}
+					if _, had := existing[key]; !had && sameValue(old, v) {
+						continue
+					}
+				}
+			}
+
 			old, had := existing[key]
+
+			if q.Secret && raw == ClearSecretValue {
+				if had {
+					out = append(out, configfile.Change{Key: key, Old: old, Del: true})
+				}
+				continue
+			}
 
 			if raw == "" {
 				if q.sameAs != "" {

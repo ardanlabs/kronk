@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -213,16 +214,38 @@ func (a *app) newQuestionsForm() *huh.Form {
 func (a *app) field(q questions.Question) huh.Field {
 	desc := a.describe(q)
 
+	if q.Secret && a.ans.Value(q.Key) == questions.ClearSecretValue {
+		return huh.NewSelect[string]().
+			Key(q.Key).
+			Title(upperFirst(q.Title)).
+			Description(desc).
+			Options(huh.NewOption("Remove saved value", questions.ClearSecretValue), huh.NewOption("Keep saved value", "")).
+			Value(a.ans.Sel[q.Key])
+	}
+
 	if q.Kind == questions.KindMulti {
 		var opts []huh.Option[string]
+		// Keep configured GPU order: tensor shares and primary GPU indices
+		// refer to it. Also retain devices absent from this machine.
+		selected := *a.ans.Multi[q.Key]
+		for _, value := range selected {
+			label := value + " (from file)"
+			if o, ok := q.Option(a.facts, value); ok {
+				label = o.Label
+			}
+			opts = append(opts, huh.NewOption(label, value))
+		}
 		for _, o := range q.Options(a.facts) {
-			opts = append(opts, huh.NewOption(o.Label, o.Value))
+			if !slices.Contains(selected, o.Value) {
+				opts = append(opts, huh.NewOption(o.Label, o.Value))
+			}
 		}
 		return huh.NewMultiSelect[string]().
 			Key(q.Key).
 			Title(upperFirst(q.Title)).
 			Description(desc).
 			Options(opts...).
+			Height(16).
 			Value(a.ans.Multi[q.Key])
 	}
 
@@ -283,6 +306,9 @@ func (a *app) field(q questions.Question) huh.Field {
 		}
 		opts = append(opts, huh.NewOption(upperFirst(o.Label), o.Value))
 	}
+	if !q.HasOther() && *a.ans.Sel[q.Key] == questions.OtherValue {
+		opts = append(opts, huh.NewOption("Existing: "+a.ans.Value(q.Key), questions.OtherValue))
+	}
 	if q.HasOther() {
 		label := "Other value…"
 		if q.OtherLabel != "" {
@@ -330,6 +356,13 @@ func (a *app) describe(q questions.Question) string {
 
 	// Blocks are set apart by a blank line: about, tip, the keys written.
 	var blocks []string
+	if q.Secret {
+		help := "Ctrl+X clears the saved secret; an empty answer keeps it."
+		if a.ans.Value(q.Key) == questions.ClearSecretValue {
+			help = "The saved secret will be removed. Ctrl+X keeps it instead."
+		}
+		about = append(about, help)
+	}
 	if len(about) > 0 {
 		blocks = append(blocks, a.st.value.Render(strings.Join(about, "\n")))
 	}
@@ -396,7 +429,7 @@ func (a *app) newSectionsForm() *huh.Form {
 // answers don't fit, the fixes come first, then keep: save anyway.
 func (a *app) reviewOptions() []huh.Option[string] {
 	if len(a.problems) > 0 {
-		return []huh.Option[string]{huh.NewOption("Quit without saving", actQuit)}
+		return []huh.Option[string]{huh.NewOption("Quit…", actQuit)}
 	}
 
 	var opts []huh.Option[string]
@@ -408,10 +441,13 @@ func (a *app) reviewOptions() []huh.Option[string] {
 	if a.notFitting() {
 		save = "Keep it and save to " + shortPath(a.path)
 	}
+	if a.quitAfterSave {
+		save += " and quit"
+	}
 	return append(opts,
 		huh.NewOption(save, actSave),
 		huh.NewOption("Save to another file…", actOther),
-		huh.NewOption("Quit without saving", actQuit),
+		huh.NewOption("Quit…", actQuit),
 	)
 }
 

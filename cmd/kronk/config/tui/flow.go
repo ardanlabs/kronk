@@ -214,7 +214,7 @@ func (a *app) startDone() (tea.Model, tea.Cmd) {
 // is set, so the error would show before the user picks anything.
 func (a *app) sectionsDone() (tea.Model, tea.Cmd) {
 	if len(a.sections) == 0 {
-		a.formErr = errors.New("select at least one section")
+		a.formErr = errors.New("no sections selected: press Space to select the highlighted section, then Enter")
 		return a.open(stepSections)
 	}
 	return a.openQuestions()
@@ -320,6 +320,9 @@ func (a *app) questionsDone() (tea.Model, tea.Cmd) {
 	a.check, a.checkErr, a.fixes, a.problems, a.saveErr = nil, nil, nil, nil, nil
 
 	if a.server {
+		if err := kronkserver.CheckKMS(configfile.Unflatten(questions.Apply(a.existing, changes))); err != nil {
+			a.problems = []string{err.Error()}
+		}
 		return a.startReview()
 	}
 
@@ -367,6 +370,9 @@ func (a *app) startReview() (tea.Model, tea.Cmd) {
 	}
 	if a.saveErr == nil {
 		a.otherPath = ""
+	}
+	if a.quitAfterSave && len(a.problems) == 0 && a.saveErr == nil && a.checkErr == nil && !a.notFitting() {
+		return a.reviewDone()
 	}
 	return a.open(stepReview)
 }
@@ -434,7 +440,7 @@ func (a *app) reviewDone() (tea.Model, tea.Cmd) {
 	}
 
 	if a.action == actQuit {
-		return a, tea.Quit
+		return a.requestQuit()
 	}
 
 	path := a.path

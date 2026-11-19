@@ -4,7 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"github.com/ardanlabs/kronk/cmd/kronk/config/questions"
 	"github.com/ardanlabs/kronk/cmd/kronk/config/source"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
 func TestUpperFirst(t *testing.T) {
@@ -55,6 +58,40 @@ func TestPickRowSource(t *testing.T) {
 	for name, tt := range tests {
 		if got := newPickRow(tt.c).sourceText; got != tt.want {
 			t.Errorf("%s: source = %q, want %q", name, got, tt.want)
+		}
+	}
+}
+
+func TestExistingChoicesRemainSelected(t *testing.T) {
+	a := newApp(t.Context(), nil, true)
+	a.facts = source.Facts{Endpoint: source.EndpointChat, Devices: devices.Devices{Devices: []devices.DeviceInfo{
+		{Name: "CUDA0", Type: "gpu_cuda"}, {Name: "CUDA1", Type: "gpu_cuda"},
+	}}}
+	a.qs = questions.Chat()
+	a.ans = questions.NewAnswers(a.qs)
+	a.existing = map[string]any{
+		"devices":              []any{"CUDA1", "CUDA0"},
+		"draft-model.devices":  []any{"RemoteGPU", "CUDA1"},
+		"draft-model.model-id": "owner/draft",
+		"cache-type-k":         "f32",
+	}
+	a.ans.Prefill(a.facts, a.existing)
+	for key, want := range map[string]string{
+		"devices": "CUDA1,CUDA0", "draft-model.devices": "RemoteGPU,CUDA1",
+		"draft-model.model-id": "owner/draft", "cache-type-k": "f32",
+	} {
+		field := a.field(a.ans.ByKey[key])
+		field.Focus()
+		field.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		if a.ans.ByKey[key].Kind == questions.KindMulti {
+			for device := range strings.SplitSeq(want, ",") {
+				if !strings.Contains(field.View(), device) {
+					t.Errorf("%s does not display configured GPU %q", key, device)
+				}
+			}
+		}
+		if got := a.ans.Value(key); got != want {
+			t.Errorf("unchanged %s submitted %q, want %q", key, got, want)
 		}
 	}
 }

@@ -111,6 +111,9 @@ func (a *app) answerText(q questions.Question) (string, bool) {
 
 	switch {
 	case q.Secret || q.Kind == questions.KindPassword:
+		if value == questions.ClearSecretValue {
+			return "remove saved value", false
+		}
 		if value != "" {
 			return "new value", false
 		}

@@ -38,6 +38,9 @@ func (a *app) View() tea.View {
 	case stepDone:
 		b.WriteString(a.doneView())
 
+	case stepQuit:
+		b.WriteString(a.quitView())
+
 	case stepFailed:
 		b.WriteString(a.wrap(a.st.bad.Render("Error: ") + a.err.Error()))
 		b.WriteString("\n\n" + a.st.help.Render("Press any key to exit."))
@@ -52,6 +55,9 @@ func (a *app) View() tea.View {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", a.panelView(a.panelWidth(), a.bodyHeight()))
 	}
 
+	if a.currentForm() != nil {
+		body += "\n" + a.st.help.Render("ctrl+q quit (asks to save changes)")
+	}
 	v := tea.NewView(header + "\n\n" + body + "\n")
 	v.AltScreen = true
 	return v
@@ -96,7 +102,11 @@ func (a *app) aboveForm() string {
 
 // bodyHeight is the number of rows under the header.
 func (a *app) bodyHeight() int {
-	return a.height - lipgloss.Height(a.header()) - 2
+	room := a.height - lipgloss.Height(a.header()) - 2
+	if a.currentForm() != nil {
+		room--
+	}
+	return room
 }
 
 func (a *app) header() string {

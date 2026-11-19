@@ -1,6 +1,7 @@
 package kronk
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -133,6 +134,10 @@ func CheckKMS(kms map[string]any) error {
 	cfg := newConfig()
 	if err := yaml.UnmarshalStrict(data, &cfg); err != nil {
 		return fmt.Errorf("kms: %w", err)
+	}
+
+	if cfg.Web.Admin.SessionDuration < time.Second {
+		return errors.New("kms: web admin session duration must be at least one second")
 	}
 
 	return validateTimeoutConfig(cfg.Web.InferenceTimeout, cfg.Web.WriteTimeout)

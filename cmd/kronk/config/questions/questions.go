@@ -47,6 +47,9 @@ const (
 // OtherValue is the select value that opens a free-form input.
 const OtherValue = "\x00other"
 
+// ClearSecretValue explicitly removes a secret. An empty answer retains it.
+const ClearSecretValue = "\x00clear-secret"
+
 type option struct {
 	Label string
 	Value string
@@ -178,6 +181,10 @@ func (q Question) Keys() []string {
 
 // parse converts an answer to the typed value written to YAML.
 func (q Question) parse(s string) (any, error) {
+	if q.Secret && s == ClearSecretValue {
+		return s, nil
+	}
+
 	switch q.Kind {
 	case kindBool:
 		return strconv.ParseBool(s)

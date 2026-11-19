@@ -398,8 +398,18 @@ need a running server.
 kronk config
 ```
 
-Every question starts on its default. Leaving the default writes nothing, so
-Kronk's defaults and AutoTune still apply. Esc goes back one question.
+Existing settings are filled in when an entry is opened, including model
+variants. Settings not already in the file start on their defaults; leaving
+those defaults writes nothing, so Kronk's defaults and AutoTune still apply.
+Esc goes back one question. In a multi-select list, `[ ]` means unselected
+and `[x]` means selected: press Space to select items, then Enter to continue.
+
+Press `ctrl+q` or `ctrl+c` while editing to quit. When there are pending
+changes, choose **Save and quit**, **Discard and quit**, or **Continue
+editing** (the default). Saving still validates the answers; invalid answers
+must be corrected, and memory warnings still need review. A failed save
+keeps the changes open instead of quitting. With no pending changes, quitting
+exits immediately.
 
 Colors follow the terminal's background, also when it switches between light
 and dark while the tool runs. When a light terminal shows faint, hard to read
@@ -483,14 +493,19 @@ questions are all asked.
 | Sampling | `temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`, `repeat_penalty`, `frequency_penalty`, `presence_penalty` |
 | Memory and GPU | `cache-type-k`, `cache-type-v`, `ngpu-layers`, `offload-kqv`, `moe`, `numa`, `flash-attention`, `swa-full`, `load-mode`, `lazy-mode` |
 | Multiple GPUs | `devices`, `split-mode`, `main-gpu`, `tensor-split` |
-| Throughput | `queue-depth`, `admission-timeout`, `prefill-batch-size`, `kv-cache-mode`, `nthreads`, `incremental-cache`, `cache-min-tokens`, `imc-session-capacity` |
-| Features | `speculation`, `draft-model`, `adapters`, `proj-on-cpu`, `proj-device`, `image-token-budget` |
+| Throughput | `queue-depth`, `admission-timeout`, `prefill-batch-size`, `kv-cache-mode`, `nthreads`, `nthreads-batch`, `incremental-cache`, `cache-min-tokens`, `imc-session-capacity` |
+| Features | `speculation`, `draft-model`, `adapters`, `proj-on-cpu`, `proj-device`, `image-token-budget`, `image-batch-token-capacity`, `insecure-logging` |
 | Audio (`bucky-models`) | `nseq-max`, `queue-depth`, `admission-timeout`, `nthreads` |
 | Image (`malina-models`) | `concurrency`, `queue-depth`, `admission-timeout`, `cpu-threads` |
 
 Template variables are one `name=value` per line, with YAML values. Adapters
 are one per line: an ID from the `lora` folder or an absolute `.gguf` path,
-with an optional `=scale`.
+with an optional `=scale`; an empty local `lora` folder does not hide this
+question. Generation and batch CPU thread counts can be set independently.
+The KV precision choices include `f8_e4m3` for models and backends that support
+FP8. A separate draft model has its own GPU selection, primary GPU, layer
+offload count, and tensor split. Image batch capacity reserves room for
+complete image chunks without changing the image detail budget.
 
 The tool does not ask for settings that a request sets better (`seed`, DRY,
 XTC, `grammar`) or that AutoTune or the GGUF own (`physical-batch-size`,
@@ -506,7 +521,9 @@ new `kms` key is asked without changes to the tool. `base-path` is not asked,
 because the server finds this file through it.
 
 Secrets are masked and never shown; an empty answer keeps the value in the
-file. The admin password is typed in clear and written as its SHA-256.
+file. On a secret question, `ctrl+x` marks the saved value for removal;
+press it again to keep the value instead. Removal takes effect only after
+saving. The admin password is entered as a password and written as its SHA-256.
 
 #### Review and save
 

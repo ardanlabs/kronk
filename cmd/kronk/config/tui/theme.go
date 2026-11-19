@@ -121,8 +121,8 @@ func formTheme(isDark bool) *huh.Styles {
 	t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(p.accent)
 	t.Focused.Option = t.Focused.Option.Foreground(p.text)
 	t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(p.accent)
-	t.Focused.SelectedPrefix = lipgloss.NewStyle().Foreground(p.accent).SetString("✓ ")
-	t.Focused.UnselectedPrefix = lipgloss.NewStyle().Foreground(p.muted).SetString("• ")
+	t.Focused.SelectedPrefix = lipgloss.NewStyle().Foreground(p.accent).SetString("[x] ")
+	t.Focused.UnselectedPrefix = lipgloss.NewStyle().Foreground(p.muted).SetString("[ ] ")
 	t.Focused.UnselectedOption = t.Focused.UnselectedOption.Foreground(p.text)
 	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(white).Background(buttonBlue)
 	t.Focused.Next = t.Focused.FocusedButton
