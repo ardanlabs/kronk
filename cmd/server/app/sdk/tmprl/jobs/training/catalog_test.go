@@ -15,6 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
 	job "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
+	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
@@ -24,6 +25,108 @@ import (
 	"go.temporal.io/sdk/client"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
+
+type pausedTrainer struct {
+	trainer
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (t *pausedTrainer) Train(ctx context.Context, input optimization.TrainingJob, publish func(tmprl.Progress)) (optimization.TrainingCandidate, error) {
+	close(t.entered)
+	select {
+	case <-ctx.Done():
+		return optimization.TrainingCandidate{}, ctx.Err()
+	case <-t.release:
+	}
+	if input.PausePoint == nil {
+		return optimization.TrainingCandidate{}, errors.New("training did not receive its pause point")
+	}
+	if err := input.PausePoint(ctx); err != nil {
+		return optimization.TrainingCandidate{}, err
+	}
+	return t.trainer.Train(ctx, input, publish)
+}
+
+func TestCatalogTrainingControlsRecoverLostReceipt(t *testing.T) {
+	db, _ := newCatalogDatabase(t)
+	env := newTestEnvironment(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, data := source(t, false)
+	upload, err := files.Put(ctx, uploads.Input{Name: name}, strings.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(model, []byte("controlled model"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &lostReceiptClient{Client: env.Client}
+	compute := &pausedTrainer{entered: make(chan struct{}), release: make(chan struct{})}
+	cfg := job.Config{TaskQueue: env.TaskQueue, Namespace: env.Namespace, Uploads: files, MoxieDB: db, StorageRoot: t.TempDir(),
+		Models: map[string]string{"gemma": model}, Trainer: compute, Log: env.Log}
+	workerJob, err := job.New(env.Client, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range workerJob.Workers() {
+		if err := w.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(w.Stop)
+	}
+	j, err := job.New(c, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := j.Start(ctx, job.Request{ID: "training-controls-" + env.TaskQueue, Model: "gemma", DatasetID: upload.ID})
+	if err != nil || run.ControlStage != "training" || !run.PauseInPlace {
+		t.Fatalf("new training did not opt into controls: %+v %v", run, err)
+	}
+	select {
+	case <-compute.entered:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	pause := tmprl.ControlRequest{RequestID: "pause", Action: "pause"}
+	if _, err := j.PreparationControl(ctx, run.Execution, pause); !errors.Is(err, tmprl.ErrControlConflict) {
+		t.Fatalf("preparation endpoint controlled training: %v", err)
+	}
+	c.review.Store(true)
+	if _, err := j.TrainingControl(ctx, run.Execution, pause); !errors.Is(err, job.ErrUnavailable) {
+		t.Fatalf("lost receipt was not exercised: %v", err)
+	}
+	close(compute.release)
+	paused := awaitStatus(t, ctx, j, run.Execution, func(s job.State) bool { return s.Status == tmprl.StatusPaused })
+	if paused.Step != "train" || compute.attempts.Load() != 0 {
+		t.Fatalf("pause did not stop inside optimization: %+v", paused)
+	}
+	restarted, err := job.New(env.Client, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := db.PendingIntents(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("training receipt not reconciled: %+v %v", pending, err)
+	}
+	if receipt, err := restarted.TrainingControl(ctx, run.Execution, pause); err != nil || receipt.Revision != 1 {
+		t.Fatalf("pause receipt could not be replayed: %+v %v", receipt, err)
+	}
+	if _, err := restarted.TrainingControl(ctx, run.Execution, tmprl.ControlRequest{RequestID: "resume", Action: "resume", ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := j.Jobs().Wait(ctx, run.Execution)
+	if err != nil || completed.Status != tmprl.StatusCompleted || !completed.Artifacts.Training.Accepted || compute.attempts.Load() != 1 {
+		t.Fatalf("resume did not finish one training and evaluation: %+v %v", completed, err)
+	}
+}
 
 type lostReceiptClient struct {
 	client.Client

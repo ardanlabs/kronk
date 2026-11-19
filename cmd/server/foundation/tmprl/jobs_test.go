@@ -18,8 +18,109 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 )
+
+func TestJobsInPlacePauseResumeAndStop(t *testing.T) {
+	for _, action := range []string{"resume", "stop"} {
+		t.Run(action, func(t *testing.T) {
+			env := newTestEnvironment(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+			defer cancel()
+			entered, permit := make(chan int, 3), make(chan struct{})
+			var invocations atomic.Int32
+			handler := tmprl.StepFunc[string, []string](func(ctx context.Context, in tmprl.StepContext[string, []string]) (tmprl.StepResult[[]string], error) {
+				if in.Request.Step == "finish" {
+					return tmprl.StepResult[[]string]{Artifacts: append(slices.Clone(in.Request.Artifacts), "finish")}, nil
+				}
+				invocations.Add(1)
+				var saved []string
+				for unit := 1; unit <= 3; unit++ {
+					entered <- unit
+					select {
+					case <-ctx.Done():
+						return tmprl.StepResult[[]string]{}, ctx.Err()
+					case <-permit:
+					}
+					saved = append(saved, fmt.Sprint(unit))
+					if err := in.PausePoint(ctx); err != nil {
+						return tmprl.StepResult[[]string]{}, err
+					}
+				}
+				return tmprl.StepResult[[]string]{Artifacts: saved}, nil
+			})
+			j, err := tmprl.New(env.Client, tmprl.Config[string, []string]{
+				Names:     tmprl.Names{Workflow: "example.InPlace", Activity: "example.InPlaceStep", Memo: "inplace.state", Query: "inplace-query", Control: "inplace-control"},
+				TaskQueue: env.TaskQueue, StorageRoot: t.TempDir(), StorageDirectory: "inplace", Log: env.Log,
+				Steps: map[string]tmprl.StepHandler[string, []string]{"work/commit": handler, "work/finish": handler},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := j.NewWorker()
+			if err := w.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(w.Stop)
+			plan := recoveryPlan()
+			run, err := j.Submit(ctx, "inplace-"+rand.Text(), tmprl.JobInput[string]{Job: &plan, ControlStage: "work", PauseInPlace: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-entered:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			pause := tmprl.ControlRequest{RequestID: "pause", Action: "pause"}
+			if _, err := j.Control(ctx, run.Execution, pause); err != nil {
+				t.Fatal(err)
+			}
+			requested := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status == tmprl.StatusPauseRequested })
+			if requested.ControlAcknowledgedRevision != 0 {
+				t.Fatal("acknowledged an in-flight unit as paused")
+			}
+			permit <- struct{}{}
+			paused := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status == tmprl.StatusPaused })
+			if paused.Step != "commit" || paused.ControlAcknowledgedRevision != 1 || paused.ControlCheckpoint != "" || paused.WorkerHost == "" {
+				t.Fatalf("pause did not retain the active step and worker: %+v", paused)
+			}
+			select {
+			case <-entered:
+				t.Fatal("started another unit while paused")
+			case <-time.After(150 * time.Millisecond):
+			}
+			if action == "stop" {
+				if err := j.Stop(ctx, run.Execution); err != nil {
+					t.Fatal(err)
+				}
+				stopped := awaitCheckpointState(t, ctx, j, run.Execution, func(s tmprl.Run[string, []string]) bool { return s.Status.Terminal() })
+				if stopped.Status != tmprl.StatusStopped || len(stopped.Artifacts) != 0 {
+					t.Fatalf("Stop continued or published paused work: %+v", stopped)
+				}
+				return
+			}
+			if _, err := j.Control(ctx, run.Execution, tmprl.ControlRequest{RequestID: "resume", Action: "resume", ExpectedRevision: 1}); err != nil {
+				t.Fatal(err)
+			}
+			handle, err := env.Client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{WorkflowID: run.WorkflowID, RunID: run.RunID,
+				UpdateName: "inplace-control.paused", Args: []any{"work", "commit", int64(1)}, WaitForStage: client.WorkflowUpdateStageCompleted})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var acknowledged bool
+			if err := handle.Get(ctx, &acknowledged); err != nil || acknowledged {
+				t.Fatalf("late acknowledgement reinstated an old pause: %t %v", acknowledged, err)
+			}
+			close(permit)
+			completed, err := j.Wait(ctx, run.Execution)
+			if err != nil || !slices.Equal(completed.Artifacts, []string{"1", "2", "3", "finish"}) || invocations.Load() != 1 {
+				t.Fatalf("Resume restarted or lost work: %+v, invocations=%d, err=%v", completed, invocations.Load(), err)
+			}
+		})
+	}
+}
 
 func TestJobsOrderedControls(t *testing.T) {
 	env := newTestEnvironment(t)

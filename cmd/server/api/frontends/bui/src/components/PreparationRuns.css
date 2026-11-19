@@ -112,6 +112,7 @@
 .live-hero-failed .ring-text, .live-hero-stopped .ring-text { font-size: 30px; color: var(--color-error); }
 .live-main { grid-area: main; min-width: 0; }
 .live-main h3 { margin: 4px 0 6px; font-size: 24px; }
+.live-main > .prep-copy { max-width: 68ch; margin-bottom: 0; }
 .live-main .prep-actions { margin-top: 14px; }
 .prep-workspace .hero-action { min-height: 48px; font-size: 15px; font-weight: 700; }
 .live-count { margin-top: 10px; font-size: 14px; color: var(--color-gray-700); }
@@ -234,11 +235,17 @@ a.train-result-accepted, a.train-result-needs_improvement, a.train-result-not_co
 .run-issue h4 { font-size: 14px; margin: 0 0 8px; }
 .run-issue p { max-width: 80ch; font-size: 14px; line-height: 1.6; margin: 0 0 10px; }
 .run-issue .prep-copy { font-size: 13px; }
-.run-issue-guidance { max-width: 80ch; font-size: 14px; line-height: 1.6; margin-top: 24px; }
-.run-issue-guidance h4 { margin: 0 0 6px; font-size: 14px; }
-.run-issue-guidance p { margin: 0; }
-.run-issue-guidance ul { margin: 6px 0 0; padding-left: 18px; }
-.run-issue-guidance li + li { margin-top: 8px; }
+.run-failure-log { margin-top: 20px; border: 1px solid var(--color-gray-200); border-radius: 8px; overflow: hidden; }
+.run-failure-log h4 { margin: 0; padding: 12px 16px; background: var(--color-gray-50); font-size: 13px; font-weight: 600; }
+.run-failure-log ol { margin: 0; padding: 0; list-style: none; }
+.run-failure-log li { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 16px; padding: 14px 16px; border-top: 1px solid var(--color-gray-200); }
+.run-failure-log time { font-size: 12px; color: var(--color-gray-600); font-variant-numeric: tabular-nums; line-height: 1.6; }
+.run-failure-log p { margin: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.run-failure-log small { display: block; margin-top: 4px; color: var(--color-gray-600); font-size: 12px; }
+.run-log-failure { color: var(--color-error); font-weight: 500; }
+.run-failure-log .run-log-status { padding: 12px 16px; border-top: 1px solid var(--color-gray-200); }
+.run-log-status .btn { margin-top: 8px; }
+@media (max-width: 600px) { .run-failure-log li { grid-template-columns: 80px minmax(0, 1fr); gap: 10px; padding: 12px; } }
 .run-issues-table { border: 1px solid var(--color-gray-200); border-radius: 8px; overflow-x: auto; margin: 14px 0; }
 .run-issues-table table { width: 100%; border-collapse: collapse; font-size: 13px; overflow-wrap: normal; }
 .run-issues-table :is(th, td) { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--color-gray-200); }
@@ -253,6 +260,9 @@ a.train-result-accepted, a.train-result-needs_improvement, a.train-result-not_co
 .run-issue-technical code { font-size: 12px; }
 .run-issue-technical .prep-copy { margin-top: 8px; }
 .prep-workspace .run-issues-link { font-size: 13px; margin-top: 4px; }
+.prep-run-detail .run-issues-link { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; margin-top: 8px; border: 1px solid var(--color-gray-300); border-radius: 6px; background: var(--color-white); font-size: 13px; font-weight: 600; text-decoration: none; }
+.prep-run-detail .run-issues-link:hover { background: var(--color-gray-50); border-color: var(--color-active-blue); }
+.prep-run-detail .run-issues-link:focus-visible { outline: 2px solid var(--color-active-blue); outline-offset: 3px; }
 .run-evaluation-answers { margin-top: 24px; }
 .run-evaluation-answer { border-bottom: 1px solid var(--color-gray-200); overflow-wrap: anywhere; }
 .run-evaluation-answer dl { display: grid; gap: 12px; margin: 8px 0 16px; font-size: 14px; }

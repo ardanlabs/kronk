@@ -50,6 +50,8 @@ type TrainingJob struct {
 	Training Training        `json:"training"`
 	Dataset  TrainingDataset `json:"dataset"`
 	Workdir  string          `json:"workdir"`
+	// PausePoint waits between computation units without discarding optimizer state.
+	PausePoint func(context.Context) error `json:"-"`
 }
 
 // TrainingCandidate identifies a trained checkpoint and its selection metrics.

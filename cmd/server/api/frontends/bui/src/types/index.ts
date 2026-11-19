@@ -1558,6 +1558,7 @@ export interface TrainingRun {
   settings?: TrainingRunSettings;
   control_revision: number;
   control_action?: string;
+  control_stage?: string;
   observed_at?: string;
   pending_actions?: { id: string; kind: string; state: string }[];
   status: string;
@@ -1569,6 +1570,7 @@ export interface TrainingRun {
   dataset_available: boolean;
   dataset_record_count: number;
   skipped_records?: number;
+  failure_log?: { step: string; code: string; message: string; time?: string; attempt?: number }[];
   issues?: { code: string; count: number; required?: number }[];
   failure_reason?: 'dataset-document-exists' | 'dataset-questions-exist' | 'dataset-changed' | 'preparation-no-examples'
     | 'preparation-no-source-units' | 'preparation-request-budget-exhausted' | 'preparation-no-verified-examples' | 'preparation-checkpoint-version' | 'invalid-training'

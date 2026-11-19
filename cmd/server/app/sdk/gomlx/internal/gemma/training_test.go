@@ -1,6 +1,7 @@
 package gemma
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -9,11 +10,117 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gomlx/gomlx/core/tensors"
 	"github.com/gomlx/gomlx/ml/model"
 )
+
+func TestTrainDatasetPausePreservesOptimizerAndStopCancels(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "go")
+	path := filepath.Join(t.TempDir(), "gemma.gguf")
+	writeTestModel(t, path, testConfig(), "gemma3")
+	newRuntime := func(t *testing.T) *Runtime {
+		t.Helper()
+		runtime, err := NewLoRARuntime(path, AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return runtime
+	}
+	dataset := PreparedDataset{Training: []TrainingRecord{
+		{Tokens: []int32{1, 4, 5}, Targets: []int32{4, 5, 6}, LossMask: []bool{false, true, true}},
+		{Tokens: []int32{1, 7, 8, 9}, Targets: []int32{7, 8, 9, 10}, LossMask: []bool{false, false, true, true}},
+	}}
+	config := TrainingConfig{Epochs: 2, LearningRate: 1e-2, BatchSize: 1, Seed: 42, AdapterCheckpointDirectory: t.TempDir()}
+	baseline := newRuntime(t)
+	defer baseline.Close()
+	want, err := baseline.TrainDataset(t.Context(), dataset, config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := filepath.Join(t.TempDir(), "uninterrupted.gguf")
+	if err := baseline.ExportBestAdapter(want, adapter); err != nil {
+		t.Fatal(err)
+	}
+	wantBytes, err := os.ReadFile(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{"resume", "stop"} {
+		t.Run(action, func(t *testing.T) {
+			runtime := newRuntime(t)
+			defer runtime.Close()
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			paused, resume, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			var completed atomic.Int32
+			cfg := config
+			cfg.AdapterCheckpointDirectory = t.TempDir()
+			var once atomic.Bool
+			cfg.PausePoint = func(ctx context.Context) error {
+				if completed.Load() == 1 && once.CompareAndSwap(false, true) {
+					close(paused)
+					select {
+					case <-resume:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+				return ctx.Err()
+			}
+			var got TrainingResult
+			var trainErr error
+			go func() {
+				defer close(done)
+				got, trainErr = runtime.TrainDataset(ctx, dataset, cfg, func(p TrainingProgress) { completed.Store(int32(p.CompletedSteps)) })
+			}()
+			defer func() { cancel(); <-done }()
+			select {
+			case <-paused:
+			case <-done:
+				t.Fatalf("training finished instead of pausing between batches: %v", trainErr)
+			case <-ctx.Done():
+				t.Fatal("training did not reach a pause point")
+			}
+			select {
+			case <-done:
+				t.Fatal("training completed while paused")
+			case <-time.After(100 * time.Millisecond):
+			}
+			if completed.Load() != 1 {
+				t.Fatal("optimizer advanced while paused")
+			}
+			if action == "stop" {
+				cancel()
+				<-done
+				if !errors.Is(trainErr, context.Canceled) || completed.Load() != 1 || got.BestEpoch != 0 {
+					t.Fatalf("Stop advanced or completed training: %+v %v", got, trainErr)
+				}
+				return
+			}
+			close(resume)
+			<-done
+			if trainErr != nil || len(got.Epochs) != len(want.Epochs) || completed.Load() != 4 {
+				t.Fatalf("Resume lost training work: %+v, completed=%d, err=%v", got, completed.Load(), trainErr)
+			}
+			for index, metrics := range got.Epochs {
+				if metrics.TrainingLoss != want.Epochs[index].TrainingLoss || metrics.ValidationLoss != want.Epochs[index].ValidationLoss {
+					t.Fatalf("pausing changed epoch %d losses: %+v, want %+v", index+1, metrics, want.Epochs[index])
+				}
+			}
+			output := filepath.Join(t.TempDir(), "resumed.gguf")
+			if err := runtime.ExportBestAdapter(got, output); err != nil {
+				t.Fatal(err)
+			}
+			gotBytes, err := os.ReadFile(output)
+			if err != nil || !bytes.Equal(gotBytes, wantBytes) {
+				t.Fatalf("resumed adapter differs from uninterrupted training: %v", err)
+			}
+		})
+	}
+}
 
 func TestTrainDatasetRunsDeterministicEpochsAndPreservesBase(t *testing.T) {
 	t.Setenv("GOMLX_BACKEND", "go")

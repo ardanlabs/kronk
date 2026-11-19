@@ -126,8 +126,12 @@ func (j *Job) catalogSubmit(ctx context.Context, input Request) (tmprl.Run[Reque
 		return tmprl.Run[Request, Artifacts]{}, err
 	}
 	command := submitCommand{InputSHA256: digest, Submission: tmprl.JobInput[Request]{Job: &plan, Request: validated}}
-	if validated.PreparationOnly {
+	switch {
+	case validated.PreparationOnly:
 		command.Submission.ControlStage = "preparation"
+	case validated.Prepare == nil:
+		command.Submission.ControlStage = "training"
+		command.Submission.PauseInPlace = true
 	}
 	payload, err := commandPayload(command)
 	if err != nil {
@@ -202,7 +206,7 @@ func (j *Job) observe(ctx context.Context, a moxiedb.Attempt, run tmprl.Run[Requ
 		projection.SkippedRecords = output.SavedSkippedRecords
 	}
 	projection.State.Definition, projection.State.Decisions = nil, nil
-	// Only the whitelisted FailureReason is kept, never failure text or raw types.
+	// Keep only the allowlisted failure reason and log, never raw errors or types.
 	projection.State.Error, projection.State.WorkerHost, projection.State.FailureTypes = "", "", nil
 	// Training options and the saved dataset are shown with the run; the model path is not.
 	projection.State.Request = Request{PreparationOnly: run.Request.PreparationOnly, Training: run.Request.Training, SavedDataset: run.Request.SavedDataset}
@@ -324,6 +328,16 @@ func (j *Job) decide(ctx context.Context, e tmprl.Execution, kind string, decisi
 // Accepted receipts are distinct from execution status and safe-point progress.
 // Only new preparation-only executions opt in; training/legacy runs are unchanged.
 func (j *Job) PreparationControl(ctx context.Context, e tmprl.Execution, request tmprl.ControlRequest) (tmprl.ControlReceipt, error) {
+	return j.runControl(ctx, e, request, "preparation")
+}
+
+// TrainingControl pauses or resumes a new training-only run without restarting
+// its active optimizer. Older and combined runs retain their original protocol.
+func (j *Job) TrainingControl(ctx context.Context, e tmprl.Execution, request tmprl.ControlRequest) (tmprl.ControlReceipt, error) {
+	return j.runControl(ctx, e, request, "training")
+}
+
+func (j *Job) runControl(ctx context.Context, e tmprl.Execution, request tmprl.ControlRequest, stage string) (tmprl.ControlReceipt, error) {
 	if err := e.Validate(); err != nil {
 		return tmprl.ControlReceipt{}, err
 	}
@@ -339,6 +353,12 @@ func (j *Job) PreparationControl(ctx context.Context, e tmprl.Execution, request
 			return tmprl.ControlReceipt{}, ErrNotFound
 		}
 		return tmprl.ControlReceipt{}, err
+	}
+	if stage == "" {
+		stage = entry.Job.Mode // Durable reconciliation selects the original job's mode.
+	}
+	if entry.Job.Mode != stage || (stage != "preparation" && stage != "training") {
+		return tmprl.ControlReceipt{}, tmprl.ErrControlConflict
 	}
 	payload, err := commandPayload(request)
 	if err != nil {
@@ -366,7 +386,7 @@ func (j *Job) PreparationControl(ctx context.Context, e tmprl.Execution, request
 		if err != nil {
 			return tmprl.ControlReceipt{}, executionError(err)
 		}
-		if !run.Request.PreparationOnly || run.ControlStage != "preparation" || run.Status.Terminal() {
+		if run.ControlStage != stage || run.Status.Terminal() || stage == "training" && !run.PauseInPlace || stage == "preparation" && !run.Request.PreparationOnly {
 			return tmprl.ControlReceipt{}, tmprl.ErrControlConflict
 		}
 	}
@@ -425,7 +445,7 @@ func (j *Job) Reconcile(ctx context.Context) error {
 			var request tmprl.ControlRequest
 			err = json.Unmarshal(intent.Payload, &request)
 			if err == nil {
-				_, err = j.PreparationControl(ctx, e, request)
+				_, err = j.runControl(ctx, e, request, "")
 			}
 		default:
 			continue

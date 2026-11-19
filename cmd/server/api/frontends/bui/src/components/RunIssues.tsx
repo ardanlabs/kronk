@@ -3,23 +3,28 @@ import { api } from '../services/api';
 import { requestMessage, stepLabel, trainingStepLabels } from '../contexts/FineTuningRunnerContext';
 import type { TrainingEvaluation, TrainingRun } from '../types';
 
-const failures: Record<NonNullable<TrainingRun['failure_reason']>, [string, string]> = {
-  'dataset-document-exists': ['This document and page range are already in the dataset.', 'Use different source material or a page range that has not already been prepared.'],
-  'dataset-questions-exist': ['Every record repeats a question already in the dataset.', 'Use source material with new facts or questions. Repeating the same preparation will not add these records.'],
-  'dataset-changed': ['The dataset changed before this run could save its records.', 'Open the current dataset from the dashboard and start a new preparation.'],
-  'preparation-no-examples': ['The model did not produce usable examples from the selected content.', 'Review the selected content, preparation goal, and instructions. The result does not prove the document contains no useful facts.'],
-  'preparation-no-source-units': ['No supported source passages were available for this preparation goal.', 'Check the selected pages and goal. Try source content with readable text and facts relevant to the task.'],
-  'preparation-request-budget-exhausted': ['Preparation exhausted its generation request budget before resolving all source passages.', 'Check the preparation model and instructions before starting a new run. This alone does not establish a problem with the source content.'],
-  'preparation-no-verified-examples': ['None of the generated training records passed verification.', 'Compare the preparation goal and instructions with the selected source content. Verification checks source support, question quality, and instruction compliance.'],
-  'preparation-checkpoint-version': ['Saved progress belongs to an older checkpoint format and cannot be resumed.', 'Start a new preparation with a new preview. Existing dataset versions are unchanged.'],
-  'invalid-training': ['The server rejected the run’s input.', 'Check that the selected document or dataset version is still available and that the run settings are valid. Detailed validation evidence was not recorded for this run; do not assume that more records will fix it.'],
-  'preparation-extractor-unavailable': ['The document conversion service (Docling) was unavailable.', 'Check that the conversion service is running and reachable, or ask the person managing the server to restore it. Start a new preparation once service is restored.'],
-  'preparation-page-range': ['The selected page range starts after the document’s last page.', 'Select a valid page range and start a new preparation.'],
-  'preparation-extraction-failed': ['The document conversion service could not read the document.', 'Check that the file opens correctly and that its selected pages contain readable content. Try another supported document if needed.'],
-  'training-records-insufficient': ['The dataset has too few training records.', 'Add source material and prepare more verified training records. Evaluation questions do not count toward the training-record minimum.'],
+const failures: Record<NonNullable<TrainingRun['failure_reason']>, string> = {
+  'dataset-document-exists': 'This document and page range are already in the dataset.',
+  'dataset-questions-exist': 'Every record repeats a question already in the dataset.',
+  'dataset-changed': 'The dataset changed before this run could save its records.',
+  'preparation-no-examples': 'The model did not produce usable examples from the selected content.',
+  'preparation-no-source-units': 'No supported source passages were available for this preparation goal.',
+  'preparation-request-budget-exhausted': 'Preparation reached its generation request limit before resolving all source passages.',
+  'preparation-no-verified-examples': 'None of the generated training records passed verification.',
+  'preparation-checkpoint-version': 'Saved progress belongs to an older checkpoint format and cannot be resumed.',
+  'invalid-training': 'The server rejected the run’s input.',
+  'preparation-extractor-unavailable': 'The document conversion service (Docling) was unavailable.',
+  'preparation-page-range': 'The selected page range starts after the document’s last page.',
+  'preparation-extraction-failed': 'The document conversion service could not read the document.',
+  'training-records-insufficient': 'The dataset has too few training records.',
 };
 
-export const failureText = (run: TrainingRun) => run.failure_reason ? failures[run.failure_reason]?.[0] ?? '' : '';
+export const failureText = (run: TrainingRun) => {
+  const step = run.stages.flatMap((stage) => stage.steps).find((step) => step.status === 'failed')?.name ?? run.step;
+  const label = run.preparation_only ? stepLabel(step) : trainingStepLabels[step ?? ''] ?? 'Training';
+  const failure = run.failure_log?.at(-1);
+  return (failure && failure.code !== 'unclassified-failure' ? failure.message : '') || (run.failure_reason && failures[run.failure_reason]) || `${label} failed.`;
+};
 export const notAccepted = (run: TrainingRun) => run.status === 'needs_improvement' || (run.status === 'completed' && run.evaluation_result === 'needs_improvement');
 
 const preparationWarnings: Record<string, [string, string]> = {
@@ -34,30 +39,29 @@ export interface RunIssue {
   code: string;
   title: string;
   detail: string;
-  guidance: string;
 }
 
-// Completed runs never show Issues, even when they recorded warnings.
+// Accepted completed runs do not show Issues, even when they recorded warnings.
 // Stopped-by-user is not an execution failure.
 export function runIssues(run: TrainingRun): RunIssue[] {
-  if (run.status === 'completed') return [];
+  if (run.status === 'stopped') return [];
+  if (run.status === 'completed' && !notAccepted(run)) return [];
   const issues: RunIssue[] = [];
   if (run.status === 'failed') {
     const minimum = run.issues?.find((issue) => issue.code === 'training-records-insufficient' && issue.required && issue.required > issue.count);
     issues.push({
       code: run.failure_reason ?? 'unclassified-failure',
-      title: minimum ? `${minimum.required! - minimum.count} more training records are needed` : failureText(run) || 'An unexpected error stopped this run.',
-      detail: minimum ? `This run had ${minimum.count} training records; it required at least ${minimum.required}. Evaluation questions do not count toward this minimum.` : 'Earlier dataset versions are unchanged.',
-      guidance: run.failure_reason ? failures[run.failure_reason]?.[1] ?? 'Ask the person managing the server to check the failed step.' : 'The recorded error does not identify the cause. Ask the person managing the server to check the failed step before changing the dataset.',
+      title: minimum ? `${minimum.required! - minimum.count} more training records are needed` : failureText(run),
+      detail: minimum ? `This run had ${minimum.count} training records; it required at least ${minimum.required}. Evaluation questions do not count toward this minimum.` : run.preparation_only ? 'No records were saved; earlier versions are unchanged.' : 'Training did not finish; the dataset is unchanged.',
     });
   } else if (notAccepted(run)) {
-    issues.push({ code: 'evaluation-not-accepted', title: 'The adapter did not meet the acceptance requirements.', detail: 'Training finished, but the adapter was not accepted.', guidance: 'Review the missed questions and expected answers in Evaluation. Correct or add training examples for the gaps you find before training again.' });
+    issues.push({ code: 'evaluation-not-accepted', title: 'The adapter did not meet the acceptance requirements.', detail: 'Training finished, but the adapter was not accepted.' });
   }
-  if (!['failed', 'needs_improvement', 'stopped'].includes(run.status)) return issues;
+  if (run.status !== 'failed' && !notAccepted(run)) return issues;
   for (const issue of run.issues ?? []) {
     const text = preparationWarnings[issue.code];
     const noun = issue.code === 'preparation-omissions' ? 'omission' : issue.code === 'preparation-generation-failed' ? 'passage' : 'rejected example';
-    if (text && issue.count > 0) issues.push({ code: issue.code, title: `${issue.count} ${noun}${issue.count === 1 ? '' : 's'} · ${text[0]}`, detail: text[1], guidance: issue.code === 'preparation-omissions' ? 'Check whether the omitted content matters to your task. If it does, use a supported text source that includes it.' : 'Review the source content and preparation instructions. These are model-based assessments, not proof that the source document is wrong.' });
+    if (text && issue.count > 0) issues.push({ code: issue.code, title: `${issue.count} ${noun}${issue.count === 1 ? '' : 's'} · ${text[0]}`, detail: text[1] });
   }
   return issues;
 }
@@ -91,19 +95,39 @@ export function RunIssues({ run, issues, evaluation }: { run: TrainingRun; issue
   const failed = run.stages.flatMap((stage) => stage.steps).find((step) => step.status === 'failed');
   const step = failed?.name ?? (notAccepted(run) ? 'evaluate' : run.step);
   const date = (value?: string) => value ? new Date(value).toLocaleString() : 'Not recorded';
-  const guidance = [...new Set(issues.map((issue) => issue.guidance))];
+  const label = (name?: string) => run.preparation_only ? stepLabel(name) : trainingStepLabels[name ?? ''] ?? 'Training';
+  const log: NonNullable<TrainingRun['failure_log']> = run.failure_log?.length ? run.failure_log : run.status === 'failed' ? [
+    ...run.stages.flatMap((stage) => stage.steps).flatMap<NonNullable<TrainingRun['failure_log']>[number]>((item) => item.status === 'completed'
+      ? [{ step: item.name, code: 'step-completed', message: `${label(item.name)} completed.`, time: item.closed_at, attempt: item.attempt }]
+      : item.status === 'failed' && item.started_at ? [{ step: item.name, code: 'step-started', message: `${label(item.name)} started.`, time: item.started_at }] : []),
+    { step: step ?? '', code: run.failure_reason ?? 'unclassified-failure', message: run.failure_reason ? failureText(run) : 'The saved run does not contain a recoverable failure cause.', time: failed?.closed_at ?? run.closed_at, attempt: failed?.attempt },
+  ] : notAccepted(run) ? [
+    { step: 'train', code: 'step-completed', message: 'Adapter training completed.', time: run.stages.flatMap((stage) => stage.steps).find((item) => item.name === 'train' && item.status === 'completed')?.closed_at },
+    ...(evaluation?.report?.checks?.filter((check) => !check.passed).map((check) => ({ step: 'evaluate', code: check.code, time: run.closed_at,
+      message: check.code === 'answer-score' ? `Answer score: ${check.actual} of ${evaluation.report!.total} passed; at least ${check.required} required.`
+        : check.code === 'gain-over-base' ? `Gain over base model: ${check.actual} more passed; at least ${check.required} required.`
+        : check.code === 'empty-answers' ? `Empty answers: ${check.actual}; at most ${check.required} allowed.`
+        : check.code === 'test-questions' ? `Test questions: ${check.actual}; at least ${check.required} required.` : `${checkLabels[check.code] ?? 'Acceptance check'} was not met.`,
+    })) ?? []),
+    { step: 'evaluate', code: 'evaluation-not-accepted', message: evaluation?.report?.checks?.length || (!evaluation?.report && run.evaluation_available) ? 'The adapter did not meet the acceptance requirements.' : 'The adapter was not accepted. Individual acceptance checks are unavailable.', time: run.closed_at },
+  ] : [];
   return <div className="run-issues">
     <div className="run-issues-heading"><h3>{run.status === 'failed' ? 'Why the run stopped' : notAccepted(run) ? 'Why it wasn’t accepted' : 'Warnings from this run'}</h3></div>
-    {issues.map((issue, at) => <section className="run-issue" key={issue.code}>
-      {issue.code !== 'evaluation-not-accepted' && <><h4>{issue.title}</h4><p>{issue.detail}</p></>}
-      {at === 0 && notAccepted(run) && evaluation && <>
-        {evaluation.error ? <div role="alert"><p className="prep-field-error">Could not load evaluation evidence: {evaluation.error}</p><button className="btn btn-secondary" onClick={evaluation.retry}>Try again</button></div> : !evaluation.report && run.evaluation_available ? <p className="prep-copy" role="status">Loading evaluation evidence…</p> : evaluation.report ? <><p className="prep-copy">Adapter: {evaluation.report.adapter_correct} / {evaluation.report.total} passed · Base model: {evaluation.report.base_correct} / {evaluation.report.total} passed</p><EvaluationChecks report={evaluation.report} /></> : <p className="prep-copy">Evaluation evidence is not available for this run.</p>}
-      </>}
+    {issues.map((issue) => <section className="run-issue" key={issue.code}>
+      <h4>{issue.title}</h4><p>{issue.detail}</p>
     </section>)}
-    <div className="run-issue-guidance"><h4>What to check next</h4>{guidance.length === 1 ? <p>{guidance[0]}</p> : <ul>{guidance.map((text) => <li key={text}>{text}</li>)}</ul>}</div>
+    {log.length > 0 && <section className="run-failure-log" aria-label="Failure log"><h4>Failure log</h4><ol>{log.map((entry, index) => <li key={`${entry.code}-${index}`}>
+      <time dateTime={entry.time} title={date(entry.time)}>{entry.time ? new Date(entry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'No time recorded'}</time>
+      <div><p className={entry.code === 'step-completed' || entry.code === 'step-started' ? '' : 'run-log-failure'}>{entry.message}</p>
+        {(entry.step || !!entry.attempt) && <small>{[entry.step ? label(entry.step) : '', entry.attempt ? `Attempt ${entry.attempt}` : ''].filter(Boolean).join(' · ')}</small>}
+      </div>
+    </li>)}</ol>
+      {notAccepted(run) && evaluation && (evaluation.error ? <div className="run-log-status" role="alert"><p>Could not load acceptance checks: {evaluation.error}</p><button className="btn btn-secondary" onClick={evaluation.retry}>Try again</button></div> : !evaluation.report && run.evaluation_available ? <p className="run-log-status" role="status">Loading acceptance checks…</p> : null)}
+    </section>}
     <details className="run-issue-technical"><summary>Technical details</summary><dl className="prep-facts">
+      {run.source_document && <div><dt>Document</dt><dd>{run.source_document}</dd></div>}
       <div><dt>Step</dt><dd>{run.preparation_only ? stepLabel(step) : trainingStepLabels[step ?? ''] ?? step ?? 'Not recorded'}</dd></div>
-      <div><dt>Diagnostic codes</dt><dd>{issues.map((issue) => <code key={issue.code}>{issue.code}<br /></code>)}</dd></div>
+      <div><dt>Diagnostic codes</dt><dd>{[...new Set([...issues.map((issue) => issue.code), ...log.filter((entry) => !['step-started', 'step-completed'].includes(entry.code)).map((entry) => entry.code)])].map((code) => <code key={code}>{code}<br /></code>)}</dd></div>
       <div><dt>Run ID</dt><dd><code>{run.run_id}</code></dd></div><div><dt>Workflow ID</dt><dd><code>{run.workflow_id}</code></dd></div>
       <div><dt>Stopped / evaluated</dt><dd>{date(failed?.closed_at ?? run.closed_at)}</dd></div><div><dt>Attempts at failed step</dt><dd>{failed?.attempt ?? 'Not recorded'}</dd></div>
     </dl></details>

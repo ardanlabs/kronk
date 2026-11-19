@@ -70,7 +70,15 @@ func (a *app) createDataset(ctx context.Context, r *http.Request) web.Encoder {
 
 func (a *app) getDataset(ctx context.Context, r *http.Request) web.Encoder {
 	web.GetWriter(ctx).Header().Set("Cache-Control", "no-store")
-	dataset, err := a.datasets.Get(ctx, r.PathValue("dataset_id"), 0)
+	version := 0
+	if r.URL.Query().Has("version") {
+		var err error
+		version, err = strconv.Atoi(r.URL.Query().Get("version"))
+		if err != nil || version < 1 {
+			return errs.Errorf(errs.InvalidArgument, "version must be a positive integer")
+		}
+	}
+	dataset, err := a.datasets.Get(ctx, r.PathValue("dataset_id"), version)
 	if err != nil {
 		return toAppError(err)
 	}
@@ -211,14 +219,22 @@ func (a *app) continuePreview(ctx context.Context, r *http.Request) web.Encoder 
 }
 
 func (a *app) pausePreparation(ctx context.Context, r *http.Request) web.Encoder {
-	return a.preparationControl(ctx, r, "pause")
+	return a.runControl(ctx, r, "preparation", "pause")
 }
 
 func (a *app) continuePreparation(ctx context.Context, r *http.Request) web.Encoder {
-	return a.preparationControl(ctx, r, "resume")
+	return a.runControl(ctx, r, "preparation", "resume")
 }
 
-func (a *app) preparationControl(ctx context.Context, r *http.Request, action string) web.Encoder {
+func (a *app) pauseTraining(ctx context.Context, r *http.Request) web.Encoder {
+	return a.runControl(ctx, r, "training", "pause")
+}
+
+func (a *app) resumeTraining(ctx context.Context, r *http.Request) web.Encoder {
+	return a.runControl(ctx, r, "training", "resume")
+}
+
+func (a *app) runControl(ctx context.Context, r *http.Request, stage, action string) web.Encoder {
 	execution := tmprl.Execution{WorkflowID: r.PathValue("workflow_id"), RunID: r.PathValue("run_id")}
 	if err := execution.Validate(); err != nil {
 		return errs.New(errs.InvalidArgument, err)
@@ -232,7 +248,12 @@ func (a *app) preparationControl(ctx context.Context, r *http.Request, action st
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
-	receipt, err := a.datasets.PreparationControl(ctx, execution, request)
+	var receipt tmprl.ControlReceipt
+	if stage == "training" {
+		receipt, err = a.training.TrainingControl(ctx, execution, request)
+	} else {
+		receipt, err = a.datasets.PreparationControl(ctx, execution, request)
+	}
 	if err != nil {
 		return toAppError(err)
 	}

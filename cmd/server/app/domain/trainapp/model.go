@@ -150,6 +150,7 @@ type Run struct {
 	ObservationRevision    int64           `json:"observation_revision,omitzero"`
 	ControlRevision        int64           `json:"control_revision"`
 	ControlAction          string          `json:"control_action,omitzero"`
+	ControlStage           string          `json:"control_stage,omitzero"`
 	ObservedAt             time.Time       `json:"observed_at,omitzero"`
 	PendingActions         []PendingAction `json:"pending_actions,omitzero"`
 	WorkflowID             string          `json:"workflow_id"`
@@ -177,6 +178,7 @@ type Run struct {
 	DatasetRecordCount     int             `json:"dataset_record_count"`
 	SkippedRecords         int             `json:"skipped_records,omitzero"`
 	FailureReason          string          `json:"failure_reason,omitzero"`
+	FailureLog             []FailureEntry  `json:"failure_log,omitempty"`
 	Issues                 []RunIssue      `json:"issues,omitempty"`
 	TrainingReady          bool            `json:"training_ready"`
 	EvaluationAvailable    bool            `json:"evaluation_available"`
@@ -189,6 +191,15 @@ type Run struct {
 	TrainingDatasetVersion int             `json:"training_dataset_version,omitzero"`
 	TrainingSettings       TrainingOptions `json:"training_settings,omitzero"`
 	EvaluationResult       string          `json:"evaluation_result,omitzero"`
+}
+
+// FailureEntry exposes an allowlisted diagnostic, never a raw backend error.
+type FailureEntry struct {
+	Step    string    `json:"step"`
+	Code    string    `json:"code"`
+	Message string    `json:"message"`
+	Time    time.Time `json:"time,omitzero"`
+	Attempt int32     `json:"attempt,omitzero"`
 }
 
 // RunIssue is a safe diagnostic count, not a backend error or log entry.
@@ -510,7 +521,8 @@ func toAppRun(run datasets.State) Run {
 	result := Run{
 		JobID: run.JobID, AttemptID: run.AttemptID, ObservationRevision: run.ObservationRevision, ObservedAt: run.ObservedAt,
 		ControlRevision: run.ControlRevision, ControlAction: run.ControlAction,
-		WorkflowID: run.WorkflowID, RunID: run.RunID, Status: string(run.Status),
+		ControlStage: run.ControlStage,
+		WorkflowID:   run.WorkflowID, RunID: run.RunID, Status: string(run.Status),
 		PreparationOnly: run.Request.PreparationOnly,
 		Stage:           string(run.Stage), Step: run.Step, StateStale: run.StateStale,
 		StartedAt: run.StartedAt, UpdatedAt: run.UpdatedAt, ClosedAt: run.ClosedAt,
@@ -525,6 +537,9 @@ func toAppRun(run datasets.State) Run {
 	}
 	for _, issue := range run.Issues {
 		result.Issues = append(result.Issues, RunIssue{Code: issue.Code, Count: issue.Count, Required: issue.Required})
+	}
+	for _, entry := range run.FailureLog {
+		result.FailureLog = append(result.FailureLog, FailureEntry{Step: entry.Step, Code: entry.Code, Message: entry.Message, Time: entry.Time, Attempt: entry.Attempt})
 	}
 	if run.Mode == "training" {
 		// A training run names the dataset version it trains on, not one it adds to.

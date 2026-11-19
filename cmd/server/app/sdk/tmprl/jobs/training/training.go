@@ -84,7 +84,8 @@ type State struct {
 	AdapterAvailable    bool
 	RemainingSeconds    int64
 	FailureReason       string
-	Issues              []RunIssue `json:"issues,omitempty"`
+	FailureLog          []FailureEntry `json:"failure_log,omitempty"`
+	Issues              []RunIssue     `json:"issues,omitempty"`
 }
 
 // RunIssue contains only a stable diagnostic code and counts, never error text.
@@ -102,6 +103,7 @@ func Describe(run tmprl.Run[Request, Artifacts]) State {
 		AdapterAvailable: run.Status == tmprl.StatusCompleted && run.Artifacts.Training.Accepted &&
 			run.Artifacts.Training.Report != "" && run.Artifacts.Training.Adapter != "",
 		FailureReason: FailureReason(run.FailureTypes),
+		FailureLog:    failureLog(run),
 	}
 	if run.Progress != nil && run.Status == tmprl.StatusRunning && !run.StateStale && run.Progress.Stage == run.Stage && run.Progress.Step == run.Step {
 		state.RemainingSeconds = int64(run.Progress.Remaining().Round(time.Second) / time.Second)
@@ -720,7 +722,7 @@ func (j *Job) trainingContext(ctx context.Context, input tmprl.StepContext[Reque
 	}
 	return optimization.StepContext{
 		Artifacts: r.Artifacts.Training, Workspace: input.Workspace, Trainer: j.cfg.Trainer,
-		Job:     optimization.TrainingJob{ModelID: r.Request.Model, Model: modelPath, Training: r.Request.Training, Dataset: state.Dataset, Workdir: scratch},
+		Job:     optimization.TrainingJob{ModelID: r.Request.Model, Model: modelPath, Training: r.Request.Training, Dataset: state.Dataset, Workdir: scratch, PausePoint: input.PausePoint},
 		Records: records, Fingerprint: key, Publish: input.Publish,
 	}, nil
 }

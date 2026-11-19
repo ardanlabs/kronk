@@ -88,10 +88,11 @@ func TestJobsGetFailureTypes(t *testing.T) {
 	e := tmprl.Execution{WorkflowID: "export-failed", RunID: "run-failed"}
 	info := snapshotInfo(t, "failed", enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, nil)
 	c.On("DescribeWorkflowExecution", mock.Anything, e.WorkflowID, e.RunID).Return(&workflowservice.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: info}, nil)
-	// An activity failure wraps the step's application error, which wraps a plain Go error.
+	// An activity failure wraps application errors and a structured timeout.
 	failure := &failurepb.Failure{Message: "activity error", FailureInfo: &failurepb.Failure_ActivityFailureInfo{ActivityFailureInfo: &failurepb.ActivityFailureInfo{}},
 		Cause: &failurepb.Failure{Message: "already in dataset", FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{Type: "dataset-document-exists"}},
-			Cause: &failurepb.Failure{Message: "wrapped", FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{Type: "wrapError"}}}}}
+			Cause: &failurepb.Failure{Message: "wrapped", FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{Type: "wrapError"}},
+				Cause: &failurepb.Failure{Message: "deadline", FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{TimeoutType: enumspb.TIMEOUT_TYPE_HEARTBEAT}}}}}}
 	it := mocks.NewHistoryEventIterator(t)
 	it.On("HasNext").Return(true).Once()
 	it.On("Next").Return(&historypb.HistoryEvent{
@@ -101,7 +102,7 @@ func TestJobsGetFailureTypes(t *testing.T) {
 	it.On("HasNext").Return(false).Once()
 	c.On("GetWorkflowHistory", mock.Anything, e.WorkflowID, e.RunID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT).Return(it)
 	got, err := j.Get(t.Context(), e)
-	if err != nil || got.Error != "activity error: already in dataset: wrapped" || !reflect.DeepEqual(got.FailureTypes, []string{"dataset-document-exists", "wrapError"}) {
+	if err != nil || got.Error != "activity error: already in dataset: wrapped: deadline" || !reflect.DeepEqual(got.FailureTypes, []string{"dataset-document-exists", "wrapError", "timeout:HEARTBEAT"}) {
 		t.Fatalf("failure: got error %q types %q, %v", got.Error, got.FailureTypes, err)
 	}
 }
