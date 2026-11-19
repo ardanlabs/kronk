@@ -40,7 +40,7 @@ func SafePoint(ctx context.Context, input preparation.StepContext) error {
 	return nil
 }
 
-// GenerationDecision retains up to three candidates while a passage is repaired.
+// GenerationDecision retains candidates while a passage is repaired.
 // A completed empty result is a reported model-selected omission.
 type GenerationDecision struct {
 	Reference string            `json:"reference"`
@@ -60,6 +60,10 @@ type State struct {
 	ReviewedCount  int                      `json:"reviewed_count,omitzero"`
 	Next           int                      `json:"next"`
 	EvaluationNext int                      `json:"evaluation_next"`
+	// Additional passes retain their progress and no-progress budget on resume.
+	GenerationRound      int `json:"generation_round,omitzero"`
+	GenerationRoundStart int `json:"generation_round_start,omitzero"`
+	GenerationStalls     int `json:"generation_stalls,omitzero"`
 	// Reserve before dispatch. An uncertain interrupted request stays consumed.
 	GenerationAttempts uint32 `json:"generation_attempts,omitzero"`
 	// Rejection feedback belongs only to the pending Next training batch.
@@ -154,7 +158,7 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 			}
 		}
 	}
-	if state.GenerationAttempts > 3 || state.GenerationRejections > state.GenerationAttempts {
+	if state.GenerationRound < 0 || state.GenerationRoundStart < 0 || state.GenerationStalls < 0 || state.GenerationStalls > 3 || state.GenerationAttempts > 3 || state.GenerationRejections > state.GenerationAttempts {
 		return State{}, false, fmt.Errorf("invalid request reservation bounds")
 	}
 	// Full preparation verifies records while it generates, so only Preview
@@ -193,7 +197,7 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 					facts[r.FactID] = true
 				}
 			}
-			if count > 3 {
+			if p.Input.Request.MaxQuestions == 0 && count > 3 {
 				return State{}, false, fmt.Errorf("a passage has more than three staged examples")
 			}
 			if decision.Complete && (count == 0 && decision.Reason != "model abstained: no_supported_example" || count > 0 && decision.Reason != "") {
@@ -204,7 +208,7 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 				if p.Input.Request.Goal == preparation.GoalQuestionAnswer || p.Input.Request.Goal == preparation.GoalTextGeneration {
 					grounded = strings.TrimSpace(r.Target) != "" && utf8.RuneCountInString(r.Target) <= 800 && slices.ContainsFunc(unit.Targets, func(text string) bool { return strings.Contains(text, r.Target) })
 				}
-				if !grounded || facts[r.FactID] || r.Evidence != unit.Evidence || r.FactID != training.FactID(r.Evidence, r.Target) || r.SourceDocument != p.Source.ID || r.UserApproved || r.ValidationPrompt || r.IndependentPrompt {
+				if !grounded || p.Input.Request.MaxQuestions == 0 && facts[r.FactID] || r.Evidence != unit.Evidence || r.FactID != training.FactID(r.Evidence, r.Target) || r.SourceDocument != p.Source.ID || r.UserApproved || r.ValidationPrompt || r.IndependentPrompt {
 					return State{}, false, fmt.Errorf("pending generation candidate changed source, target or ownership")
 				}
 				facts[r.FactID] = true

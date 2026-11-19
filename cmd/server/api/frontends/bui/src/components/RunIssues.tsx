@@ -27,6 +27,7 @@ const preparationWarnings: Record<string, [string, string]> = {
   task_quality: ['Question quality', 'The verifier flagged poor standalone questions or questions that disclosed the answer.'],
   user_requirements: ['Instructions', 'The verifier flagged conflicts with the preparation instructions.'],
   'preparation-omissions': ['Source content left out', 'Preparation omitted some source content, for example unsupported document structures or passages for which the model did not produce a usable example.'],
+  'preparation-generation-failed': ['Generation attempts exhausted', 'The model exhausted the allowed attempts for these passages without producing a complete set of usable candidates. Invalid JSON, duplicate questions, or unsupported answers can cause this; it does not prove that the source lacks useful facts.'],
 };
 
 export interface RunIssue {
@@ -55,7 +56,8 @@ export function runIssues(run: TrainingRun): RunIssue[] {
   if (!['failed', 'needs_improvement', 'stopped'].includes(run.status)) return issues;
   for (const issue of run.issues ?? []) {
     const text = preparationWarnings[issue.code];
-    if (text && issue.count > 0) issues.push({ code: issue.code, title: `${issue.count} ${issue.code === 'preparation-omissions' ? issue.count === 1 ? 'omission' : 'omissions' : issue.count === 1 ? 'rejected example' : 'rejected examples'} · ${text[0]}`, detail: text[1], guidance: issue.code === 'preparation-omissions' ? 'Check whether the omitted content matters to your task. If it does, use a supported text source that includes it.' : 'Review the source content and preparation instructions. These are model-based assessments, not proof that the source document is wrong.' });
+    const noun = issue.code === 'preparation-omissions' ? 'omission' : issue.code === 'preparation-generation-failed' ? 'passage' : 'rejected example';
+    if (text && issue.count > 0) issues.push({ code: issue.code, title: `${issue.count} ${noun}${issue.count === 1 ? '' : 's'} · ${text[0]}`, detail: text[1], guidance: issue.code === 'preparation-omissions' ? 'Check whether the omitted content matters to your task. If it does, use a supported text source that includes it.' : 'Review the source content and preparation instructions. These are model-based assessments, not proof that the source document is wrong.' });
   }
   return issues;
 }

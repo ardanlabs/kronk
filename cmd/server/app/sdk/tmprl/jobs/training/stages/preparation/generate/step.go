@@ -61,7 +61,7 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 		}
 		state.Records = slices.Clone(input.Review.Records)
 		state.ReviewID, state.ReviewedCount = input.ReviewID, len(state.Records)
-		// Reviewed examples consume passage capacity, not the entire passage.
+		// Reviewed examples count toward the requested records.
 		if input.Artifacts.Preview != nil {
 			state.Result.PromptTokens += input.Artifacts.Preview.PromptTokens
 			state.Result.CompletionTokens += input.Artifacts.Preview.CompletionTokens
@@ -112,6 +112,26 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 			break
 		}
 	}
+	// Multiple question variants of a fact belong to training, not to the
+	// one-training-question-per-fact evaluation recipe.
+	updateTarget := func() {
+		seen := make(map[string]bool)
+		records := state.Records
+		if s.Verify != nil {
+			records = records[:state.Verified]
+		}
+		for _, r := range records {
+			if r.ValidationPrompt || r.IndependentPrompt {
+				continue
+			}
+			if seen[r.FactID] {
+				evaluate = false
+				target = limit
+			}
+			seen[r.FactID] = true
+		}
+	}
+	updateTarget()
 	// verifyAll verifies pending records so rejected ones are replaced while
 	// passages or evaluation candidates remain.
 	verifyAll := func() error {
@@ -148,6 +168,12 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return err
 		}
+		if limit > 0 && p.Input.Kind == preparation.PreparationFull {
+			if err := verifyAll(); err != nil {
+				return err
+			}
+		}
+		updateTarget()
 		if target > 0 && len(state.Records) >= target {
 			// Verified records count toward the limit; rejected ones are replaced.
 			if err := verifyAll(); err != nil {
@@ -165,9 +191,33 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 		return nil
 	}
 	report(tmprl.Progress{Completed: state.Next, Total: len(state.Units), Message: "Generating training examples"})
-	for state.Next < len(state.Units) {
+	for !state.Generated {
 		if err := checkpoint.SafePoint(ctx, input); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
+		}
+		if state.Next == len(state.Units) {
+			if err := verifyAll(); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+			updateTarget()
+			if target == 0 || p.Input.Kind != preparation.PreparationFull || len(state.Records) >= target || len(state.Units) == 0 || state.EvaluationNext > 0 {
+				break
+			}
+			state.GenerationStalls++
+			if len(state.Records) > state.GenerationRoundStart {
+				state.GenerationStalls = 0
+			}
+			if state.GenerationStalls >= 3 {
+				state.Result.Warnings = append(state.Result.Warnings, fmt.Sprintf("Requested %d records; generation stopped after three passes without additional verified records", limit))
+				break
+			}
+			state.GenerationRound++
+			state.GenerationRoundStart = len(state.Records)
+			state.Next = 0
+			if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+				return tmprl.StepResult[preparation.Artifacts]{}, err
+			}
+			report(tmprl.Progress{Completed: len(state.Records), Total: limit, Message: "Generating additional records to reach the requested count"})
 		}
 		if target > 0 && len(state.Records) >= target {
 			if err := commitBatch(state.Next); err != nil {
@@ -212,6 +262,29 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 			if decision.Reason != "" {
 				feedback.WriteString(fmt.Sprintf("\nSource %s: %s", decision.Reference, decision.Reason))
 			}
+			// Verification exclusions survive batch commits and checkpoint resumes.
+			// Supply only the latest rejection for this pending passage.
+			for _, exclusion := range slices.Backward(state.Result.Exclusions) {
+				if exclusion.Reference != decision.Reference || !strings.HasPrefix(exclusion.Reason, "verification rejected example ") {
+					continue
+				}
+				var repair string
+				switch {
+				case strings.HasSuffix(exclusion.Reason, ": grounding"):
+					repair = "Recheck the entire evidence, including headings, negation, conditions and named referents. Ask only what the quoted answer fully supports."
+				case strings.HasSuffix(exclusion.Reason, ": task_quality"):
+					repair = "Write a useful standalone prompt for the requested goal. Request the answer without disclosing it or relying on unseen context."
+				case strings.HasSuffix(exclusion.Reason, ": user_requirements"):
+					repair = "Follow the requested topic and explicit guidance using only supported evidence; do not invent facts to satisfy guidance."
+				default:
+					continue
+				}
+				fmt.Fprintf(&feedback, "\nEVIDENCE %d prior %s. %s", len(pending), exclusion.Reason, repair)
+				break
+			}
+		}
+		if limit > 0 && p.Input.Kind == preparation.PreparationFull {
+			fmt.Fprintf(&feedback, "\nGenerate toward the requested %d verified records including evaluation questions. %d more training records are needed. Return up to three NEW questions per passage on this request. Prefer unused supported facts; different standalone questions about a saved fact are also allowed. Do not repeat saved prompts or invent facts.", limit, max(0, target-len(previous)))
 		}
 		if len(pending) == 0 {
 			if err := commitBatch(end); err != nil {
@@ -243,7 +316,7 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		outcome, usage, err := Run(ctx, p.Completer, p.Input.Request, pending, previous, state.GenerationAttempts-1, feedback.String())
+		outcome, usage, err := Run(ctx, p.Completer, p.Input.Request, pending, previous, uint32(state.GenerationRound)*maxRequestAttempts+state.GenerationAttempts-1, feedback.String())
 		if canceled := ctx.Err(); canceled != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, canceled
 		}
@@ -308,6 +381,13 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 		}
 	}
 	if len(state.Records) == 0 {
+		// Committed exclusions preserve exhausted generation attempts on replay.
+		// Distinguish rejected replies from a valid model-selected abstention.
+		if slices.ContainsFunc(state.Result.Exclusions, func(exclusion preparation.SourceExclusion) bool {
+			return strings.HasPrefix(exclusion.Reason, "generation failed after ")
+		}) {
+			return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError("generation request budget exhausted without valid examples; rejected model replies are recorded in the preparation checkpoint", "preparation-request-budget-exhausted", nil)
+		}
 		return tmprl.StepResult[preparation.Artifacts]{}, temporal.NewNonRetryableApplicationError("no supported examples were generated; source exclusions are saved in the preparation checkpoint", "preparation-no-examples", nil)
 	}
 	if err := verifyAll(); err != nil {

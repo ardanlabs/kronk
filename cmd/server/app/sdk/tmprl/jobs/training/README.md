@@ -160,15 +160,24 @@ History separates saved datasets and preparation-only runs from training runs.
 
 ## Document review and training authorization
 
-In the BUI's Prepare Dataset settings, **Maximum questions** controls the per-document
-cap. It maps to `prepare.max_questions` (a nonnegative integer); omitted or `0`
-means unlimited. For a small preparation test, set it to `20`. The cap includes
-accepted Preview examples and held-out evaluation questions, and applies to every
-preparation goal. Generation stops after the batch that reaches the cap, retaining
-at most that many records. Grounding and verification can leave fewer records;
-the cap is not a quota. Small capped datasets can be inspected but may not satisfy
-the existing training-readiness requirements. The setting is captured when a new
-job starts and does not change an already-running job.
+In the BUI's Prepare Dataset settings, **Record target → Set record count**
+sets the requested verified record count for each document. It maps to
+`prepare.max_questions` (a nonnegative integer); omitted or `0` means **Unlimited**.
+The count includes accepted Preview examples and held-out evaluation questions,
+and applies to every preparation goal. Preparation makes additional passes over
+the selected source and replaces rejected candidates to reach this count. The
+three-example response size is not a lifetime limit on a passage. Different
+standalone questions may share a supported answer; exact duplicate prompts and
+unsupported answers are not accepted. Question variants remain training records
+rather than using the one-training-question-per-fact evaluation recipe. Preview
+remains a separate sample of one to five records, not the full target.
+
+If three consecutive passes produce no additional verified records, preparation
+saves the available records with a warning rather than failing for a count
+shortfall. Model or infrastructure errors still use their existing failure
+handling. **Unlimited** retains its one-pass behavior. Saving into an existing
+dataset still skips duplicate questions. The setting is captured when a new job
+starts; completed historical datasets are not changed.
 
 For PDFs, the BUI's optional **First page** and **Last page** fields map to
 `prepare.page_start` and `prepare.page_end`. Set both to positive PDF viewer
@@ -176,11 +185,12 @@ page numbers (inclusive), or leave both blank/zero for the whole document.
 Docling converts only the selected pages; Preview and full generation use that
 same extraction. The original upload is unchanged, and the page range is part of
 the extraction cache identity. Page ranges are rejected for non-PDF sources.
-For example, pages 11–25 with `max_questions: 50` prepares at most 50 examples
-from that section without converting the rest of the PDF.
+For example, pages 11–25 with `max_questions: 50` generates toward 50 verified
+records from that section, including evaluation questions, without converting the
+rest of the PDF.
 
 Training requires at least 20 training, 10 validation, and 20 protected test
-examples, with valid fact coverage and split isolation. A cap of 20 is a
+examples, with valid fact coverage and split isolation. A target of 20 is a
 preparation-only test; even 50 records does not guarantee training readiness.
 
 The BUI's estimated step remaining time comes from worker timing saved in Temporal

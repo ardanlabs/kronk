@@ -16,6 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/generate"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/internal/checkpoint"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/verify"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
@@ -143,10 +144,7 @@ func TestRunTargetIDSchema(t *testing.T) {
 			model := completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
 				schema = request.ResponseSchema
 				if schema == nil {
-					_, instruction, _ := strings.Cut(request.Messages[0].Content, " Response JSON Schema: ")
-					if err := json.Unmarshal([]byte(instruction), &schema); err != nil {
-						t.Fatal(err)
-					}
+					t.Fatal("generation must constrain model output, not just describe the schema in the prompt")
 				}
 				return providers.Completion{Content: `{"decisions":[{"evidence_id":1,"examples":[],"reason":"no_supported_example"}]}`}, nil
 			})
@@ -177,8 +175,9 @@ func spanDecision(id int, prompt, quote string) map[string]any {
 }
 
 func TestRunExampleCountsAndExactSpans(t *testing.T) {
-	unit := preparation.SourceUnit{Reference: "schedule", Evidence: "Harbor opens at dawn; ferry leaves at noon; café closes at dusk.", Targets: []string{"Harbor opens at dawn; ferry leaves at noon; café closes at dusk."}}
-	quotes := []string{"dawn", "noon", "café closes at dusk"}
+	evidence := "Harbor opens at dawn; the code is fmt.Println(\"Hello, \\\"reader\\\"!\").\nThe café files are in C:\\library\\returns."
+	unit := preparation.SourceUnit{Reference: "schedule", Evidence: evidence, Targets: []string{evidence}}
+	quotes := []string{"dawn", `fmt.Println("Hello, \"reader\"!")`, `café files are in C:\library\returns`}
 	for _, goal := range []preparation.Goal{preparation.GoalQuestionAnswer, preparation.GoalTextGeneration} {
 		for _, count := range []int{0, 1, 3, 4} {
 			t.Run(fmt.Sprintf("%s/%d", goal, count), func(t *testing.T) {
@@ -463,6 +462,203 @@ func TestGenerationSafePointContinuation(t *testing.T) {
 	}
 }
 
+func TestRequestedRecordsAcrossPasses(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		target     int
+		want       int
+		reject     bool
+		pause      bool
+		noProgress bool
+	}{
+		{name: "fifty from six passages", target: 50, want: 50},
+		{name: "replace rejected records", target: 50, want: 50, reject: true},
+		{name: "resume additional pass", target: 50, want: 50, pause: true},
+		{name: "trim final batch", target: 7, want: 7},
+		{name: "unlimited unchanged", want: 6},
+		{name: "no progress saves available records", target: 50, want: 6, noProgress: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input, _ := evaluationInput(t)
+			input.Preparation.Input.Request.MaxQuestions = tc.target
+			input.Review, input.ReviewID = nil, ""
+			if err := input.Workspace.Remove(checkpoint.File); err != nil {
+				t.Fatal(err)
+			}
+			state, _, err := checkpoint.Load(t.Context(), input, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range 6 {
+				evidence := fmt.Sprintf("Facility %d opens at dawn.", i)
+				state.Units = append(state.Units, preparation.SourceUnit{Reference: fmt.Sprintf("facility-%d", i), Evidence: evidence, Targets: []string{evidence}})
+			}
+			if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+				t.Fatal(err)
+			}
+			attempts := make([]int, 6)
+			rejected := false
+			input.Preparation.Completer = completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+				prompt := request.Messages[1].Content
+				if request.EnableThinking {
+					verdicts := make(map[string]string)
+					for _, block := range strings.Split(prompt, "[RECORD ")[1:] {
+						var index int
+						if _, err := fmt.Sscanf(block, "%d]", &index); err != nil {
+							t.Fatal(err)
+						}
+						verdict := "pass"
+						if tc.reject && strings.Contains(block, "PROMPT: When does facility 0 open (question 1)?") {
+							verdict, rejected = "task_quality", true
+						}
+						verdicts[fmt.Sprintf("record_%d", index)] = verdict
+					}
+					data, err := json.Marshal(verdicts)
+					return providers.Completion{Content: string(data)}, err
+				}
+				var decisions []any
+				for i, unit := range state.Units {
+					if !strings.Contains(prompt, "\n"+unit.Evidence+"\n") {
+						continue
+					}
+					attempts[i]++
+					number := attempts[i]
+					if tc.noProgress {
+						number = 1
+					}
+					decisions = append(decisions, spanDecision(len(decisions)+1, fmt.Sprintf("When does facility %d open (question %d)?", i, number), "dawn"))
+				}
+				data, err := json.Marshal(map[string]any{"decisions": decisions})
+				return providers.Completion{Content: string(data)}, err
+			})
+			step := generate.Step{Verify: verify.Batch}
+			if tc.pause {
+				paused := errors.New("pause during additional generation")
+				input.SafePoint = func(context.Context, string) error {
+					saved := savedState(t, input)
+					if saved.GenerationRound == 2 && saved.Next == 5 && saved.GenerationAttempts == 0 {
+						return paused
+					}
+					return nil
+				}
+				if _, err := step.Execute(t.Context(), input); !errors.Is(err, paused) {
+					t.Fatalf("additional pass did not pause: %v", err)
+				}
+				reopen(t, &input)
+				input.SafePoint = nil
+			}
+			if _, err := step.Execute(t.Context(), input); err != nil {
+				t.Fatal(err)
+			}
+			result, err := (verify.Step{}).Execute(t.Context(), input)
+			if err != nil || result.Artifacts.Preparation == nil || result.Artifacts.Preparation.RecordCount != tc.want {
+				t.Fatalf("requested %d: published %+v, %v; want %d", tc.target, result.Artifacts.Preparation, err, tc.want)
+			}
+			file, err := input.Workspace.Open("dataset.jsonl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			records, err := training.ReadRecords(t.Context(), file)
+			if err != nil || len(records) != tc.want {
+				t.Fatalf("saved records = %d, %v; want %d", len(records), err, tc.want)
+			}
+			for _, record := range records {
+				if record.Target != "dawn" || tc.reject && record.Prompt == "When does facility 0 open (question 1)?" {
+					t.Fatalf("unsupported or rejected record published: %+v", record)
+				}
+			}
+			if tc.reject && !rejected {
+				t.Fatal("test did not exercise verification rejection")
+			}
+			if tc.noProgress && !strings.Contains(strings.Join(result.Artifacts.Preparation.Warnings, " "), "three passes") {
+				t.Fatal("short preparation omitted no-progress warning")
+			}
+			input.Preparation.Completer = completionFunc(func(context.Context, providers.CompletionRequest) (providers.Completion, error) {
+				t.Fatal("completed generation repeated on replay")
+				return providers.Completion{}, nil
+			})
+			if _, err := step.Execute(t.Context(), input); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestVerificationFeedbackRepairsRecordsAfterResume(t *testing.T) {
+	for _, category := range []string{"grounding", "task_quality", "user_requirements"} {
+		t.Run(category, func(t *testing.T) {
+			input, _ := evaluationInput(t)
+			input.Preparation.Input.Request.MaxQuestions = 1
+			input.Review, input.ReviewID = nil, ""
+			if err := input.Workspace.Remove(checkpoint.File); err != nil {
+				t.Fatal(err)
+			}
+			state, _, err := checkpoint.Load(t.Context(), input, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const evidence = "Interface guidance\nDon't use an interface:\nFor the sake of using an interface."
+			const bad = "What is the reason given for using an interface in the text?"
+			const good = "Which reason for using an interface should be avoided?"
+			const target = "For the sake of using an interface."
+			state.Units = []preparation.SourceUnit{{Reference: "interface", Evidence: evidence, Targets: []string{target}}}
+			state.Result.Exclusions = []preparation.SourceExclusion{{Reference: "other", Reason: `verification rejected example "unrelated question": grounding`}}
+			if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+				t.Fatal(err)
+			}
+			input.Preparation.Completer = completionFunc(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+				prompt := request.Messages[1].Content
+				if request.EnableThinking {
+					outcome := category
+					if strings.Contains(prompt, "PROMPT: "+good) {
+						outcome = "pass"
+					}
+					return providers.Completion{Content: fmt.Sprintf(`{"record_1":%q}`, outcome)}, nil
+				}
+				question := bad
+				if strings.Contains(prompt, "verification rejected example") && strings.Contains(prompt, bad) && strings.Contains(prompt, ": "+category) {
+					question = good
+				}
+				if strings.Contains(prompt, "unrelated question") {
+					t.Fatal("another passage's verification feedback leaked into this repair")
+				}
+				data, err := json.Marshal(map[string]any{"decisions": []any{spanDecision(1, question, target)}})
+				return providers.Completion{Content: string(data)}, err
+			})
+			paused := errors.New("pause after verification rejection")
+			input.SafePoint = func(context.Context, string) error {
+				if len(savedState(t, input).Result.Exclusions) > 1 {
+					return paused
+				}
+				return nil
+			}
+			step := generate.Step{Verify: verify.Batch}
+			if _, err := step.Execute(t.Context(), input); !errors.Is(err, paused) {
+				t.Fatalf("did not pause with a durable rejection: %v", err)
+			}
+			reopen(t, &input)
+			input.SafePoint = nil
+			if _, err := step.Execute(t.Context(), input); err != nil {
+				t.Fatalf("repair did not produce a verified replacement: %v", err)
+			}
+			result, err := (verify.Step{}).Execute(t.Context(), input)
+			if err != nil || result.Artifacts.Preparation == nil || result.Artifacts.Preparation.RecordCount != 1 {
+				t.Fatalf("replacement was not saved: %+v, %v", result, err)
+			}
+			file, err := input.Workspace.Open("dataset.jsonl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			records, err := training.ReadRecords(t.Context(), file)
+			if err != nil || len(records) != 1 || records[0].Prompt != good || records[0].Target != target || records[0].Evidence != evidence {
+				t.Fatalf("saved incorrect replacement: %+v, %v", records, err)
+			}
+		})
+	}
+}
+
 func TestDocumentQuestionCap(t *testing.T) {
 	// The limit covers training records and the 24 evaluation questions that 20
 	// or more training records need. Below 44 there is no room for both, so the
@@ -470,17 +666,19 @@ func TestDocumentQuestionCap(t *testing.T) {
 	// that already holds 52 training records needs its 24 questions from this
 	// run, rewording its earlier records. Verification rejections are replaced.
 	for _, test := range []struct {
-		name       string
-		limit      int
-		want       int
-		evaluation int
-		base       int
-		reject     bool
+		name          string
+		limit         int
+		want          int
+		evaluation    int
+		base          int
+		reject        bool
+		rejectVariant bool
 	}{
 		{name: "3", limit: 3, want: 3}, {name: "20", limit: 20, want: 20}, {name: "21", limit: 21, want: 21}, {name: "43", limit: 43, want: 34},
 		{name: "44", limit: 44, want: 44, evaluation: 24}, {name: "50", limit: 50, want: 50, evaluation: 24}, {name: "60", limit: 60, want: 58, evaluation: 24}, {name: "0", want: 58, evaluation: 24},
 		{name: "dataset", limit: 30, want: 30, evaluation: 24, base: 52},
 		{name: "rejected", limit: 20, want: 20, reject: true},
+		{name: "rejected variant preserves evaluation", limit: 50, want: 50, evaluation: 24, rejectVariant: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			input, state := generationInput(t)
@@ -495,9 +693,12 @@ func TestDocumentQuestionCap(t *testing.T) {
 			}
 			step := generate.Step{}
 			rejected := func(r training.Record) bool {
+				if test.rejectVariant {
+					return strings.Contains(r.Prompt, " rejected variant?")
+				}
 				return strings.HasSuffix(r.Prompt, " harbor-5?") || strings.HasSuffix(r.Prompt, " harbor-12?")
 			}
-			if test.reject {
+			if test.reject || test.rejectVariant {
 				step.Verify = func(_ context.Context, input preparation.StepContext, state *checkpoint.State) error {
 					kept := state.Records[:state.Verified]
 					for _, r := range state.Records[state.Verified:] {
@@ -533,7 +734,11 @@ func TestDocumentQuestionCap(t *testing.T) {
 					if !strings.Contains(request.Messages[1].Content, "\n"+unit.Evidence+"\n") {
 						continue
 					}
-					decisions = append(decisions, map[string]any{"evidence_id": len(decisions) + 1, "reason": "none", "examples": []any{map[string]any{"prompt": "What is the opening schedule? " + unit.Reference + "?", "answer_quote": unit.Evidence, "target_id": 0}}})
+					examples := []any{map[string]any{"prompt": "What is the opening schedule? " + unit.Reference + "?", "answer_quote": unit.Evidence, "target_id": 0}}
+					if test.rejectVariant && unit.Reference == "harbor-3" {
+						examples = append(examples, map[string]any{"prompt": "What is the opening schedule? rejected variant?", "answer_quote": unit.Evidence, "target_id": 0})
+					}
+					decisions = append(decisions, map[string]any{"evidence_id": len(decisions) + 1, "reason": "none", "examples": examples})
 				}
 				data, err := json.Marshal(map[string]any{"decisions": decisions})
 				return providers.Completion{Content: string(data)}, err
@@ -751,6 +956,37 @@ func TestGenerationReportsOmissions(t *testing.T) {
 				t.Fatalf("omission report lost source or model-selected reason: %+v", exclusion)
 			}
 		}
+	}
+}
+
+func TestGenerationEmptyOutputFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, response, failure string
+	}{
+		{"malformed", "```json\n{}\n```", "preparation-request-budget-exhausted"},
+		{"unsupported answer", `{"decisions":[{"evidence_id":1,"examples":[{"prompt":"When does the harbor open?","answer_quote":"midnight","target_id":0}],"reason":"none"}]}`, "preparation-request-budget-exhausted"},
+		{"abstention", `{"decisions":[{"evidence_id":1,"examples":[],"reason":"no_supported_example"}]}`, "preparation-no-examples"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input, state := evaluationInput(t)
+			input.Review, input.ReviewID = nil, ""
+			state = checkpoint.State{Version: state.Version, Fingerprint: state.Fingerprint, Units: state.Units[:1], Result: state.Result}
+			if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
+				t.Fatal(err)
+			}
+			input.Preparation.Completer = completer{content: tc.response}
+			for range 2 {
+				_, err := (generate.Step{}).Execute(t.Context(), input)
+				failure, ok := errors.AsType[*temporal.ApplicationError](err)
+				if !ok || failure.Type() != tc.failure || !failure.NonRetryable() {
+					t.Fatalf("failure = %v; want nonretryable %s", err, tc.failure)
+				}
+				reopen(t, &input)
+				if got := savedState(t, input); len(got.Records) != 0 || got.Generated || len(got.Result.Exclusions) != 1 {
+					t.Fatalf("invalid output was saved as examples or lost its diagnostic: %+v", got)
+				}
+			}
+		})
 	}
 }
 
