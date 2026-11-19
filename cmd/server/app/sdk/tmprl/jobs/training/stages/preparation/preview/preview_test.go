@@ -903,7 +903,7 @@ func TestPreviewGenerationRepairReservations(t *testing.T) {
 				if err != nil || json.Unmarshal(data, &state) != nil || state.GenerationAttempts != uint32(calls) || request.Seed != 3407+uint32(calls-1) || request.EnableThinking {
 					t.Fatalf("request was not durably reserved: %s, request %+v, error %v", data, request, err)
 				}
-				if calls > 1 && !strings.Contains(request.Messages[1].Content, "Repair the previous response:") {
+				if calls > 1 && !strings.Contains(request.Messages[1].Content, "Run requirements and prior response feedback:") {
 					t.Fatal("local correction omitted durable rejection feedback")
 				}
 				if calls == 2 && !exhaust {
@@ -912,8 +912,8 @@ func TestPreviewGenerationRepairReservations(t *testing.T) {
 				return providers.Completion{Content: `{"decisions":[]}`, PromptTokens: 2, CompletionTokens: 1}, nil
 			})
 			got, err := (preview.Step{}).Execute(t.Context(), input)
-			// Three invalid replies leave the passages out, so nothing is left to preview.
-			if err == nil || got.Artifacts.Preview != nil || !exhaust && !errors.Is(err, unavailable) || exhaust && !strings.Contains(err.Error(), "no supported examples") {
+			// Invalid replies exhaust the request budget; they are not abstentions.
+			if err == nil || got.Artifacts.Preview != nil || !exhaust && !errors.Is(err, unavailable) || exhaust && !strings.Contains(err.Error(), "preparation-request-budget-exhausted") {
 				t.Fatalf("interrupted repair = %+v, %v", got, err)
 			}
 			wantCalls := 2
@@ -933,14 +933,14 @@ func TestPreviewGenerationRepairReservations(t *testing.T) {
 				if exhaust {
 					t.Fatal("exhausted durable budget invoked completer again")
 				}
-				if !request.EnableThinking && (request.Seed != 3409 || !strings.Contains(request.Messages[1].Content, "Repair the previous response:")) {
+				if !request.EnableThinking && (request.Seed != 3409 || !strings.Contains(request.Messages[1].Content, "Run requirements and prior response feedback:")) {
 					t.Fatal("recovery lost reserved attempts or repair feedback")
 				}
 				return responses(3, "Recovered example")(ctx, request)
 			})
 			retried, err := (preview.Step{}).Execute(t.Context(), input)
 			if exhaust {
-				if err == nil || !strings.Contains(err.Error(), "no supported examples") || retried.Artifacts.Preview != nil {
+				if err == nil || !strings.Contains(err.Error(), "preparation-request-budget-exhausted") || retried.Artifacts.Preview != nil {
 					t.Fatalf("exhausted recovery = %+v, %v", retried, err)
 				}
 			} else if err != nil || retried.Artifacts.Preview == nil || retried.Artifacts.Preview.PromptTokens != 20 || retried.Artifacts.Preview.CompletionTokens != 6 {

@@ -48,6 +48,11 @@ func TestRun(t *testing.T) {
 	}{
 		{name: "all pass", response: `{"record_1":"pass","record_2":"pass","record_3":"pass","record_4":"pass"}`},
 		{name: "rejections", response: `{"record_4":"user_requirements","record_2":"grounding","record_1":"pass","record_3":"task_quality"}`, warnings: []string{"record 2: grounding", "record 3: task_quality", "record 4: user_requirements"}},
+		{name: "separate checks", response: `{"record_1":{"grounding":"pass","task_quality":"pass","user_requirements":"pass"},"record_2":{"grounding":"fail","task_quality":"fail","user_requirements":"fail"},"record_3":{"grounding":"pass","task_quality":"fail","user_requirements":"fail"},"record_4":{"grounding":"pass","task_quality":"pass","user_requirements":"fail"}}`, warnings: []string{"record 2: grounding", "record 3: task_quality", "record 4: user_requirements"}},
+		{name: "missing check", response: `{"record_1":{"grounding":"pass","task_quality":"pass"},"record_2":"pass","record_3":"pass","record_4":"pass"}`, invalid: true},
+		{name: "wrong check", response: `{"record_1":{"grounding":"pass","task_quality":"pass","other":"pass"},"record_2":"pass","record_3":"pass","record_4":"pass"}`, invalid: true},
+		{name: "unknown check outcome", response: `{"record_1":{"grounding":"pass","task_quality":"yes","user_requirements":"pass"},"record_2":"pass","record_3":"pass","record_4":"pass"}`, invalid: true},
+		{name: "extra check", response: `{"record_1":{"grounding":"pass","task_quality":"pass","user_requirements":"pass","other":"pass"},"record_2":"pass","record_3":"pass","record_4":"pass"}`, invalid: true},
 		{name: "missing", response: `{"record_1":"pass"}`, invalid: true},
 		{name: "wrong keys", response: `{"record_1":"pass","record_2":"pass","record_3":"pass","other":"pass"}`, invalid: true},
 		{name: "unknown outcome", response: `{"record_1":"yes","record_2":"pass","record_3":"pass","record_4":"pass"}`, invalid: true},
@@ -70,7 +75,11 @@ func TestRun(t *testing.T) {
 			if !tc.invalid && !reflect.DeepEqual(warnings, tc.warnings) {
 				t.Fatalf("warnings = %v, want %v", warnings, tc.warnings)
 			}
-			if usage.PromptTokens != 9 {
+			wantTokens := 9
+			if tc.invalid {
+				wantTokens = 27
+			}
+			if usage.PromptTokens != wantTokens {
 				t.Fatalf("lost usage: %+v", usage)
 			}
 		})
@@ -78,6 +87,36 @@ func TestRun(t *testing.T) {
 	want := errors.New("completion failed")
 	if _, _, err := verify.Run(t.Context(), completer{err: want}, preparation.PreparationRequest{}, "Source topic", records); !errors.Is(err, want) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestRunMalformedVerdictRecovery(t *testing.T) {
+	responses := []string{
+		`{"record_1":{"verdict":"pass"},"record_2":{"verdict":"grounding"}}`,
+		`{"record_1":"pass"}`,
+		`{"record_2":"grounding","record_1":"pass"}`,
+	}
+	model := completer{respond: func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+		if !request.EnableThinking || request.ResponseSchema != nil {
+			t.Fatal("format correction must preserve reasoned verification")
+		}
+		if len(responses) == 0 {
+			t.Fatal("verification exceeded its correction budget")
+		}
+		response := responses[0]
+		responses = responses[1:]
+		return providers.Completion{Content: response, PromptTokens: 9, CompletionTokens: 17}, nil
+	}}
+	records := []training.Record{
+		{Prompt: "When does the ferry leave?", Target: "Noon", Evidence: "The ferry leaves at noon."},
+		{Prompt: "Where does the ferry dock?", Target: "North pier", Evidence: "The ferry leaves at noon."},
+	}
+	warnings, usage, err := verify.Run(t.Context(), model, preparation.PreparationRequest{Goal: preparation.GoalQuestionAnswer}, "Harbor operations", records)
+	if err != nil || !slices.Equal(warnings, []string{"record 2: grounding"}) {
+		t.Fatalf("lost rejection during format correction: %v, %v", warnings, err)
+	}
+	if usage.PromptTokens != 27 || usage.CompletionTokens != 51 {
+		t.Fatalf("lost correction usage: %+v", usage)
 	}
 }
 
@@ -173,6 +212,7 @@ func TestStepRecovery(t *testing.T) {
 				failureOffset = 0 // Rejected approved examples must still stop publication.
 			}
 			failed := false
+			malformedAttempts := 0
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			wantErr := errors.New("controlled completion failure")
@@ -218,7 +258,7 @@ func TestStepRecovery(t *testing.T) {
 					}
 					outcomes[fmt.Sprintf("record_%d", i+1)] = "pass"
 				}
-				if offset == failureOffset && !failed {
+				if offset == failureOffset && (!failed || failure == "malformed" && malformedAttempts < 3) {
 					failed = true
 					var err error
 					savedBeforeFailure, err = input.Workspace.ReadFile(checkpoint.File)
@@ -227,6 +267,7 @@ func TestStepRecovery(t *testing.T) {
 					}
 					switch failure {
 					case "malformed":
+						malformedAttempts++
 						return providers.Completion{Content: "not JSON", PromptTokens: 999}, nil
 					case "rejected":
 						return providers.Completion{Content: `{"record_1":"pass","record_2":"grounding","record_3":"pass"}`, PromptTokens: 999}, nil

@@ -29,7 +29,7 @@ func EvaluationRecord(ctx context.Context, completer preparation.ModelCompleter,
 			fmt.Fprintf(&excluded, "\nDo not repeat: %s", r.Prompt)
 		}
 	}
-	prompt := fmt.Sprintf("Write a new standalone natural question ending in ? for independent evaluation. It must ask for exactly the locked target, without revealing it. Return {\"record_1\":\"question\"}. Evidence: %s\nLocked target: %s\nGuidance: %s%s", fact.Evidence, fact.Target, request.Instructions, excluded.String())
+	prompt := fmt.Sprintf("Write a new standalone natural question ending in ? for independent evaluation. It must ask for exactly the locked target, without revealing it. Preserve the original question's requested information, entity, quantity, negation and conditions; a percentage question must still request a percentage, not just name its category. Return {\"record_1\":\"question\"}. Original question: %s\nEvidence: %s\nLocked target: %s\nGuidance: %s%s", fact.Prompt, fact.Evidence, fact.Target, request.Instructions, excluded.String())
 	question := fact.Prompt
 	if rejections > 0 {
 		question = rejectedPrompt

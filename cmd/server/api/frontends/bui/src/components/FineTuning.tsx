@@ -360,18 +360,18 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
               </div>
               </div>
               <div className="form-group">
-                <FieldLabel htmlFor="fine-example-limit" tooltipKey="fineTuningMaxQuestions">Record limit (optional)</FieldLabel>
+                <FieldLabel htmlFor="fine-example-limit" tooltipKey="fineTuningMaxQuestions">Record target (optional)</FieldLabel>
                 <select id="fine-example-limit" className="form-input" value={limitExamples ? 'limit' : 'unlimited'} disabled={busy} onChange={(event) => setLimitExamples(event.target.value === 'limit')}>
                   <option value="unlimited">Unlimited</option>
-                  <option value="limit">Limit records</option>
+                  <option value="limit">Set record count</option>
                 </select>
                 {limitExamples && <>
-                  <FieldLabel htmlFor="fine-max-questions" tooltipKey="fineTuningMaxQuestions">Maximum records (required)</FieldLabel>
+                  <FieldLabel htmlFor="fine-max-questions" tooltipKey="fineTuningMaxQuestions">Requested records</FieldLabel>
                   <input id="fine-max-questions" className="form-input" type="number" min={1} step={1} required value={maxQuestions} disabled={busy} aria-invalid={!!capError} aria-describedby={`fine-cap-help${capError ? ' fine-cap-error' : ''}`} onChange={(event) => setMaxQuestions(event.target.value)} />
                   {capError && <p id="fine-cap-error" className="fine-error">{capError}</p>}
                 </>}
-                <p id="fine-cap-help" className="fine-action-note">Counts verified records from this document, including reviewed records and the evaluation questions Kronk adds. Rejected records are replaced while passages remain.</p>
-                <details className="fine-recipe-details"><summary>What makes a dataset ready for training?</summary><p>Training needs at least 20 training records. Kronk also adds evaluation questions that check the trained model against the base model: test questions for 5% of the training records (16 to 128) and half as many validation questions (at least 8). With a record limit they count toward it, so a new dataset needs a limit of 44 to get both; with less room it trains without that check. Preparation does not start training.</p></details>
+                <p id="fine-cap-help" className="fine-action-note">Counts verified records from each document, including reviewed records and evaluation questions. Preparation makes additional passes to reach your count and replaces rejected candidates. A passage can supply more than three records, including different questions about supported facts. If three passes add no verified records, preparation saves the available records with a warning instead of failing for a shortfall. Unlimited makes one pass.</p>
+                <details className="fine-recipe-details"><summary>What makes a dataset ready for training?</summary><p>Training needs at least 20 training records. Kronk also adds evaluation questions that check the trained model against the base model: test questions for 5% of the training records (16 to 128) and half as many validation questions (at least 8). Evaluation questions count toward the target, so a new dataset needs a target of at least 44 to get both; with less room it trains without that check. Preparation does not start training.</p></details>
               </div>
 
               <details className="fine-recipe-details">

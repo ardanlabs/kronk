@@ -49,7 +49,7 @@ type PreparationRequest struct {
 	Goal            Goal              `json:"goal"`
 	Instructions    string            `json:"instructions,omitzero"`
 	PreviewRecords  int               `json:"preview_records,omitzero"`
-	MaxQuestions    int               `json:"max_questions,omitzero"` // Maximum saved examples, including review and evaluation; zero is unlimited.
+	MaxQuestions    int               `json:"max_questions,omitzero"` // Requested records, including review and evaluation; zero is unlimited.
 	PageStart       int               `json:"page_start,omitzero"`
 	PageEnd         int               `json:"page_end,omitzero"`
 	ReviewedRecords []training.Record `json:"reviewed_records,omitzero"`

@@ -52,6 +52,9 @@ func (j *Job) runIssues(run tmprl.Run[Request, Artifacts]) []RunIssue {
 	counts := make(map[string]int)
 	for _, exclusion := range checkpoint.Result.Exclusions {
 		code := "preparation-omissions"
+		if strings.HasPrefix(exclusion.Reason, "generation failed after ") {
+			code = "preparation-generation-failed"
+		}
 		if strings.HasPrefix(exclusion.Reason, "verification rejected example ") {
 			code = ""
 			for _, category := range []string{"grounding", "task_quality", "user_requirements"} {
@@ -66,7 +69,7 @@ func (j *Job) runIssues(run tmprl.Run[Request, Artifacts]) []RunIssue {
 		}
 	}
 	var issues []RunIssue
-	for _, code := range []string{"grounding", "task_quality", "user_requirements", "preparation-omissions"} {
+	for _, code := range []string{"grounding", "task_quality", "user_requirements", "preparation-generation-failed", "preparation-omissions"} {
 		if count := counts[code]; count > 0 {
 			issues = append(issues, RunIssue{Code: code, Count: count})
 		}
