@@ -2726,7 +2726,7 @@ kronk service uninstall`}</code></pre>
               <tr>
                 <td><code>/v1/audio/speech</code></td>
                 <td>POST</td>
-                <td>Generate buffered WAV or PCM speech</td>
+                <td>Generate buffered speech audio</td>
               </tr>
               <tr>
                 <td><code>/v1/audio/transcriptions</code></td>
@@ -3546,7 +3546,7 @@ make example-decision-audio`}</code></pre>
               <tr>
                 <td><code>response_format</code></td>
                 <td>string, optional</td>
-                <td><code>wav</code> (default) or <code>pcm</code>; omission, empty string, or null selects WAV</td>
+                <td><code>wav</code> (default), <code>pcm</code>, <code>mp3</code>, <code>opus</code>, <code>aac</code>, or <code>flac</code>; omission, empty string, or null selects WAV</td>
               </tr>
               <tr>
                 <td><code>stream_format</code></td>
@@ -3583,7 +3583,42 @@ curl --fail-with-body http://localhost:11435/v1/audio/speech \\
 afplay speech.wav # macOS; use a WAV player on other systems.`}</code></pre>
           <p>HTTP 200 returns raw audio bytes, not JSON or base64. WAV uses <code>Content-Type: audio/wav</code> and contains complete PCM16 little-endian mono audio with its sample rate in the header. All four currently supported bundles produce 24 kHz audio.</p>
           <p>For headerless samples, add <code>"response_format": "pcm"</code> and save as <code>speech.pcm</code>. The response uses <code>Content-Type: audio/pcm</code> and contains the same signed 16-bit little-endian mono samples without a WAV header or resampling. A raw PCM player must be configured for the model's sample rate (24 kHz for these bundles), mono, and signed 16-bit little-endian samples.</p>
-          <p>Both formats are buffered: successful audio is returned only after synthesis finishes. <code>stream_format: "audio"</code> does not enable incremental delivery. Failures return JSON instead of a successful partial audio response. When using curl, inspect the exit status before playing the output file: an HTTP error saved by <code>--fail-with-body</code> contains JSON, not audio.</p>
+          <h3 id="additional-formats-through-ffmpeg">Additional formats through ffmpeg</h3>
+          <p>MP3, Opus, AAC, and FLAC require <code>ffmpeg</code> on the <strong>server's PATH</strong>, with the corresponding encoder available. WAV and PCM do not require ffmpeg. For example, install it with <code>brew install ffmpeg</code> on macOS or <code>sudo apt-get install ffmpeg</code> on Debian/Ubuntu, and ensure the service/container can find that executable.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th><code>response_format</code></th>
+                <th>Content-Type</th>
+                <th>Container / encoding</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>mp3</code></td>
+                <td><code>audio/mpeg</code></td>
+                <td>MP3 (<code>libmp3lame</code>)</td>
+              </tr>
+              <tr>
+                <td><code>opus</code></td>
+                <td><code>audio/ogg</code></td>
+                <td>Ogg Opus (<code>libopus</code>); reports a 48 kHz playback rate</td>
+              </tr>
+              <tr>
+                <td><code>aac</code></td>
+                <td><code>audio/aac</code></td>
+                <td>AAC in ADTS, not M4A/MP4</td>
+              </tr>
+              <tr>
+                <td><code>flac</code></td>
+                <td><code>audio/flac</code></td>
+                <td>Lossless FLAC</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Set <code>"response_format": "mp3"</code> in the request above and change the output filename to <code>speech.mp3</code>; use the other format names and matching extensions in the same way. MP3, AAC, and FLAC retain the generated 24 kHz mono rate; Opus uses its codec-specific playback rate. Encoding uses memory and pipes, not temporary files. Installing ffmpeg on the client alone is not sufficient.</p>
+          <p>If ffmpeg cannot be found, a compressed-format request returns an actionable 400 before loading a model. A missing encoder or other encoding failure returns 500; the server never falls back to another format or returns a successful partial file. A deadline or disconnect cancels encoding as well as synthesis.</p>
+          <p>All formats are buffered: successful audio is returned only after synthesis and any encoding finish. <code>stream_format: "audio"</code> does not enable incremental delivery. Failures return JSON instead of a successful partial audio response. When using curl, inspect the exit status before playing the output file: an HTTP error saved by <code>--fail-with-body</code> contains JSON, not audio.</p>
           <h3 id="errors-and-compatibility">Errors and compatibility</h3>
           <table className="flags-table">
             <thead>
@@ -3595,7 +3630,7 @@ afplay speech.wav # macOS; use a WAV player on other systems.`}</code></pre>
             <tbody>
               <tr>
                 <td>400</td>
-                <td>Invalid request, unknown voice, unsupported format/stream format, model-specific input limit, or model without supported speech capability</td>
+                <td>Invalid request, unknown voice, unsupported format/stream format, missing ffmpeg for a compressed format, model-specific input limit, or model without supported speech capability</td>
               </tr>
               <tr>
                 <td>401 / 403</td>
@@ -3619,12 +3654,12 @@ afplay speech.wav # macOS; use a WAV player on other systems.`}</code></pre>
               </tr>
               <tr>
                 <td>500</td>
-                <td>Internal synthesis or response-conversion failure</td>
+                <td>Internal synthesis, response-conversion, or ffmpeg encoding failure</td>
               </tr>
             </tbody>
           </table>
           <p>Unknown-voice errors list supported choices, including the <code>default</code> alias. An autoregressive frame-limit failure returns no partial audio; split long passages into smaller requests rather than treating 429 as successful output. Kokoro and Tiny-Voca use their own normalized-text/duration limits instead of the autoregressive frame cap.</p>
-          <p>This is an OpenAI-compatible subset, not complete speech API parity. Unlike OpenAI's MP3 default, Kronk defaults to WAV. MP3, Opus, AAC, FLAC, SSE, and true streaming are unsupported. OpenAI voice names such as <code>alloy</code> are not universal Kronk presets: use <code>default</code> or a name supported by the loaded bundle. SDK reference-audio and language controls are not exposed by this endpoint. There is no BUI speech playground; the BUI token form can grant speech access.</p>
+          <p>This is an OpenAI-compatible subset, not complete speech API parity. Unlike OpenAI's MP3 default, Kronk defaults to WAV. SSE and true streaming are unsupported. OpenAI voice names such as <code>alloy</code> are not universal Kronk presets: use <code>default</code> or a name supported by the loaded bundle. SDK reference-audio and language controls are not exposed by this endpoint. There is no BUI speech playground; the BUI token form can grant speech access.</p>
           <h2 id="chapter-10-request-parameters">Chapter 10: Request Parameters</h2>
           <p>This chapter covers generation parameters used by Chat Completions and the Go SDK. Other API formats expose compatible subsets or translate their own field names into these parameters. See <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> for endpoint-specific request formats and streaming behavior.</p>
           <h2 id="101-scope-and-defaults">10.1 Scope and Defaults</h2>
@@ -3994,7 +4029,7 @@ EOF`}</code></pre>
             <li>Kronk does not impose fixed media payload, image-dimension, or media-count limits. Image decoding allocates memory in proportion to decoded dimensions, and a request can retain multiple decoded media items at once. Applications that accept media from untrusted sources must validate those resources before passing them to Kronk.</li>
           </ul>
           <h2 id="119-text-to-speech-sdk">11.9 Text-to-Speech SDK</h2>
-          <p><code>krn.Speech(ctx, model.SpeechRequest&#123;Input: text&#125;)</code> generates a complete PCM16 little-endian mono WAV. Speech models are detected automatically; <code>WithSpeech</code> is optional configuration, not a switch required to enable speech. The server also exposes buffered WAV/PCM output at <code>POST /v1/audio/speech</code>; its required fields, formats, errors, and compatibility limits are documented in <a href="https://www.kronkai.com/manual#915-text-to-speech">§9.15</a>. SDK language and reference-audio controls are not exposed by that endpoint. There is no BUI speech playground; the token form can grant speech access.</p>
+          <p><code>krn.Speech(ctx, model.SpeechRequest&#123;Input: text&#125;)</code> generates a complete PCM16 little-endian mono WAV. Speech models are detected automatically; <code>WithSpeech</code> is optional configuration, not a switch required to enable speech. The server also exposes buffered WAV/PCM and optional ffmpeg-encoded output at <code>POST /v1/audio/speech</code>; its required fields, formats, errors, and compatibility limits are documented in <a href="https://www.kronkai.com/manual#915-text-to-speech">§9.15</a>. SDK language and reference-audio controls are not exposed by that endpoint. There is no BUI speech playground; the token form can grant speech access.</p>
           <h3 id="1191-models-and-installation">11.9.1 Models and Installation</h3>
           <p>The verified bundles are:</p>
           <table className="flags-table">
@@ -4138,7 +4173,7 @@ return os.WriteFile("conditioned.wav", response.Audio, 0644)`}</code></pre>
           <p>The <code>sdk/kronk/pool</code> package acquires speech models through the normal <code>AquireModel</code> operation. The returned handle supports the same <code>Speech</code> method. Decoder discovery, fixed runtime defaults, and speech-aware memory reservations are automatic. <code>WithSpeech</code> is a Go SDK option; there is no <code>speech</code>/<code>max-frames</code> entry in <code>model_config.yaml</code> at present. Custom pooled configurations can carry <code>model.Config.PtrSpeech</code> through <code>AquireCustom</code>.</p>
           <p>Memory planning includes the backbone, decoder, applicable KV caches, slot-dependent host memory, and retained working buffers. On unified-memory systems these are charged once to RAM, not again to a separate VRAM budget. An active speech request protects its model from eviction. Failed loads release their reservations; idle eviction or pool shutdown unloads the model and releases its reservation. A bundle that cannot fit returns <code>pool.ErrNoCapacity</code>; temporary pressure with no idle eviction candidate returns <code>pool.ErrServerBusy</code>.</p>
           <p>Autoregressive speech memory planning supports up to 512 frames, without restricting the selected native backend. CPU decoder placement charges weights and working memory to RAM rather than VRAM. Kokoro and Tiny-Voca reserve for their admitted normalized inputs and configured slot counts rather than an autoregressive frame budget. For Qwen and Chatterbox, reservations include the accepted 30-second reference workload even when a request omits <code>Reference</code>. Reference-encoding workspace estimates are provisional on every backend; Qwen decoders with the optional transcript-conditioning encoder require additional capacity. Non-Metal generation estimates are also provisional. Leave spare RAM and VRAM when choosing pool budgets. Estimates are not peak-memory guarantees, and execution requires a compatible native library bundle. Unsupported decoder layouts fail planning explicitly. Lower frame limits can reduce output allowances without reducing reference-encoding or all other working memory.</p>
-          <p>The SDK returns WAV; the HTTP endpoint separately offers buffered WAV and PCM as described in <a href="https://www.kronkai.com/manual#915-text-to-speech">§9.15</a>. Incremental/streaming audio, compressed output formats, and a BUI synthesis playground are not provided.</p>
+          <p>The SDK returns WAV; the HTTP endpoint separately offers buffered WAV and PCM, plus MP3, Opus, AAC, and FLAC when ffmpeg is available on the server, as described in <a href="https://www.kronkai.com/manual#915-text-to-speech">§9.15</a>. Incremental/streaming audio and a BUI synthesis playground are not provided.</p>
           <hr />
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
           <h2 id="chapter-12-security-and-authentication">Chapter 12: Security and Authentication</h2>
@@ -6542,7 +6577,8 @@ examples source             -> example BUI documentation
           <p>The state pool is sized by <code>Config.NSeqMax</code>, which defaults to 1. The admission channel is sized by <code>NSeqMax + QueueDepth</code>; queue depth defaults to 0. Calls beyond that capacity wait until their context is canceled, the configured admission timeout expires, or an operation releases admission capacity. The admission timeout defaults to three minutes and stops applying once capacity is acquired. The states isolate concurrent inference while sharing the handle's model weights and Whisper context.</p>
           <p>The Bucky planner reserves the shared model file size once and a conservative 200 MiB runtime allowance for every configured state. It does not charge <code>QueueDepth</code>, because waiting calls do not allocate a state. Planning and model loading use the same resolved configuration so the reservation scales with the actual <code>NSeqMax</code> used by the handle.</p>
           <p>The audio HTTP handler delegates file decoding and transcription to <code>Bucky.TranscribeFile</code>. It explicitly enforces the 25 MiB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.</p>
-          <p>Focused tests that exist include unit tests under <code>sdk/bucky/model/</code> and <code>sdk/bucky/ffmpeg/</code>, transcription/pool/stream suites under <code>sdk/bucky/tests/transcribe/</code>, and the server audio API tests under <code>cmd/server/api/services/kronk/tests/</code>. Choose the narrowest test whose native library and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.</p>
+          <p>Focused tests that exist include unit tests under <code>sdk/bucky/model/</code> and the shared <code>sdk/tools/ffmpeg/</code>, transcription/pool/stream suites under <code>sdk/bucky/tests/transcribe/</code>, and the server audio API tests under <code>cmd/server/api/services/kronk/tests/</code>. Choose the narrowest test whose native library and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.</p>
+          <p>Ordinary CI speech voice and pool-lifecycle tests cover Chatterbox, Qwen, Kokoro, and Tiny-Voca; the CI and local fixture installers include all four. Additional native smoke/API suites use the <code>speech_integration</code> build tag, not an environment-variable switch. Install the bundles with <code>make install-speak-models</code> before using <code>make test-speech</code>. Missing required fixtures fail rather than silently skipping.</p>
           <h3 id="209-verification-for-llm-agents">20.9 Verification for LLM Agents</h3>
           <h4 id="2091-required-go-post-edit-sequence">20.9.1 Required Go post-edit sequence</h4>
           <p>After changing Go, obey the root instructions and scope work to the changed package. For each changed Go file/package:</p>
@@ -6880,6 +6916,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/model/internal/parsers/
               <ul>
                 <li><a href="#request" className={activeSection === 'request' ? 'active' : ''}>Request</a></li>
                 <li><a href="#generate-and-save-a-wav" className={activeSection === 'generate-and-save-a-wav' ? 'active' : ''}>Generate and save a WAV</a></li>
+                <li><a href="#additional-formats-through-ffmpeg" className={activeSection === 'additional-formats-through-ffmpeg' ? 'active' : ''}>Additional formats through ffmpeg</a></li>
                 <li><a href="#errors-and-compatibility" className={activeSection === 'errors-and-compatibility' ? 'active' : ''}>Errors and compatibility</a></li>
               </ul>
             </div>

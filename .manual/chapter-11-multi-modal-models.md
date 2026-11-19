@@ -201,7 +201,8 @@ behavior and limitations.
 `krn.Speech(ctx, model.SpeechRequest{Input: text})` generates a complete PCM16
 little-endian mono WAV. Speech models are detected automatically; `WithSpeech`
 is optional configuration, not a switch required to enable speech. The server
-also exposes buffered WAV/PCM output at `POST /v1/audio/speech`; its required
+also exposes buffered WAV/PCM and optional ffmpeg-encoded output at
+`POST /v1/audio/speech`; its required
 fields, formats, errors, and compatibility limits are documented in
 [§9.15](https://www.kronkai.com/manual#915-text-to-speech). SDK language and
 reference-audio controls are not exposed by that endpoint. There is no BUI
@@ -471,10 +472,10 @@ bundle. Unsupported decoder layouts fail planning explicitly. Lower frame
 limits can reduce output allowances without reducing reference-encoding or
 all other working memory.
 
-The SDK returns WAV; the HTTP endpoint separately offers buffered WAV and PCM
-as described in [§9.15](https://www.kronkai.com/manual#915-text-to-speech).
-Incremental/streaming audio, compressed output formats, and a BUI synthesis
-playground are not provided.
+The SDK returns WAV; the HTTP endpoint separately offers buffered WAV and PCM,
+plus MP3, Opus, AAC, and FLAC when ffmpeg is available on the server, as
+described in [§9.15](https://www.kronkai.com/manual#915-text-to-speech).
+Incremental/streaming audio and a BUI synthesis playground are not provided.
 
 ---
 

@@ -40,13 +40,32 @@ func (sr *speechRequest) Validate() error {
 	if sr.ResponseFormat == "" {
 		sr.ResponseFormat = "wav"
 	}
-	if sr.ResponseFormat != "wav" && sr.ResponseFormat != "pcm" {
-		return fmt.Errorf("unsupported response_format %q; supported formats: wav, pcm", sr.ResponseFormat)
+	if speechContentType(sr.ResponseFormat) == "" {
+		return fmt.Errorf("unsupported response_format %q; supported formats: wav, pcm, mp3, opus, aac, flac", sr.ResponseFormat)
 	}
 	if sr.StreamFormat != "" && sr.StreamFormat != "audio" {
 		return fmt.Errorf("unsupported stream_format %q; supported format: audio (buffered)", sr.StreamFormat)
 	}
 	return nil
+}
+
+func speechContentType(format string) string {
+	switch format {
+	case "wav":
+		return "audio/wav"
+	case "pcm":
+		return "audio/pcm"
+	case "mp3":
+		return "audio/mpeg"
+	case "opus":
+		return "audio/ogg"
+	case "aac":
+		return "audio/aac"
+	case "flac":
+		return "audio/flac"
+	default:
+		return ""
+	}
 }
 
 // speechPCM extracts the original samples without resampling or assuming a

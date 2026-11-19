@@ -5,6 +5,7 @@
 - [v1.33.3](#v1333)
   - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
   - [Internal Parser Packages](#v1333-internal-parser-packages)
+  - [Shared ffmpeg Package](#v1333-shared-ffmpeg-package)
 - [v1.33.2](#v1332)
   - [Responses Reasoning Output](#v1332-responses-reasoning-output)
   - [Structured-Output Schema Validation](#v1332-structured-output-schema-validation)
@@ -82,6 +83,15 @@ Custom parsers remain supported through the existing `model.Parser` contract and
 `model.RegisterParser`. Register custom factories before loading any models; they
 are tried in registration order before the built-ins. Parser precedence among
 built-ins, tool-call wire formats, and reasoning output are unchanged.
+
+### v1.33.3: Shared ffmpeg Package
+
+The ffmpeg helper package moved from
+`github.com/ardanlabs/kronk/sdk/bucky/ffmpeg` to
+`github.com/ardanlabs/kronk/sdk/tools/ffmpeg` so Bucky decoding and speech
+encoding share the same utility. Update Go imports to the new path, including
+references to `FFmpeg` and `ErrNotInstalled`. Existing decoding methods and
+HTTP error behavior are unchanged; the old import path is no longer provided.
 
 ## v1.33.2
 

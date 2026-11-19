@@ -11,7 +11,6 @@ import (
 
 	"github.com/ardanlabs/bucky/pkg/audio"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	buckyffmpeg "github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -21,6 +20,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	"github.com/ardanlabs/kronk/sdk/tools/ffmpeg"
 	"github.com/ardanlabs/kronk/sdk/tools/github"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
@@ -56,7 +56,7 @@ func TestFromSDK(t *testing.T) {
 		{name: "hugging face not found", err: hf.ErrNotFound, code: NotFound},
 		{name: "hugging face throttled", err: hf.ErrThrottled, code: TooManyRequests},
 		{name: "github rate limited", err: github.ErrRateLimited, code: TooManyRequests},
-		{name: "ffmpeg not installed", err: buckyffmpeg.ErrNotInstalled, code: FailedPrecondition},
+		{name: "ffmpeg not installed", err: ffmpeg.ErrNotInstalled, code: FailedPrecondition},
 		{name: "unsupported audio", err: audio.ErrUnsupportedFormat, code: InvalidArgument},
 		{name: "llama libraries read only", err: libs.ErrReadOnly, code: FailedPrecondition},
 		{name: "bucky libraries read only", err: buckylibs.ErrReadOnly, code: FailedPrecondition},

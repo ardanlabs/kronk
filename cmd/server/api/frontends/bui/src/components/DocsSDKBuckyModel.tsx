@@ -47,7 +47,7 @@ export default function DocsSDKBuckyModel() {
                 <code>func Decode(ctx context.Context, r io.Reader) ([]float32, error)</code>
               </pre>
               <p className="doc-description">Decode reads audio in any format the bucky SDK supports and returns the 16 kHz mono float32 PCM that Transcribe expects.</p>
-              <p className="doc-description">WAV, MP3, and FLAC are decoded in-process by the upstream github.com/ardanlabs/bucky/pkg/audio package. Anything else (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is transcoded to WAV by shelling out to ffmpeg via sdk/bucky/ffmpeg. ffmpeg is located once on first use and reused for the lifetime of the process.</p>
+              <p className="doc-description">WAV, MP3, and FLAC are decoded in-process by the upstream github.com/ardanlabs/bucky/pkg/audio package. Anything else (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is transcoded to WAV by shelling out to ffmpeg via sdk/tools/ffmpeg. ffmpeg is located once on first use and reused for the lifetime of the process.</p>
               <p className="doc-description">When ffmpeg is not installed or the transcode fails, Decode returns an error that wraps audio.ErrUnsupportedFormat so callers that already match the upstream sentinel keep working and the user-visible error category remains "unsupported format".</p>
             </div>
 

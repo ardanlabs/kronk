@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,14 @@ import (
 func Test_API_SpeechModels(t *testing.T) {
 	test := apitest.NewWithModelConfig(t, "Test_API_SpeechModels", "testdata/model_config.yaml")
 	token := speechToken(t, test, false, "speech")
+	formats := []string{"", "wav", "pcm"}
+	_, ffmpegErr := exec.LookPath("ffmpeg")
+	_, ffprobeErr := exec.LookPath("ffprobe")
+	if ffmpegErr == nil && ffprobeErr == nil {
+		formats = append(formats, "mp3", "opus", "aac", "flac")
+	} else {
+		t.Log("ffmpeg/ffprobe unavailable; compressed speech checks omitted")
+	}
 	for _, id := range []string{
 		"ggml-org/chatterbox-turbo-Q8_0", "ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0",
 		"ggml-org/Kokoro-82M-F32", "ggml-org/tiny-voca-F32",
@@ -27,7 +36,7 @@ func Test_API_SpeechModels(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			var wav []byte
 			var table []apitest.Table
-			for _, format := range []string{"", "wav", "pcm"} {
+			for _, format := range formats {
 				// Ignored controls must not alter the SDK's conditioning or limits.
 				fields := ""
 				if format != "" {
@@ -46,6 +55,36 @@ func Test_API_SpeechModels(t *testing.T) {
 						if format == "pcm" {
 							if header.Get("Content-Type") != "audio/pcm" || len(wav) <= 44 || !bytes.Equal(audio, wav[44:]) {
 								return "PCM response does not match the WAV samples"
+							}
+							return ""
+						}
+						if format != "" && format != "wav" {
+							mime, rate := "audio/"+format, "24000"
+							switch format {
+							case "mp3":
+								mime = "audio/mpeg"
+							case "opus":
+								mime, rate = "audio/ogg", "48000"
+							}
+							if header.Get("Content-Type") != mime || len(audio) == 0 {
+								return fmt.Sprintf("got %s / %d bytes, want nonempty %s", header.Get("Content-Type"), len(audio), mime)
+							}
+							probe := exec.CommandContext(t.Context(), "ffprobe", "-v", "error", "-show_entries", "stream=codec_name,sample_rate,channels", "-of", "csv=p=0", "pipe:0")
+							probe.Stdin = bytes.NewReader(audio)
+							metadata, err := probe.Output()
+							if err != nil {
+								return fmt.Sprintf("ffprobe: %v", err)
+							}
+							if got, want := strings.TrimSpace(string(metadata)), format+","+rate+",1"; got != want {
+								return fmt.Sprintf("codec/rate/channels: got %q, want %q", got, want)
+							}
+							if format == "flac" {
+								decode := exec.CommandContext(t.Context(), "ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "s16le", "pipe:1")
+								decode.Stdin = bytes.NewReader(audio)
+								pcm, err := decode.Output()
+								if err != nil || len(wav) <= 44 || !bytes.Equal(pcm, wav[44:]) {
+									return fmt.Sprintf("FLAC changed original WAV samples: %v", err)
+								}
 							}
 							return ""
 						}

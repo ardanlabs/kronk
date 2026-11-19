@@ -834,10 +834,17 @@ unbounded work. Keep protocol field validation/format selection in the handler a
 audio/model mechanics in Bucky.
 
 Focused tests that exist include unit tests under `sdk/bucky/model/` and
-`sdk/bucky/ffmpeg/`, transcription/pool/stream suites under
+the shared `sdk/tools/ffmpeg/`, transcription/pool/stream suites under
 `sdk/bucky/tests/transcribe/`, and the server audio API tests under
 `cmd/server/api/services/kronk/tests/`. Choose the narrowest test whose native library
 and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.
+
+Ordinary CI speech voice and pool-lifecycle tests cover Chatterbox, Qwen,
+Kokoro, and Tiny-Voca; the CI and local fixture installers include all four.
+Additional native smoke/API suites use the `speech_integration` build tag,
+not an environment-variable switch. Install the bundles with
+`make install-speak-models` before using `make test-speech`.
+Missing required fixtures fail rather than silently skipping.
 
 ### 20.9 Verification for LLM Agents
 

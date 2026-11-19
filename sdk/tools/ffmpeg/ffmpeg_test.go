@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
+	"github.com/ardanlabs/kronk/sdk/tools/ffmpeg"
 )
 
 func TestNew_NotInstalled(t *testing.T) {
@@ -139,6 +139,72 @@ func TestToPCM16_ContextCancel(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatalf("ToPCM16Bytes: did not return after ctx cancel")
 	}
+}
+
+func TestEncode(t *testing.T) {
+	f := mustFFmpeg(t)
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not installed; skipping codec verification")
+	}
+	in := generateAudio(t, "wav", "pcm_s16le")
+	for _, tc := range []struct{ format, codec string }{
+		{"mp3", "mp3"}, {"opus", "opus"}, {"aac", "aac"}, {"flac", "flac"},
+	} {
+		t.Run(tc.format, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			out, err := f.Encode(ctx, bytes.NewReader(in), tc.format)
+			if err != nil {
+				t.Fatalf("Encode: got %v, want nil", err)
+			}
+			probe := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "stream=codec_name,sample_rate,channels", "-of", "csv=p=0", "pipe:0")
+			probe.Stdin = bytes.NewReader(out)
+			metadata, err := probe.Output()
+			if err != nil {
+				t.Fatalf("ffprobe: %v", err)
+			}
+			if got, want := strings.TrimSpace(string(metadata)), tc.codec+",48000,1"; got != want {
+				t.Errorf("codec/rate/channels: got %q, want %q", got, want)
+			}
+			pcm, err := f.ToPCM16Bytes(ctx, bytes.NewReader(out))
+			if err != nil {
+				t.Fatalf("decode encoded audio: %v", err)
+			}
+			assertPCM16k(t, pcm)
+			if tc.format == "flac" {
+				original, err := f.ToPCM16Bytes(ctx, bytes.NewReader(in))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(pcm, original) {
+					t.Error("FLAC round trip changed the PCM samples")
+				}
+			}
+		})
+	}
+}
+
+func TestEncodeErrors(t *testing.T) {
+	f := mustFFmpeg(t)
+	for _, tc := range []struct{ name, format, input string }{
+		{"invalid audio", "mp3", "not audio"},
+		{"unsupported format", "wav", "not audio"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := f.Encode(t.Context(), strings.NewReader(tc.input), tc.format)
+			if err == nil || out != nil {
+				t.Fatalf("Encode: got %d bytes, %v; want nil audio and error", len(out), err)
+			}
+		})
+	}
+	t.Run("cancel during encoding", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		out, err := f.Encode(ctx, ctxReader{ctx: ctx}, "mp3")
+		if !errors.Is(err, context.DeadlineExceeded) || out != nil {
+			t.Fatalf("Encode: got %d bytes, %v; want nil audio and deadline error", len(out), err)
+		}
+	})
 }
 
 // ctxReader blocks until ctx is done then returns ctx.Err().

@@ -10,7 +10,6 @@ import (
 	"runtime"
 
 	"github.com/ardanlabs/bucky/pkg/audio"
-	buckyffmpeg "github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -20,6 +19,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	"github.com/ardanlabs/kronk/sdk/tools/ffmpeg"
 	"github.com/ardanlabs/kronk/sdk/tools/github"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
@@ -154,7 +154,7 @@ func FromSDK(err error) *Error {
 		code = TooManyRequests
 	case errors.Is(err, model.ErrArtifactSizeMismatch):
 		code = FailedPrecondition
-	case errors.Is(err, buckyffmpeg.ErrNotInstalled):
+	case errors.Is(err, ffmpeg.ErrNotInstalled):
 		code = FailedPrecondition
 	case errors.Is(err, audio.ErrUnsupportedFormat):
 		code = InvalidArgument

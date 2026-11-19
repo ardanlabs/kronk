@@ -31,7 +31,7 @@ func Test_API_SpeechContracts(t *testing.T) {
 		{name: "missing voice", body: `{"model":"missing","input":"Hello"}`, status: 400, message: "voice"},
 		{name: "wrong type", body: `{"model":"missing","input":3,"voice":"default"}`, status: 400},
 		{name: "format type", body: `{"model":"missing","input":"Hello","voice":"default","response_format":3}`, status: 400},
-		{name: "unsupported format", body: `{"model":"missing","input":"Hello","voice":"default","response_format":"mp3"}`, status: 400, message: "wav, pcm"},
+		{name: "unsupported format", body: `{"model":"missing","input":"Hello","voice":"default","response_format":"ogg"}`, status: 400, message: "wav, pcm, mp3, opus, aac, flac"},
 		{name: "SSE", body: `{"model":"missing","input":"Hello","voice":"default","stream_format":"sse"}`, status: 400, message: "buffered"},
 		{name: "invalid UTF-8", body: "{\"model\":\"missing\",\"input\":\"\xff\",\"voice\":\"default\"}", status: 400, message: "UTF-8"},
 		{name: "body limit", body: strings.Repeat(" ", 1<<20) + `{}`, status: 400, message: "request body too large"},
@@ -137,6 +137,31 @@ func Test_API_SpeechContracts(t *testing.T) {
 	// Authorized invalid bodies consume quota before validation, without
 	// loading models. Keep these requests ordered to check each boundary.
 	test.Run(t, table, "speech-grants-and-limits")
+
+	t.Run("ffmpeg missing", func(t *testing.T) {
+		t.Setenv("PATH", "")
+		var table []apitest.Table
+		for _, format := range []string{"mp3", "opus", "aac", "flac", "wav", "pcm"} {
+			status, code, message := http.StatusBadRequest, errs.FailedPrecondition, "requires ffmpeg on the server PATH"
+			if format == "wav" || format == "pcm" {
+				// These formats bypass ffmpeg and reach model lookup.
+				status, code, message = http.StatusNotFound, errs.NotFound, ""
+			}
+			table = append(table, apitest.Table{
+				Name: format, URL: "/v1/audio/speech", Method: http.MethodPost, Token: token,
+				RawBody:    []byte(fmt.Sprintf(`{"model":"test/missing","input":"Hello","voice":"default","response_format":%q}`, format)),
+				StatusCode: status, GotResp: &errs.Error{}, ResponseCmpFunc: jsonContentType,
+				CmpFunc: func(got, _ any) string {
+					g := got.(*errs.Error)
+					if !g.Code.Equal(code) || !strings.Contains(g.Message, message) {
+						return fmt.Sprintf("got %+v, want %s containing %q", g, code, message)
+					}
+					return ""
+				},
+			})
+		}
+		test.Run(t, table, "speech-no-ffmpeg")
+	})
 }
 
 func speechToken(t *testing.T, test *apitest.Test, admin bool, endpoint string) string {

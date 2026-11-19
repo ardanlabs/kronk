@@ -2,6 +2,7 @@
 package audioapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 	kmodel "github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/pool"
+	"github.com/ardanlabs/kronk/sdk/tools/ffmpeg"
 )
 
 // maxUploadBytes sets a 25 MiB file cap for the audio transcriptions
@@ -154,6 +156,15 @@ func (a *app) speech(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
+	var encoder *ffmpeg.FFmpeg
+	if req.ResponseFormat != "wav" && req.ResponseFormat != "pcm" {
+		var err error
+		encoder, err = ffmpeg.New("")
+		if err != nil {
+			return errs.FromSDK(fmt.Errorf("speech format %q requires ffmpeg on the server PATH; install ffmpeg or use wav/pcm: %w", req.ResponseFormat, err))
+		}
+	}
+
 	krn, err := a.pool.Kronk.AquireModel(ctx, req.Model)
 	if err != nil {
 		return errs.FromSDK(err)
@@ -162,6 +173,14 @@ func (a *app) speech(ctx context.Context, r *http.Request) web.Encoder {
 	response, err := krn.Speech(ctx, kmodel.SpeechRequest{Input: req.Input, Voice: req.Voice})
 	if err != nil {
 		return errs.FromSDK(err)
+	}
+
+	if encoder != nil {
+		audio, err := encoder.Encode(ctx, bytes.NewReader(response.Audio), req.ResponseFormat)
+		if err != nil {
+			return errs.FromSDK(fmt.Errorf("encode speech: %w", err))
+		}
+		return rawResponse{data: audio, contentType: speechContentType(req.ResponseFormat)}
 	}
 
 	if req.ResponseFormat == "pcm" {
