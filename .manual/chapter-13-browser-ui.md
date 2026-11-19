@@ -124,6 +124,15 @@ Token controls include duration, endpoint grants, and rate limits. The
 **Session** page reports whether browser administration authentication is
 enabled and whether the browser has an authenticated admin session.
 
+In **Security → Create Token**, `/v1/audio/speech` grants text-to-speech
+access separately from transcription/translation. Enable it and choose
+**Unlimited**, **Per Day**, **Per Month**, or **Per Year**; finite windows also
+require **Max Requests**. Leaving it unchecked omits the speech grant.
+Endpoint grants and quotas are enforced in `full-protected` mode, not merely
+by enabling a browser admin session. See
+[§9.15](https://www.kronkai.com/manual#915-text-to-speech) for speech requests;
+there is no BUI speech-generation playground.
+
 These tools remain available in open mode. This lets you prepare keys and
 tokens before enabling authentication, but anyone who can reach an open
 server can also use its management APIs. See Chapter 12 before exposing the

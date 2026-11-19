@@ -113,11 +113,19 @@ The grant names used by inference middleware are:
 | `embeddings` | `POST /v1/embeddings` |
 | `rerank` | `POST /v1/rerank` and `/v1/reranking` |
 | `tokenize` | `POST /v1/tokenize` |
+| `speech` | `POST /v1/audio/speech` |
 | `transcriptions` | `POST /v1/audio/transcriptions`, `POST /v1/audio/translations` |
 | `image-generations` | `POST /v1/images/generations`, `POST /v1/images/edits`, `GET /v1/images/events` |
 
 Grant names are not validated when a token is created. Use the names above
 exactly; a typo produces a valid token with an unusable grant.
+
+`speech` and `transcriptions` are independent: neither grants the other, and
+their quotas are separate. Transcription and translation share the
+`transcriptions` grant and counter. Newly initialized master tokens include
+unlimited `speech` access; existing master tokens are not rewritten and retain
+their admin bypass. Existing restricted application tokens need a newly
+issued token containing `speech` to use the endpoint in `full-protected` mode.
 
 Each `--endpoints` entry has one of these forms:
 
@@ -139,6 +147,19 @@ kronk security token create \
 Kronk counts admitted requests by token subject and endpoint. Counters are
 stored in `~/.kronk/badger/`, survive server restarts, and expire after their
 current window. Admin tokens do not use these counters.
+
+For a speech-only token allowing 100 requests per UTC day:
+
+```shell
+kronk security token create --duration 24h --endpoints "speech:100/day"
+```
+
+Alternatively, in the BUI choose **Security → Create Token**, enable
+`/v1/audio/speech`, select **Per Day**, and set **Max Requests** to `100`.
+Select **Unlimited** to disable its quota. Requests that pass authorization
+consume quota even if request validation or synthesis subsequently fails;
+quota exhaustion returns HTTP 429. Endpoint-grant and quota enforcement still
+depends on `full-protected` mode, as described above.
 
 ## 12.5 Using a Token
 

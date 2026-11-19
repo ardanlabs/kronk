@@ -18,7 +18,8 @@ Multimodal models combine a language model with a media projector that turns
 images or audio into input the language model can process. They use the Chat
 Completions endpoint described in [Chapter 9](https://www.kronkai.com/manual#chapter-9-api-endpoints).
 Text-to-speech is a separate SDK operation described in [§11.9](#119-text-to-speech-sdk);
-it does not use Chat Completions or Bucky's transcription API.
+it also has a buffered `/v1/audio/speech` endpoint. Neither uses Chat
+Completions or Bucky's transcription API.
 
 ## 11.1 Models and Projectors
 
@@ -199,9 +200,12 @@ behavior and limitations.
 
 `krn.Speech(ctx, model.SpeechRequest{Input: text})` generates a complete PCM16
 little-endian mono WAV. Speech models are detected automatically; `WithSpeech`
-is optional configuration, not a switch required to enable speech. This is a
-Go SDK feature: no `/v1/audio/speech` endpoint or BUI speech playground is
-provided yet. The normal model-download tools can still install these bundles.
+is optional configuration, not a switch required to enable speech. The server
+also exposes buffered WAV/PCM output at `POST /v1/audio/speech`; its required
+fields, formats, errors, and compatibility limits are documented in
+[§9.15](https://www.kronkai.com/manual#915-text-to-speech). SDK language and
+reference-audio controls are not exposed by that endpoint. There is no BUI
+speech playground; the token form can grant speech access.
 
 ### 11.9.1 Models and Installation
 
@@ -211,7 +215,11 @@ The verified bundles are:
 | --- | --- | --- |
 | `ggml-org/chatterbox-turbo-Q8_0` | F16 audio decoder | English, 24 kHz WAV; empty voice uses the bundled `default` voice |
 | `ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0` | Matching Q8_0 audio decoder | 24 kHz WAV; use an empty voice, including when the bundle has no named presets |
+| `ggml-org/Kokoro-82M-F32` | Matching F32 audio decoder | English, 24 kHz WAV; default conditioning or supported US/GB English presets such as `bf_emma` |
 | `ggml-org/tiny-voca-F32` | Matching F32 audio decoder | English, 24 kHz WAV; default `M2` or preset `F2`; no voice cloning |
+
+These voice defaults describe the SDK. The HTTP endpoint requires an explicit
+`voice`: use `"default"` for default conditioning on any of these bundles.
 
 Install with the regular Hugging Face/catalog downloader. It discovers and
 downloads the matching decoder; you do not need to supply a separate projector
@@ -220,6 +228,7 @@ URL:
 ```shell
 kronk model pull --local ggml-org/chatterbox-turbo-Q8_0
 kronk model pull --local ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0
+kronk model pull --local ggml-org/Kokoro-82M-F32
 kronk model pull --local ggml-org/tiny-voca-F32
 ```
 
@@ -248,6 +257,20 @@ calling `kronk.Init`. Older or incompatible libraries without native audio
 generation return `model.ErrSpeechUnsupported`. Soprano, Pocket TTS, other
 Qwen sizes/variants, and Chatterbox Multilingual are not qualified by these
 working bundles; upstream native support alone is not Kronk support.
+
+#### Kokoro
+
+Kokoro accepts English text and supported English presets in its decoder
+bundle. Voices beginning with `a` use US English pronunciation; voices beginning
+with `b` use British English pronunciation. For example, `bf_emma` selects a
+British preset. Other language families are not supported. Unknown voices
+return an error listing the supported presets and the `default` alias.
+
+Each request must normalize to **1–510 mapped phoneme tokens** in one segment.
+This limit is not an English character count; split longer passages into
+separate requests. Kokoro is non-autoregressive, does not accept reference
+audio, and uses fixed speed **1.0**. Leave `SpeechConfig.MaxFrames` unset or
+at **512**; nondefault values are rejected, not applied as output caps.
 
 #### Tiny-Voca
 
@@ -366,8 +389,10 @@ template and must not be sent through chat, embedding, or reranking methods.
   not characters, PCM samples, or a common duration across models. Reaching
   the ceiling without end-of-speech returns `model.ErrSpeechLimit`, not
   successful truncated audio.
-- Runtime settings are **2,048 context tokens per slot**, **512-token
-  prefill and physical batches**, and **partitioned F16 K/V caches**.
+- Chatterbox and Qwen runtime settings are **2,048 context tokens per slot**,
+  **512-token prefill and physical batches**, and **partitioned F16 K/V caches**.
+  Kokoro and Tiny-Voca instead use **512-position noncausal encoders** without
+  persistent KV caches, subject to their normalized-input limits above.
   Incompatible explicit overrides, IMC, speculative decoding, and adapters
   are rejected. Speech resolves these fixed limits instead of applying chat
   AutoTune recommendations.
@@ -423,7 +448,7 @@ reservations are automatic. `WithSpeech` is a Go SDK option; there is no
 `speech`/`max-frames` entry in `model_config.yaml` at present. Custom pooled
 configurations can carry `model.Config.PtrSpeech` through `AquireCustom`.
 
-Memory planning includes the backbone, decoder, KV caches, slot-dependent
+Memory planning includes the backbone, decoder, applicable KV caches, slot-dependent
 host memory, and retained working buffers. On unified-memory systems these
 are charged once to RAM, not again to a separate VRAM budget. An active
 speech request protects its model from eviction. Failed loads release their
@@ -431,10 +456,12 @@ reservations; idle eviction or pool shutdown unloads the model and releases
 its reservation. A bundle that cannot fit returns `pool.ErrNoCapacity`;
 temporary pressure with no idle eviction candidate returns `pool.ErrServerBusy`.
 
-Speech memory planning supports the bundles above through 512 frames, without
+Autoregressive speech memory planning supports up to 512 frames, without
 restricting the selected native backend. CPU decoder placement charges weights
-and working memory to RAM rather than VRAM. Reservations include the accepted
-30-second reference workload even when a particular request omits `Reference`.
+and working memory to RAM rather than VRAM. Kokoro and Tiny-Voca reserve for
+their admitted normalized inputs and configured slot counts rather than an
+autoregressive frame budget. For Qwen and Chatterbox, reservations include the
+accepted 30-second reference workload even when a request omits `Reference`.
 Reference-encoding workspace estimates are provisional on every backend;
 Qwen decoders with the optional transcript-conditioning encoder require
 additional capacity. Non-Metal generation estimates are also provisional.
@@ -444,8 +471,10 @@ bundle. Unsupported decoder layouts fail planning explicitly. Lower frame
 limits can reduce output allowances without reducing reference-encoding or
 all other working memory.
 
-Incremental/streaming audio delivery, selectable output formats, and an HTTP/BUI
-synthesis interface remain outside this SDK contract.
+The SDK returns WAV; the HTTP endpoint separately offers buffered WAV and PCM
+as described in [§9.15](https://www.kronkai.com/manual#915-text-to-speech).
+Incremental/streaming audio, compressed output formats, and a BUI synthesis
+playground are not provided.
 
 ---
 

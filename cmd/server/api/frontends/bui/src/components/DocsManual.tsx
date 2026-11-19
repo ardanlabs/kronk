@@ -2633,10 +2633,13 @@ kronk service uninstall`}</code></pre>
           <p>Inference and model discovery are public in <code>open</code> and <code>management</code> modes. <code>authenticated</code> requires a valid bearer token; <code>full-protected</code> additionally requires the inference endpoint's grant:</p>
           <pre className="code-block"><code className="language-text">{`Authorization: Bearer <token>`}</code></pre>
           <p>Management routes require an administrator token in every mode except <code>open</code>. External auth providers must also be configured to enforce authentication. See <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> for token creation, endpoint grants, and rate limits.</p>
-          <p>Application errors use a top-level code and message:</p>
+          <p>Application errors use an OpenAI-style error object (the Messages API uses its Anthropic error format):</p>
           <pre className="code-block"><code className="language-json">{`{
-  "code": "invalid_argument",
-  "message": "missing model field"
+  "error": {
+    "message": "missing model field",
+    "type": "invalid_request_error",
+    "code": "invalid_argument"
+  }
 }`}</code></pre>
           <p>The HTTP status reflects the error. Depending on the failure, clients may see statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.</p>
           <p>Errors before streaming begins use the JSON error format and HTTP status above. Once SSE headers have been sent, a generation failure is reported inside the stream and the HTTP status cannot change. Clients must check stream error records rather than treating HTTP 200 as successful completion.</p>
@@ -2719,6 +2722,11 @@ kronk service uninstall`}</code></pre>
                 <td><code>/v1/images/events</code></td>
                 <td>GET</td>
                 <td>Stream server-wide Malina progress</td>
+              </tr>
+              <tr>
+                <td><code>/v1/audio/speech</code></td>
+                <td>POST</td>
+                <td>Generate buffered WAV or PCM speech</td>
               </tr>
               <tr>
                 <td><code>/v1/audio/transcriptions</code></td>
@@ -3507,6 +3515,116 @@ make example-decision-audio`}</code></pre>
             </tbody>
           </table>
           <p>These routes are authorized by the authentication service. In protected modes they require an administrator token. Token creation accepts <code>admin</code>, <code>duration</code>, and an <code>endpoints</code> map of endpoint grants and rate limits. See <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> for the request model, key rotation, and the effects of deleting a signing key.</p>
+          <h2 id="915-text-to-speech">9.15 Text-to-Speech</h2>
+          <p><code>POST /v1/audio/speech</code> generates speech from text using an installed Kronk speech model and its matching audio decoder. It does not use Bucky. All four supported bundles, installation commands, and model-specific text limits are listed in <a href="https://www.kronkai.com/manual#119-text-to-speech-sdk">§11.9</a>.</p>
+          <h3 id="request">Request</h3>
+          <p>Send <code>Content-Type: application/json</code>. In <code>full-protected</code> mode, a nonadmin token needs the independent <code>speech</code> grant; <code>transcriptions</code> is not sufficient. See <a href="https://www.kronkai.com/manual#124-endpoint-grants-and-rate-limits">Chapter 12</a>.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>model</code></td>
+                <td>string, required</td>
+                <td>Installed model ID, such as <code>ggml-org/Kokoro-82M-F32</code></td>
+              </tr>
+              <tr>
+                <td><code>input</code></td>
+                <td>string, required</td>
+                <td>Nonblank UTF-8 text without NUL bytes, at most 64 KiB; model-specific limits also apply</td>
+              </tr>
+              <tr>
+                <td><code>voice</code></td>
+                <td>string, required</td>
+                <td><code>default</code> or a supported preset in the selected bundle; names are case-sensitive</td>
+              </tr>
+              <tr>
+                <td><code>response_format</code></td>
+                <td>string, optional</td>
+                <td><code>wav</code> (default) or <code>pcm</code>; omission, empty string, or null selects WAV</td>
+              </tr>
+              <tr>
+                <td><code>stream_format</code></td>
+                <td>string, optional</td>
+                <td>Omission, empty string, null, or <code>audio</code> returns buffered audio; <code>sse</code> is not supported</td>
+              </tr>
+              <tr>
+                <td><code>speed</code></td>
+                <td>any JSON value, optional</td>
+                <td>Accepted and ignored; no speed control</td>
+              </tr>
+              <tr>
+                <td><code>instructions</code></td>
+                <td>any JSON value, optional</td>
+                <td>Accepted and ignored; no style control</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The complete JSON body is limited to 1 MiB, allowing JSON escaping of the 64 KiB decoded text limit. Missing, null, or empty required fields, non-string values for stored string fields, malformed/trailing JSON, and invalid UTF-8 return 400. Unknown fields are ignored; they do not enable language selection, reference audio, voice cloning, chat sampling, or a <code>max_frames</code> override.</p>
+          <h3 id="generate-and-save-a-wav">Generate and save a WAV</h3>
+          <p>Install a bundle first (use <code>--local</code> on the same machine and data root as the server), then send the request. Set <code>KRONK_TOKEN</code> to a speech-enabled token for protected servers; omit the Authorization header for open access.</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull --local ggml-org/Kokoro-82M-F32
+
+curl --fail-with-body http://localhost:11435/v1/audio/speech \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "ggml-org/Kokoro-82M-F32",
+    "input": "Your turn!",
+    "voice": "default"
+  }' \\
+  --output speech.wav
+
+afplay speech.wav # macOS; use a WAV player on other systems.`}</code></pre>
+          <p>HTTP 200 returns raw audio bytes, not JSON or base64. WAV uses <code>Content-Type: audio/wav</code> and contains complete PCM16 little-endian mono audio with its sample rate in the header. All four currently supported bundles produce 24 kHz audio.</p>
+          <p>For headerless samples, add <code>"response_format": "pcm"</code> and save as <code>speech.pcm</code>. The response uses <code>Content-Type: audio/pcm</code> and contains the same signed 16-bit little-endian mono samples without a WAV header or resampling. A raw PCM player must be configured for the model's sample rate (24 kHz for these bundles), mono, and signed 16-bit little-endian samples.</p>
+          <p>Both formats are buffered: successful audio is returned only after synthesis finishes. <code>stream_format: "audio"</code> does not enable incremental delivery. Failures return JSON instead of a successful partial audio response. When using curl, inspect the exit status before playing the output file: an HTTP error saved by <code>--fail-with-body</code> contains JSON, not audio.</p>
+          <h3 id="errors-and-compatibility">Errors and compatibility</h3>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>HTTP status</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>400</td>
+                <td>Invalid request, unknown voice, unsupported format/stream format, model-specific input limit, or model without supported speech capability</td>
+              </tr>
+              <tr>
+                <td>401 / 403</td>
+                <td>Missing/invalid token or missing speech grant in a protected mode</td>
+              </tr>
+              <tr>
+                <td>404</td>
+                <td>Model not installed</td>
+              </tr>
+              <tr>
+                <td>429</td>
+                <td>Endpoint quota, admission/resource capacity, or autoregressive frame limit exceeded</td>
+              </tr>
+              <tr>
+                <td>503</td>
+                <td>Pool busy with no evictable model</td>
+              </tr>
+              <tr>
+                <td>504</td>
+                <td>Request deadline exceeded</td>
+              </tr>
+              <tr>
+                <td>500</td>
+                <td>Internal synthesis or response-conversion failure</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Unknown-voice errors list supported choices, including the <code>default</code> alias. An autoregressive frame-limit failure returns no partial audio; split long passages into smaller requests rather than treating 429 as successful output. Kokoro and Tiny-Voca use their own normalized-text/duration limits instead of the autoregressive frame cap.</p>
+          <p>This is an OpenAI-compatible subset, not complete speech API parity. Unlike OpenAI's MP3 default, Kronk defaults to WAV. MP3, Opus, AAC, FLAC, SSE, and true streaming are unsupported. OpenAI voice names such as <code>alloy</code> are not universal Kronk presets: use <code>default</code> or a name supported by the loaded bundle. SDK reference-audio and language controls are not exposed by this endpoint. There is no BUI speech playground; the BUI token form can grant speech access.</p>
           <h2 id="chapter-10-request-parameters">Chapter 10: Request Parameters</h2>
           <p>This chapter covers generation parameters used by Chat Completions and the Go SDK. Other API formats expose compatible subsets or translate their own field names into these parameters. See <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> for endpoint-specific request formats and streaming behavior.</p>
           <h2 id="101-scope-and-defaults">10.1 Scope and Defaults</h2>
@@ -3777,7 +3895,7 @@ make example-decision-audio`}</code></pre>
           <p>Each entry in <code>choices[].logprobs.content</code> contains the generated <code>token</code>, its <code>logprob</code>, its UTF-8 <code>bytes</code>, and up to <code>top_logprobs</code> alternatives. Values closer to zero were more probable under that generation step, but they are not proof of factual correctness.</p>
           <p>Streaming responses attach logprob data to individual delta chunks. Non-streaming responses collect the entries in the final choice. This data is useful for token-level diagnostics and comparative scoring; it does not alter sampling after generation has occurred.</p>
           <h2 id="chapter-11-multimodal-models">Chapter 11: Multimodal Models</h2>
-          <p>Multimodal models combine a language model with a media projector that turns images or audio into input the language model can process. They use the Chat Completions endpoint described in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>. Text-to-speech is a separate SDK operation described in <a href="#119-text-to-speech-sdk">§11.9</a>; it does not use Chat Completions or Bucky's transcription API.</p>
+          <p>Multimodal models combine a language model with a media projector that turns images or audio into input the language model can process. They use the Chat Completions endpoint described in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>. Text-to-speech is a separate SDK operation described in <a href="#119-text-to-speech-sdk">§11.9</a>; it also has a buffered <code>/v1/audio/speech</code> endpoint. Neither uses Chat Completions or Bucky's transcription API.</p>
           <h2 id="111-models-and-projectors">11.1 Models and Projectors</h2>
           <p>Use the catalog to find models with image or audio capabilities:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list`}</code></pre>
@@ -3876,7 +3994,7 @@ EOF`}</code></pre>
             <li>Kronk does not impose fixed media payload, image-dimension, or media-count limits. Image decoding allocates memory in proportion to decoded dimensions, and a request can retain multiple decoded media items at once. Applications that accept media from untrusted sources must validate those resources before passing them to Kronk.</li>
           </ul>
           <h2 id="119-text-to-speech-sdk">11.9 Text-to-Speech SDK</h2>
-          <p><code>krn.Speech(ctx, model.SpeechRequest&#123;Input: text&#125;)</code> generates a complete PCM16 little-endian mono WAV. Speech models are detected automatically; <code>WithSpeech</code> is optional configuration, not a switch required to enable speech. This is a Go SDK feature: no <code>/v1/audio/speech</code> endpoint or BUI speech playground is provided yet. The normal model-download tools can still install these bundles.</p>
+          <p><code>krn.Speech(ctx, model.SpeechRequest&#123;Input: text&#125;)</code> generates a complete PCM16 little-endian mono WAV. Speech models are detected automatically; <code>WithSpeech</code> is optional configuration, not a switch required to enable speech. The server also exposes buffered WAV/PCM output at <code>POST /v1/audio/speech</code>; its required fields, formats, errors, and compatibility limits are documented in <a href="https://www.kronkai.com/manual#915-text-to-speech">§9.15</a>. SDK language and reference-audio controls are not exposed by that endpoint. There is no BUI speech playground; the token form can grant speech access.</p>
           <h3 id="1191-models-and-installation">11.9.1 Models and Installation</h3>
           <p>The verified bundles are:</p>
           <table className="flags-table">
@@ -3899,15 +4017,22 @@ EOF`}</code></pre>
                 <td>24 kHz WAV; use an empty voice, including when the bundle has no named presets</td>
               </tr>
               <tr>
+                <td><code>ggml-org/Kokoro-82M-F32</code></td>
+                <td>Matching F32 audio decoder</td>
+                <td>English, 24 kHz WAV; default conditioning or supported US/GB English presets such as <code>bf_emma</code></td>
+              </tr>
+              <tr>
                 <td><code>ggml-org/tiny-voca-F32</code></td>
                 <td>Matching F32 audio decoder</td>
                 <td>English, 24 kHz WAV; default <code>M2</code> or preset <code>F2</code>; no voice cloning</td>
               </tr>
             </tbody>
           </table>
+          <p>These voice defaults describe the SDK. The HTTP endpoint requires an explicit <code>voice</code>: use <code>"default"</code> for default conditioning on any of these bundles.</p>
           <p>Install with the regular Hugging Face/catalog downloader. It discovers and downloads the matching decoder; you do not need to supply a separate projector URL:</p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull --local ggml-org/chatterbox-turbo-Q8_0
 kronk model pull --local ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0
+kronk model pull --local ggml-org/Kokoro-82M-F32
 kronk model pull --local ggml-org/tiny-voca-F32`}</code></pre>
           <p>From a source checkout, <code>make install-speak-models</code> installs the speech bundles. Files remain in the normal model store under <code>~/.kronk/models/</code> unless you configure a different data root. The companion is named <code>mmproj-*.gguf</code>, but it is an audio decoder, not an image projector. Use the matching companion, not an arbitrary GGUF with the same model family name.</p>
           <p>Run the complete SDK example from the repository root:</p>
@@ -3915,6 +4040,9 @@ kronk model pull --local ggml-org/tiny-voca-F32`}</code></pre>
 afplay examples/speech.wav # macOS playback; use a WAV player on other systems.`}</code></pre>
           <p>The example installs compatible native libraries and the selected model on first use, writes <code>examples/speech.wav</code> only after successful synthesis, and prints its sample rate, sample count, duration, and byte count. Its <code>modelSource</code> constant selects Qwen by default; the commented Chatterbox source can be substituted without specifying a decoder URL. A failed run does not replace a WAV left by an earlier successful run.</p>
           <p>Use Kronk's library manager to install the compatible native bundle before calling <code>kronk.Init</code>. Older or incompatible libraries without native audio generation return <code>model.ErrSpeechUnsupported</code>. Soprano, Pocket TTS, other Qwen sizes/variants, and Chatterbox Multilingual are not qualified by these working bundles; upstream native support alone is not Kronk support.</p>
+          <h4 id="kokoro">Kokoro</h4>
+          <p>Kokoro accepts English text and supported English presets in its decoder bundle. Voices beginning with <code>a</code> use US English pronunciation; voices beginning with <code>b</code> use British English pronunciation. For example, <code>bf_emma</code> selects a British preset. Other language families are not supported. Unknown voices return an error listing the supported presets and the <code>default</code> alias.</p>
+          <p>Each request must normalize to <strong>1–510 mapped phoneme tokens</strong> in one segment. This limit is not an English character count; split longer passages into separate requests. Kokoro is non-autoregressive, does not accept reference audio, and uses fixed speed <strong>1.0</strong>. Leave <code>SpeechConfig.MaxFrames</code> unset or at <strong>512</strong>; nondefault values are rejected, not applied as output caps.</p>
           <h4 id="tiny-voca">Tiny-Voca</h4>
           <p>Tiny-Voca accepts English text and normalizes numbers, times, abbreviations and pronunciations using its bundled dictionaries and pronunciation model. Use the regular <code>Speech</code> method with <code>Voice: "M2"</code> (the default) or <code>Voice: "F2"</code>. <code>Language</code> may be empty, <code>en</code>, <code>en-us</code>, or <code>english</code>, case-insensitively; it does not translate text. Recordings and reference transcripts are rejected.</p>
           <p>A request may contain multiple sentences, but must normalize to at most <strong>509 phoneme symbols in total</strong>, including word breaks and punctuation, excluding sentence padding. Unknown words passed to the pronunciation model must be at most <strong>512 bytes</strong> each. These are post-normalization limits, not English character limits. Split longer passages into separate requests.</p>
@@ -3954,7 +4082,7 @@ afplay examples/speech.wav # macOS playback; use a WAV player on other systems.`
             <li>For Qwen, <code>Language</code> is optional. Empty uses English. Accepted names and codes are English (<code>en</code>), Chinese (<code>zh</code>), German (<code>de</code>), Italian (<code>it</code>), Portuguese (<code>pt</code>), Spanish (<code>es</code>), Japanese (<code>ja</code>), Korean (<code>ko</code>), French (<code>fr</code>), and Russian (<code>ru</code>); names/codes are case-insensitive. The loaded backbone must contain the corresponding language token. This selects conditioning, not translation: provide the text in the desired language. Chatterbox Turbo rejects language selection and reference transcripts.</li>
             <li>Speed and speech-sampling controls are not exposed. Chat sampling settings and <code>max_tokens</code> do not configure speech.</li>
             <li><code>model.WithSpeech(&model.SpeechConfig&#123;MaxFrames: 256&#125;)</code> can lower the autoregressive generation ceiling. Nil configuration or <code>MaxFrames: 0</code> uses <strong>512</strong>; accepted explicit limits are <strong>1–512</strong>. Frames are model-specific units, not characters, PCM samples, or a common duration across models. Reaching the ceiling without end-of-speech returns <code>model.ErrSpeechLimit</code>, not successful truncated audio.</li>
-            <li>Runtime settings are <strong>2,048 context tokens per slot</strong>, <strong>512-token prefill and physical batches</strong>, and <strong>partitioned F16 K/V caches</strong>. Incompatible explicit overrides, IMC, speculative decoding, and adapters are rejected. Speech resolves these fixed limits instead of applying chat AutoTune recommendations.</li>
+            <li>Chatterbox and Qwen runtime settings are <strong>2,048 context tokens per slot</strong>, <strong>512-token prefill and physical batches</strong>, and <strong>partitioned F16 K/V caches</strong>. Kokoro and Tiny-Voca instead use <strong>512-position noncausal encoders</strong> without persistent KV caches, subject to their normalized-input limits above. Incompatible explicit overrides, IMC, speculative decoding, and adapters are rejected. Speech resolves these fixed limits instead of applying chat AutoTune recommendations.</li>
             <li><code>model.WithNSeqMax(n)</code> sets the number of concurrent speech slots; the default is <strong>1</strong>. Requests can overlap, but native inference is serialized; more slots do not promise a throughput speedup. Memory requirements grow with slot count even though the loaded model weights are shared.</li>
           </ul>
           <p>For example, read a permitted recording from disk with <code>os.ReadFile</code> and pass its bytes to the already-loaded handle:</p>
@@ -4008,9 +4136,9 @@ return os.WriteFile("conditioned.wav", response.Audio, 0644)`}</code></pre>
           </table>
           <h3 id="1194-memory-planning-and-typed-pools">11.9.4 Memory Planning and Typed Pools</h3>
           <p>The <code>sdk/kronk/pool</code> package acquires speech models through the normal <code>AquireModel</code> operation. The returned handle supports the same <code>Speech</code> method. Decoder discovery, fixed runtime defaults, and speech-aware memory reservations are automatic. <code>WithSpeech</code> is a Go SDK option; there is no <code>speech</code>/<code>max-frames</code> entry in <code>model_config.yaml</code> at present. Custom pooled configurations can carry <code>model.Config.PtrSpeech</code> through <code>AquireCustom</code>.</p>
-          <p>Memory planning includes the backbone, decoder, KV caches, slot-dependent host memory, and retained working buffers. On unified-memory systems these are charged once to RAM, not again to a separate VRAM budget. An active speech request protects its model from eviction. Failed loads release their reservations; idle eviction or pool shutdown unloads the model and releases its reservation. A bundle that cannot fit returns <code>pool.ErrNoCapacity</code>; temporary pressure with no idle eviction candidate returns <code>pool.ErrServerBusy</code>.</p>
-          <p>Speech memory planning supports the bundles above through 512 frames, without restricting the selected native backend. CPU decoder placement charges weights and working memory to RAM rather than VRAM. Reservations include the accepted 30-second reference workload even when a particular request omits <code>Reference</code>. Reference-encoding workspace estimates are provisional on every backend; Qwen decoders with the optional transcript-conditioning encoder require additional capacity. Non-Metal generation estimates are also provisional. Leave spare RAM and VRAM when choosing pool budgets. Estimates are not peak-memory guarantees, and execution requires a compatible native library bundle. Unsupported decoder layouts fail planning explicitly. Lower frame limits can reduce output allowances without reducing reference-encoding or all other working memory.</p>
-          <p>Incremental/streaming audio delivery, selectable output formats, and an HTTP/BUI synthesis interface remain outside this SDK contract.</p>
+          <p>Memory planning includes the backbone, decoder, applicable KV caches, slot-dependent host memory, and retained working buffers. On unified-memory systems these are charged once to RAM, not again to a separate VRAM budget. An active speech request protects its model from eviction. Failed loads release their reservations; idle eviction or pool shutdown unloads the model and releases its reservation. A bundle that cannot fit returns <code>pool.ErrNoCapacity</code>; temporary pressure with no idle eviction candidate returns <code>pool.ErrServerBusy</code>.</p>
+          <p>Autoregressive speech memory planning supports up to 512 frames, without restricting the selected native backend. CPU decoder placement charges weights and working memory to RAM rather than VRAM. Kokoro and Tiny-Voca reserve for their admitted normalized inputs and configured slot counts rather than an autoregressive frame budget. For Qwen and Chatterbox, reservations include the accepted 30-second reference workload even when a request omits <code>Reference</code>. Reference-encoding workspace estimates are provisional on every backend; Qwen decoders with the optional transcript-conditioning encoder require additional capacity. Non-Metal generation estimates are also provisional. Leave spare RAM and VRAM when choosing pool budgets. Estimates are not peak-memory guarantees, and execution requires a compatible native library bundle. Unsupported decoder layouts fail planning explicitly. Lower frame limits can reduce output allowances without reducing reference-encoding or all other working memory.</p>
+          <p>The SDK returns WAV; the HTTP endpoint separately offers buffered WAV and PCM as described in <a href="https://www.kronkai.com/manual#915-text-to-speech">§9.15</a>. Incremental/streaming audio, compressed output formats, and a BUI synthesis playground are not provided.</p>
           <hr />
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
           <h2 id="chapter-12-security-and-authentication">Chapter 12: Security and Authentication</h2>
@@ -4119,6 +4247,10 @@ export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)`}</code></pre>
                 <td><code>POST /v1/tokenize</code></td>
               </tr>
               <tr>
+                <td><code>speech</code></td>
+                <td><code>POST /v1/audio/speech</code></td>
+              </tr>
+              <tr>
                 <td><code>transcriptions</code></td>
                 <td><code>POST /v1/audio/transcriptions</code>, <code>POST /v1/audio/translations</code></td>
               </tr>
@@ -4129,6 +4261,7 @@ export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)`}</code></pre>
             </tbody>
           </table>
           <p>Grant names are not validated when a token is created. Use the names above exactly; a typo produces a valid token with an unusable grant.</p>
+          <p><code>speech</code> and <code>transcriptions</code> are independent: neither grants the other, and their quotas are separate. Transcription and translation share the <code>transcriptions</code> grant and counter. Newly initialized master tokens include unlimited <code>speech</code> access; existing master tokens are not rewritten and retain their admin bypass. Existing restricted application tokens need a newly issued token containing <code>speech</code> to use the endpoint in <code>full-protected</code> mode.</p>
           <p>Each <code>--endpoints</code> entry has one of these forms:</p>
           <pre className="code-block"><code className="language-text">{`endpoint
 endpoint:unlimited
@@ -4138,6 +4271,9 @@ endpoint:limit/window`}</code></pre>
   --duration 720h \\
   --endpoints "chat-completions:1000/day,embeddings:500/month,responses:unlimited"`}</code></pre>
           <p>Kronk counts admitted requests by token subject and endpoint. Counters are stored in <code>~/.kronk/badger/</code>, survive server restarts, and expire after their current window. Admin tokens do not use these counters.</p>
+          <p>For a speech-only token allowing 100 requests per UTC day:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk security token create --duration 24h --endpoints "speech:100/day"`}</code></pre>
+          <p>Alternatively, in the BUI choose <strong>Security → Create Token</strong>, enable <code>/v1/audio/speech</code>, select <strong>Per Day</strong>, and set <strong>Max Requests</strong> to <code>100</code>. Select <strong>Unlimited</strong> to disable its quota. Requests that pass authorization consume quota even if request validation or synthesis subsequently fails; quota exhaustion returns HTTP 429. Endpoint-grant and quota enforcement still depends on <code>full-protected</code> mode, as described above.</p>
           <h2 id="125-using-a-token">12.5 Using a Token</h2>
           <p>Send a token using the bearer authorization scheme:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_TOKEN="<application-token>"
@@ -4269,6 +4405,7 @@ kronk server start`}</code></pre>
           <p>Bucky has separate pages for downloading and removing whisper models and managing whisper.cpp library bundles under <code>~/.kronk/bucky-libraries/</code>. See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a> for installation and transcription details.</p>
           <h4 id="security">Security</h4>
           <p>Security pages list, create, and delete signing keys and create user tokens. Token controls include duration, endpoint grants, and rate limits. The <strong>Session</strong> page reports whether browser administration authentication is enabled and whether the browser has an authenticated admin session.</p>
+          <p>In <strong>Security → Create Token</strong>, <code>/v1/audio/speech</code> grants text-to-speech access separately from transcription/translation. Enable it and choose <strong>Unlimited</strong>, <strong>Per Day</strong>, <strong>Per Month</strong>, or <strong>Per Year</strong>; finite windows also require <strong>Max Requests</strong>. Leaving it unchecked omits the speech grant. Endpoint grants and quotas are enforced in <code>full-protected</code> mode, not merely by enabling a browser admin session. See <a href="https://www.kronkai.com/manual#915-text-to-speech">§9.15</a> for speech requests; there is no BUI speech-generation playground.</p>
           <p>These tools remain available in open mode. This lets you prepare keys and tokens before enabling authentication, but anyone who can reach an open server can also use its management APIs. See Chapter 12 before exposing the server beyond a trusted machine or network.</p>
           <h4 id="testing">Testing</h4>
           <p>Testing provides several model evaluation workflows:</p>
@@ -6737,6 +6874,14 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/model/internal/parsers/
             </div>
             <div className="doc-index-section">
               <a href="#914-security-administration" className={`doc-index-header ${activeSection === '914-security-administration' ? 'active' : ''}`}>9.14 Security Administration</a>
+            </div>
+            <div className="doc-index-section">
+              <a href="#915-text-to-speech" className={`doc-index-header ${activeSection === '915-text-to-speech' ? 'active' : ''}`}>9.15 Text-to-Speech</a>
+              <ul>
+                <li><a href="#request" className={activeSection === 'request' ? 'active' : ''}>Request</a></li>
+                <li><a href="#generate-and-save-a-wav" className={activeSection === 'generate-and-save-a-wav' ? 'active' : ''}>Generate and save a WAV</a></li>
+                <li><a href="#errors-and-compatibility" className={activeSection === 'errors-and-compatibility' ? 'active' : ''}>Errors and compatibility</a></li>
+              </ul>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-10-request-parameters" className={`doc-index-header ${activeSection === 'chapter-10-request-parameters' ? 'active' : ''}`}>Chapter 10: Request Parameters</a>
