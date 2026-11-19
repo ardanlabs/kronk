@@ -2288,6 +2288,54 @@
         "inherited": false
       },
       {
+        "name": "moxie-address",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Temporal server address for Moxie (default: 127.0.0.1:7233)",
+        "inherited": false
+      },
+      {
+        "name": "moxie-database-url",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "PostgreSQL connection URL for Moxie (empty uses file storage)",
+        "inherited": false
+      },
+      {
+        "name": "moxie-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Enable Moxie fine-tuning storage and Temporal workers",
+        "inherited": false
+      },
+      {
+        "name": "moxie-models",
+        "shorthand": "",
+        "type": "stringSlice",
+        "default": "[]",
+        "usage": "Approved model IDs for training (comma separated)",
+        "inherited": false
+      },
+      {
+        "name": "moxie-namespace",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Temporal namespace for Moxie (default: default)",
+        "inherited": false
+      },
+      {
+        "name": "moxie-root",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Moxie data directory (default: ~/.moxie)",
+        "inherited": false
+      },
+      {
         "name": "os",
         "shorthand": "",
         "type": "string",

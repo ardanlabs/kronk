@@ -279,7 +279,7 @@ func NewWithModelConfig(t *testing.T, testName, modelConfigFile string) *Test {
 	}
 
 	mux := mux.WebAPI(cfgMux,
-		build.Routes(),
+		build.Routes(build.Config{}),
 	)
 
 	at.Sec, at.Pool, at.mux = sec, p, mux

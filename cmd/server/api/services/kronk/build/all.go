@@ -9,29 +9,24 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/downapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/embedapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/imageapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/moxieapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/playgroundapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/rerankapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/respapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/tokenapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
-	"github.com/ardanlabs/kronk/cmd/server/app/domain/trainapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
 
 // Config supplies host-owned optional training capabilities.
 type Config struct {
-	Training trainapp.Config
+	Moxie moxieapp.Config
 }
 
 // Routes constructs the RouteAdder for this instance.
-func Routes(configs ...Config) all {
-	var cfg Config
-	if len(configs) > 0 {
-		cfg = configs[0]
-	}
-
+func Routes(cfg Config) all {
 	return all{cfg: cfg}
 }
 
@@ -46,10 +41,10 @@ func (routes all) Add(app *web.App, cfg mux.Config) {
 		Log:   cfg.Log,
 	})
 
-	if trainConfig := routes.cfg.Training; trainConfig.Job != nil || trainConfig.Uploads != nil {
+	if trainConfig := routes.cfg.Moxie; trainConfig.Job != nil || trainConfig.Uploads != nil {
 		trainConfig.AuthClient = cfg.AuthClient
 		trainConfig.AuthorizationMode = cfg.AuthorizationMode
-		trainapp.Routes(app, trainConfig)
+		moxieapp.Routes(app, trainConfig)
 	}
 
 	toolapp.Routes(app, toolapp.Config{

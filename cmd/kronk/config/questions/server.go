@@ -29,6 +29,7 @@ var sections = []struct {
 	{"mcp", "MCP service"},
 	{"download", "Model downloads through the server"},
 	{"tempo", "Tracing (Tempo)"},
+	{"moxie", "Moxie fine-tuning services"},
 	{"pool", "Model pool: memory budget, models kept loaded, idle unload"},
 	{"runtime", "Runtime: paths, libraries, processor, tokens, logging"},
 }

@@ -30,7 +30,7 @@ import (
 // Prerequisites: compatible installed llama.cpp libraries, an existing indexed
 // Kronk model catalog (models/.index.yaml), and a small single-file GGUF chat
 // model supporting chat templates and JSON-schema constrained output. The model
-// must fit available RAM on CPU with a 512-token context. Nothing is downloaded,
+// must fit available RAM on CPU with a 16K-token context. Nothing is downloaded,
 // indexed, trained, or exported; supplied configuration errors fail, not skip.
 // This exercises real KMS admission/loading, raw and templated tokenization,
 // GoMLX preflight's private CPU pool entry, and KMSCompleter structured completion.
@@ -77,7 +77,7 @@ func TestKMSNativeSmoke(t *testing.T) {
 		ModelsInPool: 1,
 		ModelConfig: map[string]models.ModelConfig{modelID: {
 			PtrContextWindow: new(512), PtrNGpuLayers: new(-1), PtrNSeqMax: new(1),
-			PtrIncrementalCache: new(false), PtrInsecureLogging: new(false),
+			PtrIncrementalCache: new(true), PtrInsecureLogging: new(false),
 		}},
 	})
 	if err != nil {
@@ -154,6 +154,20 @@ func TestKMSNativeSmoke(t *testing.T) {
 	}
 	if completion.PromptTokens < 1 || completion.CompletionTokens < 1 || completion.CompletionTokens > 32 {
 		t.Errorf("usage: got %+v, want positive prompt tokens and 1..32 completion tokens", completion)
+	}
+	prepared, ok := p.GetExisting(modelID + "/custom/preparation")
+	if !ok {
+		t.Fatal("preparation model: want a separate pooled entry")
+	}
+	if cfg := prepared.ModelConfig(); cfg.ContextWindow() != 16384 || cfg.IncrementalCache() {
+		t.Errorf("preparation settings: got context=%d IMC=%t, want 16384 and false", cfg.ContextWindow(), cfg.IncrementalCache())
+	}
+	regular, err := p.AquireModel(ctx, modelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg := regular.ModelConfig(); cfg.ContextWindow() != 512 || !cfg.IncrementalCache() {
+		t.Errorf("normal settings: got context=%d IMC=%t, want 512 and true", cfg.ContextWindow(), cfg.IncrementalCache())
 	}
 	t.Logf("native smoke: raw IDs=%d, templated tokens=%d, completion=%s, usage=%d/%d", len(ids), tokens.Tokens, completion.Content, completion.PromptTokens, completion.CompletionTokens)
 }

@@ -24,7 +24,7 @@ func TestMoECacheCPUShareTransport(t *testing.T) {
 	for _, share := range []float32{-0.01, 1.01} {
 		table = append(table, apitest.Table{
 			Name: fmt.Sprint(share), Method: http.MethodPost, URL: "/v1/kronk/models/vram",
-			RawBody:    []byte(fmt.Sprintf(`{"model_id":"example/model","moe_cache_cpu_share":%v}`, share)),
+			RawBody:    fmt.Appendf(nil, `{"model_id":"example/model","moe_cache_cpu_share":%v}`, share),
 			Headers:    map[string]string{"Content-Type": "application/json"},
 			StatusCode: http.StatusBadRequest, GotResp: &errs.Error{}, ExpResp: errs.InvalidArgument,
 			ResponseCmpFunc: jsonContentType,

@@ -20,13 +20,6 @@ import (
 
 var supportedConfigVersions = []int{1, 2}
 
-type trainingConfig struct {
-	Enabled   bool     `yaml:"enabled"`
-	Address   string   `yaml:"address"`
-	Namespace string   `yaml:"namespace"`
-	Models    []string `yaml:"models"`
-}
-
 type config struct {
 	conf.Version `yaml:"-"`
 	Web          struct {
@@ -72,10 +65,13 @@ type config struct {
 		ServiceName string  `conf:"help:Service name in the traces" yaml:"service-name"`
 		Probability float64 `conf:"help:Share of requests traced (0 to 1)" yaml:"probability"`
 	} `yaml:"tempo"`
-	Training trainingConfig `yaml:"training"`
-	Moxie    struct {
-		Root        string `yaml:"root"`
-		DatabaseURL string `conf:"mask" yaml:"database-url"`
+	Moxie struct {
+		Enabled     bool     `conf:"help:Enable Moxie fine-tuning storage and services" yaml:"enabled"`
+		Address     string   `conf:"help:Temporal server address for training (host:port)" yaml:"address"`
+		Namespace   string   `conf:"help:Temporal namespace for training" yaml:"namespace"`
+		Models      []string `conf:"help:Approved model IDs for training" yaml:"models"`
+		Root        string   `conf:"help:Moxie data directory. Empty uses ~/.moxie" yaml:"root"`
+		DatabaseURL string   `conf:"mask,help:PostgreSQL connection URL for Moxie. Empty uses file storage" yaml:"database-url"`
 	} `yaml:"moxie"`
 	Pool struct {
 		ModelConfigFile string        `yaml:"-"`
@@ -125,8 +121,8 @@ func newConfig() config {
 	cfg.Tempo.Probability = 0.25
 	cfg.Pool.BudgetPercent = 90
 	cfg.Pool.ModelsInPool = 10
-	cfg.Training.Address = "127.0.0.1:7233"
-	cfg.Training.Namespace = "default"
+	cfg.Moxie.Address = "127.0.0.1:7233"
+	cfg.Moxie.Namespace = "default"
 	cfg.LibDownloadEnabled = true
 	cfg.MediaBackendsEnabled = true
 	cfg.LibVerifyEnabled = true
@@ -221,9 +217,9 @@ func resolveAuthorizationSettings(mode auth.Mode, mcpAuthEnabled bool) (bool, bo
 	return false, false, false
 }
 
-func validateTrainingConfig(cfg trainingConfig) error {
-	if cfg.Enabled && (strings.TrimSpace(cfg.Address) == "" || strings.TrimSpace(cfg.Namespace) == "" || len(cfg.Models) == 0) {
-		return errors.New("configuration: enabled training requires a Temporal address, namespace, and approved model IDs")
+func validateMoxieConfig(cfg config) error {
+	if cfg.Moxie.Enabled && (strings.TrimSpace(cfg.Moxie.Address) == "" || strings.TrimSpace(cfg.Moxie.Namespace) == "" || len(cfg.Moxie.Models) == 0) {
+		return errors.New("configuration: enabled Moxie requires a Temporal address, namespace, and approved model IDs")
 	}
 	return nil
 }

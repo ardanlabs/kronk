@@ -1394,7 +1394,7 @@ export interface EfficiencyResponse {
 // =============================================================================
 // Training
 
-// Public trainapp transport. The job owns validation and training policy.
+// Public moxieapp transport. The job owns validation and training policy.
 export interface TrainingUpload {
   id: string;
   name: string;

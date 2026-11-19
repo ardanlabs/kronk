@@ -2197,12 +2197,65 @@ kronk libs --local`}</code></pre>
                 <td><code>0</code></td>
                 <td>Enable or disable llama.cpp logging</td>
               </tr>
+              <tr>
+                <td><code>--moxie-enabled</code></td>
+                <td><code>KRONK_MOXIE_ENABLED</code></td>
+                <td><code>false</code></td>
+                <td>Enable Moxie fine-tuning storage and Temporal workers</td>
+              </tr>
+              <tr>
+                <td><code>--moxie-address</code></td>
+                <td><code>KRONK_MOXIE_ADDRESS</code></td>
+                <td><code>127.0.0.1:7233</code></td>
+                <td>Temporal server address</td>
+              </tr>
+              <tr>
+                <td><code>--moxie-namespace</code></td>
+                <td><code>KRONK_MOXIE_NAMESPACE</code></td>
+                <td><code>default</code></td>
+                <td>Temporal namespace</td>
+              </tr>
+              <tr>
+                <td><code>--moxie-models</code></td>
+                <td><code>KRONK_MOXIE_MODELS</code></td>
+                <td>unset</td>
+                <td>Comma-separated approved training model IDs</td>
+              </tr>
+              <tr>
+                <td><code>--moxie-root</code></td>
+                <td><code>KRONK_MOXIE_ROOT</code></td>
+                <td><code>~/.moxie</code></td>
+                <td>Moxie storage directory</td>
+              </tr>
+              <tr>
+                <td><code>--moxie-database-url</code></td>
+                <td><code>KRONK_MOXIE_DATABASE_URL</code></td>
+                <td>unset</td>
+                <td>Optional PostgreSQL connection URL; empty uses file storage</td>
+              </tr>
             </tbody>
           </table>
           <p>Most server configuration flags map to environment variables, but names follow the server's configuration hierarchy rather than a universal text conversion. For example, <code>--budget-percent</code> maps to <code>KRONK_POOL_BUDGET_PERCENT</code>. <code>--detach</code> is a CLI process-control flag and has no environment equivalent.</p>
           <p>Run the following for the complete current list, including HTTP timeouts, CORS, tracing, external authentication, processor selection, and library overrides:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --help`}</code></pre>
           <p>Keep tokens and passwords in protected environment or secret-manager settings, not shared shell scripts. <code>--insecure-logging</code> can expose prompts and model configuration and should be limited to controlled debugging.</p>
+          <h3 id="moxie-fine-tuning">Moxie fine-tuning</h3>
+          <p>Moxie is disabled by default. Disabled Moxie does not initialize its storage or dataset catalog, connect to its database, or start Temporal workers. Other Kronk inference services remain available.</p>
+          <p>To enable it with an approved training model:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --moxie-enabled --moxie-models=ggml-org/gemma-3-1b-it-Q8_0`}</code></pre>
+          <p>The Temporal server must be reachable at <code>--moxie-address</code> and the configured namespace must exist. Moxie also requires a nonempty approved-model list. Missing model downloads do not block startup or empty dashboard histories; the model must be downloaded before submitting training that uses it.</p>
+          <p>The equivalent <code>model_config.yaml</code> settings are all under <code>kms.moxie</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`kms:
+  moxie:
+    enabled: true
+    address: 127.0.0.1:7233
+    namespace: default
+    models:
+      - ggml-org/gemma-3-1b-it-Q8_0
+    root: ""
+    database-url: ""`}</code></pre>
+          <p>An empty <code>root</code> uses <code>~/.moxie</code>. To use PostgreSQL, provide the connection URL through <code>KRONK_MOXIE_DATABASE_URL</code> and initialize its schema with <code>make tuning-up</code> from the repository before starting Kronk. Keep database credentials out of shared command lines and configuration files.</p>
+          <p>There is no separate <code>kms.training</code> configuration block or training enable switch. Move older <code>kms.training</code> settings into <code>kms.moxie</code>, and change the environment-variable prefix from <code>KRONK_TRAINING_</code> to <code>KRONK_MOXIE_</code>.</p>
           <h3 id="runtime-selection-and-overrides">Runtime selection and overrides</h3>
           <p>With no processor or library-path override, server startup detects a preferred llama.cpp backend and verifies it before native libraries are loaded. CUDA 13 requires compute capability 7.5 or newer on every visible NVIDIA GPU. Older or hidden CUDA devices cause host detection to prefer an available ROCm or Vulkan runtime and then CPU. If compatibility cannot be determined conclusively, Kronk retains the preferred backend.</p>
           <p>Kronk also probes the installed preferred accelerator bundle. It changes to a different installed bundle only when the preferred bundle positively reports no accelerator and a same-version alternative positively reports a device. This probe never installs another bundle. The startup log records the preferred and selected processors and the reason for the decision.</p>
@@ -6894,6 +6947,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/model/internal/parsers/
             <div className="doc-index-section">
               <a href="#83-essential-server-configuration" className={`doc-index-header ${activeSection === '83-essential-server-configuration' ? 'active' : ''}`}>8.3 Essential Server Configuration</a>
               <ul>
+                <li><a href="#moxie-fine-tuning" className={activeSection === 'moxie-fine-tuning' ? 'active' : ''}>Moxie fine-tuning</a></li>
                 <li><a href="#runtime-selection-and-overrides" className={activeSection === 'runtime-selection-and-overrides' ? 'active' : ''}>Runtime selection and overrides</a></li>
               </ul>
             </div>

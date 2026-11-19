@@ -33,6 +33,12 @@ kronk-server: ## Start the model server
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
+kronk-server-moxie: bui-build ## Start the model server
+	. .env 2>/dev/null || true && \
+	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
+	export KRONK_MOXIE_ENABLED=true && \
+	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
+
 kronk-server-build: kronk-build ## Build assets and start the model server
 	. .env 2>/dev/null || true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \

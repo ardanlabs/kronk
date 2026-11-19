@@ -94,6 +94,37 @@ func TestReservePIDFileRemovesStaleFile(t *testing.T) {
 	}
 }
 
+func TestBuildEnvVarsMoxie(t *testing.T) {
+	cmd := NewCommand()
+	if got := buildEnvVars(cmd); len(got) != 0 {
+		t.Fatalf("unset flags: got %v, want no environment overrides", got)
+	}
+	for name, value := range map[string]string{
+		"moxie-enabled": "true", "moxie-address": "temporal.example:7233",
+		"moxie-namespace": "fine-tuning", "moxie-models": "owner/model-a,owner/model-b",
+		"moxie-root": "/data/moxie", "moxie-database-url": "postgres://localhost/moxie",
+	} {
+		if err := cmd.Flags().Set(name, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, want := range []string{
+		"KRONK_MOXIE_ENABLED=true", "KRONK_MOXIE_ADDRESS=temporal.example:7233",
+		"KRONK_MOXIE_NAMESPACE=fine-tuning", "KRONK_MOXIE_MODELS=owner/model-a,owner/model-b",
+		"KRONK_MOXIE_ROOT=/data/moxie", "KRONK_MOXIE_DATABASE_URL=postgres://localhost/moxie",
+	} {
+		if got := buildEnvVars(cmd); !slices.Contains(got, want) {
+			t.Errorf("Moxie flags: got %v, want entry %q", got, want)
+		}
+	}
+	if err := cmd.Flags().Set("moxie-enabled", "false"); err != nil {
+		t.Fatal(err)
+	}
+	if got := buildEnvVars(cmd); !slices.Contains(got, "KRONK_MOXIE_ENABLED=false") {
+		t.Errorf("explicit disable: got %v, want KRONK_MOXIE_ENABLED=false", got)
+	}
+}
+
 func TestBuildEnvVarsAdminPassword(t *testing.T) {
 	const value = "test-digest"
 
