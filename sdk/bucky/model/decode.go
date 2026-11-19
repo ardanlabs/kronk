@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/bucky/pkg/audio"
-	"github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
+	"github.com/ardanlabs/kronk/sdk/tools/ffmpeg"
 )
 
 // sniffBytes is the size of the prefix read from the input stream to
@@ -44,7 +44,7 @@ func loadFFmpeg() (*ffmpeg.FFmpeg, error) {
 // WAV, MP3, and FLAC are decoded in-process by the upstream
 // github.com/ardanlabs/bucky/pkg/audio package. Anything else (WebM /
 // Opus, MP4 / AAC, OGG, M4A, ...) is transcoded to WAV by shelling
-// out to ffmpeg via sdk/bucky/ffmpeg. ffmpeg is located once on first
+// out to ffmpeg via sdk/tools/ffmpeg. ffmpeg is located once on first
 // use and reused for the lifetime of the process.
 //
 // When ffmpeg is not installed or the transcode fails, Decode returns

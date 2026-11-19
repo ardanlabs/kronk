@@ -1,12 +1,13 @@
 // Package ffmpeg provides a thin wrapper around the ffmpeg command-line
-// tool. It exists so the bucky SDK can transcode browser-recorded audio
+// tool, shared by Bucky decoding and Kronk speech encoding. Bucky transcodes audio
 // (WebM/Opus, MP4/AAC, OGG, ...) into the 16 kHz mono signed 16-bit
 // little-endian PCM that whisper.cpp consumes.
 //
 // ffmpeg is invoked as a subprocess with input on stdin and output on
-// stdout. Raw PCM is emitted rather than RIFF/WAVE because ffmpeg
+// stdout. Decoding emits raw PCM rather than RIFF/WAVE because ffmpeg
 // cannot patch the WAV header sizes when writing to a non-seekable
 // pipe (it leaves them as 0xFFFFFFFF), which trips strict WAV decoders.
+// Encoding supports MP3, Ogg Opus, AAC/ADTS, and FLAC for speech output.
 // No temporary files are written.
 //
 // If the binary is not present on PATH, New returns ErrNotInstalled so
@@ -44,7 +45,7 @@ const waitDelay = 2 * time.Second
 // =============================================================================
 
 // FFmpeg wraps a resolved ffmpeg binary path and provides transcoding
-// helpers used by the bucky SDK.
+// helpers for audio decoding and speech encoding.
 type FFmpeg struct {
 	binary string
 }
@@ -92,6 +93,42 @@ func (f *FFmpeg) ToPCM16(ctx context.Context, dst io.Writer, src io.Reader) erro
 		"pipe:1",
 	}
 
+	return f.run(ctx, dst, src, args)
+}
+
+// Encode reads audio from src and returns a complete encoded MP3, Ogg Opus,
+// AAC/ADTS, or FLAC file, selected by format (mp3, opus, aac, or flac).
+// It preserves the input sample rate where supported by the codec; Opus
+// reports a 48 kHz playback rate. Cancellation stops the subprocess.
+// Encoding errors return no audio, even if ffmpeg produced partial output.
+func (f *FFmpeg) Encode(ctx context.Context, src io.Reader, format string) ([]byte, error) {
+	var codec, container string
+	switch format {
+	case "mp3":
+		codec, container = "libmp3lame", "mp3"
+	case "opus":
+		codec, container = "libopus", "ogg"
+	case "aac":
+		codec, container = "aac", "adts"
+	case "flac":
+		codec, container = "flac", "flac"
+	default:
+		return nil, fmt.Errorf("ffmpeg: unsupported output format %q", format)
+	}
+
+	args := []string{
+		"-hide_banner", "-nostats", "-loglevel", "error",
+		"-i", "pipe:0", "-map", "0:a:0", "-vn",
+		"-c:a", codec, "-f", container, "pipe:1",
+	}
+	var dst bytes.Buffer
+	if err := f.run(ctx, &dst, src, args); err != nil {
+		return nil, err
+	}
+	return dst.Bytes(), nil
+}
+
+func (f *FFmpeg) run(ctx context.Context, dst io.Writer, src io.Reader, args []string) error {
 	cmd := exec.CommandContext(ctx, f.binary, args...)
 	cmd.Stdin = src
 	cmd.Stdout = dst

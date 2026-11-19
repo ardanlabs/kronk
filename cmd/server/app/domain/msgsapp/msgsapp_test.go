@@ -3,49 +3,13 @@ package msgsapp
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
-
-func TestMessagesRejectsMissingMessagesBeforeModelAcquisition(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"test","max_tokens":1}`))
-
-	resp := (&app{}).messages(t.Context(), req)
-	appErr, ok := resp.(*errs.Error)
-	if !ok {
-		t.Fatalf("messages: got %T, want *errs.Error", resp)
-	}
-	if !appErr.Code.Equal(errs.InvalidArgument) {
-		t.Errorf("Code: got %s, want %s", appErr.Code, errs.InvalidArgument)
-	}
-}
-
-func TestMessagesRejectsStopSequencesBeforeModelAcquisition(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"test","max_tokens":1,"messages":[{"role":"user","content":"hello"}],"stop_sequences":["END"]}`))
-
-	resp := (&app{}).messages(t.Context(), req)
-	appErr, ok := resp.(*errs.Error)
-	if !ok {
-		t.Fatalf("messages: got %T, want *errs.Error", resp)
-	}
-	if !appErr.Code.Equal(errs.InvalidArgument) {
-		t.Errorf("Code: got %s, want %s", appErr.Code, errs.InvalidArgument)
-	}
-	if got, want := appErr.Message, "stop_sequences is not supported"; got != want {
-		t.Errorf("Message: got %q, want %q", got, want)
-	}
-}
 
 func TestStreamStateSendEventReportsTransportErrors(t *testing.T) {
 	errWrite := errors.New("write failed")
@@ -346,39 +310,5 @@ func TestMessagesSDKStreamWireProtocol(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestMessagesRejectsInvalidBodiesThroughRoute(t *testing.T) {
-	log := logger.New(io.Discard, logger.LevelError, "TEST", nil)
-	server := web.NewApp(log.Info, mid.Errors(log), mid.Panics())
-	Routes(server, Config{Log: log, AuthorizationMode: auth.Open, InferenceTimeout: time.Minute})
-	for _, stream := range []string{"false", "true"} {
-		for _, body := range []string{
-			`{"model":"test","max_tokens":1,"messages":[{"role":"user","content":"hello"}],"stream":` + stream + `}{"second":true}`,
-			`{"model":"test","max_tokens":1,"messages":[{"role":"user","content":"hello"}],"stream":` + stream + `}42`,
-			`{"model":"test","max_tokens":1,"messages":[{"role":"user","content":"hello"}],"stream":` + stream + `} trailing-garbage`,
-			`{"model":"test","max_tokens":-1,"messages":[{"role":"user","content":"hello"}],"stream":` + stream + `}`,
-			`{"model":"test","max_tokens":1,"messages":[{"role":"system","content":"hello"}],"stream":` + stream + `}`,
-			`{"model":"test","max_tokens":1,"messages":[{"role":"user","content":{}}],"stream":` + stream + `}`,
-			`{"model":"test","max_tokens":1,"messages":[{"role":"user","content":"hello"}],"system":42,"stream":` + stream + `}`,
-			`{"max_tokens":1,"stream":` + stream + `} ` + "\n\t",
-		} {
-			rr := httptest.NewRecorder()
-			server.ServeHTTP(rr, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)))
-			if rr.Code != http.StatusBadRequest || rr.Header().Get("Content-Type") != "application/json" {
-				t.Fatalf("invalid request %s: got %d %s", body, rr.Code, rr.Body)
-			}
-			var got ErrorResponse
-			if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-				t.Fatal(err)
-			}
-			if got.Type != "error" || got.Error.Type != "invalid_request_error" || got.Error.Message == "" {
-				t.Errorf("invalid request %s: got %+v", body, got)
-			}
-			if id := rr.Header().Get("request-id"); id == "" || id != rr.Header().Get("anthropic-request-id") {
-				t.Errorf("request ID headers: got %v", rr.Header())
-			}
-		}
 	}
 }

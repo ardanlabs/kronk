@@ -80,10 +80,15 @@ func (*Kokoro) Validate(language, referenceText string) (string, error) {
 	}
 }
 
+// SupportsVoice accepts the English US/GB presets supported by normalization.
+func (*Kokoro) SupportsVoice(name string) bool {
+	return strings.HasPrefix(name, "a") || strings.HasPrefix(name, "b")
+}
+
 // Prepare renders English into the model's phonemes and admits one bounded
 // segment. Both BOS padding tokens count toward the 512-position capacity.
 func (k *Kokoro) Prepare(ctx context.Context, _ llama.Vocab, prompt Prompt, input *mtmd.HelperGenAudioInput) (int, error) {
-	if !strings.HasPrefix(prompt.Voice, "a") && !strings.HasPrefix(prompt.Voice, "b") {
+	if !k.SupportsVoice(prompt.Voice) {
 		return 0, fmt.Errorf("Kokoro requires an English voice (a* or b*), got %q", prompt.Voice)
 	}
 	phonemes, err := k.renderer.Render(ctx, prompt.Text, prompt.Language, prompt.Voice, nil)

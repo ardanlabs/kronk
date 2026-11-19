@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../services/api';
 import { RateLimit, RateWindow } from '../types';
+import { FieldLabel } from './ParamTooltips';
 
 const AVAILABLE_ENDPOINTS = [
   { label: '/v1/chat/completions', value: 'chat-completions' },
@@ -9,6 +10,7 @@ const AVAILABLE_ENDPOINTS = [
   { label: '/v1/rerank', value: 'rerank' },
   { label: '/v1/responses', value: 'responses' },
   { label: '/v1/images/*', value: 'image-generations' },
+  { label: '/v1/audio/speech', value: 'speech' },
   { label: '/v1/audio/transcriptions and /v1/audio/translations', value: 'transcriptions' },
   { label: '/v1/messages', value: 'messages' },
   { label: '/v1/tokenize', value: 'tokenize' },
@@ -146,7 +148,8 @@ export default function SecurityTokenCreate() {
                           : '1px solid transparent',
                       }}
                     >
-                      <label
+                      <FieldLabel
+                        tooltipKey={endpoint.value === 'speech' ? 'speechEndpoint' : undefined}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -165,7 +168,7 @@ export default function SecurityTokenCreate() {
                           style={{ marginRight: '8px' }}
                         />
                         {endpoint.label}
-                      </label>
+                      </FieldLabel>
 
                       {config.enabled && (
                         <div

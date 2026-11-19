@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,8 +19,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// TestSpeechPoolLifecycle exercises both speech bundles installed by
-// make install-test-models. Missing fixtures fail rather than skip.
+// TestSpeechPoolLifecycle exercises all speech bundles installed by
+// make install-speak-models. Missing fixtures fail rather than skip.
 func TestSpeechPoolLifecycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("native speech lifecycle skipped in short mode")
@@ -34,11 +35,13 @@ func TestSpeechPoolLifecycle(t *testing.T) {
 	for _, id := range []string{
 		"ggml-org/chatterbox-turbo-Q8_0",
 		"ggml-org/Qwen3-TTS-12Hz-1.7B-Base-Q8_0",
+		"ggml-org/Kokoro-82M-F32",
+		"ggml-org/tiny-voca-F32",
 	} {
 		t.Run(id, func(t *testing.T) {
 			mp, err := mdls.FullPath(id)
 			if err != nil || len(mp.ModelFiles) == 0 || mp.ProjFile == "" {
-				t.Fatalf("missing speech fixture %s: %v; run make install-test-models", id, err)
+				t.Fatalf("missing speech fixture %s: %v; run make install-speak-models", id, err)
 			}
 			testSpeechPoolLifecycle(t, mp)
 		})
@@ -64,13 +67,13 @@ func testSpeechPoolLifecycle(t *testing.T, mp models.Path) {
 	if err := mdls.BuildIndex(logger, false); err != nil {
 		t.Fatal(err)
 	}
-	newPool := func(t *testing.T, snapshot resman.Snapshot) *pool.Pool {
+	newPool := func(t *testing.T, snapshot resman.Snapshot, log kronk.Logger) *pool.Pool {
 		t.Helper()
 		rm, err := resman.New(resman.Config{Snapshot: snapshot})
 		if err != nil {
 			t.Fatal(err)
 		}
-		p, err := pool.New(pool.Config{Log: logger, Models: mdls, Resman: rm})
+		p, err := pool.New(pool.Config{Log: log, Models: mdls, Resman: rm})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +86,7 @@ func testSpeechPoolLifecycle(t *testing.T, mp models.Path) {
 	}
 	const id = "test/speech"
 	t.Run("cold-load-reuse-and-release", func(t *testing.T) {
-		p := newPool(t, resman.FromDevices(devices.List()))
+		p := newPool(t, resman.FromDevices(devices.List()), logger)
 		krn, err := p.AquireModel(t.Context(), id)
 		if err != nil {
 			t.Fatal(err)
@@ -124,7 +127,7 @@ func testSpeechPoolLifecycle(t *testing.T, mp models.Path) {
 		}
 	})
 	t.Run("busy-protection-and-idle-eviction", func(t *testing.T) {
-		p := newPool(t, resman.FromDevices(devices.List()))
+		p := newPool(t, resman.FromDevices(devices.List()), logger)
 		if _, err := p.AquireModel(t.Context(), id); err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +139,26 @@ func testSpeechPoolLifecycle(t *testing.T, mp models.Path) {
 		}
 		snapshot := resman.FromDevices(devices.List())
 		snapshot.RAMBytes = footprint * 3 / 2
-		p = newPool(t, snapshot)
+		// Hold the first admitted request until cancellation. Native synthesis
+		// can finish before a competing model's metadata is planned, especially
+		// under the race detector, so utterance length cannot synchronize this.
+		admitted := make(chan struct{})
+		var once sync.Once
+		blockAdmission := func(ctx context.Context, msg string, args ...any) {
+			if msg != "request-lifecycle" {
+				return
+			}
+			for i := 0; i+1 < len(args); i += 2 {
+				if args[i] == "status" && args[i+1] == "complete" {
+					once.Do(func() {
+						close(admitted)
+						<-ctx.Done()
+					})
+					return
+				}
+			}
+		}
+		p = newPool(t, snapshot, blockAdmission)
 		krn, err := p.AquireModel(t.Context(), id)
 		if err != nil {
 			t.Fatal(err)
@@ -151,24 +173,19 @@ func testSpeechPoolLifecycle(t *testing.T, mp models.Path) {
 		var speechErr error
 		go func() {
 			defer close(done)
-			_, speechErr = krn.Speech(ctx, model.SpeechRequest{Input: strings.Repeat("We are playing Connect Four together. Take your time to look at the board before choosing a column. You can win by connecting four pieces in a row, but you also need to block your opponent. Think about the center of the board and watch for diagonal threats. ", 3)})
+			_, speechErr = krn.Speech(ctx, model.SpeechRequest{Input: "Mary had a little lamb, its fleece was white as snow."})
 		}()
 		t.Cleanup(func() {
 			cancel()
 			<-done
 		})
-		// Wait for the public active-use counter, not a scheduler detail or a
-		// guessed delay. The long request keeps work active during planning.
-		ticker := time.NewTicker(time.Millisecond)
-		defer ticker.Stop()
-		for krn.ActiveStreams() == 0 {
-			select {
-			case <-done:
-				t.Fatalf("speech ended before becoming active: %v", speechErr)
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			case <-ticker.C:
-			}
+		select {
+		case <-admitted:
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		if krn.ActiveStreams() != 1 {
+			t.Fatalf("admitted speech: got active=%d, want 1", krn.ActiveStreams())
 		}
 		key := id + "/playground/replacement"
 		if _, err := p.AquireCustom(t.Context(), key, cfg); !errors.Is(err, pool.ErrServerBusy) {
@@ -208,7 +225,7 @@ func testSpeechPoolLifecycle(t *testing.T, mp models.Path) {
 	t.Run("insufficient-budget", func(t *testing.T) {
 		snapshot := resman.FromDevices(devices.List())
 		snapshot.RAMBytes = 1 << 20
-		p := newPool(t, snapshot)
+		p := newPool(t, snapshot, logger)
 		if _, err := p.AquireModel(t.Context(), id); !errors.Is(err, pool.ErrNoCapacity) {
 			t.Fatalf("got %v, want ErrNoCapacity", err)
 		}
@@ -217,7 +234,7 @@ func testSpeechPoolLifecycle(t *testing.T, mp models.Path) {
 		}
 	})
 	t.Run("failed-load-rolls-back", func(t *testing.T) {
-		p := newPool(t, resman.FromDevices(devices.List()))
+		p := newPool(t, resman.FromDevices(devices.List()), logger)
 		cfg, err := p.ResolvedKronkConfig(id)
 		if err != nil {
 			t.Fatal(err)

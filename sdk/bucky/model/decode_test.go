@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/bucky/pkg/audio"
-	"github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
+	"github.com/ardanlabs/kronk/sdk/tools/ffmpeg"
 )
 
 func TestDecode_NativeWAV(t *testing.T) {

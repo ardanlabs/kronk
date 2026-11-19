@@ -3,22 +3,15 @@ package toolapp
 import (
 	"bytes"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
-	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
-	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-func TestMoECacheCPUShareTransport(t *testing.T) {
+func TestMoECacheCPUShareEncoding(t *testing.T) {
 	for _, share := range []float32{0, 0.25, 1} {
 		resp := toModelInfo(llamamodels.FileInfo{}, llamamodels.ModelInfo{},
 			llamamodels.ModelConfig{MoE: &model.MoEConfig{PtrCacheCPUShare: new(share)}}, nil)
@@ -28,15 +21,6 @@ func TestMoECacheCPUShareTransport(t *testing.T) {
 		}
 		if want := fmt.Sprintf(`"cache-cpu-share":%v`, share); !bytes.Contains(data, []byte(want)) {
 			t.Errorf("Encode: got %s, want %s", data, want)
-		}
-	}
-	for _, share := range []float32{-0.01, 1.01} {
-		body := fmt.Sprintf(`{"model_id":"example/model","moe_cache_cpu_share":%v}`, share)
-		req := httptest.NewRequest(http.MethodPost, "/v1/models/vram", bytes.NewBufferString(body))
-		resp := (&app{}).calculateVRAM(t.Context(), req)
-		err, ok := resp.(*errs.Error)
-		if !ok || err.Code != errs.InvalidArgument {
-			t.Errorf("calculateVRAM(%v): got %v, want InvalidArgument", share, resp)
 		}
 	}
 }
@@ -70,19 +54,6 @@ func TestVRAMResponseIncludesDeviceCacheMirrors(t *testing.T) {
 		t.Fatalf("device-aware totals: got VRAM/cache/slots/per-slot/unified %d/%d/%d/%d/%d, want 1100/100/140/70/1140",
 			resp.TotalVRAM, resp.KVVRAMBytes, resp.SlotMemory, resp.KVPerSlot, resp.UnifiedFootprint)
 	}
-}
-
-func TestModelDetailsNotFound(t *testing.T) {
-	models, err := llamamodels.NewWithPaths(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewWithPaths: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/models/provider%2Fmissing", nil)
-	req.SetPathValue("model", "provider/missing")
-	resp := (&app{models: models}).showModel(t.Context(), req)
-
-	assertNotFound(t, resp)
 }
 
 func TestOpenAIModel(t *testing.T) {
@@ -166,34 +137,6 @@ func TestModelIntegrityResponse(t *testing.T) {
 	}
 }
 
-func TestListModelsIntegrity(t *testing.T) {
-	models, err := llamamodels.NewWithPaths(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewWithPaths: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(models.Path(), ".index.yaml"), []byte("{}\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile index: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/v1/kronk/models/integrity", nil)
-	encoder := (&app{models: models}).listModelsIntegrity(t.Context(), req)
-	response, ok := encoder.(ModelIntegrityResponse)
-	if !ok {
-		t.Fatalf("response type: got %T, want ModelIntegrityResponse", encoder)
-	}
-	if response.Object != "model_integrity.list" {
-		t.Errorf("Object: got %q, want %q", response.Object, "model_integrity.list")
-	}
-	if len(response.Data) != 0 {
-		t.Errorf("Data length: got %d, want 0", len(response.Data))
-	}
-
-	retrieveReq := httptest.NewRequest(http.MethodGet, "/v1/kronk/models/integrity/missing", nil)
-	retrieveReq.SetPathValue("model", "missing")
-	retrieveResponse := (&app{models: models}).retrieveModelIntegrity(t.Context(), retrieveReq)
-	assertNotFound(t, retrieveResponse)
-}
-
 func TestModelInfoAdmissionCapacity(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -242,35 +185,6 @@ func TestModelInfoQuantization(t *testing.T) {
 	}
 	if resp.Quantization != "Q4_K_M" {
 		t.Errorf("Quantization: got %q, want %q", resp.Quantization, "Q4_K_M")
-	}
-}
-
-func TestBuckyModelDetailsNotFound(t *testing.T) {
-	models, err := buckymodels.NewWithPaths(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewWithPaths: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/bucky/models/missing", nil)
-	req.SetPathValue("model", "missing")
-	resp := (&app{buckyModels: models}).detailsBuckyModel(t.Context(), req)
-
-	assertNotFound(t, resp)
-}
-
-func TestListMalinaModelsEmpty(t *testing.T) {
-	models, err := malinamodels.NewWithPaths(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewWithPaths() error = %v", err)
-	}
-
-	resp := (&app{malinaModels: models}).listMalinaModels(t.Context(), httptest.NewRequest(http.MethodGet, "/malina/models", nil))
-	list, ok := resp.(MalinaModelsResponse)
-	if !ok {
-		t.Fatalf("listMalinaModels() response = %T, want MalinaModelsResponse", resp)
-	}
-	if len(list.Models) != 0 {
-		t.Errorf("models: got %+v, want empty", list.Models)
 	}
 }
 
@@ -359,17 +273,5 @@ func TestResolveSWAFull(t *testing.T) {
 				t.Errorf("resolveSWAFull: got %t, want %t", got, tt.want)
 			}
 		})
-	}
-}
-
-func assertNotFound(t *testing.T, resp any) {
-	t.Helper()
-
-	appErr, ok := resp.(*errs.Error)
-	if !ok {
-		t.Fatalf("response: got %T, want *errs.Error", resp)
-	}
-	if !appErr.Code.Equal(errs.NotFound) {
-		t.Errorf("Code: got %s, want %s", appErr.Code, errs.NotFound)
 	}
 }

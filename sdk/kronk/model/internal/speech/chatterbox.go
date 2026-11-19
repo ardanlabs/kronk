@@ -13,6 +13,11 @@ import (
 // or transcripts. Native speaker-reference preparation is shared by the engine.
 type ChatterboxTurbo struct{}
 
+// SupportsVoice accepts any preset supplied by the decoder.
+func (*ChatterboxTurbo) SupportsVoice(string) bool {
+	return true
+}
+
 // NewExecution creates Chatterbox's externally sampled autoregressive protocol.
 func (*ChatterboxTurbo) NewExecution(ctx context.Context, log applog.Logger, cfg ExecutionConfig) (Execution, error) {
 	return NewAutoregressive(ctx, log, cfg)

@@ -58,6 +58,13 @@ type Test struct {
 	events   []logger.Record
 }
 
+// NewWithHandler constructs a table runner for test-owned HTTP dependencies.
+// It does not initialize security, pools, or native libraries.
+func NewWithHandler(handler http.Handler) *Test {
+	at := Test{mux: handler}
+	return &at
+}
+
 // ServeHTTP serves the production routes through a test-owned HTTP server.
 func (at *Test) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	at.mux.ServeHTTP(w, r)
@@ -114,15 +121,18 @@ func (at *Test) Run(t *testing.T, table []Table, testName string, options ...Opt
 					t.Fatalf("%s: Should receive a status code of %d for the response : %d", tt.Name, tt.StatusCode, w.Code)
 				}
 
-				if tt.StatusCode == http.StatusNoContent {
-					return
+				lastDiff = ""
+				if tt.ResponseCmpFunc != nil {
+					lastDiff = tt.ResponseCmpFunc(w.Header(), w.Body.Bytes())
 				}
 
-				if err := json.Unmarshal(w.Body.Bytes(), tt.GotResp); err != nil {
-					t.Fatalf("Should be able to unmarshal the response : %s", err)
+				if lastDiff == "" && tt.StatusCode != http.StatusNoContent && (tt.GotResp != nil || tt.ResponseCmpFunc == nil) {
+					if err := json.Unmarshal(w.Body.Bytes(), tt.GotResp); err != nil {
+						t.Fatalf("Should be able to unmarshal the response : %s", err)
+					}
+					lastDiff = tt.CmpFunc(tt.GotResp, tt.ExpResp)
 				}
 
-				lastDiff = tt.CmpFunc(tt.GotResp, tt.ExpResp)
 				if lastDiff == "" {
 					if attempt > 0 {
 						t.Logf("Passed on retry attempt %d", attempt+1)

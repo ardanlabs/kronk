@@ -15,6 +15,11 @@ import (
 // conditioning; older decoders fall back to speaker-embedding conditioning.
 type Qwen3TTS struct{}
 
+// SupportsVoice accepts any preset supplied by the decoder.
+func (*Qwen3TTS) SupportsVoice(string) bool {
+	return true
+}
+
 // NewExecution creates Qwen's externally sampled autoregressive protocol.
 func (*Qwen3TTS) NewExecution(ctx context.Context, log applog.Logger, cfg ExecutionConfig) (Execution, error) {
 	return NewAutoregressive(ctx, log, cfg)

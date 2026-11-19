@@ -23,6 +23,7 @@ var errSpeechEngineStopped = errors.New("speech engine stopped")
 // request types or shared engine state. Its errors reject the current request.
 type speechModel interface {
 	Validate(language, referenceText string) (string, error)
+	SupportsVoice(name string) bool
 	Prepare(ctx context.Context, vocab llama.Vocab, prompt speech.Prompt, input *mtmd.HelperGenAudioInput) (int, error)
 	NewExecution(ctx context.Context, log applog.Logger, cfg speech.ExecutionConfig) (speech.Execution, error)
 }
@@ -34,6 +35,7 @@ type speechEngine struct {
 	adapter   speechModel
 	voice     mtmd.Bitmap
 	voiceName string
+	voices    []string // Immutable supported presets, including the default alias.
 	slots     []speechSlot
 	model     *Model
 	maxFrames int // Immutable load-time resource limit.
@@ -161,6 +163,20 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 		return fmt.Errorf("init speech model: %w: %w", kind, err)
 	}
 
+	engine.voices = []string{"default"}
+	for i := int32(0); ; i++ {
+		name, err := mtmd.GenAudioVoiceName(m.mtmdMetaCtx, i)
+		if err != nil {
+			return fmt.Errorf("speech preset voices: %w: %w", ErrSpeechUnsupported, err)
+		}
+		if name == "" {
+			break
+		}
+		if name != "default" && engine.adapter.SupportsVoice(name) {
+			engine.voices = append(engine.voices, name)
+		}
+	}
+
 	for i := range cfg.NSeqMax() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -212,6 +228,9 @@ func initSpeechRuntime(ctx context.Context, m *Model) (err error) {
 
 func (e *speechEngine) prepare(slot *speechSlot) error {
 	req := slot.job.request
+	if req.Voice != "" && !slices.Contains(e.voices, req.Voice) {
+		return fmt.Errorf("%w: unknown speech voice %q; supported voices: %q", ErrInvalidRequest, req.Voice, e.voices)
+	}
 	input := slot.input
 	voiceName := req.Voice
 	if voiceName == "" || voiceName == "default" {

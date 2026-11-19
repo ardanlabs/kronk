@@ -16,6 +16,7 @@
 - [9.12 Bucky and Malina Administration](#912-bucky-and-malina-administration)
 - [9.13 Operations and Evaluation](#913-operations-and-evaluation)
 - [9.14 Security Administration](#914-security-administration)
+- [9.15 Text-to-Speech](#915-text-to-speech)
 
 ---
 
@@ -43,12 +44,16 @@ External auth providers must also be configured to enforce authentication. See
 [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
 for token creation, endpoint grants, and rate limits.
 
-Application errors use a top-level code and message:
+Application errors use an OpenAI-style error object (the Messages API uses its
+Anthropic error format):
 
 ```json
 {
-  "code": "invalid_argument",
-  "message": "missing model field"
+  "error": {
+    "message": "missing model field",
+    "type": "invalid_request_error",
+    "code": "invalid_argument"
+  }
 }
 ```
 
@@ -78,6 +83,7 @@ records rather than treating HTTP 200 as successful completion.
 | `/v1/images/generations`       | POST   | Generate an image with Malina           |
 | `/v1/images/edits`             | POST   | Transform an image with Malina          |
 | `/v1/images/events`            | GET    | Stream server-wide Malina progress      |
+| `/v1/audio/speech`             | POST   | Generate buffered speech audio          |
 | `/v1/audio/transcriptions`     | POST   | Transcribe audio with Bucky            |
 | `/v1/audio/translations`       | POST   | Translate audio into English with Bucky |
 
@@ -1042,3 +1048,122 @@ they require an administrator token. Token creation accepts `admin`, `duration`,
 and an `endpoints` map of endpoint grants and rate limits. See
 [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
 for the request model, key rotation, and the effects of deleting a signing key.
+
+## 9.15 Text-to-Speech
+
+`POST /v1/audio/speech` generates speech from text using an installed Kronk
+speech model and its matching audio decoder. It does not use Bucky. All four
+supported bundles, installation commands, and model-specific text limits are
+listed in [§11.9](https://www.kronkai.com/manual#119-text-to-speech-sdk).
+
+### Request
+
+Send `Content-Type: application/json`. In `full-protected` mode, a nonadmin
+token needs the independent `speech` grant; `transcriptions` is not sufficient.
+See [Chapter 12](https://www.kronkai.com/manual#124-endpoint-grants-and-rate-limits).
+
+| Field | Type | Behavior |
+| ----- | ---- | -------- |
+| `model` | string, required | Installed model ID, such as `ggml-org/Kokoro-82M-F32` |
+| `input` | string, required | Nonblank UTF-8 text without NUL bytes, at most 64 KiB; model-specific limits also apply |
+| `voice` | string, required | `default` or a supported preset in the selected bundle; names are case-sensitive |
+| `response_format` | string, optional | `wav` (default), `pcm`, `mp3`, `opus`, `aac`, or `flac`; omission, empty string, or null selects WAV |
+| `stream_format` | string, optional | Omission, empty string, null, or `audio` returns buffered audio; `sse` is not supported |
+| `speed` | any JSON value, optional | Accepted and ignored; no speed control |
+| `instructions` | any JSON value, optional | Accepted and ignored; no style control |
+
+The complete JSON body is limited to 1 MiB, allowing JSON escaping of the
+64 KiB decoded text limit. Missing, null, or empty required fields, non-string
+values for stored string fields, malformed/trailing JSON, and invalid UTF-8
+return 400. Unknown fields are ignored; they do not enable language selection,
+reference audio, voice cloning, chat sampling, or a `max_frames` override.
+
+### Generate and save a WAV
+
+Install a bundle first (use `--local` on the same machine and data root as the
+server), then send the request. Set `KRONK_TOKEN` to a speech-enabled token for
+protected servers; omit the Authorization header for open access.
+
+```shell
+kronk model pull --local ggml-org/Kokoro-82M-F32
+
+curl --fail-with-body http://localhost:11435/v1/audio/speech \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ggml-org/Kokoro-82M-F32",
+    "input": "Your turn!",
+    "voice": "default"
+  }' \
+  --output speech.wav
+
+afplay speech.wav # macOS; use a WAV player on other systems.
+```
+
+HTTP 200 returns raw audio bytes, not JSON or base64. WAV uses
+`Content-Type: audio/wav` and contains complete PCM16 little-endian mono audio
+with its sample rate in the header. All four currently supported bundles
+produce 24 kHz audio.
+
+For headerless samples, add `"response_format": "pcm"` and save as
+`speech.pcm`. The response uses `Content-Type: audio/pcm` and contains the
+same signed 16-bit little-endian mono samples without a WAV header or
+resampling. A raw PCM player must be configured for the model's sample rate
+(24 kHz for these bundles), mono, and signed 16-bit little-endian samples.
+
+### Additional formats through ffmpeg
+
+MP3, Opus, AAC, and FLAC require `ffmpeg` on the **server's PATH**, with the
+corresponding encoder available. WAV and PCM do not require ffmpeg. For example,
+install it with `brew install ffmpeg` on macOS or `sudo apt-get install ffmpeg`
+on Debian/Ubuntu, and ensure the service/container can find that executable.
+
+| `response_format` | Content-Type | Container / encoding |
+| ----------------- | ------------ | -------------------- |
+| `mp3` | `audio/mpeg` | MP3 (`libmp3lame`) |
+| `opus` | `audio/ogg` | Ogg Opus (`libopus`); reports a 48 kHz playback rate |
+| `aac` | `audio/aac` | AAC in ADTS, not M4A/MP4 |
+| `flac` | `audio/flac` | Lossless FLAC |
+
+Set `"response_format": "mp3"` in the request above and change the output
+filename to `speech.mp3`; use the other format names and matching extensions
+in the same way. MP3, AAC, and FLAC retain the generated 24 kHz mono rate;
+Opus uses its codec-specific playback rate. Encoding uses memory and pipes,
+not temporary files. Installing ffmpeg on the client alone is not sufficient.
+
+If ffmpeg cannot be found, a compressed-format request returns an actionable
+400 before loading a model. A missing encoder or other encoding failure
+returns 500; the server never falls back to another format or returns a
+successful partial file. A deadline or disconnect cancels encoding as well as
+synthesis.
+
+All formats are buffered: successful audio is returned only after synthesis
+and any encoding finish. `stream_format: "audio"` does not enable incremental delivery.
+Failures return JSON instead of a successful partial audio response. When
+using curl, inspect the exit status before playing the output file: an HTTP
+error saved by `--fail-with-body` contains JSON, not audio.
+
+### Errors and compatibility
+
+| HTTP status | Meaning |
+| ----------- | ------- |
+| 400 | Invalid request, unknown voice, unsupported format/stream format, missing ffmpeg for a compressed format, model-specific input limit, or model without supported speech capability |
+| 401 / 403 | Missing/invalid token or missing speech grant in a protected mode |
+| 404 | Model not installed |
+| 429 | Endpoint quota, admission/resource capacity, or autoregressive frame limit exceeded |
+| 503 | Pool busy with no evictable model |
+| 504 | Request deadline exceeded |
+| 500 | Internal synthesis, response-conversion, or ffmpeg encoding failure |
+
+Unknown-voice errors list supported choices, including the `default` alias.
+An autoregressive frame-limit failure returns no partial audio; split long
+passages into smaller requests rather than treating 429 as successful output.
+Kokoro and Tiny-Voca use their own normalized-text/duration limits instead of
+the autoregressive frame cap.
+
+This is an OpenAI-compatible subset, not complete speech API parity. Unlike
+OpenAI's MP3 default, Kronk defaults to WAV. SSE and true streaming are
+unsupported. OpenAI voice names such as `alloy` are not universal
+Kronk presets: use `default` or a name supported by the loaded bundle. SDK
+reference-audio and language controls are not exposed by this endpoint. There
+is no BUI speech playground; the BUI token form can grant speech access.

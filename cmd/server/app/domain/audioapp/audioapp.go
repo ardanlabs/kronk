@@ -1,7 +1,8 @@
-// Package audioapp provides the audio (speech-to-text) api endpoints.
+// Package audioapp provides speech-to-text and text-to-speech API endpoints.
 package audioapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,9 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
+	kmodel "github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/pool"
+	"github.com/ardanlabs/kronk/sdk/tools/ffmpeg"
 )
 
 // maxUploadBytes sets a 25 MiB file cap for the audio transcriptions
@@ -143,6 +146,53 @@ func (a *app) transcribe(ctx context.Context, r *http.Request, forceTranslate bo
 	default:
 		return jsonResponse(map[string]any{"text": tr.Text})
 	}
+}
+
+func (a *app) speech(ctx context.Context, r *http.Request) web.Encoder {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxSpeechRequestBytes)
+
+	var req speechRequest
+	if err := web.Decode(r, &req); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+
+	var encoder *ffmpeg.FFmpeg
+	if req.ResponseFormat != "wav" && req.ResponseFormat != "pcm" {
+		var err error
+		encoder, err = ffmpeg.New("")
+		if err != nil {
+			return errs.FromSDK(fmt.Errorf("speech format %q requires ffmpeg on the server PATH; install ffmpeg or use wav/pcm: %w", req.ResponseFormat, err))
+		}
+	}
+
+	krn, err := a.pool.Kronk.AquireModel(ctx, req.Model)
+	if err != nil {
+		return errs.FromSDK(err)
+	}
+
+	response, err := krn.Speech(ctx, kmodel.SpeechRequest{Input: req.Input, Voice: req.Voice})
+	if err != nil {
+		return errs.FromSDK(err)
+	}
+
+	if encoder != nil {
+		audio, err := encoder.Encode(ctx, bytes.NewReader(response.Audio), req.ResponseFormat)
+		if err != nil {
+			return errs.FromSDK(fmt.Errorf("encode speech: %w", err))
+		}
+		return rawResponse{data: audio, contentType: speechContentType(req.ResponseFormat)}
+	}
+
+	if req.ResponseFormat == "pcm" {
+		pcm, err := speechPCM(response.Audio)
+		if err != nil {
+			return errs.New(errs.Internal, err)
+		}
+
+		return rawResponse{data: pcm, contentType: "audio/pcm"}
+	}
+
+	return rawResponse{data: response.Audio, contentType: "audio/wav"}
 }
 
 // =============================================================================
