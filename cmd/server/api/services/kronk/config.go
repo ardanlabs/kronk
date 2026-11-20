@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
@@ -215,28 +213,6 @@ func resolveAuthorizationSettings(mode auth.Mode, mcpAuthEnabled bool) (bool, bo
 	}
 
 	return false, false, false
-}
-
-func validateMoxieConfig(cfg config) error {
-	if cfg.Moxie.Enabled && (strings.TrimSpace(cfg.Moxie.Address) == "" || strings.TrimSpace(cfg.Moxie.Namespace) == "" || len(cfg.Moxie.Models) == 0) {
-		return errors.New("configuration: enabled Moxie requires a Temporal address, namespace, and approved model IDs")
-	}
-	return nil
-}
-
-// moxieRoot preserves the existing default and resolves one root for all owners.
-func moxieRoot(root string) (string, error) {
-	if root == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("locating Moxie root: %w", err)
-		}
-		root = filepath.Join(home, ".moxie")
-	}
-	if strings.TrimSpace(root) == "" {
-		return "", errors.New("configuration: Moxie root must not be blank")
-	}
-	return filepath.Abs(root)
 }
 
 func validateTimeoutConfig(inferenceTimeout, writeTimeout time.Duration) error {

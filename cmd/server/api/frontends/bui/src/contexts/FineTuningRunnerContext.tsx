@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { useMatch, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import type { PreparationOptions, TrainingOptions, TrainingRun, TrainingUpload } from '../types';
+import { useAuth } from './AuthContext';
 
 export const FINE_TUNING_MODEL_ID = 'ggml-org/gemma-3-1b-it-Q8_0';
 
@@ -86,7 +87,9 @@ export function retryDelay(signal: AbortSignal, ms = 5000) {
 }
 
 export function FineTuningRunnerProvider({ children }: { children: ReactNode }) {
-  const onFineTuningPage = useMatch('/fine-tuning') !== null;
+  const { moxieEnabled } = useAuth();
+  const matchesFineTuningPage = useMatch('/fine-tuning') !== null;
+  const onFineTuningPage = moxieEnabled && matchesFineTuningPage;
   const [params] = useSearchParams();
   const watchingRun = onFineTuningPage && !params.get('view') && params.get('workspace') !== 'live'
     && !!params.get('run') && !!(params.get('preparation') || params.get('training'));

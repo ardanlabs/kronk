@@ -3,6 +3,7 @@ package build_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxierun"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
@@ -62,17 +64,23 @@ func TestTrainingRouteWiring(t *testing.T) {
 	log := logger.New(io.Discard, logger.LevelInfo, "route-test", nil)
 	for _, test := range []struct {
 		name       string
-		training   moxieapp.Config
+		cfg        mux.Config
 		wantUpload int
 		wantRun    int
 	}{
-		{"disabled", moxieapp.Config{}, http.StatusNotFound, http.StatusNotFound},
+		{"disabled", mux.Config{}, http.StatusNotFound, http.StatusNotFound},
+		{"deferred-unavailable", mux.Config{MoxieResolve: func(context.Context) (moxierun.Services, error) {
+			return moxierun.Services{}, errors.New("dependency unavailable")
+		}}, http.StatusServiceUnavailable, http.StatusServiceUnavailable},
 		// Startup always pairs uploads with the datasets service, which reads runs through the job.
-		{"uploads-only", moxieapp.Config{Uploads: store, Datasets: datasets.New(datasets.Config{Uploads: store})}, http.StatusBadRequest, http.StatusServiceUnavailable},
-		{"enabled", moxieapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Job: job, Uploads: store})}, http.StatusBadRequest, http.StatusOK},
+		{"uploads-only", mux.Config{MoxieUploads: store, MoxieDatasets: datasets.New(datasets.Config{Uploads: store})}, http.StatusBadRequest, http.StatusServiceUnavailable},
+		{"enabled", mux.Config{MoxieJob: job, MoxieUploads: store, MoxieDatasets: datasets.New(datasets.Config{Job: job, Uploads: store})}, http.StatusBadRequest, http.StatusOK},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			api := mux.WebAPI(mux.Config{Log: log, AuthorizationMode: auth.Open}, build.Routes(build.Config{Moxie: test.training}))
+			cfg := test.cfg
+			cfg.Log = log
+			cfg.AuthorizationMode = auth.Open
+			api := mux.WebAPI(cfg, build.Routes())
 			for _, legacy := range []struct{ method, path string }{
 				{http.MethodPost, "/fine-tuning/datasets"},
 				{http.MethodGet, "/fine-tuning/prepare/models"},

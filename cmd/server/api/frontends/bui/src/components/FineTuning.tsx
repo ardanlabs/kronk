@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { DEFAULT_TRAINING_OPTIONS, requestMessage, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
 import { api, ApiError } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import type { CatalogModelResponse, PreparationDataset, PreparationOptions, TrainingRun } from '../types';
 import { FieldLabel, ParamTooltip } from './ParamTooltips';
 import DatasetDashboard from './DatasetDashboard';
@@ -14,11 +15,13 @@ const digits = (value: string) => value.replace(/\D/g, '');
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 export default function FineTuning() {
+  const { moxieEnabled } = useAuth();
   const [params] = useSearchParams();
   const view = params.get('view');
   const workspaceVisible = params.get('workspace') === 'live' || view === 'prepare';
   const [workspaceVisited, setWorkspaceVisited] = useState(workspaceVisible);
   useEffect(() => { if (workspaceVisible) setWorkspaceVisited(true); }, [workspaceVisible]);
+  if (!moxieEnabled) return <Navigate replace to="/" />;
   // History is part of the dashboard now, and every run opens on the dashboard.
   if (view === 'history') return <Navigate replace to="/fine-tuning" />;
   // Training starts from a finished dataset now.

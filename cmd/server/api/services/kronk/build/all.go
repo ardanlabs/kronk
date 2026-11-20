@@ -20,31 +20,29 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
 
-// Config supplies host-owned optional training capabilities.
-type Config struct {
-	Moxie moxieapp.Config
+// Routes constructs the RouteAdder.
+func Routes() all {
+	return all{}
 }
 
-// Routes constructs the RouteAdder for this instance.
-func Routes(cfg Config) all {
-	return all{cfg: cfg}
-}
-
-type all struct {
-	cfg Config
-}
+type all struct{}
 
 // Add implements the RouterAdder interface.
-func (routes all) Add(app *web.App, cfg mux.Config) {
+func (all) Add(app *web.App, cfg mux.Config) {
 	checkapp.Routes(app, checkapp.Config{
 		Build: cfg.Build,
 		Log:   cfg.Log,
 	})
 
-	if trainConfig := routes.cfg.Moxie; trainConfig.Job != nil || trainConfig.Uploads != nil {
-		trainConfig.AuthClient = cfg.AuthClient
-		trainConfig.AuthorizationMode = cfg.AuthorizationMode
-		moxieapp.Routes(app, trainConfig)
+	if cfg.MoxieJob != nil || cfg.MoxieUploads != nil || cfg.MoxieResolve != nil {
+		moxieapp.Routes(app, moxieapp.Config{
+			Job:               cfg.MoxieJob,
+			Uploads:           cfg.MoxieUploads,
+			Datasets:          cfg.MoxieDatasets,
+			Resolve:           cfg.MoxieResolve,
+			AuthClient:        cfg.AuthClient,
+			AuthorizationMode: cfg.AuthorizationMode,
+		})
 	}
 
 	toolapp.Routes(app, toolapp.Config{

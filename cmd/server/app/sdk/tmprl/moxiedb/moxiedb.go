@@ -4,8 +4,10 @@ package moxiedb
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -39,6 +41,24 @@ func Open(ctx context.Context, url string) (*DB, error) {
 }
 
 func (db *DB) Close() error { return db.sql.Close() }
+
+// IsUnavailable identifies connection failures without treating schema, query,
+// or constraint errors as outages. It does not retry SQL or replay transactions.
+func IsUnavailable(err error) bool {
+	if errors.Is(err, driver.ErrBadConn) {
+		return true
+	}
+	if _, ok := errors.AsType[*net.OpError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[*pgconn.ConnectError](err); ok {
+		return true
+	}
+	if pg, ok := errors.AsType[*pgconn.PgError](err); ok {
+		return strings.HasPrefix(pg.Code, "08") || pg.Code == "57P01" || pg.Code == "57P02" || pg.Code == "57P03" || pg.Code == "53300"
+	}
+	return false
+}
 
 func dbError(err error) error {
 	if errors.Is(err, sql.ErrNoRows) {

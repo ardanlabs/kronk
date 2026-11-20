@@ -7,6 +7,8 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -15,10 +17,41 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 //go:embed migrations/001_init.sql
 var migration []byte
+
+func TestIsUnavailable(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"connection", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, true},
+		{"truncated-data", io.ErrUnexpectedEOF, false},
+		{"missing-file", &os.PathError{Op: "open", Path: "missing.json", Err: os.ErrNotExist}, false},
+		{"shutdown", &pgconn.PgError{Code: "57P01"}, true},
+		{"restarting", &pgconn.PgError{Code: "57P03"}, true},
+		{"connection-failure", &pgconn.PgError{Code: "08006"}, true},
+		{"capacity", &pgconn.PgError{Code: "53300"}, true},
+		{"constraint", &pgconn.PgError{Code: "23505"}, false},
+		{"missing-schema", &pgconn.PgError{Code: "42P01"}, false},
+		{"canceled", context.Canceled, false},
+		{"success", nil, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.err
+			if err != nil {
+				err = fmt.Errorf("catalog query: %w", err)
+			}
+			if got := moxiedb.IsUnavailable(err); got != test.want {
+				t.Errorf("IsUnavailable: got %t, want %t", got, test.want)
+			}
+		})
+	}
+}
 
 func TestOpenInvalidConfiguration(t *testing.T) {
 	const marker = "password-marker-must-not-leak"

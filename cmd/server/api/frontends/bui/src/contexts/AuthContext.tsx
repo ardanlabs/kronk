@@ -4,12 +4,14 @@ import { SESSION_EXPIRED_EVENT } from '../services/api';
 
 interface AuthContextType {
   authenticationRequired: boolean;
+  moxieEnabled: boolean;
   logout: () => Promise<void>;
 }
 
 interface SessionResponse {
   authenticated: boolean;
   authentication_required: boolean;
+  moxie_enabled: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -17,12 +19,14 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<'loading' | 'authenticated' | 'anonymous'>('loading');
   const [authenticationRequired, setAuthenticationRequired] = useState(true);
+  const [moxieEnabled, setMoxieEnabled] = useState(false);
 
   const checkSession = useCallback(async () => {
     try {
       const response = await fetch('/admin/api/session', { credentials: 'same-origin' });
       const session = await response.json() as SessionResponse;
       setAuthenticationRequired(session.authentication_required);
+      setMoxieEnabled(response.ok && session.moxie_enabled === true);
       setStatus(response.ok && session.authenticated ? 'authenticated' : 'anonymous');
     } catch {
       setStatus('anonymous');
@@ -50,10 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   if (status === 'anonymous') {
-    return <Login onAuthenticated={() => setStatus('authenticated')} />;
+    return <Login onAuthenticated={() => void checkSession()} />;
   }
 
-  return <AuthContext.Provider value={{ authenticationRequired, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ authenticationRequired, moxieEnabled, logout }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

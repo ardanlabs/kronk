@@ -18,6 +18,8 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
 	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxierun"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
@@ -29,8 +31,38 @@ type app struct {
 	datasets *datasets.Service
 }
 
-func newApp(cfg Config) *app {
+func newApp(cfg moxierun.Services) *app {
 	return &app{training: cfg.Job, uploads: cfg.Uploads, datasets: cfg.Datasets}
+}
+
+// readiness resolves one immutable service snapshot after authorization. A failed
+// initialization never reaches the operation, especially a training submission.
+func (cfg Config) readiness(operation func(*app, context.Context, *http.Request) web.Encoder, require func(*app, web.HandlerFunc) web.HandlerFunc) web.HandlerFunc {
+	return func(ctx context.Context, r *http.Request) web.Encoder {
+		ctx, cancel := context.WithTimeout(ctx, time.Minute)
+		defer cancel()
+
+		services := moxierun.Services{Job: cfg.Job, Uploads: cfg.Uploads, Datasets: cfg.Datasets}
+		if cfg.Resolve != nil {
+			var err error
+			services, err = cfg.Resolve(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return toAppError(ctx.Err())
+				}
+				return errs.Errorf(errs.Unavailable, "Moxie is unavailable; check PostgreSQL and Temporal, then try again")
+			}
+		}
+
+		api := newApp(services)
+
+		next := func(ctx context.Context, r *http.Request) web.Encoder { return operation(api, ctx, r) }
+		if require != nil {
+			next = require(api, next)
+		}
+
+		return next(ctx, r.WithContext(ctx))
+	}
 }
 
 func (a *app) requireDatasets(next web.HandlerFunc) web.HandlerFunc {
@@ -461,7 +493,7 @@ func toAppError(err error) *errs.Error {
 		return errs.Errorf(errs.NotFound, "training resource not found")
 	case errors.Is(err, training.ErrAlreadyExists):
 		return errs.Errorf(errs.AlreadyExists, "training job already exists")
-	case errors.Is(err, training.ErrUnavailable):
+	case errors.Is(err, training.ErrUnavailable), moxiedb.IsUnavailable(err):
 		return errs.Errorf(errs.Unavailable, "training service is unavailable")
 	}
 	return errs.Errorf(errs.Internal, "training request: %s", err)
