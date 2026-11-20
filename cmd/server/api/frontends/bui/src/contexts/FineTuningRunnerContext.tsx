@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useMatch } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import type { PreparationOptions, TrainingOptions, TrainingRun, TrainingUpload } from '../types';
 
@@ -84,6 +85,7 @@ export function retryDelay(signal: AbortSignal, ms = 5000) {
 }
 
 export function FineTuningRunnerProvider({ children }: { children: ReactNode }) {
+  const onFineTuningPage = useMatch('/fine-tuning') !== null;
   const [documents, setDocuments] = useState<SourceDocument[]>([]);
   const documentsUploading = documents.some((item) => !item.upload && !item.error);
   const [submitting, setSubmitting] = useState(false);
@@ -104,11 +106,14 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     for (const controller of documentAborts.current.values()) controller.abort();
   }, []);
 
-  // A page load starts with no runs in memory. Adopt the newest in-progress runs so the
-  // sidebar and the one-preparation-at-a-time rule survive a reload or a new tab.
-  // Starting stays blocked until this answers, so it retries until it does.
+  // Discover in-progress runs when entering Fine-Tuning. Keep form/run state across
+  // navigation, but do not make background requests while another page is open.
+  // Starting stays blocked until this answers, so it retries while the page is open.
   useEffect(() => {
+    if (!onFineTuningPage) return;
     const controller = new AbortController();
+    setAdopting(true);
+    setAdoptionError('');
     void (async () => {
       while (!controller.signal.aborted) {
         try {
@@ -130,9 +135,10 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [onFineTuningPage]);
 
   useEffect(() => {
+    if (!onFineTuningPage) return;
     const identities: [string, string][] = JSON.parse(watchedRuns);
     if (identities.length === 0) return;
     const controller = new AbortController();
@@ -158,7 +164,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       }
     })();
     return () => controller.abort();
-  }, [watchedRuns]);
+  }, [onFineTuningPage, watchedRuns]);
 
   const selectRun = (run: TrainingRun) => {
     if (run.stages.some((stage) => stage.name === 'preparation')) {

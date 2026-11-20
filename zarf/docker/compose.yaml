@@ -1,4 +1,23 @@
+# Runtime data lives under ~/.kronk/docker; checked-in configuration stays read-only.
 services:
+  # Prepare bind mounts for the images' non-root users (also on Linux).
+  storage-init:
+    image: postgres:18
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mkdir -p /storage/docling /storage/postgres /storage/temporal-bootstrap \
+          /storage/openwebui /storage/grafana /storage/loki /storage/prometheus \
+          /storage/alloy /storage/tempo
+        chown 1001:0 /storage/docling
+        chown 472:0 /storage/grafana
+        chown 65534:65534 /storage/prometheus
+        chown 10001:10001 /storage/loki /storage/tempo
+    volumes:
+      - ${HOME:?HOME must be set}/.kronk/docker:/storage
+
   docling:
     image: quay.io/docling-project/docling-serve:v1.38.1@sha256:c632ab38b69a923c33b4d0c7dea4b8d3b8128bd19b94f710c3ee7db89dde8d34
     container_name: moxie-docling
@@ -15,11 +34,14 @@ services:
     ports:
       - "127.0.0.1:5001:5001"
     volumes:
-      - ./docling:/scratch
+      - ${HOME:?HOME must be set}/.kronk/docker/docling:/scratch
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
 
   # Shared PostgreSQL instance for the temporal and moxiedb databases.
   postgres:
-    image: postgres:16
+    image: postgres:18
     container_name: moxie-postgres
     restart: unless-stopped
     environment:
@@ -28,7 +50,11 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - moxie-postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18 stores data in 18/docker; existing 16 data needs migration.
+      - ${HOME:?HOME must be set}/.kronk/docker/postgres:/var/lib/postgresql
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
@@ -37,7 +63,7 @@ services:
 
   # One-shot dependencies keep initialization out of the make recipe.
   postgres-init:
-    image: postgres:16
+    image: postgres:18
     restart: "no"
     environment:
       PGHOST: postgres
@@ -90,7 +116,7 @@ services:
         chmod 644 /bootstrap/schema-state.tmp
         mv /bootstrap/schema-state.tmp /bootstrap/schema-state
     volumes:
-      - temporal-bootstrap:/bootstrap
+      - ${HOME:?HOME must be set}/.kronk/docker/temporal-bootstrap:/bootstrap
     depends_on:
       postgres:
         condition: service_healthy
@@ -118,7 +144,7 @@ services:
             -d "/etc/temporal/schema/postgresql/v12/$$schema/versioned"
         done
     volumes:
-      - temporal-bootstrap:/bootstrap:ro
+      - ${HOME:?HOME must be set}/.kronk/docker/temporal-bootstrap:/bootstrap:ro
     depends_on:
       postgres-init:
         condition: service_completed_successfully
@@ -156,7 +182,7 @@ services:
 
   # Moxie SQL only: dataset files/indexing stay in the native datasets package.
   moxie-schema:
-    image: postgres:16
+    image: postgres:18
     profiles: ["setup"]
     restart: "no"
     environment:
@@ -253,7 +279,10 @@ services:
     ports:
       - "8081:11435"
     volumes:
-      - ./openwebui:/app/backend/data
+      - ${HOME:?HOME must be set}/.kronk/docker/openwebui:/app/backend/data
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
     networks:
       - kronk-net
 
@@ -275,15 +304,21 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/dashboards:/etc/dashboards
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/dashboards:ro
+      - ${HOME:?HOME must be set}/.kronk/docker/grafana:/var/lib/grafana
     networks:
       - kronk-net
     depends_on:
-      - loki
-      - prometheus
-      - tempo
+      storage-init:
+        condition: service_completed_successfully
+      loki:
+        condition: service_started
+      prometheus:
+        condition: service_started
+      tempo:
+        condition: service_started
 
   loki:
     image: grafana/loki:3.7.7
@@ -294,7 +329,11 @@ services:
     ports:
       - "3101:3101"
     volumes:
-      - ./loki:/loki-conf
+      - ./loki:/loki-conf:ro
+      - ${HOME:?HOME must be set}/.kronk/docker/loki:/loki
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
     networks:
       - kronk-net
 
@@ -314,7 +353,11 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus:/prom-conf
+      - ./prometheus:/prom-conf:ro
+      - ${HOME:?HOME must be set}/.kronk/docker/prometheus:/prometheus
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
     networks:
       - kronk-net
 
@@ -332,12 +375,15 @@ services:
       - "3102:3102"
     volumes:
       - ./alloy:/etc/alloy:ro
-      - alloy-data:/var/lib/alloy/data
+      - ${HOME:?HOME must be set}/.kronk/docker/alloy:/var/lib/alloy/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - kronk-net
     depends_on:
-      - loki
+      storage-init:
+        condition: service_completed_successfully
+      loki:
+        condition: service_started
 
   tempo:
     image: grafana/tempo:3.0.3
@@ -352,7 +398,11 @@ services:
       - "9411:9411"
       - "14268:14268"
     volumes:
-      - ./tempo:/tempo-conf
+      - ./tempo:/tempo-conf:ro
+      - ${HOME:?HOME must be set}/.kronk/docker/tempo:/tmp/tempo
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
     networks:
       - kronk-net
 
@@ -363,8 +413,3 @@ networks:
   kronk-net:
     name: kronk-net
     driver: bridge
-
-volumes:
-  alloy-data:
-  moxie-postgres-data:
-  temporal-bootstrap:

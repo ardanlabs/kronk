@@ -335,10 +335,12 @@ and a local Jetson build, see
 
 The repository includes Compose files in
 [`zarf/docker/kronk`](https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk)
-that reuse the same `kronk-data` volume. The default file selects CPU inference
+that store state in `~/.kronk/docker/kronk` on the host. The default file selects CPU inference
 and publishes the API (`11435`) and debug server (`11445`, including metrics
 and profiling) on localhost. Remove a `kronk` container started with
-`docker run` first; its models are kept in the volume:
+`docker run` first; its models are kept in the old named volume. Copy its data
+to `~/.kronk/docker/kronk` before starting Compose if you want to reuse it;
+Compose does not migrate existing data automatically:
 
 ```shell
 docker rm -f kronk

@@ -817,9 +817,14 @@ verify GPU inference.
 
 The Compose files in
 [`zarf/docker/kronk`](https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk)
-use the same container name (`kronk`) and volume (`kronk-data`) as the
-examples above, so the `docker exec` and `docker logs` commands work
-unchanged. Start with
+use the same container name (`kronk`) as the examples above, so the `docker exec`
+and `docker logs` commands work unchanged. Compose stores state in the host
+directory `~/.kronk/docker/kronk`, not in the `kronk-data` named volume.
+Startup prepares directory ownership and seeds an empty directory with the
+image's libraries and model configuration. Existing nonempty storage is not
+overwritten or migrated. To reuse named-volume data, stop the old container,
+back up the volume, and copy its contents to this directory with numeric
+ownership preserved before starting Compose. Start with
 [2.3 Container Quick Start](https://www.kronkai.com/manual#23-container-quick-start).
 All `docker compose` commands run from the directory holding the files.
 
@@ -932,10 +937,12 @@ docker compose down
 ```
 
 `stop` leaves the container available to start again; `down` removes the
-Compose containers and network. Both retain the named `kronk-data` volume.
-Do not use `docker compose down --volumes` or `docker volume rm kronk-data`
-unless you intend to permanently delete models, configuration, and keys.
-Back up important data before any deliberate volume removal.
+Compose containers and network. Both retain the bind-mounted
+`~/.kronk/docker/kronk` directory, including when `down --volumes` is used.
+Deleting this host directory permanently deletes models, configuration, and
+keys. Back up important data before any deliberate removal. Old `kronk-data`
+named volumes are also retained and must not be removed until any migration
+has been verified.
 
 The `kronk-net` network is shared with the
 [observability stack](https://www.kronkai.com/manual#153-bundled-observability-stack)

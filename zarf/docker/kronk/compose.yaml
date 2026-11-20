@@ -19,9 +19,8 @@
 #   KRONK_DOWNLOAD_ENABLED  share models/libs with peer servers (default: false)
 #
 # All state (models, config, catalog, keys, libraries) lives in the single
-# `kronk-data` volume on /kronk. Do not split it into several volumes — see
-# the VOLUME note in the Dockerfile. The volume name matches the
-# `docker run -v kronk-data:/kronk` examples, so both share the same models.
+# ~/.kronk/docker/kronk bind mount on /kronk. Do not split it into several
+# mounts. Existing kronk-data named volumes are not migrated automatically.
 #
 # The healthcheck (curl /v1/liveness) is inherited from the image.
 #
@@ -30,6 +29,19 @@
 name: kronk
 
 services:
+  storage-init:
+    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-cpu
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        # Seed fresh storage with the image's libraries and model configuration.
+        if [ -z "$$(ls -A /storage)" ]; then cp -a /kronk/. /storage/; fi
+        chown 10001:10001 /storage
+    volumes:
+      - ${HOME:?HOME must be set}/.kronk/docker/kronk:/storage
+
   kronk:
     image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-cpu
     container_name: kronk
@@ -49,7 +61,10 @@ services:
       - "${KRONK_BIND_ADDR:-127.0.0.1}:11435:11435"
       - "${KRONK_BIND_ADDR:-127.0.0.1}:11445:11445"
     volumes:
-      - kronk-data:/kronk
+      - ${HOME:?HOME must be set}/.kronk/docker/kronk:/kronk
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
     networks:
       - kronk-net
 
@@ -62,7 +77,3 @@ networks:
   kronk-net:
     name: kronk-net
     driver: bridge
-
-volumes:
-  kronk-data:
-    name: kronk-data

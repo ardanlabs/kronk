@@ -176,7 +176,7 @@ TEMPO      := grafana/tempo:3.1.1
 LOKI       := grafana/loki:3.7.9
 ALLOY      := grafana/alloy:v1.21.2
 DOCLING    := quay.io/docling-project/docling-serve:v1.38.1
-POSTGRES   := postgres:16
+POSTGRES   := postgres:18
 TEMPORAL   := temporalio/server:1.32.2
 TEMPORAL_ADMIN := temporalio/admin-tools:1.32.2
 

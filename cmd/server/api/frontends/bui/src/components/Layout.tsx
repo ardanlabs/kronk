@@ -39,7 +39,6 @@ const menuStructure: MenuCategory[] = [
     items: [
       { page: 'chat', label: 'Chat' },
       { page: 'decision', label: 'Decision' },
-      { page: 'fine-tuning', label: 'Fine-tuning' },
       { page: 'vram-calculator', label: 'VRAM Calculator' },
       { page: 'translator', label: 'Translator' },
       { page: 'image-generator', label: 'Image Generator' },
@@ -112,6 +111,13 @@ const menuStructure: MenuCategory[] = [
         label: 'Libs',
         items: [{ page: 'malina-libs', label: 'Manage' }],
       },
+    ],
+  },
+  {
+    id: 'moxie',
+    label: 'Moxie',
+    items: [
+      { page: 'fine-tuning', label: 'Fine-Tuning' },
     ],
   },
   {
@@ -275,6 +281,14 @@ const categoryIcons: Record<string, JSX.Element> = {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <circle cx="8.5" cy="8.5" r="1.5" />
       <path d="M21 15l-5-5L5 21" />
+    </svg>
+  ),
+  moxie: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h4m4 0h10M3 12h10m4 0h4M3 18h4m4 0h10" />
+      <circle cx="9" cy="6" r="2" />
+      <circle cx="15" cy="12" r="2" />
+      <circle cx="9" cy="18" r="2" />
     </svg>
   ),
   apps: (
