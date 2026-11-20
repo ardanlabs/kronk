@@ -6,15 +6,15 @@
 # First startup or deleted containers require exporting the original passwords.
 # Empty Temporal schemas are initialized once; normal starts never upgrade them.
 
-tuning-up:
+moxie-up:
 	. .env 2>/dev/null || true && \
 	docker compose -f zarf/docker/compose.yaml up -d --wait docling temporal && docker compose -f zarf/docker/compose.yaml run --rm --no-deps moxie-schema && docker compose -f zarf/docker/compose.yaml run --rm --no-deps temporal-namespace
 
 # Stop without removing PostgreSQL history or Docling scratch files.
-tuning-down:
+moxie-down:
 	docker compose -f zarf/docker/compose.yaml stop docling temporal postgres
 
-tuning-logs:
+moxie-logs:
 	docker compose -f zarf/docker/compose.yaml logs -f docling temporal postgres
 
 # ==============================================================================
