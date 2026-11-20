@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { requestMessage, retryDelay, stepLabel, trainingPath } from '../contexts/FineTuningRunnerContext';
+import { requestMessage, stepLabel, trainingPath, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
 import { api, ApiError } from '../services/api';
 import type { TrainingRun } from '../types';
 import { active, Badge, datasetName, date, failedStep, PreparationRunView, Progress, records, remaining, reviewable, runKey, version } from './PreparationRuns';
@@ -47,31 +47,24 @@ export default function DatasetDashboard({ visible }: { visible: boolean }) {
   </div>;
 }
 
-// useLatestTrainings maps each dataset version to its newest training run, and keeps
-// them current while one is in progress.
+// Load training links once for each snapshot of the dashboard.
 function useLatestTrainings(visible: boolean, revision: unknown) {
   const [latest, setLatest] = useState<Map<string, TrainingRun>>(new Map());
   useEffect(() => {
     if (!visible) return;
     const controller = new AbortController();
     void (async () => {
-      while (!controller.signal.aborted) {
-        let running = true;
-        try {
-          const page = await api.trainingRuns('', controller.signal, '', { mode: 'training', pageSize: 50, order: 'newest' });
-          if (controller.signal.aborted) return;
-          const next = new Map<string, TrainingRun>();
-          for (const item of page.runs ?? []) {
-            const key = `${item.training_dataset_id}@${item.training_dataset_version}`;
-            if (item.training_dataset_id && !next.has(key)) next.set(key, item);
-          }
-          setLatest(next);
-          running = [...next.values()].some(active);
-        } catch {
-          // The link is secondary; keep the last answer and try again.
+      try {
+        const page = await api.trainingRuns('', controller.signal, '', { mode: 'training', pageSize: 50, order: 'newest' });
+        if (controller.signal.aborted) return;
+        const next = new Map<string, TrainingRun>();
+        for (const item of page.runs ?? []) {
+          const key = `${item.training_dataset_id}@${item.training_dataset_version}`;
+          if (item.training_dataset_id && !next.has(key)) next.set(key, item);
         }
-        if (!running) return;
-        await retryDelay(controller.signal);
+        setLatest(next);
+      } catch {
+        // Training links are secondary; keep the last answer until the next refresh.
       }
     })();
     return () => controller.abort();
@@ -80,6 +73,7 @@ function useLatestTrainings(visible: boolean, revision: unknown) {
 }
 
 function RunList({ visible }: { visible: boolean }) {
+  const { refreshRuns } = useFineTuningRunner();
   const [filter, setFilter] = useState('all');
   const [newestFirst, setNewestFirst] = useState(true);
   // tokens[i] is the page token for page i; page 0 has none.
@@ -88,35 +82,30 @@ function RunList({ visible }: { visible: boolean }) {
   const [list, setList] = useState<{ runs: TrainingRun[]; next: string } | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [loading, setLoading] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const shown = useRef(false);
   const statuses = filters.find(([key]) => key === filter)![2];
   const restart = () => { setTokens(['']); setPage(0); setList(null); };
 
-  // The shown page long-polls: the server answers when that page changes.
+  // Load once on entry, page/filter changes, or an explicit refresh. Never long-poll.
   useEffect(() => {
     if (!visible) return;
     const controller = new AbortController();
     void (async () => {
-      let revision = '';
       setError('');
-      while (!controller.signal.aborted) {
-        try {
-          const result = await api.trainingRuns(tokens[page], controller.signal, revision, { mode: 'preparation', statuses, pageSize: PAGE_SIZE, order: newestFirst ? 'newest' : 'oldest' });
-          if (controller.signal.aborted) return;
-          setError('');
-          if (result.revision !== revision) {
-            revision = result.revision;
-            setList({ runs: result.runs ?? [], next: result.next_page_token ?? '' });
-          }
-        } catch (err) {
-          if (controller.signal.aborted) return;
-          // A page token from before the list changed is rejected; start over from page 1.
-          if (err instanceof ApiError && err.status === 400 && page > 0) { restart(); return; }
-          setError(requestMessage(err, 'Could not load preparation runs.'));
-          revision = '';
-          await retryDelay(controller.signal);
-        }
+      setLoading(true);
+      try {
+        const result = await api.trainingRuns(tokens[page], controller.signal, '', { mode: 'preparation', statuses, pageSize: PAGE_SIZE, order: newestFirst ? 'newest' : 'oldest' });
+        if (controller.signal.aborted) return;
+        setList({ runs: result.runs ?? [], next: result.next_page_token ?? '' });
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        // A page token from before the list changed is rejected; start over from page 1.
+        if (err instanceof ApiError && err.status === 400 && page > 0) { restart(); return; }
+        setError(requestMessage(err, 'Could not load preparation runs.'));
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
     })();
     return () => controller.abort();
@@ -130,12 +119,13 @@ function RunList({ visible }: { visible: boolean }) {
 
   const rows = list?.runs ?? [];
   const first = page * PAGE_SIZE + 1;
-  const trainings = useLatestTrainings(visible, list);
+  const trainings = useLatestTrainings(visible && !!list, list);
+  const refresh = () => { setAttempt((value) => value + 1); refreshRuns(); };
 
   return <>
     <div className="page-header-with-action prep-heading">
       <div><h2 ref={heading} tabIndex={-1}>Dashboard</h2><p className="page-description">Each row is one run that turns documents into verified records for a dataset. Open a run to follow it or see its result.</p></div>
-      <div className="prep-actions"><Link className="btn btn-primary" to="/fine-tuning?view=prepare">+ New dataset</Link></div>
+      <div className="prep-actions"><button className="btn btn-secondary" type="button" disabled={loading} onClick={refresh}>{loading ? 'Refreshing…' : 'Refresh'}</button><Link className="btn btn-primary" to="/fine-tuning?view=prepare">+ New dataset</Link></div>
     </div>
     <div className="dash-filter">
       <label htmlFor="dash-filter">Sort by</label>
@@ -143,7 +133,7 @@ function RunList({ visible }: { visible: boolean }) {
         {filters.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
     </div>
-    {error && <div className="prep-load-error" role="alert"><span>Could not load preparation runs: {error} Retrying automatically.</span><button className="btn btn-secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Try again</button></div>}
+    {error && <div className="prep-load-error" role="alert"><span>Could not load preparation runs: {error} Select Refresh to try again.</span></div>}
     {!list && !error && <p className="prep-copy" role="status">Loading preparation runs…</p>}
     {list && <div className="catalog-table-wrap prep-table-wrap"><table className="catalog-table prep-table dash-table">
       <caption className="prep-sr-only">Dataset preparation, page {page + 1}</caption>
