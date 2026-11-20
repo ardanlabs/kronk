@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { useMatch } from 'react-router-dom';
+import { useMatch, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import type { PreparationOptions, TrainingOptions, TrainingRun, TrainingUpload } from '../types';
 
@@ -72,6 +72,7 @@ interface FineTuningRunnerValue {
   startDatasetTraining: (training: TrainingOptions, dataset: { id: string; version: number }) => Promise<TrainingRun | null>;
   startPreparations: (training: TrainingOptions, prepare: (item: SourceDocument) => PreparationOptions) => Promise<TrainingRun[]>;
   selectRun: (run: TrainingRun) => void;
+  refreshRuns: () => void;
 }
 
 const FineTuningRunnerContext = createContext<FineTuningRunnerValue | null>(null);
@@ -86,6 +87,9 @@ export function retryDelay(signal: AbortSignal, ms = 5000) {
 
 export function FineTuningRunnerProvider({ children }: { children: ReactNode }) {
   const onFineTuningPage = useMatch('/fine-tuning') !== null;
+  const [params] = useSearchParams();
+  const watchingRun = onFineTuningPage && !params.get('view') && params.get('workspace') !== 'live'
+    && !!params.get('run') && !!(params.get('preparation') || params.get('training'));
   const [documents, setDocuments] = useState<SourceDocument[]>([]);
   const documentsUploading = documents.some((item) => !item.upload && !item.error);
   const [submitting, setSubmitting] = useState(false);
@@ -94,6 +98,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const [error, setError] = useState('');
   const [adopting, setAdopting] = useState(true);
   const [adoptionError, setAdoptionError] = useState('');
+  const [refreshAttempt, setRefreshAttempt] = useState(0);
   const documentAborts = useRef(new Map<string, AbortController>());
   const submissionPending = useRef(false);
   const runSubmissionIDs = useRef<Record<string, string>>({});
@@ -108,37 +113,34 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
 
   // Discover in-progress runs when entering Fine-Tuning. Keep form/run state across
   // navigation, but do not make background requests while another page is open.
-  // Starting stays blocked until this answers, so it retries while the page is open.
+  // Starting stays blocked until this answers; a failed request needs manual refresh.
   useEffect(() => {
     if (!onFineTuningPage) return;
     const controller = new AbortController();
     setAdopting(true);
     setAdoptionError('');
     void (async () => {
-      while (!controller.signal.aborted) {
-        try {
-          const page = await api.trainingRuns('', controller.signal, '', { statuses: activeStatuses });
-          if (controller.signal.aborted) return;
-          const runs = page.runs ?? [];
-          const preparation = runs.find((run) => run.stages.some((stage) => stage.name === 'preparation'));
-          const training = runs.find((run) => !run.stages.some((stage) => stage.name === 'preparation'));
-          if (preparation) setPreparationRun((current) => current ?? preparation);
-          if (training) setTrainingRun((current) => current ?? training);
-          setAdoptionError('');
-          setAdopting(false);
-          return;
-        } catch (err) {
-          if (controller.signal.aborted) return;
-          setAdoptionError(requestMessage(err, 'Could not load runs in progress.'));
-          await retryDelay(controller.signal);
-        }
+      try {
+        const page = await api.trainingRuns('', controller.signal, '', { statuses: activeStatuses });
+        if (controller.signal.aborted) return;
+        const runs = page.runs ?? [];
+        const preparation = runs.find((run) => run.stages.some((stage) => stage.name === 'preparation'));
+        const training = runs.find((run) => !run.stages.some((stage) => stage.name === 'preparation'));
+        setPreparationRun(preparation ?? null);
+        setTrainingRun(training ?? null);
+        setAdoptionError('');
+        setAdopting(false);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setAdoptionError(requestMessage(err, 'Could not load runs in progress.'));
       }
     })();
     return () => controller.abort();
-  }, [onFineTuningPage]);
+  }, [onFineTuningPage, refreshAttempt]);
 
+  // Only a run's detail screen watches live progress, never the idle dashboard.
   useEffect(() => {
-    if (!onFineTuningPage) return;
+    if (!watchingRun) return;
     const identities: [string, string][] = JSON.parse(watchedRuns);
     if (identities.length === 0) return;
     const controller = new AbortController();
@@ -164,7 +166,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       }
     })();
     return () => controller.abort();
-  }, [onFineTuningPage, watchedRuns]);
+  }, [watchingRun, watchedRuns]);
 
   const selectRun = (run: TrainingRun) => {
     if (run.stages.some((stage) => stage.name === 'preparation')) {
@@ -292,7 +294,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
         completed: trainingJob.progress?.completed ?? 0, total: trainingJob.progress?.total ?? 0,
       } : null,
       addDocuments, removeDocument, cancelPreparation, startDatasetTraining, startPreparations,
-      selectRun,
+      selectRun, refreshRuns: () => setRefreshAttempt((value) => value + 1),
     }}>
       {children}
     </FineTuningRunnerContext.Provider>

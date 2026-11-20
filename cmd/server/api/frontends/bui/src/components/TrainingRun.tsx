@@ -186,7 +186,7 @@ export function TrainingSetup({ visible }: { visible: boolean }) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { models, loading: modelsLoading, loadModels } = useModelList();
-  const { submitting, error, trainingActivity, adopting, startDatasetTraining } = useFineTuningRunner();
+  const { submitting, error, trainingActivity, adopting, adoptionError, refreshRuns, startDatasetTraining } = useFineTuningRunner();
   const datasetID = params.get('dataset') ?? '';
   const version = Number(params.get('version'));
   const [dataset, setDataset] = useState<PreparationDataset | null>(null);
@@ -228,7 +228,8 @@ export function TrainingSetup({ visible }: { visible: boolean }) {
   if (!modelsLoading && !modelInstalled) issues.push({ message: `Install ${baseModelName} from the Catalog.`, link: <Link to="/catalog">Open the Catalog</Link> });
   if (invalidSetting) issues.push({ message: `Enter a positive ${invalidSetting[1].toLowerCase()}.` });
   if (trainingActivity?.path) issues.push({ message: 'Another training is already queued or running; one training runs at a time.', link: <Link to={trainingActivity.path}>Open it</Link> });
-  if (adopting) issues.push({ message: 'Checking for trainings in progress…' });
+  if (adoptionError) issues.push({ message: `Could not check for trainings in progress: ${adoptionError}`, link: <button className="prep-inline-link" type="button" onClick={refreshRuns}>Refresh</button> });
+  else if (adopting) issues.push({ message: 'Checking for trainings in progress…' });
   const ready = !issues.length && !submitting;
 
   const start = async (event: FormEvent<HTMLFormElement>) => {
