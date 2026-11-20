@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
-import { preparationSteps as steps, requestMessage as message, sentence, stepLabel } from '../contexts/FineTuningRunnerContext';
+import { preparationSteps as steps, requestMessage as message, sentence, stepLabel, trainingStepLabels } from '../contexts/FineTuningRunnerContext';
 import type { PreparationDataset, PreparationOptions, TrainingPreviewRecord, TrainingRun } from '../types';
 import { FieldLabel } from './ParamTooltips';
 import { DatasetTrainings, duration, setupPath, useDatasetTrainings } from './TrainingRun';
@@ -126,6 +126,36 @@ const stepCopy: Record<string, string> = {
   verify: 'Each record is being checked against its source. Records that fail are dropped.',
 };
 const progressUnits: Record<string, string> = { extract: 'pages read', generate: 'sections', verify: 'records checked' };
+
+// RunActivity records only updates observed on this screen, not a durable log.
+export function RunActivity({ run, now }: { run: TrainingRun; now: number }) {
+  const progress = run.progress?.stage === run.stage && run.progress?.step === run.step ? run.progress : undefined;
+  const label = run.stage === 'training' ? trainingStepLabels[run.step ?? ''] ?? 'Training' : stepLabel(run.step);
+  const text = run.status === 'running' ? progress?.message || (run.step === 'extract' ? 'Waiting for document extraction results. Page counts update after a conversion batch finishes.' : 'In progress.')
+    : statuses[display(run)].label;
+  const units = progress?.message === 'Generating additional records to reach the requested count' ? 'records' : progress?.message === 'Generating evaluation questions' ? 'evaluation questions' : progressUnits[progress?.step ?? ''] ?? 'work units completed';
+  const counts = progress && progress.completed > 0 && progress.message !== 'Source extraction complete' ? `${progress.completed}${progress.total > 0 ? ` of ${progress.total}` : ''} ${units}` : '';
+  const activity = `${run.state_stale ? 'Last known: ' : ''}${label}: ${text}${counts ? ` · ${counts}` : ''}`;
+  const stamp = progress?.updated_at || run.updated_at || run.started_at;
+  const [entries, setEntries] = useState<{ id: number; text: string; time: string }[]>([]);
+  useEffect(() => {
+    setEntries((current) => current[0]?.text === activity ? current : [{ id: (current[0]?.id ?? 0) + 1, text: activity, time: stamp }, ...current.slice(0, 29)]);
+  }, [activity, stamp]);
+  const stage = run.stages.find((item) => item.name === run.stage);
+  const step = stage?.steps.find((item) => item.name === run.step);
+  const heartbeat = step?.last_heartbeat_at;
+  const age = (value: string) => timeLeft(Math.max(0, now - Date.parse(value)));
+  return <section className="fine-panel run-activity" aria-label="Run activity">
+    <h3>Activity</h3>
+    <p className="prep-copy">{active(run) ? 'Checks for updates every 5 seconds while this run is open.' : 'This run has ended.'} Recent updates observed on this screen; not a complete log.</p>
+    {active(run) && <p className="run-activity-health">{heartbeat ? `Worker heartbeat ${age(heartbeat)} ago.` : 'No worker heartbeat reported yet.'} {progress?.updated_at ? `Last work update ${age(progress.updated_at)} ago.` : 'No work-update timestamp available.'} A heartbeat reports worker liveness, not completed work.</p>}
+    {run.step === 'extract' && active(run) && <p className="prep-copy">Document conversion can be quiet within a page batch. No page count or completion estimate is invented while waiting.</p>}
+    <ol className="run-activity-list" role="log" aria-label="Observed run activity" aria-live="polite" aria-relevant="additions">
+      {entries.map((entry) => <li key={entry.id}><time dateTime={entry.time} title={entry.time}>{new Date(entry.time).toLocaleTimeString()}</time><span>{entry.text}</span></li>)}
+    </ol>
+  </section>;
+}
+
 // pagesRead is how many pages extraction has read of a whole document, whose page count is not known until the end.
 export const pagesRead = (run: TrainingRun) => run.status === 'running' && run.step === 'extract' && run.progress?.step === 'extract' && !run.progress.total ? run.progress.completed : 0;
 // timeLeft writes a span with its units, such as "4 min 16 sec" or "1 hr 5 min".
@@ -380,6 +410,7 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
         </div>
         {confirmStop && active(run) && <div className="prep-confirm live-confirm" role="group" aria-label="Confirm cancellation"><p><strong>Stop this preparation?</strong> Stop means cancellation, not pause. This run cannot be resumed; saved dataset versions stay unchanged.</p><div className="prep-actions"><button className="btn btn-danger" disabled={!!busy} onClick={() => { setConfirmStop(false); void act('stop', () => api.stopTrainingRun(run.workflow_id, run.run_id), 'Stop requested. The run closes after it cancels.'); }}>Stop run</button><button className="btn btn-secondary" onClick={() => setConfirmStop(false)}>Keep this run</button></div></div>}
       </section>}
+      <RunActivity key={runKey(run)} run={run} now={now} />
       <DetailTabs tabs={tabs} shown={shownTab} onSelect={setDetailTab}>
           {shownTab === 'issues' && <RunIssues key={runKey(run)} run={run} issues={issues} />}
           {shownTab === 'dataset' && (!datasetID ? <p className="prep-copy">This run has no dataset.</p> : datasetError && !dataset ? <p className="prep-warning" role="alert">Could not load the dataset: {datasetError}</p> : !dataset ? <p className="prep-copy" role="status">Loading the dataset…</p> : <>

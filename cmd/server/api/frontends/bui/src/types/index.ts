@@ -1542,7 +1542,7 @@ export interface TrainingRun {
   updated_at?: string;
   closed_at?: string;
   stages: TrainingStage[];
-  progress?: { stage: string; step: string; completed: number; total: number; remaining_seconds?: number };
+  progress?: { stage: string; step: string; completed: number; total: number; remaining_seconds?: number; message?: string; updated_at?: string };
   checkpoint?: { id: string; name: string; stage: string; step?: string };
   preview?: { records: TrainingPreviewRecord[]; warnings?: string[] };
 }

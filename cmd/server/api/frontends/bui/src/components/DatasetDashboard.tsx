@@ -163,13 +163,13 @@ function RunList({ visible }: { visible: boolean }) {
 }
 
 function RunScreen({ workflowID, runID, visible }: { workflowID: string; runID: string; visible: boolean }) {
+  const { selectRun } = useFineTuningRunner();
   const [run, setRun] = useState<TrainingRun | null>(null);
   const [error, setError] = useState<{ text: string; missing: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
 
-  // A working run refreshes every second so its progress moves; other runs in progress
-  // every few seconds; finished runs load once.
+  // Active runs refresh five seconds after each response; finished runs load once.
   useEffect(() => {
     if (!visible) return;
     const controller = new AbortController();
@@ -179,8 +179,9 @@ function RunScreen({ workflowID, runID, visible }: { workflowID: string; runID: 
         const next = await api.trainingRun(workflowID, runID, controller.signal);
         if (controller.signal.aborted) return;
         setRun(next);
+        selectRun(next);
         setError(null);
-        if (active(next)) timer = setTimeout(load, ['running', 'recovering', 'queued'].includes(next.status) ? 1000 : 3000);
+        if (active(next)) timer = setTimeout(load, 5000);
       } catch (err) {
         if (controller.signal.aborted) return;
         const missing = err instanceof ApiError && err.status === 404;
@@ -190,7 +191,7 @@ function RunScreen({ workflowID, runID, visible }: { workflowID: string; runID: 
     };
     void load();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [visible, workflowID, runID, attempt]);
+  }, [visible, workflowID, runID, attempt, selectRun]);
 
   useEffect(() => {
     if (visible) (run ? document.getElementById('run-card-title') : heading.current)?.focus();

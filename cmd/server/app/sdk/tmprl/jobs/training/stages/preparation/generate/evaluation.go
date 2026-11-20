@@ -39,7 +39,7 @@ func EvaluationRecord(ctx context.Context, completer preparation.ModelCompleter,
 		return training.Record{}, providers.Completion{}, err
 	}
 	messages := []providers.Message{
-		{Role: "system", Content: preparationSystemPrompt},
+		{Role: "system", Content: preparation.DefaultInstructions},
 		{Role: "user", Content: prompt},
 		{Role: "assistant", Content: string(example)},
 		{Role: "user", Content: "That question is already in the dataset. Produce a genuinely different wording. Recast the grammatical construction rather than copying it. Use only the original evidence and locked target; the answer must not change. Do not include the answer in the question. Return only the replacement question in the required JSON schema."},

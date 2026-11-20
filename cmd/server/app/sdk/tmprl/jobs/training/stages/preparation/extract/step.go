@@ -38,7 +38,17 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		}
 		var progress func(int)
 		if input.Publish != nil {
-			progress = func(read int) { input.Publish(tmprl.Progress{Completed: read, Total: total}) }
+			message := "Reading source document"
+			switch p.Source.Format {
+			case ".pdf":
+				message = "Converting PDF pages; waiting for the next completed page batch"
+			case ".docx":
+				message = "Converting Word document; waiting for extraction results"
+			}
+			input.Publish(tmprl.Progress{Total: total, Message: message})
+			progress = func(read int) {
+				input.Publish(tmprl.Progress{Completed: read, Total: total, Message: "Page batch extracted; continuing document conversion"})
+			}
 		}
 		document, err := Run(ctx, p.Extractor, p.Source, p.OpenSource, input.Workspace, progress, pages)
 		if err != nil {

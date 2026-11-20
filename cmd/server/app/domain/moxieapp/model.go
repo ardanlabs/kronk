@@ -36,6 +36,31 @@ func (app Upload) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
+// PreparationInstructions carries the server's reusable preparation guidance.
+type PreparationInstructions struct {
+	Instructions string `json:"instructions"`
+}
+
+// Encode implements web.Encoder.
+func (app PreparationInstructions) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+// Decode implements web.Decoder and accepts one instructions object.
+func (app *PreparationInstructions) Decode(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(app); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return fmt.Errorf("request body must contain one instructions object")
+	}
+	return nil
+}
+
 // NewTraining submits one job using an uploaded document, a prepared JSONL
 // dataset, or a saved dataset version. The job owns model approval, dataset
 // readiness, defaults, and training policy.
@@ -504,11 +529,27 @@ type Step struct {
 
 // Progress contains backend-reported counts, not an estimated percentage.
 type Progress struct {
-	Stage            string `json:"stage"`
-	Step             string `json:"step"`
-	Completed        int    `json:"completed"`
-	Total            int    `json:"total"`
-	RemainingSeconds int64  `json:"remaining_seconds,omitzero"`
+	Stage            string    `json:"stage"`
+	Step             string    `json:"step"`
+	Completed        int       `json:"completed"`
+	Total            int       `json:"total"`
+	RemainingSeconds int64     `json:"remaining_seconds,omitzero"`
+	Message          string    `json:"message,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at,omitzero"`
+}
+
+// publicProgressMessage exposes only application-authored status text. Arbitrary
+// provider messages may contain document content or private infrastructure details.
+func publicProgressMessage(message string) string {
+	switch message {
+	case "Reading source document", "Converting PDF pages; waiting for the next completed page batch",
+		"Converting Word document; waiting for extraction results", "Page batch extracted; continuing document conversion",
+		"Source extraction complete", "Generated batch saved; verification still required",
+		"Generating training examples", "Generating additional records to reach the requested count",
+		"Generating evaluation questions", "Verifying prepared records":
+		return message
+	}
+	return ""
 }
 
 // Encode implements web.Encoder.
@@ -587,6 +628,7 @@ func toAppRun(run datasets.State) Run {
 		result.Progress = Progress{
 			Stage: string(run.Progress.Stage), Step: run.Progress.Step,
 			Completed: run.Progress.Completed, Total: run.Progress.Total,
+			Message: publicProgressMessage(run.Progress.Message), UpdatedAt: run.Progress.UpdatedAt,
 		}
 		result.Progress.RemainingSeconds = run.RemainingSeconds
 	}
