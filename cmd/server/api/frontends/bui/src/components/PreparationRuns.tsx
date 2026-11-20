@@ -149,7 +149,6 @@ export function RunActivity({ run, now }: { run: TrainingRun; now: number }) {
     <h3>Activity</h3>
     <p className="prep-copy">{active(run) ? 'Checks for updates every 5 seconds while this run is open.' : 'This run has ended.'} Recent updates observed on this screen; not a complete log.</p>
     {active(run) && <p className="run-activity-health">{heartbeat ? `Worker heartbeat ${age(heartbeat)} ago.` : 'No worker heartbeat reported yet.'} {progress?.updated_at ? `Last work update ${age(progress.updated_at)} ago.` : 'No work-update timestamp available.'} A heartbeat reports worker liveness, not completed work.</p>}
-    {run.step === 'extract' && active(run) && <p className="prep-copy">Document conversion can be quiet within a page batch. No page count or completion estimate is invented while waiting.</p>}
     <ol className="run-activity-list" role="log" aria-label="Observed run activity" aria-live="polite" aria-relevant="additions">
       {entries.map((entry) => <li key={entry.id}><time dateTime={entry.time} title={entry.time}>{new Date(entry.time).toLocaleTimeString()}</time><span>{entry.text}</span></li>)}
     </ol>
