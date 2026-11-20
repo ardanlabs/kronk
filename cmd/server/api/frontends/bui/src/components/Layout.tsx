@@ -347,7 +347,7 @@ export default function Layout({ children }: LayoutProps) {
   } = useFineTuningRunner();
   const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
-  const { authenticationRequired, logout } = useAuth();
+  const { authenticationRequired, moxieEnabled, logout } = useAuth();
 
   const [serverVersion, setServerVersion] = useState<string>();
 
@@ -711,7 +711,7 @@ export default function Layout({ children }: LayoutProps) {
             <h1>Model Server</h1>
           </Link>
         </div>
-        <nav>{menuStructure.map((category) => renderCategory(category))}</nav>
+        <nav>{menuStructure.filter((category) => category.id !== 'moxie' || moxieEnabled).map((category) => renderCategory(category))}</nav>
         {(showAutoTestIndicator || showDownloadIndicator || showAccuracyIndicator || showEfficiencyIndicator || showFineTuningIndicator || showSessionIndicator) && (
           <div className="sidebar-indicators">
             {fineTuningPreparation && (

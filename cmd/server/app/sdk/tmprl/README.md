@@ -23,8 +23,11 @@ job's public API.
   Jobs → foundation/Temporal. Training authorization, evaluation and adapter
   endpoints remain on the training path. Existing mixed run URLs are unchanged;
   HTTP neither constructs services nor coordinates the low-level runner.
-- `api/services/kronk/main.go` retains the existing `.moxie` startup and injects
-  uploads, datasets, and application jobs. No second storage root is initialized.
+- `moxierun/` owns on-demand initialization, shared initialization attempts,
+  clients, workers, and cleanup. It returns services without HTTP configuration.
+- `api/services/kronk/main.go` enables and configures the runtime, injects its
+  resolver into HTTP, and closes it before releasing borrowed model resources.
+  No second storage root is initialized.
 - Foundation still owns actual execution, retries, controls, recovery, and history.
   Application errors preserve backend causes without requiring HTTP to interpret
   Temporal service errors.
@@ -52,11 +55,14 @@ Initialization has two distinct owners:
    serializes competing initializers and records its SHA-256. Compatible starts
    skip installation/upgrades. Unknown, damaged or incompatible schemas fail
    without changing application tables. There are no separate maintenance targets.
-2. Normal application startup opens/checks SQL without creating tables, constructs
-   the existing file store and training job, then calls `datasets.Initialize`.
+2. On the first authorized fine-tuning request, `moxierun` opens/checks SQL without
+   creating tables, constructs the existing file store and training job, then
+   calls `datasets.Initialize`.
    That service verifies all snapshots, reconciles publication metadata and builds
-   the generated `.index.yaml` before any worker starts or routes accept requests.
-   Worker shutdown precedes Temporal-client and database closure.
+   the generated `.index.yaml` before any worker starts or the request proceeds.
+   Worker shutdown precedes Temporal-client and database closure. Failed
+   initialization is cleaned up and can be retried by a later request; ordinary
+   outages after initialization retain the established clients and workers.
 
 For cutover, stop old file-only writers first, retain backups of both Moxie files
 and PostgreSQL, run `tuning-up`, and configure SQL on every publisher using the same

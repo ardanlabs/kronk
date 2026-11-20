@@ -167,10 +167,24 @@ To enable it with an approved training model:
 kronk server start --moxie-enabled --moxie-models=ggml-org/gemma-3-1b-it-Q8_0
 ```
 
-The Temporal server must be reachable at `--moxie-address` and the configured
-namespace must exist. Moxie also requires a nonempty approved-model list. Missing
+Fine-tuning requires Temporal at `--moxie-address`, an existing configured
+namespace, and a nonempty approved-model list. Missing
 model downloads do not block startup or empty dashboard histories; the model
 must be downloaded before submitting training that uses it.
+
+Kronk can start before PostgreSQL or Temporal is available. Enabled Moxie connects
+and starts its workers on the first authorized fine-tuning API request. If this
+fails, the request returns `503 Service Unavailable`; a later request tries again.
+After starting the dependencies, select **Refresh** on the dashboard. Restarting
+Kronk is not required. Workers do not start until fine-tuning is first used.
+
+Once connected, Moxie retains its database pool and Temporal clients through
+ordinary service outages and reconnects when the services return. Requests that
+need an unavailable service can fail with `503`, or `504` if their deadline
+expires. Requests have a one-minute limit, or the caller's earlier deadline.
+The SQL-backed run list can still show saved observations while Temporal is
+unavailable. No failed submission is automatically replayed by an HTTP request.
+Other Kronk inference services remain available throughout these outages.
 
 The equivalent `model_config.yaml` settings are all under `kms.moxie`:
 
@@ -188,7 +202,7 @@ kms:
 
 An empty `root` uses `~/.moxie`. To use PostgreSQL, provide the connection URL
 through `KRONK_MOXIE_DATABASE_URL` and initialize its schema with
-`make tuning-up` from the repository before starting Kronk. Keep database
+`make moxie-up` from the repository before using fine-tuning. Keep database
 credentials out of shared command lines and configuration files.
 
 There is no separate `kms.training` configuration block or training enable

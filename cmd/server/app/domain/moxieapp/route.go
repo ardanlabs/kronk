@@ -1,6 +1,7 @@
 package moxieapp
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
@@ -8,6 +9,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxierun"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
@@ -19,32 +21,33 @@ type Config struct {
 	Datasets          *datasets.Service
 	AuthClient        *authclient.Client
 	AuthorizationMode auth.Mode
+	Resolve           func(context.Context) (moxierun.Services, error)
 }
 
 // Routes registers training upload, submission, and state APIs.
 func Routes(webApp *web.App, cfg Config) {
-	api := newApp(cfg)
 	access := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode)
-	if cfg.Uploads != nil {
-		webApp.HandlerFunc(http.MethodPost, "v1", "/training/uploads", api.upload, access.Administration())
+	if cfg.Uploads != nil || cfg.Resolve != nil {
+		webApp.HandlerFunc(http.MethodPost, "v1", "/training/uploads", cfg.readiness((*app).upload, nil), access.Administration())
 	}
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/datasets", api.listDatasets, access.Management(), api.requireDatasets)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/datasets", api.createDataset, access.Administration(), api.requireDatasets)
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/datasets/{dataset_id}", api.getDataset, access.Management(), api.requireDatasets)
-	webApp.HandlerFunc(http.MethodDelete, "v1", "/training/datasets/{dataset_id}/documents/{document_id}", api.removeDocument, access.Administration(), api.requireDatasets)
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/datasets/{dataset_id}/versions/{version}/download", api.downloadDatasetVersion, access.Management(), api.requireDatasets)
 
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs", api.create, access.Administration(), api.requireRuns)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preview/continue", api.continuePreview, access.Administration(), api.requireRuns)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preparation/pause", api.pausePreparation, access.Administration(), api.requireRuns)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preparation/continue", api.continuePreparation, access.Administration(), api.requireRuns)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/training/pause", api.pauseTraining, access.Administration(), api.requireJob)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/training/resume", api.resumeTraining, access.Administration(), api.requireJob)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/start-training", api.startTraining, access.Administration(), api.requireJob)
-	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/stop", api.stop, access.Administration(), api.requireRuns)
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs", api.query, access.Management(), api.requireCatalog)
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}", api.queryByID, access.Management(), api.requireCatalog)
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/evaluation", api.evaluation, access.Management(), api.requireJob)
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/adapter", api.adapter, access.Management(), api.requireJob)
-	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/dataset", api.dataset, access.Management(), api.requireRuns)
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/datasets", cfg.readiness((*app).listDatasets, (*app).requireDatasets), access.Management())
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/datasets", cfg.readiness((*app).createDataset, (*app).requireDatasets), access.Administration())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/datasets/{dataset_id}", cfg.readiness((*app).getDataset, (*app).requireDatasets), access.Management())
+	webApp.HandlerFunc(http.MethodDelete, "v1", "/training/datasets/{dataset_id}/documents/{document_id}", cfg.readiness((*app).removeDocument, (*app).requireDatasets), access.Administration())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/datasets/{dataset_id}/versions/{version}/download", cfg.readiness((*app).downloadDatasetVersion, (*app).requireDatasets), access.Management())
+
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs", cfg.readiness((*app).create, (*app).requireRuns), access.Administration())
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preview/continue", cfg.readiness((*app).continuePreview, (*app).requireRuns), access.Administration())
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preparation/pause", cfg.readiness((*app).pausePreparation, (*app).requireRuns), access.Administration())
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/preparation/continue", cfg.readiness((*app).continuePreparation, (*app).requireRuns), access.Administration())
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/training/pause", cfg.readiness((*app).pauseTraining, (*app).requireJob), access.Administration())
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/training/resume", cfg.readiness((*app).resumeTraining, (*app).requireJob), access.Administration())
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/start-training", cfg.readiness((*app).startTraining, (*app).requireJob), access.Administration())
+	webApp.HandlerFunc(http.MethodPost, "v1", "/training/runs/{workflow_id}/{run_id}/stop", cfg.readiness((*app).stop, (*app).requireRuns), access.Administration())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs", cfg.readiness((*app).query, (*app).requireCatalog), access.Management())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}", cfg.readiness((*app).queryByID, (*app).requireCatalog), access.Management())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/evaluation", cfg.readiness((*app).evaluation, (*app).requireJob), access.Management())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/adapter", cfg.readiness((*app).adapter, (*app).requireJob), access.Management())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/dataset", cfg.readiness((*app).dataset, (*app).requireRuns), access.Management())
 }

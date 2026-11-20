@@ -24,7 +24,7 @@ func newTransportAPI(t *testing.T, cfg mux.Config) *apitest.Test {
 	if cfg.InferenceTimeout == 0 {
 		cfg.InferenceTimeout = time.Minute
 	}
-	return apitest.NewWithHandler(mux.WebAPI(cfg, build.Routes(build.Config{})))
+	return apitest.NewWithHandler(mux.WebAPI(cfg, build.Routes()))
 }
 
 func jsonContentType(header http.Header, _ []byte) string {

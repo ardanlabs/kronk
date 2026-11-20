@@ -143,7 +143,8 @@ func registerAdminRoutes(app *web.App, cfg Config) {
 		if !authenticated {
 			status = http.StatusUnauthorized
 		}
-		writeJSON(w, status, sessionResponse{Authenticated: authenticated, AuthenticationRequired: cfg.AdminAuthEnabled})
+		moxieEnabled := cfg.MoxieJob != nil || cfg.MoxieUploads != nil || cfg.MoxieResolve != nil
+		writeJSON(w, status, sessionResponse{Authenticated: authenticated, AuthenticationRequired: cfg.AdminAuthEnabled, MoxieEnabled: authenticated && moxieEnabled})
 	})
 
 	app.RawHandlerFunc(http.MethodPost, "admin", "/api/logout", func(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +157,7 @@ func registerAdminRoutes(app *web.App, cfg Config) {
 type sessionResponse struct {
 	Authenticated          bool `json:"authenticated"`
 	AuthenticationRequired bool `json:"authentication_required"`
+	MoxieEnabled           bool `json:"moxie_enabled"`
 }
 
 func adminCookieMiddleware(next http.Handler) http.Handler {

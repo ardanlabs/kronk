@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxierun"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
 
@@ -42,6 +43,33 @@ func TestAdminRedirects(t *testing.T) {
 	app.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("unknown path status: got %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestAdminSessionMoxieEnabled(t *testing.T) {
+	for name, enabled := range map[string]bool{"disabled": false, "enabled": true} {
+		t.Run(name, func(t *testing.T) {
+			app := web.NewApp(func(context.Context, string, ...any) {})
+			var cfg Config
+			if enabled {
+				cfg.MoxieResolve = func(context.Context) (moxierun.Services, error) {
+					return moxierun.Services{}, context.DeadlineExceeded
+				}
+			}
+			registerAdminRoutes(app, cfg)
+			rr := httptest.NewRecorder()
+			app.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/admin/api/session", nil))
+			var response struct {
+				Authenticated bool  `json:"authenticated"`
+				MoxieEnabled  *bool `json:"moxie_enabled"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if rr.Code != http.StatusOK || !response.Authenticated || response.MoxieEnabled == nil || *response.MoxieEnabled != enabled {
+				t.Fatalf("session: got %d %s, want authenticated with moxie_enabled=%t", rr.Code, rr.Body, enabled)
+			}
+		})
 	}
 }
 
@@ -200,7 +228,10 @@ func TestAdminLoginSession(t *testing.T) {
 	digest := sha256.Sum256([]byte("secret"))
 	app := web.NewApp(func(context.Context, string, ...any) {})
 	registerAdminRoutes(app, Config{
-		AdminAuthEnabled:     true,
+		AdminAuthEnabled: true,
+		MoxieResolve: func(context.Context) (moxierun.Services, error) {
+			return moxierun.Services{}, context.DeadlineExceeded
+		},
 		AdminPasswordSHA256:  hex.EncodeToString(digest[:]),
 		AdminSessionDuration: 150 * time.Minute,
 		Security:             sec,
@@ -254,5 +285,12 @@ func TestAdminLoginSession(t *testing.T) {
 	handler.ServeHTTP(sessionRR, sessionReq)
 	if sessionRR.Code != http.StatusOK {
 		t.Fatalf("authenticated session status: got %d, want %d", sessionRR.Code, http.StatusOK)
+	}
+	var session sessionResponse
+	if err := json.Unmarshal(sessionRR.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+	if !session.MoxieEnabled {
+		t.Errorf("authenticated session: got %s, want moxie_enabled=true", sessionRR.Body)
 	}
 }

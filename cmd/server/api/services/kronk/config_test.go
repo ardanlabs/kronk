@@ -242,30 +242,8 @@ func TestMoxieConfig(t *testing.T) {
 	if cfg.Enabled || cfg.Address != "127.0.0.1:7233" || cfg.Namespace != "default" || len(cfg.Models) != 0 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	for _, test := range []struct {
-		name      string
-		enabled   bool
-		address   string
-		namespace string
-		models    []string
-		wantError bool
-	}{
-		{"disabled", false, "", "", nil, false},
-		{"enabled", true, "localhost:7233", "default", []string{"huggingface/model"}, false},
-		{"no-models", true, "localhost:7233", "default", nil, true},
-		{"no-address", true, "", "default", []string{"huggingface/model"}, true},
-		{"no-namespace", true, "localhost:7233", "", []string{"huggingface/model"}, true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			cfg := newConfig()
-			cfg.Moxie.Enabled = test.enabled
-			cfg.Moxie.Address = test.address
-			cfg.Moxie.Namespace = test.namespace
-			cfg.Moxie.Models = test.models
-			if err := validateMoxieConfig(cfg); (err != nil) != test.wantError {
-				t.Fatalf("validation: %v, want error %t", err, test.wantError)
-			}
-		})
+	if cfg.DatabaseURL != "" {
+		t.Fatal("SQL mode must remain explicit")
 	}
 }
 
@@ -389,53 +367,6 @@ func TestValidateAdminConfig(t *testing.T) {
 			err := validateAdminConfig(tt.admin, tt.web, tt.password, tt.host)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validateAdminConfig() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestMoxieRoot(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	root, err := moxieRoot("")
-	if err != nil || root != filepath.Join(os.Getenv("HOME"), ".moxie") {
-		t.Fatalf("existing default changed: %q %v", root, err)
-	}
-	custom := filepath.Join(t.TempDir(), "relocated")
-	if got, err := moxieRoot(custom); err != nil || got != custom {
-		t.Fatalf("explicit root: %q %v", got, err)
-	}
-	if _, err := moxieRoot(" "); err == nil {
-		t.Fatal("blank root accepted")
-	}
-	if newConfig().Moxie.DatabaseURL != "" {
-		t.Fatal("SQL mode must remain explicit")
-	}
-	if newConfig().Moxie.Enabled {
-		t.Fatal("Moxie must be disabled by default")
-	}
-}
-
-func TestStartMoxieOptIn(t *testing.T) {
-	for name, enabled := range map[string]bool{"disabled": false, "enabled": true} {
-		t.Run(name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "moxie")
-			// Disabled Moxie ignores invalid settings; enabled Moxie validates
-			// them before initializing storage or contacting any service.
-			cfg := newConfig()
-			cfg.Moxie.Enabled = enabled
-			cfg.Moxie.Root = root
-			cfg.Moxie.DatabaseURL = "invalid-database-url"
-			got, stop, err := startMoxie(t.Context(), nil, cfg, nil, nil)
-			if (err != nil) != enabled {
-				t.Fatalf("Moxie validation: got %v, want error=%t", err, enabled)
-			}
-			t.Cleanup(stop)
-			if got.Uploads != nil || got.Datasets != nil || got.Job != nil {
-				t.Fatalf("Moxie services: got %+v, want no resources", got)
-			}
-			_, err = os.Stat(root)
-			if !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("Moxie directory: got %v, want no directory", err)
 			}
 		})
 	}

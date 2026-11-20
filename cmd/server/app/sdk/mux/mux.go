@@ -3,6 +3,7 @@
 package mux
 
 import (
+	"context"
 	"embed"
 	"net/http"
 	"time"
@@ -12,7 +13,11 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxierun"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
@@ -73,6 +78,10 @@ type Config struct {
 	MalinaLibs           *malinalibs.Libs
 	MalinaModels         *malinamodels.Models
 	MalinaProgress       *malinaprogress.Broker
+	MoxieJob             *training.Job
+	MoxieUploads         *uploads.Store
+	MoxieDatasets        *datasets.Service
+	MoxieResolve         func(context.Context) (moxierun.Services, error)
 	DownloadEnabled      bool
 	AuthorizationMode    auth.Mode
 	AdminAuthEnabled     bool

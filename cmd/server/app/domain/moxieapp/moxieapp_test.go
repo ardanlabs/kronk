@@ -32,6 +32,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxierun"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
@@ -1711,7 +1712,12 @@ func TestReadStateRequiresAuthorization(t *testing.T) {
 						}
 					})
 					api := web.NewApp(log.Info, mid.Errors(log))
-					moxieapp.Routes(api, moxieapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthClient: client, AuthorizationMode: mode})
+					moxieapp.Routes(api, moxieapp.Config{Job: job, Uploads: store, Datasets: datasets.New(datasets.Config{Files: job.Datasets(), Job: job}), AuthClient: client, AuthorizationMode: mode,
+						Resolve: func(context.Context) (moxierun.Services, error) {
+							t.Error("unauthorized request attempted Moxie initialization")
+							return moxierun.Services{}, errors.New("dependency unavailable")
+						},
+					})
 					for _, method := range []string{http.MethodGet, http.MethodPost} {
 						path := statePath
 						if method == http.MethodPost {

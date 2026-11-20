@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"syscall"
 	"time"
 
@@ -21,19 +20,13 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
-	"github.com/ardanlabs/kronk/cmd/server/app/domain/moxieapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
-	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxierun"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -48,7 +41,6 @@ import (
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"go.temporal.io/sdk/client"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -616,16 +608,24 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	// -------------------------------------------------------------------------
 	// Moxie Fine-Tuning
 
-	moxieConfig, stopMoxie, err := startMoxie(ctx, log, cfg, models, p)
-	if err != nil {
-		log.Error(ctx, "startup", "status", "fine-tuning unavailable", "ERROR", err)
+	if cfg.Moxie.Enabled {
+		moxie := moxierun.New(ctx, log, moxierun.Config{
+			Address:      cfg.Moxie.Address,
+			Namespace:    cfg.Moxie.Namespace,
+			Models:       cfg.Moxie.Models,
+			Root:         cfg.Moxie.Root,
+			DatabaseURL:  cfg.Moxie.DatabaseURL,
+			ModelCatalog: models,
+			ModelPool:    p.Kronk,
+		})
+		defer moxie.Close()
+		cfgMux.MoxieResolve = moxie.Resolve
 	}
-	defer stopMoxie()
 
 	// -------------------------------------------------------------------------
 	// Bind Routes and Run
 
-	webAPI := mux.WebAPI(cfgMux, build.Routes(build.Config{Moxie: moxieConfig}), options...)
+	webAPI := mux.WebAPI(cfgMux, build.Routes(), options...)
 
 	api := http.Server{
 		Addr:         cfg.Web.APIHost,
@@ -716,143 +716,6 @@ func registerIMCSessionMetrics(p *pool.Pool) (func(), error) {
 
 		return details
 	})
-}
-
-// startMoxie starts fine-tuning: its storage, dataset catalog, Temporal
-// worker, and job catalog only when Moxie is enabled.
-// On failure it undoes what it started and returns
-// the error, so the server runs without fine-tuning. stop shuts down what
-// started, in reverse order.
-func startMoxie(ctx context.Context, log *logger.Logger, serverCfg config, catalog *models.Models, p *pool.Pool) (_ moxieapp.Config, stop func(), err error) {
-	cfg := serverCfg.Moxie
-
-	if !cfg.Enabled {
-		return moxieapp.Config{}, func() {}, nil
-	}
-
-	if err := validateMoxieConfig(serverCfg); err != nil {
-		return moxieapp.Config{}, func() {}, err
-	}
-
-	var cleanup []func()
-	stop = func() {
-		for _, c := range slices.Backward(cleanup) {
-			c()
-		}
-	}
-
-	defer func() {
-		if err != nil {
-			stop()
-			stop = func() {}
-		}
-	}()
-
-	root, err := moxieRoot(cfg.Root)
-	if err != nil {
-		return moxieapp.Config{}, stop, err
-	}
-
-	var database *moxiedb.DB
-	if cfg.DatabaseURL != "" {
-		database, err = moxiedb.Open(ctx, cfg.DatabaseURL)
-		if err != nil {
-			return moxieapp.Config{}, stop, fmt.Errorf("opening Moxie database: %w", err)
-		}
-		cleanup = append(cleanup, func() { database.Close() })
-		if err := database.CheckSchema(ctx); err != nil {
-			return moxieapp.Config{}, stop, fmt.Errorf("checking Moxie schema; run make tuning-up: %w", err)
-		}
-	}
-
-	store, err := uploads.New(uploads.Config{Root: filepath.Join(root, "uploads")})
-	if err != nil {
-		return moxieapp.Config{}, stop, fmt.Errorf("initializing training uploads: %w", err)
-	}
-
-	datasetFiles, err := datasetstore.New(datasetstore.Config{Root: filepath.Join(root, "preparation-datasets")})
-	if err != nil {
-		return moxieapp.Config{}, stop, fmt.Errorf("initializing preparation datasets: %w", err)
-	}
-
-	trainConfig := moxieapp.Config{Uploads: store}
-
-	approvedModels := make(map[string]string, len(cfg.Models))
-	for _, id := range cfg.Models {
-		approvedModels[id] = ""
-	}
-
-	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	temporalClient, err := client.DialContext(dialCtx, client.Options{HostPort: cfg.Address, Namespace: cfg.Namespace})
-	cancel()
-	if err != nil {
-		return moxieapp.Config{}, stop, fmt.Errorf("connecting training Temporal client: %w", err)
-	}
-
-	cleanup = append(cleanup, temporalClient.Close)
-
-	extractor, err := providers.NewDoclingExtractor("", nil)
-	if err != nil {
-		return moxieapp.Config{}, stop, fmt.Errorf("initializing document extractor: %w", err)
-	}
-
-	job, err := training.New(temporalClient, training.Config{
-		Uploads: store, Datasets: datasetFiles, MoxieDB: database, StorageRoot: root,
-		Namespace: cfg.Namespace,
-		Models:    approvedModels, ModelCatalog: catalog, ModelPool: p.Kronk, Extractor: extractor, Log: log.Info,
-	})
-	if err != nil {
-		return moxieapp.Config{}, stop, fmt.Errorf("initializing training job: %w", err)
-	}
-
-	trainingWorkers := job.Workers()
-	trainConfig.Job = job
-
-	trainConfig.Datasets = datasets.New(datasets.Config{
-		Files: datasetFiles, Job: trainConfig.Job, DB: database, Uploads: store, Namespace: cfg.Namespace,
-	})
-
-	// A damaged dataset version affects only that dataset.
-	if err := trainConfig.Datasets.Initialize(ctx); err != nil {
-		log.Error(ctx, "startup", "status", "initializing datasets", "ERROR", err)
-	}
-
-	for _, w := range trainingWorkers {
-		if err := w.Start(); err != nil {
-			return moxieapp.Config{}, stop, fmt.Errorf("starting training worker: %w", err)
-		}
-		cleanup = append(cleanup, w.Stop)
-	}
-
-	if len(trainingWorkers) > 0 {
-		cleanup = append(cleanup, func() {
-			// Running preparation units finish and save before the worker stops,
-			// within the 120 seconds SageMaker and Unsloth allow (the
-			// systemd/launchd stop limit is 150). Unsaved units repeat after restart.
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-			defer cancel()
-			log.Info(ctx, "shutdown", "status", "saving preparation work")
-			if err := trainConfig.Job.Jobs().Drain(ctx); err != nil {
-				log.Error(ctx, "shutdown", "status", "preparation save incomplete; unsaved units repeat after restart", "ERROR", err)
-			}
-		})
-		log.Info(ctx, "startup", "status", "training worker started", "namespace", cfg.Namespace)
-	}
-
-	if database != nil && trainConfig.Job != nil {
-		catalogCtx, cancelCatalog := context.WithCancel(ctx)
-		catalogDone := make(chan struct{})
-		go func() {
-			defer close(catalogDone)
-			trainConfig.Job.RunCatalog(catalogCtx)
-		}()
-		cleanup = append(cleanup, func() {
-			cancelCatalog()
-			<-catalogDone
-		})
-	}
-
-	return trainConfig, stop, nil
 }
 
 var logo = `
