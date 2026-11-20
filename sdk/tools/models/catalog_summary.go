@@ -239,7 +239,13 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 // identifier. Current decision models carry a standardized decision type;
 // published model names remain as a fallback for older GGUFs.
 func CapabilitiesForModel(metadata map[string]string, hasProjection bool, modelID string) CatalogCapabilities {
-	profile := arch.ResolveForModel(metadata, modelID)
+	return CapabilitiesForBundle(metadata, nil, hasProjection, modelID)
+}
+
+// CapabilitiesForBundle derives capabilities from the backbone and optional
+// projector metadata, distinguishing chat bundles from dedicated speech models.
+func CapabilitiesForBundle(metadata, projector map[string]string, hasProjection bool, modelID string) CatalogCapabilities {
+	profile := arch.ResolveBundle(metadata, projector, modelID)
 	caps := CatalogCapabilities{
 		Streaming: true,
 	}

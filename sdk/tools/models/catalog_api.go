@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
@@ -233,11 +234,13 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 			touched = true
 		}
 
-		// Enrichment normally touches entries missing these fields. Decision
-		// model names are also revisited so catalogs created before Decision
-		// was a capability are corrected from chat_completion.
+		// Revisit legacy chat classifications when the architecture/name now
+		// identifies a specialized purpose, or a decoder may identify speech.
+		inferred := CapabilitiesForModel(map[string]string{"general.architecture": entry.Architecture}, false, catalogEntryModelName(entry))
+		legacyChat := entry.Capabilities.Endpoint == "chat_completion" &&
+			(inferred.Endpoint != "chat_completion" || (entry.MMProj != "" && !entry.Capabilities.Tooling))
 		if needsEnrichmentMigration || touched || entry.ModelType == "" || entry.Capabilities.Endpoint == "" ||
-			(isDecisionCatalogEntry(entry) && !entry.Capabilities.Decision) {
+			legacyChat || (isDecisionCatalogEntry(entry) && !entry.Capabilities.Decision) {
 			updated, ok, err := m.enrichEntry(ctx, entry)
 			if err != nil {
 				log(ctx, "reconcile-catalog: enrich-entry", "id", canonical, "ERROR", err)
@@ -290,7 +293,10 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEn
 
 	profile := arch.Resolve(metadata)
 	modelType := profile.ParameterActivation()
-	capabilities := CapabilitiesForModel(metadata, entry.MMProj != "", catalogEntryModelName(entry))
+	capabilities, err := m.CatalogCapabilities(ctx, entry, metadata)
+	if err != nil {
+		return entry, false, err
+	}
 	mtpSource := MTPSourceFor(metadata, entry.MTP != "")
 	capabilities.MTP = !mtpSource.IsZero()
 
@@ -306,6 +312,34 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEn
 	entry.MTPSource = mtpSource
 
 	return entry, true, nil
+}
+
+// CatalogCapabilities derives capabilities from a catalog backbone's metadata,
+// consulting the projector only when a non-chat decoder could identify speech.
+func (m *Models) CatalogCapabilities(ctx context.Context, entry CatalogEntry, metadata map[string]string) (CatalogCapabilities, error) {
+	id := catalogEntryModelName(entry)
+	profile := arch.ResolveForModel(metadata, id)
+	if entry.MMProj == "" || profile.HasChatTemplate || profile.Purpose != modelprofile.PurposeGeneration || profile.Decision.Type != "" {
+		return CapabilitiesForModel(metadata, entry.MMProj != "", id), nil
+	}
+
+	data, err := gguf.ReadHeaderBytes(filepath.Join(m.modelsPath, entry.Provider, entry.Family, projOnDiskName(entry)))
+	if err != nil {
+		projector := entry
+		projector.Files = []string{entry.MMProjOrig}
+		if entry.MMProjOrig == "" {
+			projector.Files = []string{entry.MMProj}
+		}
+		data, err = m.GGUFHead(ctx, projector)
+		if err != nil {
+			return CatalogCapabilities{}, fmt.Errorf("catalog-capabilities: projector: %w", err)
+		}
+	}
+	projector, err := gguf.ParseMetadata(data)
+	if err != nil {
+		return CatalogCapabilities{}, fmt.Errorf("catalog-capabilities: parse-projector: %w", err)
+	}
+	return CapabilitiesForBundle(metadata, projector, true, id), nil
 }
 
 func isDecisionCatalogEntry(entry CatalogEntry) bool {

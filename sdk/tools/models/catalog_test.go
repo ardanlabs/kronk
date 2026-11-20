@@ -386,7 +386,7 @@ func TestReconcileCatalogMigratesEmbeddedMTP(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(modelFile), 0755); err != nil {
 		t.Fatalf("MkdirAll: unexpected error: %v", err)
 	}
-	writeCatalogTestGGUF(t, modelFile, map[string]uint32{"qwen35moe.nextn_predict_layers": 1})
+	writeCatalogTestGGUF(t, modelFile, map[string]any{"qwen35moe.nextn_predict_layers": uint32(1)})
 
 	log := func(context.Context, string, ...any) {}
 	if err := m.ReconcileCatalog(context.Background(), log); err != nil {
@@ -443,7 +443,76 @@ func TestReconcileCatalogRetriesIncompleteMigration(t *testing.T) {
 	}
 }
 
-func writeCatalogTestGGUF(t *testing.T, file string, metadata map[string]uint32) {
+func TestReconcileCatalogCorrectsLegacyChatPurposes(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		arch       string
+		template   string
+		decoder    bool
+		projection bool
+		want       string
+	}{
+		{"qwen3-reranker-Q8_0", "qwen3", "", false, false, "rerank"},
+		{"speech-Q8_0", "qwen3tts", "", false, false, "speech"},
+		{"music-Q8_0", "qwen3", "", true, true, "speech"},
+		{"omni-Q8_0", "qwen3", "chat template", true, true, "chat_completion"},
+		{"vision-Q8_0", "qwen4exp", "chat template", false, true, "chat_completion"},
+		{"legacy-vision-Q8_0", "qwen4exp", "", false, true, "chat_completion"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			basePath := t.TempDir()
+			m, err := NewWithPaths(basePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry := CatalogEntry{
+				Provider: "example", Family: "test-GGUF", Revision: "main",
+				Files: []string{test.name + ".gguf"}, MTPChecked: true,
+				ModelType: "Dense", Architecture: test.arch,
+				Capabilities: CatalogCapabilities{Endpoint: "chat_completion", Streaming: true},
+			}
+			folder := filepath.Join(m.modelsPath, entry.Provider, entry.Family)
+			if err := os.MkdirAll(folder, 0755); err != nil {
+				t.Fatal(err)
+			}
+			metadata := map[string]any{"general.architecture": test.arch}
+			if test.template != "" {
+				metadata["tokenizer.chat_template"] = test.template
+			}
+			writeCatalogTestGGUF(t, filepath.Join(folder, entry.Files[0]), metadata)
+			if test.projection {
+				entry.MMProj = projOnDiskName(entry)
+				writeCatalogTestGGUF(t, filepath.Join(folder, entry.MMProj), map[string]any{
+					"general.architecture": "clip", "clip.has_gen_audio_encoder": test.decoder,
+				})
+			}
+			file, err := defaults.CatalogFile("", basePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := "example/" + test.name
+			data, err := yaml.Marshal(Catalog{Version: catalogVersion, Models: map[string]CatalogEntry{id: entry}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.ReconcileCatalog(t.Context(), testLog); err != nil {
+				t.Fatal(err)
+			}
+			catalog, err := m.Catalog()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := catalog.Models[id].Capabilities.Endpoint; got != test.want {
+				t.Fatalf("endpoint: got %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func writeCatalogTestGGUF(t *testing.T, file string, metadata map[string]any) {
 	t.Helper()
 
 	var data bytes.Buffer
@@ -460,8 +529,21 @@ func writeCatalogTestGGUF(t *testing.T, file string, metadata map[string]uint32)
 		if _, err := data.WriteString(key); err != nil {
 			t.Fatalf("WriteString: unexpected error: %v", err)
 		}
-		if err := binary.Write(&data, binary.LittleEndian, gguf.MetadataValueTypeUInt32); err != nil {
+		valueType := gguf.MetadataValueTypeUInt32
+		switch value.(type) {
+		case string:
+			valueType = gguf.MetadataValueTypeString
+		case bool:
+			valueType = gguf.MetadataValueTypeBool
+		}
+		if err := binary.Write(&data, binary.LittleEndian, valueType); err != nil {
 			t.Fatalf("binary.Write value type: unexpected error: %v", err)
+		}
+		if text, ok := value.(string); ok {
+			if err := binary.Write(&data, binary.LittleEndian, uint64(len(text))); err != nil {
+				t.Fatal(err)
+			}
+			value = []byte(text)
 		}
 		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
 			t.Fatalf("binary.Write value: unexpected error: %v", err)

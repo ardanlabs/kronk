@@ -87,7 +87,12 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	detail.ParameterCount = models.ParameterCount(metadata)
 	detail.Parameters = models.ParametersLabel(metadata)
 	detail.Template = models.TemplateName(metadata)
-	detail.Capabilities = models.CapabilitiesForModel(metadata, entry.MMProj != "", id)
+	capabilities, err := a.models.CatalogCapabilities(ctx, entry, metadata)
+	if err != nil {
+		a.log.Info(ctx, "catalog-show", "id", id, "WARN", "no bundle capabilities", "ERROR", err)
+	} else {
+		detail.Capabilities = capabilities
+	}
 	detail.MTPSource = models.MTPSourceFor(metadata, entry.MTP != "")
 	detail.Capabilities.MTP = !detail.MTPSource.IsZero()
 
