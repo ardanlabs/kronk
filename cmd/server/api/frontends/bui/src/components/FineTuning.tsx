@@ -72,7 +72,10 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   const duplicates = new Set(uploaded.filter((item, index) => uploaded.findIndex((other) => other.upload!.sha256 === item.upload!.sha256) !== index).map((item) => item.key));
   const preparationModels = catalog.filter((model) => model.downloaded && model.validated
     && model.capabilities?.endpoint === 'chat_completion'
-    && !model.capabilities.images && !model.capabilities.audio && !model.capabilities.video
+    // Multimodal chat models also accept text. Standalone drafters and
+    // projectors are artifacts, even when their backbone is a chat architecture.
+    && !/(^|\/)(mtp-|mmproj-)/i.test(model.id)
+    && !model.architecture?.toLowerCase().includes('assistant')
     && !model.capabilities.embedding && !model.capabilities.rerank && !model.capabilities.decision);
   const preparationModelInstalled = preparationModels.some((model) => model.id === preparation.model);
   const positiveInteger = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
@@ -333,7 +336,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
               <p className="fine-panel-copy">Choose an installed model to generate and verify records.</p>
               {catalogError && <div className="fine-error" role="alert">Could not load preparation models: {catalogError} <button className="btn btn-secondary" type="button" onClick={() => setCatalogAttempt((attempt) => attempt + 1)}>Retry Catalog</button></div>}
               {catalogLoading && <p role="status">Loading preparation models…</p>}
-              {!catalogLoading && !catalogError && preparationModels.length === 0 && <p role="status">No installed, validated text-only chat models were reported by the Catalog. Image/audio/video, embedding, reranking, and decision models are excluded. Check model installation and validation in the Catalog, then select Refresh Catalog.</p>}
+              {!catalogLoading && !catalogError && preparationModels.length === 0 && <p role="status">No installed, validated chat models were reported by the Catalog. Multimodal chat models are supported; standalone MTP drafters, projectors, embedding, reranking, speech, and decision models are excluded. Whisper and Stable Diffusion models are not chat models. Check model installation and validation in the Catalog, then select Refresh Catalog.</p>}
               <div className="form-group" id="fine-model-section" tabIndex={-1}>
                 <FieldLabel htmlFor="fine-preparation-model" tooltipKey="fineTuningPreparationModel">Preparation model (required)</FieldLabel>
                 <div className="fine-model-picker">
@@ -343,7 +346,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
                 </select>
                 <button className="btn btn-secondary" type="button" disabled={busy || catalogLoading} onClick={() => setCatalogAttempt((attempt) => attempt + 1)}>Refresh Catalog</button>
                 </div>
-                <p id="fine-model-feedback" className="fine-action-note">{preparationModelInstalled ? 'This model generates records; it does not select the training base model.' : 'Select an installed, validated text-only chat model to enable Generate preview.'}</p>
+                <p id="fine-model-feedback" className="fine-action-note">{preparationModelInstalled ? 'This model generates records; it does not select the training base model.' : 'Select an installed, validated chat model to enable Generate preview. Multimodal chat models can also prepare text records.'}</p>
               </div>
               <div className="fine-preparation-options">
               <div className="form-group">
