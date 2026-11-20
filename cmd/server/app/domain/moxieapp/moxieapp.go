@@ -87,6 +87,28 @@ func (a *app) listDatasets(ctx context.Context, r *http.Request) web.Encoder {
 	return result
 }
 
+func (a *app) getPreparationInstructions(ctx context.Context, r *http.Request) web.Encoder {
+	web.GetWriter(ctx).Header().Set("Cache-Control", "no-store")
+	instructions, err := a.datasets.PreparationInstructions(ctx)
+	if err != nil {
+		return toAppError(err)
+	}
+	return PreparationInstructions{Instructions: instructions}
+}
+
+func (a *app) savePreparationInstructions(ctx context.Context, r *http.Request) web.Encoder {
+	r.Body = http.MaxBytesReader(web.GetWriter(ctx), r.Body, 16<<10)
+	var input PreparationInstructions
+	if err := web.Decode(r, &input); err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+	instructions, err := a.datasets.SavePreparationInstructions(ctx, input.Instructions)
+	if err != nil {
+		return toAppError(err)
+	}
+	return PreparationInstructions{Instructions: instructions}
+}
+
 func (a *app) createDataset(ctx context.Context, r *http.Request) web.Encoder {
 	r.Body = http.MaxBytesReader(web.GetWriter(ctx), r.Body, 4096)
 	var input NewDataset

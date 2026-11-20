@@ -32,6 +32,8 @@ func Routes(webApp *web.App, cfg Config) {
 	}
 
 	webApp.HandlerFunc(http.MethodGet, "v1", "/training/datasets", cfg.readiness((*app).listDatasets, (*app).requireDatasets), access.Management())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/preparation/instructions", cfg.readiness((*app).getPreparationInstructions, (*app).requireDatasets), access.Management())
+	webApp.HandlerFunc(http.MethodPut, "v1", "/training/preparation/instructions", cfg.readiness((*app).savePreparationInstructions, (*app).requireDatasets), access.Administration())
 	webApp.HandlerFunc(http.MethodPost, "v1", "/training/datasets", cfg.readiness((*app).createDataset, (*app).requireDatasets), access.Administration())
 	webApp.HandlerFunc(http.MethodGet, "v1", "/training/datasets/{dataset_id}", cfg.readiness((*app).getDataset, (*app).requireDatasets), access.Management())
 	webApp.HandlerFunc(http.MethodDelete, "v1", "/training/datasets/{dataset_id}/documents/{document_id}", cfg.readiness((*app).removeDocument, (*app).requireDatasets), access.Administration())

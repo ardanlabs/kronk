@@ -268,6 +268,12 @@ a.train-result-accepted, a.train-result-needs_improvement, a.train-result-not_co
 .run-evaluation-answer dl { display: grid; gap: 12px; margin: 8px 0 16px; font-size: 14px; }
 .run-evaluation-answer dt { font-size: 13px; font-weight: 600; color: var(--color-gray-700); }
 .run-evaluation-answer dd { margin: 4px 0 0; white-space: pre-wrap; }
+.run-activity h3 { margin: 0 0 12px; }
+.run-activity-health { color: var(--color-gray-700); font-size: 13px; margin: 16px 0; }
+.run-activity-list { list-style: none; padding: 0; margin: 16px 0 0; max-height: 280px; overflow-y: auto; }
+.run-activity-list li { display: flex; align-items: baseline; gap: 16px; padding: 12px 0; border-top: 1px solid var(--color-gray-200); font-size: 13px; overflow-wrap: anywhere; }
+.run-activity-list time { flex-shrink: 0; color: var(--color-gray-600); font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) {
   .run-issues-table :is(th, td) { padding: 9px 8px; font-size: 12px; }
+  .run-activity-list li { display: grid; gap: 4px; }
 }

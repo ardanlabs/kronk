@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { useMatch, useSearchParams } from 'react-router-dom';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useMatch } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
 import type { PreparationOptions, TrainingOptions, TrainingRun, TrainingUpload } from '../types';
 import { useAuth } from './AuthContext';
@@ -90,9 +90,6 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const { moxieEnabled } = useAuth();
   const matchesFineTuningPage = useMatch('/fine-tuning') !== null;
   const onFineTuningPage = moxieEnabled && matchesFineTuningPage;
-  const [params] = useSearchParams();
-  const watchingRun = onFineTuningPage && !params.get('view') && params.get('workspace') !== 'live'
-    && !!params.get('run') && !!(params.get('preparation') || params.get('training'));
   const [documents, setDocuments] = useState<SourceDocument[]>([]);
   const documentsUploading = documents.some((item) => !item.upload && !item.error);
   const [submitting, setSubmitting] = useState(false);
@@ -108,7 +105,6 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const activePreparation = preparationRun && !terminalStatuses.has(preparationRun.status) ? preparationRun : null;
   const activeTraining = trainingRun && !terminalStatuses.has(trainingRun.status) ? trainingRun : null;
   const trainingJob = activeTraining ?? (activePreparation?.stage === 'training' ? activePreparation : null);
-  const watchedRuns = JSON.stringify([activePreparation, activeTraining].filter((run) => run !== null).map((run) => [run.workflow_id, run.run_id]));
 
   useEffect(() => () => {
     for (const controller of documentAborts.current.values()) controller.abort();
@@ -141,43 +137,14 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     return () => controller.abort();
   }, [onFineTuningPage, refreshAttempt]);
 
-  // Only a run's detail screen watches live progress, never the idle dashboard.
-  useEffect(() => {
-    if (!watchingRun) return;
-    const identities: [string, string][] = JSON.parse(watchedRuns);
-    if (identities.length === 0) return;
-    const controller = new AbortController();
-    void (async () => {
-      let revision = '';
-      while (!controller.signal.aborted) {
-        try {
-          const page = await api.trainingRuns('', controller.signal, revision);
-          // List rows omit the preview and artifacts, so read each watched run in full.
-          const updates = await Promise.all(identities.map(([workflowID, runID]) => api.trainingRun(workflowID, runID, controller.signal)));
-          if (controller.signal.aborted) return;
-          const update = (selected: TrainingRun | null) => updates.find((run) => selected?.workflow_id === run.workflow_id && selected.run_id === run.run_id) ?? selected;
-          setPreparationRun(update);
-          setTrainingRun(update);
-                if (updates.every((run) => terminalStatuses.has(run.status))) return;
-          revision = page.revision;
-        } catch {
-          if (controller.signal.aborted) return;
-          // The server may be restarting; keep retrying until this run is no longer watched.
-          revision = '';
-          await retryDelay(controller.signal);
-        }
-      }
-    })();
-    return () => controller.abort();
-  }, [watchingRun, watchedRuns]);
-
-  const selectRun = (run: TrainingRun) => {
+  // Detail screens own refreshing; share their results without a second watcher.
+  const selectRun = useCallback((run: TrainingRun) => {
     if (run.stages.some((stage) => stage.name === 'preparation')) {
       setPreparationRun(run);
     } else {
       setTrainingRun(run);
     }
-  };
+  }, []);
 
   // cancelPreparation cancels uploads still in progress. Uploaded documents stay chosen.
   const cancelPreparation = () => {

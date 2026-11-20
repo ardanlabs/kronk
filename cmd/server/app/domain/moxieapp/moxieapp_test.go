@@ -80,6 +80,83 @@ func testAPI(t *testing.T, c *mocks.Client) (*web.App, *uploads.Store) {
 	return api, store
 }
 
+func TestPreparationInstructionsPersistAcrossReopen(t *testing.T) {
+	root := t.TempDir()
+	open := func() *web.App {
+		t.Helper()
+		files, err := datasetstore.New(datasetstore.Config{Root: root})
+		if err != nil {
+			t.Fatal(err)
+		}
+		log := logger.New(io.Discard, logger.LevelInfo, "instructions-test", nil)
+		api := web.NewApp(log.Info, mid.Errors(log))
+		moxieapp.Routes(api, moxieapp.Config{Datasets: datasets.New(datasets.Config{Files: files}), AuthorizationMode: auth.Open})
+		return api
+	}
+	api := open()
+	request := func(method, body string, wantStatus int) string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		r := httptest.NewRequestWithContext(t.Context(), method, "/v1/training/preparation/instructions", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		api.ServeHTTP(w, r)
+		if w.Code != wantStatus {
+			t.Fatalf("%s instructions: got %d, want %d: %s", method, w.Code, wantStatus, w.Body)
+		}
+		if wantStatus != http.StatusOK {
+			return ""
+		}
+		if method == http.MethodGet && w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("instructions response must not be cached")
+		}
+		var result moxieapp.PreparationInstructions
+		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		return result.Instructions
+	}
+	defaults := request(http.MethodGet, "", http.StatusOK)
+	if defaults != preparation.DefaultInstructions || !strings.Contains(defaults, "only the supplied evidence") {
+		t.Fatalf("default instructions: got %q", defaults)
+	}
+	const custom = "Write concise questions for experienced engineers."
+	if got := request(http.MethodPut, `{"instructions":"  `+custom+`  "}`, http.StatusOK); got != custom {
+		t.Fatalf("saved instructions: got %q, want %q", got, custom)
+	}
+	api = open()
+	if got := request(http.MethodGet, "", http.StatusOK); got != custom {
+		t.Fatalf("reopened instructions: got %q, want %q", got, custom)
+	}
+	for _, body := range []string{
+		`{"instructions":"other","unknown":true}`,
+		`{"instructions":"other"} {}`,
+		`{"instructions":42}`,
+		`{"instructions":"` + strings.Repeat("x", 2001) + `"}`,
+		strings.Repeat(" ", 16<<10) + `{}`,
+	} {
+		request(http.MethodPut, body, http.StatusBadRequest)
+		if got := request(http.MethodGet, "", http.StatusOK); got != custom {
+			t.Fatalf("invalid request changed instructions: got %q, want %q", got, custom)
+		}
+	}
+	unicode := strings.Repeat("🌊", 2000)
+	if got := request(http.MethodPut, `{"instructions":"`+unicode+`"}`, http.StatusOK); got != unicode {
+		t.Fatal("2000 Unicode characters should be accepted")
+	}
+	request(http.MethodPut, `{"instructions":"`+unicode+`🌊"}`, http.StatusBadRequest)
+	api = open()
+	if got := request(http.MethodGet, "", http.StatusOK); got != unicode {
+		t.Fatal("over-limit request changed saved Unicode instructions")
+	}
+	if got := request(http.MethodPut, `{"instructions":"  "}`, http.StatusOK); got != defaults {
+		t.Fatalf("restored instructions: got %q, want %q", got, defaults)
+	}
+	api = open()
+	if got := request(http.MethodGet, "", http.StatusOK); got != defaults {
+		t.Fatalf("reopened defaults: got %q, want %q", got, defaults)
+	}
+}
+
 func TestPreparationDatasetRoutes(t *testing.T) {
 	testPreparationDatasetRoutes(t, nil)
 }
@@ -578,7 +655,7 @@ func TestReadProgressEstimate(t *testing.T) {
 			start := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
 			e := tmprl.Execution{WorkflowID: "training-example", RunID: "run-2"}
 			state := tmprl.Run[training.Request, training.Artifacts]{Execution: e, Status: tmprl.StatusRunning, Stage: "preparation", Step: "generate"}
-			progress := tmprl.Progress{Execution: e, Stage: "preparation", Step: "generate", InitialCompleted: 12, Completed: 16, Total: 20, StartedAt: start, UpdatedAt: start.Add(2 * time.Minute)}
+			progress := tmprl.Progress{Execution: e, Stage: "preparation", Step: "generate", Message: "Generating training examples", InitialCompleted: 12, Completed: 16, Total: 20, StartedAt: start, UpdatedAt: start.Add(2 * time.Minute)}
 			if mode == "paused" {
 				state.Status = tmprl.StatusPaused
 			}
@@ -623,6 +700,9 @@ func TestReadProgressEstimate(t *testing.T) {
 			}
 			if got.Progress.RemainingSeconds != want {
 				t.Fatalf("remaining seconds = %d, want %d", got.Progress.RemainingSeconds, want)
+			}
+			if mode == "running" && (got.Progress.Message != "Generating training examples" || !got.Progress.UpdatedAt.Equal(start.Add(2*time.Minute))) {
+				t.Fatalf("public activity message and timestamp: %+v", got.Progress)
 			}
 		})
 	}

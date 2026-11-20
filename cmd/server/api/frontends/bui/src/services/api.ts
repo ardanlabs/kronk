@@ -1288,6 +1288,13 @@ class ApiService {
 
   // ── Training app ──
 
+  async preparationInstructions(signal?: AbortSignal): Promise<{ instructions: string }> {
+    return this.request('/training/preparation/instructions', { signal, cache: 'no-store' });
+  }
+
+  async savePreparationInstructions(instructions: string): Promise<{ instructions: string }> {
+    return this.request('/training/preparation/instructions', { method: 'PUT', body: JSON.stringify({ instructions }) });
+  }
 
   async createPreparationDataset(name: string): Promise<PreparationDataset> {
     return this.request('/training/datasets', { method: 'POST', body: JSON.stringify({ name }) });

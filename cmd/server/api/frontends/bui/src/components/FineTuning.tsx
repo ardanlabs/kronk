@@ -50,6 +50,12 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState('');
   const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [savedInstructions, setSavedInstructions] = useState<string | null>(null);
+  const [instructionsLoading, setInstructionsLoading] = useState(true);
+  const [instructionsSaving, setInstructionsSaving] = useState(false);
+  const [instructionsError, setInstructionsError] = useState('');
+  const [instructionsNotice, setInstructionsNotice] = useState('');
+  const [instructionsAttempt, setInstructionsAttempt] = useState(0);
   // Add documents opens this form for one existing dataset; otherwise it creates a new one.
   const [selectedDataset, setSelectedDataset] = useState<PreparationDataset | null>(null);
   const [datasetName, setDatasetName] = useState('');
@@ -78,6 +84,8 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     && !model.architecture?.toLowerCase().includes('assistant')
     && !model.capabilities.embedding && !model.capabilities.rerank && !model.capabilities.decision);
   const preparationModelInstalled = preparationModels.some((model) => model.id === preparation.model);
+  const instructionsDirty = preparation.instructions.trim() !== savedInstructions;
+  const instructionsTooLong = Array.from(preparation.instructions.trim()).length > 2000;
   const positiveInteger = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
   const capError = limitExamples && !positiveInteger(maxQuestions) ? 'Enter a positive whole number, or choose Unlimited.' : '';
   const rangeErrors = (key: string) => {
@@ -92,8 +100,8 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     const index = documents.indexOf(item);
     return [errors.start && { message: `${item.file.name}: ${errors.start}`, field: `fine-page-start-${index}` }, errors.end && { message: `${item.file.name}: ${errors.end}`, field: `fine-page-end-${index}` }].filter((issue) => !!issue);
   });
-  const settingsValid = !capError && !pageIssues.length;
-  const ready = uploaded.length > 0 && !documentsUploading && !uploadFailed.length && !duplicates.size && settingsValid && !catalogLoading && !catalogError && preparationModelInstalled && !datasetLoading && !datasetError && !creationUncertain && (datasetID ? selectedDataset?.id === datasetID : !!datasetName.trim());
+  const settingsValid = !capError && !pageIssues.length && !instructionsTooLong;
+  const ready = uploaded.length > 0 && !documentsUploading && !uploadFailed.length && !duplicates.size && settingsValid && !catalogLoading && !catalogError && preparationModelInstalled && !datasetLoading && !datasetError && !creationUncertain && !instructionsLoading && !instructionsSaving && savedInstructions !== null && (datasetID ? selectedDataset?.id === datasetID : !!datasetName.trim());
 
   const uploadIDs = uploaded.map((item) => item.upload!.id).join();
   useEffect(() => {
@@ -124,6 +132,39 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     return () => { cancelled = true; };
   }, [catalogAttempt]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setInstructionsLoading(true);
+    setInstructionsError('');
+    api.preparationInstructions(controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setPreparation((current) => ({ ...current, instructions: result.instructions }));
+        setSavedInstructions(result.instructions);
+        setInstructionsNotice('Current instructions loaded from the server.');
+      })
+      .catch((err) => { if (!controller.signal.aborted) setInstructionsError(requestMessage(err, 'Could not load preparation instructions.')); })
+      .finally(() => { if (!controller.signal.aborted) setInstructionsLoading(false); });
+    return () => controller.abort();
+  }, [instructionsAttempt]);
+
+  const saveInstructions = async (): Promise<string | null> => {
+    setInstructionsSaving(true);
+    setInstructionsError('');
+    try {
+      const result = await api.savePreparationInstructions(preparation.instructions);
+      setPreparation((current) => ({ ...current, instructions: result.instructions }));
+      setSavedInstructions(result.instructions);
+      setInstructionsNotice('Saved on the server.');
+      return result.instructions;
+    } catch (err) {
+      setInstructionsError(requestMessage(err, 'Could not save preparation instructions.'));
+      return null;
+    } finally {
+      setInstructionsSaving(false);
+    }
+  };
+
   const readinessIssues: { message: string; field?: string }[] = [];
   if (documentsUploading) readinessIssues.push({ message: 'Wait for the document uploads.', field: 'fine-source' });
   else if (!uploaded.length) readinessIssues.push({ message: 'Choose at least one source document.', field: 'fine-source' });
@@ -135,6 +176,9 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   if (catalogLoading) readinessIssues.push({ message: 'Wait for preparation models to load.' });
   else if (catalogError || !preparationModelInstalled) readinessIssues.push({ message: catalogError ? 'Retry the preparation model catalog.' : 'Select a preparation model.', field: 'fine-model-section' });
   if (capError) readinessIssues.push({ message: capError, field: 'fine-max-questions' });
+  if (instructionsLoading || instructionsSaving) readinessIssues.push({ message: 'Wait for preparation instructions to finish loading or saving.' });
+  else if (savedInstructions === null) readinessIssues.push({ message: 'Retry loading preparation instructions.', field: 'fine-preparation-instructions' });
+  if (instructionsTooLong) readinessIssues.push({ message: 'Keep preparation instructions within 2000 characters.', field: 'fine-preparation-instructions' });
   readinessIssues.push(...pageIssues);
   if (busy) readinessIssues.push({ message: 'Wait for the current operation to finish.' });
   const previews = uploaded.length > 1 ? `${uploaded.length} previews` : 'preview';
@@ -151,6 +195,12 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     datasetPending.current = true;
     setDatasetBusy(true);
     try {
+      let instructions = preparation.instructions;
+      if (instructionsDirty) {
+        const saved = await saveInstructions();
+        if (saved === null) return;
+        instructions = saved;
+      }
       // One destination serves every document. It is created once, even across retries.
       const ids = uploaded.map((item) => item.upload!.id);
       let destination = selectedDataset;
@@ -179,7 +229,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
       const runs = await startPreparations(DEFAULT_TRAINING_OPTIONS, (item) => {
         const range = ranges[item.key];
         return {
-          ...preparation, target_dataset_id: target.id, base_version: target.version,
+          ...preparation, instructions, target_dataset_id: target.id, base_version: target.version,
           max_questions: limitExamples ? Number(maxQuestions) : 0,
           ...(item.upload!.format === '.pdf' && range?.use ? { page_start: Number(range.start), page_end: Number(range.end) } : {}),
         };
@@ -373,20 +423,24 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
                 </select>
                 {limitExamples && <>
                   <FieldLabel htmlFor="fine-max-questions" tooltipKey="fineTuningMaxQuestions">Requested records</FieldLabel>
-                  <input id="fine-max-questions" className="form-input" type="number" min={1} step={1} required value={maxQuestions} disabled={busy} aria-invalid={!!capError} aria-describedby={`fine-cap-help${capError ? ' fine-cap-error' : ''}`} onChange={(event) => setMaxQuestions(event.target.value)} />
+                  <input id="fine-max-questions" className="form-input" type="number" autoComplete="off" data-lpignore="true" min={1} step={1} required value={maxQuestions} disabled={busy} aria-invalid={!!capError} aria-describedby={`fine-cap-help${capError ? ' fine-cap-error' : ''}`} onChange={(event) => setMaxQuestions(event.target.value)} />
                   {capError && <p id="fine-cap-error" className="fine-error">{capError}</p>}
                 </>}
                 <p id="fine-cap-help" className="fine-action-note">Counts verified records from each document, including reviewed records and evaluation questions. Preparation makes additional passes to reach your count and replaces rejected candidates. A passage can supply more than three records, including different questions about supported facts. If three passes add no verified records, preparation saves the available records with a warning instead of failing for a shortfall. Unlimited makes one pass.</p>
-                <details className="fine-recipe-details"><summary>What makes a dataset ready for training?</summary><p>Training needs at least 20 training records. Kronk also adds evaluation questions that check the trained model against the base model: test questions for 5% of the training records (16 to 128) and half as many validation questions (at least 8). Evaluation questions count toward the target, so a new dataset needs a target of at least 44 to get both; with less room it trains without that check. Preparation does not start training.</p></details>
+                <p className="fine-action-note">Training needs at least 20 training records. Kronk also adds evaluation questions that check the trained model against the base model: test questions for 5% of the training records (16 to 128) and half as many validation questions (at least 8). Evaluation questions count toward the target, so a new dataset needs a target of at least 44 to get both; with less room it trains without that check. Preparation does not start training.</p>
               </div>
 
-              <details className="fine-recipe-details">
-                <summary>Preparation instructions (optional)</summary>
-                <div className="form-group">
-                  <FieldLabel htmlFor="fine-preparation-instructions" tooltipKey="fineTuningDatasetInstructions">Instructions</FieldLabel>
-                  <textarea id="fine-preparation-instructions" className="form-input" rows={4} value={preparation.instructions} disabled={busy} onChange={(event) => setPreparation((current) => ({ ...current, instructions: event.target.value }))} />
+              <div className="form-group fine-preparation-instructions">
+                <FieldLabel htmlFor="fine-preparation-instructions" tooltipKey="fineTuningDatasetInstructions">Preparation instructions</FieldLabel>
+                <textarea id="fine-preparation-instructions" className="form-input" rows={7} value={preparation.instructions} disabled={busy || instructionsLoading || instructionsSaving || savedInstructions === null} aria-describedby="fine-instructions-help fine-instructions-status" aria-invalid={instructionsTooLong} onChange={(event) => setPreparation((current) => ({ ...current, instructions: event.target.value }))} />
+                <p id="fine-instructions-help" className="fine-action-note">These instructions guide generation and verification; source-grounding and JSON rules remain enforced. Saved instructions are shared across browsers using this server, not stored in your browser. Each run retains its own copy. Clear and save to restore the built-in instructions.</p>
+                <div className="fine-actions">
+                  <button className="btn btn-secondary" type="button" disabled={busy || instructionsLoading || instructionsSaving || savedInstructions === null || !instructionsDirty || instructionsTooLong} onClick={() => void saveInstructions()}>{instructionsSaving ? 'Saving…' : 'Save instructions'}</button>
+                  <span id="fine-instructions-status" className="fine-action-note" role="status">{instructionsLoading ? 'Loading instructions…' : instructionsDirty && savedInstructions !== null ? 'Unsaved changes; generating a preview saves them first.' : instructionsNotice}</span>
                 </div>
-              </details>
+                {instructionsTooLong && <p className="fine-error">Preparation instructions must not exceed 2000 characters.</p>}
+                {instructionsError && <div className="fine-error" role="alert">{instructionsError} {savedInstructions === null && <button className="btn btn-secondary" type="button" disabled={instructionsLoading} onClick={() => setInstructionsAttempt((attempt) => attempt + 1)}>Retry instructions</button>}</div>}
+              </div>
             </section>
 
           <section className="fine-panel fine-preview-readiness" id="fine-preview-readiness" tabIndex={-1} aria-label="Preview readiness">

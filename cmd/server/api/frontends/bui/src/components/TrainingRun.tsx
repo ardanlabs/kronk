@@ -5,7 +5,7 @@ import { FINE_TUNING_MODEL_ID, DEFAULT_TRAINING_OPTIONS, requestMessage, retryDe
 import { useModelList } from '../contexts/ModelListContext';
 import type { PreparationDataset, TrainingOptions, TrainingRun as Run } from '../types';
 import { FieldLabel } from './ParamTooltips';
-import { active, Badge, date, DetailTabs, failedStep, records, runKey, stepGlyphs, stepStateLabels, timeLeft, useNow, type StepState } from './PreparationRuns';
+import { active, Badge, date, DetailTabs, failedStep, records, RunActivity, runKey, stepGlyphs, stepStateLabels, timeLeft, useNow, type StepState } from './PreparationRuns';
 import { EvaluationChecks, failureText, notAccepted, runIssues, RunIssues, useEvaluation } from './RunIssues';
 
 // Training runs start from a saved dataset version and belong to that dataset: the
@@ -296,6 +296,7 @@ export function TrainingSetup({ visible }: { visible: boolean }) {
 
 // TrainingRunScreen is one training run's page: live progress, then its result.
 export function TrainingRunScreen({ workflowID, runID, visible }: { workflowID: string; runID: string; visible: boolean }) {
+  const { selectRun } = useFineTuningRunner();
   const [run, setRun] = useState<Run | null>(null);
   const [error, setError] = useState<{ text: string; missing: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -311,8 +312,9 @@ export function TrainingRunScreen({ workflowID, runID, visible }: { workflowID: 
         const next = await api.trainingRun(workflowID, runID, controller.signal);
         if (controller.signal.aborted) return;
         setRun(next);
+        selectRun(next);
         setError(null);
-        if (active(next)) timer = setTimeout(load, next.status === 'running' ? 1000 : 3000);
+        if (active(next)) timer = setTimeout(load, 5000);
       } catch (err) {
         if (controller.signal.aborted) return;
         const missing = err instanceof ApiError && err.status === 404;
@@ -322,7 +324,7 @@ export function TrainingRunScreen({ workflowID, runID, visible }: { workflowID: 
     };
     void load();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [visible, workflowID, runID, attempt]);
+  }, [visible, workflowID, runID, attempt, selectRun]);
 
   // Back goes to the dataset's Training runs tab, on its newest preparation run's page.
   const datasetID = run?.training_dataset_id;
@@ -507,6 +509,7 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
     {active(run) && notice && <p className="prep-warning" role="status">{notice}</p>}
     {active(run) && actionError && <p className="fine-error" role="alert">{actionError}</p>}
     {card}
+    <RunActivity key={runKey(run)} run={run} now={now} />
     <DetailTabs tabs={tabs} shown={shownTab} onSelect={setDetailTab}>
       {shownTab === 'issues' && <RunIssues key={runKey(run)} run={run} issues={issues} evaluation={evaluation} />}
       {shownTab === 'evaluation' && <EvaluationResults evaluation={evaluation} />}

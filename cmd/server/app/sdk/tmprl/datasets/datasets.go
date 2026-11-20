@@ -17,6 +17,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
@@ -55,6 +56,31 @@ func New(cfg Config) *Service {
 		namespace = cfg.Job.Namespace()
 	}
 	return &Service{files: cfg.Files, job: cfg.Job, db: cfg.DB, uploads: cfg.Uploads, namespace: cmp.Or(namespace, "default")}
+}
+
+// PreparationInstructions returns saved server-wide guidance or the built-in default.
+func (s *Service) PreparationInstructions(ctx context.Context) (string, error) {
+	if s.files == nil {
+		return "", training.ErrUnavailable
+	}
+	instructions, err := s.files.PreparationInstructions(ctx)
+	if err != nil {
+		return "", err
+	}
+	return cmp.Or(instructions, preparation.DefaultInstructions), nil
+}
+
+// SavePreparationInstructions remembers guidance for future forms. Clearing it
+// restores the built-in default; submitted runs keep their own instruction copy.
+func (s *Service) SavePreparationInstructions(ctx context.Context, instructions string) (string, error) {
+	if s.files == nil {
+		return "", training.ErrUnavailable
+	}
+	instructions = cmp.Or(strings.TrimSpace(instructions), preparation.DefaultInstructions)
+	if err := s.files.SavePreparationInstructions(ctx, instructions); err != nil {
+		return "", err
+	}
+	return instructions, nil
 }
 
 // Create preserves file-only callers and coordinates a durable create intent in SQL mode.

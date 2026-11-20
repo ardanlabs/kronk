@@ -8793,6 +8793,10 @@ button.autotest-detail-log-header:focus-visible {
 }
 .fine-preparation-options .form-group { min-width: 0; margin-bottom: 12px; }
 .fine-preparation-options .fine-preview-count > select { max-width: none; }
+.fine-preparation-settings #fine-cap-help,
+.fine-preparation-settings #fine-cap-help + .fine-action-note,
+.fine-preparation-instructions > .fine-actions { margin-top: 16px; }
+.fine-preparation-instructions { margin-top: 20px; }
 .fine-source-scope { border-top: 1px solid var(--color-gray-200); padding-top: 16px; margin-top: 16px; }
 /* One card per source document: its file and its pages share one region. */
 .fine-doc-list { display: grid; gap: 10px; margin: 0 0 12px; padding: 0; list-style: none; }
