@@ -252,6 +252,13 @@ The repository includes a Docker Compose stack containing Grafana, Prometheus,
 Tempo, Loki, and Alloy. It provisions the data sources and a Kronk dashboard
 without manual Grafana setup.
 
+Runtime data persists under `~/.kronk/docker/`, in the `grafana`, `prometheus`,
+`tempo`, `loki`, and `alloy` subdirectories. Startup prepares directory ownership
+for the containers' users. Configuration and dashboards remain read-only mounts
+from `zarf/docker/`. Stopping or removing containers does not delete host data.
+Existing container data and named volumes are not migrated automatically; back
+them up and copy required history before switching to these directories.
+
 This is a trusted-development stack: Grafana enables anonymous Admin access and
 publishes port `3100` without a loopback-only binding. Restrict published ports
 and configure authentication before allowing access from other machines. Actual

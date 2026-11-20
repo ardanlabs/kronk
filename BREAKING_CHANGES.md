@@ -11,6 +11,8 @@
   - [SWA Cache Default and MTP Physical Batches](#v1333-swa-cache-default-and-mtp-physical-batches)
   - [Multi-GPU AutoTune Batch Default](#v1333-multi-gpu-autotune-batch-default)
   - [Inference Metrics](#v1333-inference-metrics)
+  - [Docker Runtime Storage](#v1333-docker-runtime-storage)
+  - [Development PostgreSQL 18](#v1333-development-postgresql-18)
   - [Moxie Startup Opt-In](#v1333-moxie-startup-opt-in)
   - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
   - [Internal Parser Packages](#v1333-internal-parser-packages)
@@ -235,6 +237,63 @@ argument, the error class: `ObserveChatRequestDuration(modelID, "", duration)`
 for success, or a low-cardinality error class for failure. SDK/model-server
 inference paths supply this automatically. See Chapter 15 for the pinned
 convention revision, measurement populations, and query examples.
+
+### v1.33.3: Docker Runtime Storage
+
+The supporting-service and Kronk Compose stacks now bind runtime data beneath
+`$HOME/.kronk/docker/`, one directory per service. Configuration, dashboards, and
+SQL migrations remain read-only mounts from the checkout. `HOME` must be set.
+Startup creates the data directories and sets their container-user ownership.
+Fresh Kronk storage is seeded with the image's libraries and model configuration;
+nonempty Kronk storage is not overwritten. Existing storage is not migrated.
+
+Before starting the updated stacks, stop the old containers and back up their
+data. Copy existing data to these destinations, preserving numeric ownership:
+
+| Old storage | New directory under `~/.kronk/docker/` |
+| --- | --- |
+| `zarf/docker/openwebui/` | `openwebui/` |
+| `zarf/docker/docling/` | `docling/` |
+| `docker_alloy-data` named volume | `alloy/` |
+| `kronk-data` named volume | `kronk/` |
+| `docker_moxie-postgres-data` named volume | `postgres/` (requires the PostgreSQL migration below) |
+
+Volume names can have a different project prefix; inspect the old containers'
+mounts with `docker inspect <container>` before copying. Do not copy PostgreSQL
+16 files directly into the PostgreSQL 18 directory. The `temporal-bootstrap/`
+handoff is regenerated from the database; it does not need migration.
+
+Grafana, Prometheus, Loki, and Tempo now persist their runtime data as well. To
+retain existing history, export/copy it from the old containers before removing
+them. Loki's old `/tmp/loki`, `/tmp/tsdb-index`, `/tmp/tsdb-cache`, `/tmp/chunks`,
+and `/tmp/compactor` paths now live beneath `/loki` in its container. Retain the
+old storage until the replacement services and their data have been verified.
+The standalone `docker run -v kronk-data:/kronk` examples still use a named
+volume and no longer share storage with Compose automatically.
+
+### v1.33.3: Development PostgreSQL 18
+
+The development Compose stack now uses `postgres:18` instead of `postgres:16`
+for the shared Moxie and Temporal database. The host directory
+`~/.kronk/docker/postgres` is mounted at `/var/lib/postgresql`; PostgreSQL 18
+stores its cluster in `18/docker` beneath that mount instead of the old
+`/var/lib/postgresql/data` location.
+
+Existing PostgreSQL 16 volumes cannot be opened by PostgreSQL 18. Before switching
+an existing stack, stop applications that write to either database and back up
+the running PostgreSQL 16 cluster, including roles and both databases:
+
+```shell
+docker exec moxie-postgres pg_dumpall -U postgres > moxie-postgres-16.sql
+```
+
+Protect this backup: it includes database contents and role password hashes.
+Use a [PostgreSQL major-version migration](https://www.postgresql.org/docs/18/upgrading.html)
+(`pg_upgrade` or dump/restore into a fresh PostgreSQL 18 cluster). Preserve the old
+volume until the restored `moxiedb` and `temporal` databases have been verified.
+Restore before running `make tuning-up`, which initializes empty databases.
+Do not delete the old volume or use `docker compose down -v` as an upgrade step.
+Normal startup does not migrate PostgreSQL data or upgrade Temporal schemas.
 
 ### v1.33.3: Speech Response Numeric Types
 
