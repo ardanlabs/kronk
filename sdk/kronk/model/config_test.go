@@ -321,6 +321,24 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	if strings.Contains(got, cfg.ChatTemplateKwargs["secret"].(string)) {
 		t.Errorf("Config.String() exposed chat template kwarg contents in %q", got)
 	}
+
+	for _, tt := range []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{"unresolved", Config{}, "PhysicalBatchSize[2048]"},
+		{"default", adjustGenerationBatch(Config{}, 1, false), "PhysicalBatchSize[2048]"},
+		{"custom prefill", adjustGenerationBatch(Config{PtrPrefillBatchSize: new(1024)}, 1, false), "PhysicalBatchSize[1024]"},
+		{"MTP reserve", adjustGenerationBatch(Config{PtrNSeqMax: new(1)}, 0, true), "PhysicalBatchSize[2048]"},
+		{"explicit", adjustGenerationBatch(Config{PtrPhysicalBatchSize: new(512), PtrImageBatchTokenCapacity: new(1024)}, 1, false), "PhysicalBatchSize[512]"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.String(); !strings.Contains(got, tt.want) {
+				t.Errorf("Config.String(): got %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestDecisionProtocolConfigurationOverride(t *testing.T) {

@@ -1,6 +1,6 @@
 {
     "$schema": "https://opencode.ai/config.json",
-    "model": "kronk/unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT",
+    "model": "kronk/ggml-org/Inkling-2-Mini-Q8_0/AGENT",
     "providers": {
         "kronk": {
             "package": "@opencode/ai/providers/openai-compatible",
@@ -9,6 +9,22 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
+                "ggml-org/Inkling-2-Mini-Q8_0/AGENT": {
+                    "name": "Inkling 2 Mini Q8_0",
+                    "capabilities": {
+                        "tools": true,
+                        "input": [
+                            "text"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 131072,
+                        "output": 16384
+                    }
+                },
                 "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT": {
                     "name": "Qwen3.8 Flash Next UD-Q2_K_XL",
                     "capabilities": {

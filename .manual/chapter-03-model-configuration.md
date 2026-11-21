@@ -206,8 +206,11 @@ When `context-window` and `nseq-max` are specified but the KV cache types are
 omitted, automatic tuning uses this priority:
 
 1. Preserve the configured context window and concurrency.
-2. Try `f16` for both KV caches.
-3. If `f16` does not fit, try `q8_0` at the same context and concurrency.
+2. Try `f16` for both KV caches. For ordinary single-GPU generation with no
+   explicit physical batch size, try the preferred batch first, then halve it
+   down to 512 before reducing cache precision.
+3. If `f16` does not fit, try `q8_0` with the same batch candidates at the same
+   context and concurrency.
 4. If `q8_0` does not fit, keep the configured values and report that the
    recommendation does not fit. Automatic tuning does not select a cache type
    below `q8_0` and does not reduce the configured context or concurrency.
@@ -228,7 +231,9 @@ When context and concurrency are not specified, the balanced analysis limits
 the selected context to the model's training context and a maximum of 128K
 tokens. It searches supported context buckets from largest to smallest. At
 each context it tries `f16` first and then `q8_0` before considering a smaller
-context. The usual minimum candidate is 4K, but a smaller training context is
+context, trying the eligible physical batch sizes within each cache type.
+It never changes SWA mode: full remains the default and compact is opt-in.
+The usual minimum candidate is 4K, but a smaller training context is
 not expanded to 4K. Fit checks use both VRAM and host RAM where applicable; on
 unified-memory systems, they use the combined footprint. CPU-only analysis can
 check RAM when a budget is known. Without a known budget, the corresponding
@@ -649,8 +654,20 @@ pipeline overlap within a submission.
 Explicit positive physical sizes override AutoTune's recommendation. AutoTune
 initially recommends 512 for ordinary text models using multiple selected GPUs
 with layer splitting and full GPU offload. Single-GPU and other execution modes
-retain the legacy default when the setting is omitted. Image capacity and budget
-floors can raise a request, and logical/native context capacity can cap it.
+start with the architecture's preferred batch or the runtime default when the
+setting is omitted. For ordinary
+single-GPU generation, AutoTune can halve the physical batch down to 512 to
+fit the estimated memory budget before quantizing KV or reducing context.
+Vision-capable language models participate in this search while respecting
+configured image-capacity and image-token-budget floors. It does not search
+smaller batches for multi-GPU, evaluation, or active MTP/separate-draft execution.
+For eligible single-GPU generation, Inkling2 models (including Inkling2 Loop)
+prefer 512 even when a larger batch fits the estimate, to limit their large
+relative-position attention workspace. This is a tuning preference, not a hard
+limit; explicit physical batch sizes still take precedence.
+Smaller batches can reduce prefill throughput; the logical prompt contribution
+is unchanged. Image capacity and budget floors
+can raise a request, and logical/native context capacity can cap it.
 Embedding, reranking, and specialized decision evaluation retain their own sizing policies. Requested
 and effective capacities are reported separately. Non-causal media chunks still
 must fit in one physical batch; oversized chunks return an error.

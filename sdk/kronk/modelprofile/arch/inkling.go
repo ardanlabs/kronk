@@ -29,6 +29,9 @@ func (Inkling) Apply(metadata Metadata, profile *modelprofile.Profile) error {
 	profile.RequiresFileMetadata = true
 	profile.MemorySemantics = modelprofile.MemoryRecurrent
 	profile.ComputeKind = modelprofile.ComputeInkling
+	// Dense relative-position bias makes large query batches expensive even
+	// with flash attention. Prefer headroom over larger prefill microbatches.
+	profile.PreferredPhysicalBatchSize = 512
 	blocks := profile.Dimensions.BlockCount
 	if blocks <= 0 || blocks > 512 {
 		return fmt.Errorf("invalid or missing block count")

@@ -63,6 +63,9 @@ func TestInklingProfile(t *testing.T) {
 			if p.MemorySemantics != modelprofile.MemoryRecurrent || p.SequenceProcessing != "Hybrid" || !p.RequiresFileMetadata || p.ComputeKind != modelprofile.ComputeInkling {
 				t.Errorf("runtime semantics: got %+v", p)
 			}
+			if p.PreferredPhysicalBatchSize != 512 {
+				t.Errorf("preferred physical batch: got %d, want 512", p.PreferredPhysicalBatchSize)
+			}
 			if p.SupportsTensorParallel || p.Batch.InputMixing != modelprofile.BatchInputMixingUnsupported || !p.Speculation.MTPArchitecture.IsZero() {
 				t.Errorf("unsupported capabilities were enabled: got %+v", p)
 			}

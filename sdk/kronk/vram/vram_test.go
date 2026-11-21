@@ -1663,6 +1663,43 @@ func TestFromBytesLFM3Memory(t *testing.T) {
 	}
 }
 
+func TestInklingComputeWorkspace(t *testing.T) {
+	input := Input{
+		ComputeKind: modelprofile.ComputeInkling, ModelSizeBytes: 8 << 30,
+		ContextWindow: 131072, Slots: 1, NUBatch: 2048, EmbeddingLength: 2048,
+		BlockCount: 24, HeadCount: 24, HeadCountKV: 4, KeyLength: 128, ValueLength: 128,
+		SlidingWindow: 512, SlidingWindowLayers: 20, SWAFull: true, BytesPerElement: 2,
+	}
+	full := Calculate(input)
+	// Two 128K × 2K × 24-head F32 bias tensors alone require 48 GiB.
+	// Allow masks/inputs/activations, but do not multiply the arena by layers.
+	if got := full.ComputeMemory.WorkspaceGPU; got < 48<<30 || got > 54<<30 {
+		t.Fatalf("2K workspace: got %d, want 48–54 GiB", got)
+	}
+	input.NUBatch = 512
+	small := Calculate(input)
+	if got := small.ComputeMemory.WorkspaceGPU; got*4 != full.ComputeMemory.WorkspaceGPU {
+		t.Errorf("512 workspace: got %d, want quarter of %d", got, full.ComputeMemory.WorkspaceGPU)
+	}
+	if got := small.ComputeMemory.WorkspaceCPU; got*4 != full.ComputeMemory.WorkspaceCPU {
+		t.Errorf("512 host workspace: got %d, want quarter of %d", got, full.ComputeMemory.WorkspaceCPU)
+	}
+	input.NUBatch = 2048
+	input.SWAFull = false
+	compact := Calculate(input)
+	if compact.SlotMemory >= full.SlotMemory || compact.ComputeMemory.WorkspaceGPU >= full.ComputeMemory.WorkspaceGPU {
+		t.Fatal("compact SWA did not reduce cache and workspace")
+	}
+	if compact.ComputeMemory.WorkspaceGPU < 48<<30 {
+		t.Fatal("compact SWA incorrectly removed the full-attention bias workspace")
+	}
+	input.BytesPerElement = 1
+	quantized := Calculate(input)
+	if quantized.ComputeMemory != compact.ComputeMemory {
+		t.Fatal("KV quantization changed F32 relative-position workspace")
+	}
+}
+
 func TestFromBytesInklingMemory(t *testing.T) {
 	// Four physical layers, with the middle two executed three times. The
 	// resulting eight cache slots have 13 full-attention and 7 SWA KV heads.
@@ -1723,17 +1760,20 @@ func TestFromBytesInklingMemory(t *testing.T) {
 			}
 			if tt.offload == 2 {
 				input := result.Input
-				input.ComputeBackend = "metal"
 				input.KVUnified = true
+				base := Calculate(input)
+				input.ComputeBackend = "metal"
 				unified := Calculate(input)
 				// The final logical slot is full attention even though the
 				// final physical block uses SWA. Include its Metal gather,
-				// query scratch, and the full/SWA row-list device copy.
-				if got := unified.ComputeMemory.WorkspaceGPU - result.ComputeMemory.WorkspaceGPU; got != 872448 {
-					t.Errorf("loop-slot Metal attention scratch: got %d, want 872448", got)
+				// and query scratch. Both backends include row-list inputs.
+				if got := unified.ComputeMemory.WorkspaceGPU - base.ComputeMemory.WorkspaceGPU; got != 851968 {
+					t.Errorf("loop-slot Metal attention scratch: got %d, want 851968", got)
 				}
-				if got := unified.ComputeMemory.WorkspaceCPU; got != 20480 {
-					t.Errorf("loop-slot attention lists: got %d, want 20480", got)
+				// 1,343,488 bytes of masks/positions/hidden rows plus
+				// 20,480 bytes of full/SWA row-list inputs.
+				if got := unified.ComputeMemory.WorkspaceCPU; got != 1363968 {
+					t.Errorf("loop-slot attention inputs: got %d, want 1363968", got)
 				}
 			}
 			if tt.offload == 6 {
