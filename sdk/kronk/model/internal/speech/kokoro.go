@@ -29,16 +29,16 @@ type Kokoro struct {
 }
 
 // NewKokoro validates Kokoro's fixed encoder/frame policy and borrows its TTS
-// dictionaries through the supplied native metadata accessors. The model must
-// outlive the adapter and every execution created from it.
-func NewKokoro(mdl llama.Model, maxFrames int, count func(llama.Model, string) (int, error), value func(llama.Model, string, int32) (string, bool)) (*Kokoro, error) {
+// dictionaries through Yzma. The model must outlive the adapter and every
+// execution created from it.
+func NewKokoro(mdl llama.Model, maxFrames int) (*Kokoro, error) {
 	if maxFrames != 512 {
 		return nil, fmt.Errorf("%w: Kokoro is non-autoregressive and does not support MaxFrames overrides", ErrInvalidConfig)
 	}
 	if llama.ModelNCtxTrain(mdl) != KokoroContextWindow {
 		return nil, fmt.Errorf("Kokoro requires a %d-position encoder", KokoroContextWindow)
 	}
-	renderer, err := newTTSNormalizer(mdl, count, value)
+	renderer, err := newTTSNormalizer(mdl)
 	if err != nil {
 		return nil, err
 	}

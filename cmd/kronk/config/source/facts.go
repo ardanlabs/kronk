@@ -160,12 +160,14 @@ func (f Facts) Tokenizer() string {
 	return model + ":" + f.Info.Metadata["tokenizer.ggml.pre"]
 }
 
-// MoE, Projection, MTP and SWA report the model traits the questions
-// depend on.
+// MoE reports whether the model uses mixture-of-experts layers.
 func (f Facts) MoE() bool { return f.Analysis.Model.MoE != nil }
 
+// Projection reports whether the model has a projector file.
 func (f Facts) Projection() bool { return f.Info.HasProjection }
 
+// MTP reports whether the model has a multi-token prediction file.
 func (f Facts) MTP() bool { return f.Info.HasMTP }
 
+// SWA reports whether the model uses sliding-window attention.
 func (f Facts) SWA() bool { return f.Analysis.Model.Attention.SlidingWindow > 0 }

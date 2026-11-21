@@ -204,7 +204,16 @@ version: 2
 kms: {}
 
 models:
-  # nseq-max: 1  ~89GB VRAM
+  # nseq-max: 1  ~67GB VRAM
+  # nseq-max: 2  ~91GB VRAM
+  ggml-org/Inkling-2-Mini-Q8_0/AGENT:
+    nseq-max: 1
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 16384
+      reasoning_effort: low
+
+  # nseq-max: 1  ~65GB VRAM
   unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT:
     nseq-max: 1
     context-window: 131072
@@ -217,7 +226,7 @@ models:
   # nseq-max: 1  ~63GB VRAM
   # nseq-max: 2  ~93GB VRAM
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
-    nseq-max: 2
+    nseq-max: 1
     context-window: 131072
     chat-template-kwargs:
       preserve_thinking: true
@@ -227,7 +236,7 @@ models:
   # nseq-max: 1  ~49GB VRAM
   # nseq-max: 2  ~56GB VRAM
   ornith-ai/Ornith-1.5-35B-Q8_0/AGENT:
-    nseq-max: 2
+    nseq-max: 1
     context-window: 262144
     chat-template-kwargs:
       preserve_thinking: true
@@ -237,7 +246,7 @@ models:
   # nseq-max: 1  ~43GB VRAM
   # nseq-max: 2  ~53GB VRAM
   ukisai/Swift-Qwen3.8-27B-Q8_0/AGENT:
-    nseq-max: 2
+    nseq-max: 1
     context-window: 131072
     chat-template-kwargs:
       preserve_thinking: true
@@ -247,7 +256,7 @@ models:
   # nseq-max: 1  ~45GB VRAM
   # nseq-max: 2  ~48GB VRAM
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
-    nseq-max: 2
+    nseq-max: 1
     context-window: 131072
     chat-template-kwargs:
       preserve_thinking: true
@@ -257,7 +266,7 @@ models:
   # nseq-max: 1  ~33GB VRAM
   # nseq-max: 2  ~43GB VRAM
   unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
-    nseq-max: 2
+    nseq-max: 1
     context-window: 131072
     sampling-parameters:
       max_tokens: 16384

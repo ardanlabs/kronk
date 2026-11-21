@@ -328,6 +328,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		splitMode:           cfg.PtrSplitMode,
 		nGpuLayers:          cfg.PtrNGpuLayers,
 		physicalBatchSize:   int64(runtimeCfg.PhysicalBatchSize()),
+		preferredBatchSize:  profile.PreferredPhysicalBatchSize,
 		batchConfig:         runtimeCfg,
 		generationRows:      rowsPerSlot,
 		singlePhysicalBatch: singlePhysicalBatch,
@@ -435,6 +436,7 @@ type profileInput struct {
 	splitMode           *model.SplitMode
 	nGpuLayers          *int
 	physicalBatchSize   int64
+	preferredBatchSize  int64
 	batchConfig         model.Config
 	generationRows      int
 	singlePhysicalBatch bool
@@ -516,9 +518,9 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	// Select the largest context bucket that fits within the GPU budget. An
 	// explicit context is the only candidate: cache precision may be reduced to
 	// preserve it, but AutoTune must not silently reduce a requested context.
-	// Prefer f16 at each context length, then try q8_0 before reducing the
-	// context. This preserves the profile's context objective whenever KV
-	// quantization is enough to make it fit.
+	// Prefer f16 at each context length, reducing the physical batch before
+	// trying q8_0. Only then reduce context. Explicit batch sizes and contexts
+	// remain constraints; SWA mode is never changed by the search.
 	buckets := []int64{
 		vram.ContextWindow4K, vram.ContextWindow8K, vram.ContextWindow16K,
 		vram.ContextWindow32K, vram.ContextWindow64K, vram.ContextWindow128K, vram.ContextWindow256K,
@@ -537,28 +539,50 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	rec.CacheTypeK = fallback.typeK
 	rec.CacheTypeV = fallback.typeV
 
-	found := false
+	// Smaller physical batches trade prefill throughput for workspace without
+	// quantizing KV. GenerationBatchSizes retains configured image-capacity
+	// floors, including for vision-capable language models. Do not tune
+	// multi-GPU execution, evaluation, or speculative rollback graphs.
+	batches := []int64{p.physicalBatchSize}
+	if p.hasGPU && p.gpuCount == 1 && p.batchConfig.PtrPhysicalBatchSize == nil &&
+		p.class != "embedding" && p.class != "rerank" &&
+		p.batchConfig.DecisionProtocol.IsZero() && !p.singlePhysicalBatch &&
+		p.batchConfig.PtrDraftModel == nil {
+		preferred := int64(p.batchConfig.BatchBaseSize())
+		if p.preferredBatchSize > 0 {
+			preferred = min(preferred, p.preferredBatchSize)
+			batches = []int64{preferred}
+		}
+		for batch := preferred; batch > 512; {
+			batch = max(batch/2, 512)
+			batches = append(batches, batch)
+		}
+	}
+
+search:
 	for _, bucket := range slices.Backward(buckets) {
 		if bucket > ctxCap {
 			continue
 		}
 
 		for _, cacheType := range cacheTypes {
-			result := calculateProfile(p, bucket, rec.NSeqMax, cacheType)
-			if !profileFits(p, result) {
-				continue
+			for _, batch := range batches {
+				p.batchConfig.PtrPhysicalBatchSize = nil
+				if batch > 0 {
+					p.batchConfig.PtrPhysicalBatchSize = new(int(batch))
+				}
+				rec.PhysicalBatchSize = batch
+				result := calculateProfile(p, bucket, rec.NSeqMax, cacheType)
+				if !profileFits(p, result) {
+					continue
+				}
+
+				bestCtx = bucket
+				selectedCache = cacheType
+				rec.CacheTypeK = cacheType.typeK
+				rec.CacheTypeV = cacheType.typeV
+				break search
 			}
-
-			bestCtx = bucket
-			selectedCache = cacheType
-			rec.CacheTypeK = cacheType.typeK
-			rec.CacheTypeV = cacheType.typeV
-			found = true
-			break
-		}
-
-		if found {
-			break
 		}
 	}
 

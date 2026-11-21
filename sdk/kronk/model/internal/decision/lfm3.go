@@ -3,11 +3,13 @@ package decision
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
 
 type lfm3D1Protocol struct {
@@ -44,7 +46,83 @@ func (p *lfm3D1Protocol) Decide(ctx context.Context, req DecisionRequest) (Decis
 	if err != nil {
 		return DecisionResponse{}, err
 	}
-	return p.run(ctx, req, questions, answerLFM3D1Question)
+	return p.runQuestions(ctx, req, questions)
+}
+
+// runQuestions follows D1's pack_set layout: shared state is group zero,
+// and each question can attend only to the state and its own nonzero group.
+// Groups isolate full attention, not KV sequences or unrelated requests.
+func (p *lfm3D1Protocol) runQuestions(ctx context.Context, req DecisionRequest, questions []finalTokenQuestion) (DecisionResponse, error) {
+	pack := p.runtime.DecisionGroups && len(questions) > 1
+	for _, question := range req.Questions {
+		if _, spoken := question.Instructions.(DecisionAudioInstructions); spoken {
+			pack = false
+		}
+	}
+	if !pack {
+		return p.finalTokenRunner.run(ctx, req, questions, answerLFM3D1Question)
+	}
+	var work []Work
+	for i, question := range questions {
+		if err := ctx.Err(); err != nil {
+			return DecisionResponse{}, err
+		}
+		values := maps.Clone(question.values)
+		values["state"] = nil
+		lone, err := p.template.renderValues(values)
+		if err != nil {
+			return DecisionResponse{}, err
+		}
+		head := "<|startoftext|><|im_start|>user\n"
+		if len(question.files) > 0 {
+			head += strings.Repeat(mtmd.DefaultMarker(), len(question.files))
+		}
+		suffix, ok := strings.CutPrefix(lone, head)
+		if !ok {
+			return DecisionResponse{}, fmt.Errorf("decision: unexpected LFM3 d1 prompt layout")
+		}
+		text := suffix
+		if question.values["state"] != nil {
+			text = "QUESTION:\n" + text
+		}
+		tokens := p.encode(text, true)
+		if len(work) > 0 {
+			set := &work[len(work)-1]
+			if len(set.Readouts) < 16 && set.rowCount()+len(tokens) <= p.runtime.ContextWindow {
+				group := int32(len(set.Readouts) + 1)
+				set.Tokens = append(set.Tokens, tokens...)
+				for range tokens {
+					set.DecisionGroups = append(set.DecisionGroups, group)
+				}
+				var candidates []llama.Token
+				for _, group := range question.groups {
+					candidates = append(candidates, group...)
+				}
+				set.Readouts = append(set.Readouts, Readout{Position: set.Position + len(set.Tokens) - 1, Candidates: candidates})
+				continue
+			}
+		}
+		// A new set starts with the ordinary complete prompt. This also checks
+		// standalone budgets and prepares shared media only once per set.
+		item, err := p.prepareQuestion(ctx, question)
+		if err != nil {
+			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", req.Questions[i].ID, err)
+		}
+		first := item.rowCount() - len(p.encode(suffix, true))
+		if first <= 0 || first >= item.rowCount() {
+			return DecisionResponse{}, fmt.Errorf("decision: unexpected LFM3 d1 question boundary")
+		}
+		item.DecisionGroups = make([]int32, len(item.Tokens))
+		for j := first; j < item.rowCount(); j++ {
+			if j < len(item.PrefixRows) {
+				item.PrefixRows[j].DecisionGroup = 1
+				continue
+			}
+			item.DecisionGroups[j-len(item.PrefixRows)] = 1
+		}
+		work = append(work, item)
+	}
+	return p.runWork(ctx, req, questions, work, answerLFM3D1Question)
 }
 
 func (p *lfm3D1Protocol) questions(req DecisionRequest) ([]finalTokenQuestion, error) {

@@ -67,5 +67,5 @@ func (p *lfm3D1OmniProtocol) Decide(ctx context.Context, req DecisionRequest) (D
 		questions[i].values = values
 		questions[i].files = files
 	}
-	return p.run(ctx, req, questions, answerLFM3D1Question)
+	return p.runQuestions(ctx, req, questions)
 }

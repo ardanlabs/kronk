@@ -15,7 +15,7 @@ func BatchCapabilities(architecture string) modelprofile.BatchCapabilities {
 		"qwen4exp", "qwen3tts":
 		return modelprofile.BatchCapabilities{InputMixing: modelprofile.BatchInputMixingSupported}
 
-	case "cogvlm", "deepseek4", "graniteswitch", "eagle3", "dflash", "gemma4-assistant":
+	case "cogvlm", "deepseek4", "graniteswitch", "eagle3", "dflash", "gemma4-assistant", "inkling2", "inkling2_loop":
 		return modelprofile.BatchCapabilities{InputMixing: modelprofile.BatchInputMixingUnsupported}
 
 	default:

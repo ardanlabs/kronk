@@ -14,14 +14,15 @@ import (
 // trims an existing session and instead rebuilds an empty/LRU session.
 func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, system []llama.Token, requestStart time.Time) cacheResult {
 	result := cacheResult{modifiedD: d}
-	if len(actual) == 0 || len(stable) >= len(actual) || !tokensHavePrefix(actual, stable) {
+	if len(actual) == 0 || !tokensHavePrefix(actual, stable) {
 		return result
 	}
 
-	// The generation-enabled render must contribute a non-empty inference
-	// tail. Besides producing logits, its final decode captures pendingH for
-	// shared-KV Gemma MTP.
-	targetLen := len(stable)
+	// Keep a non-empty inference tail even when the template renders the same
+	// tokens with and without add_generation_prompt. Its final decode produces
+	// logits and captures pendingH for shared-KV Gemma MTP without changing the
+	// rendered prompt.
+	targetLen := min(len(stable), len(actual)-1)
 	target := slices.Clone(actual[:targetLen])
 	tail := slices.Clone(actual[targetLen:])
 	if len(system) >= targetLen || !tokensHavePrefix(target, system) {

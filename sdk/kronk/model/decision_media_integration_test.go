@@ -74,25 +74,42 @@ func TestLFM3D1Omni(t *testing.T) {
 			// decision runtime's single-sequence execution requirement.
 			t.Parallel()
 			for range 2 {
-				resp, err := krn.Decision(t.Context(), model.DecisionRequest{Files: [][]byte{read(t, image.name)}, Questions: []model.DecisionQuestion{animal}})
-				if err != nil || resp.Answers["animal"].Choice != image.want || resp.Usage.InputTokens <= 1 || resp.Usage.OutputTokens != 0 {
+				resp, err := krn.Decision(t.Context(), model.DecisionRequest{Files: [][]byte{read(t, image.name)}, Questions: []model.DecisionQuestion{
+					animal, model.DecisionQuestionNoul("giraffe", "Is the animal a giraffe?", nil),
+				}})
+				if err != nil || resp.Answers["animal"].Choice != image.want || resp.Usage.InputTokens <= 1 || resp.Usage.OutputTokens != 0 || (resp.Answers["giraffe"].Noul > .5) != (image.want == "giraffe") {
 					t.Fatalf("image decision: got %+v, %v, want %s with input-only usage", resp, err, image.want)
 				}
 			}
 		})
 	}
 	t.Run("audio state", func(t *testing.T) {
-		resp, err := krn.Decision(t.Context(), model.DecisionRequest{Files: [][]byte{read(t, "jfk.wav")}, Questions: []model.DecisionQuestion{
+		req := model.DecisionRequest{Files: [][]byte{read(t, "jfk.wav")}, Questions: []model.DecisionQuestion{
 			model.DecisionQuestionChoice("subject", "What is the subject of this speech?",
 				model.DecisionQuestionOpt("service", "Serving one's country"), model.DecisionQuestionOpt("cooking", "A recipe for dinner")),
 			model.DecisionQuestionNoul("country", "Does the speaker mention their country?", nil),
 			model.DecisionQuestionScore("rating", "Does this clip contain human speech?", "No human speech", "Clear human speech"),
-		}})
+		}}
+		resp, err := krn.Decision(t.Context(), req)
 		// Each question has one final readout token; usage must also include
 		// the encoded audio and the rest of its rendered text prompt.
 		if err != nil || resp.Answers["subject"].Choice != "service" || resp.Answers["country"].Noul <= .5 || resp.Answers["rating"].Score != 1 || resp.Usage.InputTokens <= 3 {
 			t.Fatalf("audio decision: got %+v, %v", resp, err)
 		}
+		var independentTokens int
+		for _, question := range req.Questions {
+			single := req
+			single.Questions = []model.DecisionQuestion{question}
+			answer, err := krn.Decision(t.Context(), single)
+			if err != nil {
+				t.Fatal(err)
+			}
+			independentTokens += answer.Usage.InputTokens
+		}
+		if resp.Usage.InputTokens >= independentTokens {
+			t.Errorf("packed audio input rows: got %d, want fewer than %d", resp.Usage.InputTokens, independentTokens)
+		}
+		t.Logf("audio input rows: independent=%d packed=%d", independentTokens, resp.Usage.InputTokens)
 	})
 	t.Run("spoken instructions", func(t *testing.T) {
 		file := os.Getenv("KRONK_TEST_LFM3_OMNI_QUESTION")
@@ -106,8 +123,10 @@ func TestLFM3D1Omni(t *testing.T) {
 		question := animal
 		question.Instructions = model.DecisionAudioInstructions{Data: audio}
 		for _, image := range []struct{ name, want string }{{"giraffe.jpg", "giraffe"}, {"deer/image10.jpg", "deer"}} {
-			resp, err := krn.Decision(t.Context(), model.DecisionRequest{Images: [][]byte{read(t, image.name)}, Questions: []model.DecisionQuestion{question}})
-			if err != nil || resp.Answers["animal"].Choice != image.want {
+			written := animal
+			written.ID = "written"
+			resp, err := krn.Decision(t.Context(), model.DecisionRequest{Images: [][]byte{read(t, image.name)}, Questions: []model.DecisionQuestion{question, written}})
+			if err != nil || resp.Answers["animal"].Choice != image.want || resp.Answers["written"].Choice != image.want {
 				t.Fatalf("spoken question: got %+v, %v, want %s", resp, err, image.want)
 			}
 		}

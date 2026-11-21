@@ -9,10 +9,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 )
 
-const defaultConfig = "../../../../sdk/tools/defaults/yaml/model_config.yaml"
-
 func TestSaveEntryNewModel(t *testing.T) {
-	path := copyDefault(t)
+	path := copyFixture(t)
 
 	changes := []Change{
 		{Key: "context-window", New: 65536},
@@ -50,7 +48,7 @@ func TestSaveEntryNewModel(t *testing.T) {
 		t.Fatalf("temperature = %v", mc.Sampling.Temperature)
 	}
 
-	orig, err := modelconfig.Load(defaultConfig)
+	orig, err := modelconfig.Load(backup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +56,11 @@ func TestSaveEntryNewModel(t *testing.T) {
 		t.Fatalf("models = %d, want %d", len(doc.Models), len(orig.Models)+1)
 	}
 
-	data, _ := os.ReadFile(path)
-	for _, want := range []string{"# SERVER OPTIONS", "kms: {}", "# nseq-max: 1  ~89GB VRAM"} {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"# Server settings", "kms: {}", "# Existing model", "nseq-max: 1 # Keep this inline comment"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("lost %q", want)
 		}
@@ -67,8 +68,8 @@ func TestSaveEntryNewModel(t *testing.T) {
 }
 
 func TestSaveEntryEditAndRemove(t *testing.T) {
-	path := copyDefault(t)
-	id := "ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT"
+	path := copyFixture(t)
+	id := "test/existing-model"
 
 	changes := []Change{
 		{Key: "context-window", Old: 65536, New: 32768},
@@ -94,7 +95,7 @@ func TestSaveEntryEditAndRemove(t *testing.T) {
 
 	data, _ := os.ReadFile(path)
 	entry := string(data)[strings.Index(string(data), id):]
-	entry = entry[:strings.Index(entry, "mradermacher/")]
+	entry = entry[:strings.Index(entry, "test/other-model")]
 	if strings.Contains(entry, "sampling-parameters") {
 		t.Fatalf("empty sampling-parameters left behind:\n%s", entry)
 	}
@@ -167,7 +168,7 @@ func TestSaveEntryValuesReplacesTheEntry(t *testing.T) {
 }
 
 func TestSaveEntryRejectsInvalid(t *testing.T) {
-	path := copyDefault(t)
+	path := copyFixture(t)
 	before, _ := os.ReadFile(path)
 
 	if _, err := SaveEntry(path, SectionModels, "test/model", []Change{{Key: "flash-attention", New: "sometimes"}}); err == nil {
@@ -182,11 +183,8 @@ func TestSaveEntryRejectsInvalid(t *testing.T) {
 
 // TestEditEntryKeepsLayout checks that only the edited entry's lines change.
 func TestEditEntryKeepsLayout(t *testing.T) {
-	data, err := os.ReadFile(defaultConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	orig := string(data)
+	data := []byte(testConfig)
+	orig := testConfig
 
 	out, err := editEntry(data, SectionModels, "test/new", []Change{{Key: "context-window", New: 65536}})
 	if err != nil {
@@ -201,7 +199,7 @@ func TestEditEntryKeepsLayout(t *testing.T) {
 		t.Fatal("lines outside the new entry changed")
 	}
 
-	id := "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT"
+	id := "test/other-model"
 	out, err = editEntry(data, SectionModels, id, []Change{{Key: "context-window", Old: 65536, New: 32768}})
 	if err != nil {
 		t.Fatal(err)
@@ -225,16 +223,11 @@ func TestEditEntryEmptyModels(t *testing.T) {
 	}
 }
 
-func copyDefault(t *testing.T) string {
+func copyFixture(t *testing.T) string {
 	t.Helper()
 
-	data, err := os.ReadFile(defaultConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	path := filepath.Join(t.TempDir(), "model_config.yaml")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, []byte(testConfig), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -278,3 +271,28 @@ func TestEditEntryNothingToWrite(t *testing.T) {
 		}
 	}
 }
+
+var testConfig = `version: 2
+
+# Server settings
+kms: {}
+
+models:
+  # Existing model
+  test/existing-model:
+    context-window: 65536
+    nseq-max: 1 # Keep this inline comment
+    sampling-parameters:
+      max_tokens: 8192
+      temperature: 1
+      top_k: 20
+      top_p: 0.95
+
+  test/other-model:
+    context-window: 65536
+    nseq-max: 2
+
+bucky-models: {}
+
+malina-models: {}
+`

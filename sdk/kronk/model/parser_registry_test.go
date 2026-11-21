@@ -176,6 +176,11 @@ func TestSelectParser_BuiltinPrecedence(t *testing.T) {
 		fp   Fingerprint
 		want string
 	}{
+		{"Inkling 2 architecture", Fingerprint{Architecture: "inkling2"}, "inkling"},
+		{"Inkling 2 loop architecture", Fingerprint{Architecture: "inkling2_loop"}, "inkling"},
+		{"Inkling protocol before Qwen", Fingerprint{Architecture: "qwen3", ChatTemplate: "<|message_model|><|content_text|><|content_model_end_sampling|>"}, "inkling"},
+		{"Inkling protocol before Harmony", Fingerprint{ChatTemplate: "<|message_model|><|content_text|><|content_model_end_sampling|> <|channel|> <|constrain|>json"}, "inkling"},
+		{"Inkling name alone is not a protocol", Fingerprint{ModelName: "Inkling-2-Mini"}, "fallback"},
 		{"XML Harmony before Qwen", Fingerprint{Architecture: "qwen2", ChatTemplate: "<|channel|> <|constrain|>xml rfl:parameter"}, "beam"},
 		{"JSON Harmony before Qwen", Fingerprint{Architecture: "qwen2", ChatTemplate: "<|channel|> <|constrain|>json"}, "gpt-oss"},
 		{"Qwen lineage", Fingerprint{Architecture: "qwen3"}, "qwen"},
@@ -281,5 +286,33 @@ func TestBuiltinParser_VocabEOG(t *testing.T) {
 	sm.Reset()
 	if got := sm.(StateMachineFlusher).Flush(); got != (Result{}) {
 		t.Errorf("Flush after Reset: got %+v, want no retained output", got)
+	}
+}
+
+func TestSelectParser_InklingPublicContract(t *testing.T) {
+	withCleanRegistry(t)
+	for _, architecture := range []string{"inkling2", "inkling2_loop"} {
+		t.Run(architecture, func(t *testing.T) {
+			parser := selectParser(Fingerprint{Architecture: architecture})
+			sm := parser.NewStateMachine()
+			r, eog := sm.Classify(`<|message_model|><|content_thinking|>Plan.<|end_message|><|message_model|>lookup<|content_invoke_tool_json|>{"name":"lookup","args":{"id":9007199254740993}}<|end_message|>`)
+			if r.Channel != ChannelReasoning || r.Content != "Plan." || eog {
+				t.Fatalf("Classify: got %+v, EOG %v, want reasoning", r, eog)
+			}
+			sm.(VocabEOGConsumer).ConsumeVocabEOG("<|content_model_end_sampling|>")
+			flusher := sm.(StateMachineFlusher)
+			r = flusher.Flush()
+			calls := parser.ToolCall(t.Context(), nil, r.Content)
+			if r.Channel != ChannelTool || len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "lookup" || calls[0].Function.Arguments["id"] != json.Number("9007199254740993") {
+				t.Fatalf("selected Inkling parser: got %+v, calls %+v", r, calls)
+			}
+			if got := flusher.Flush(); got != (Result{}) {
+				t.Errorf("drained Flush: got %+v, want empty", got)
+			}
+			sm.Reset()
+			if got := flusher.Flush(); got != (Result{}) {
+				t.Errorf("Reset: got %+v, want empty", got)
+			}
+		})
 	}
 }

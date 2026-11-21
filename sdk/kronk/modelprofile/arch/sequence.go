@@ -43,7 +43,7 @@ func SequenceProcessing(metadata Metadata, p modelprofile.Profile) string {
 	if strings.HasPrefix(strings.ToLower(p.Architecture), "mamba") {
 		return "Recurrent"
 	}
-	if (KnownRecurrent{}).Claims(p.Architecture) || (QwenHybrid{}).Claims(p.Architecture) {
+	if (KnownRecurrent{}).Claims(p.Architecture) || (QwenHybrid{}).Claims(p.Architecture) || (Inkling{}).Claims(p.Architecture) {
 		return "Hybrid"
 	}
 	return "Unknown"

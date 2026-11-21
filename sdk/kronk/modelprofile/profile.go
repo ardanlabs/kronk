@@ -68,6 +68,10 @@ type Profile struct {
 	LazyRowsPerToken       int64
 	Warnings               []string
 
+	// PreferredPhysicalBatchSize is the architecture's AutoTune starting size.
+	// Zero retains the runtime default; explicit requests and native floors win.
+	PreferredPhysicalBatchSize int64
+
 	issues []error
 }
 

@@ -587,8 +587,8 @@ physical batch, regardless of the configured prefill batch size. D3,
 LFM2-D1-Omni, and LFM3 d1 use one execution sequence even when `NSeqMax` is
 larger. Large context windows can
 therefore increase working memory requirements for these models. LFM3 d1 does
-not reuse persistent sequence state; independent questions and concurrent
-requests are serialized through that single execution sequence.
+not reuse persistent sequence state; question sets and concurrent requests
+are serialized through that single execution sequence.
 
 LFM3 d1 preserves structured JSON state and option descriptions, returns the
 median score level rather than an expected level, and uses maximum answer
@@ -596,6 +596,21 @@ probability for choice and score `confidence`. The `lfm3-d1-omni` protocol
 shares these semantics and supports image/audio state and spoken instructions
 with a compatible projector. All expanded media rows count toward usage and
 the whole-prompt budget; inputs are never truncated.
+
+With llama.cpp b12606's decision-group support, LFM3 d1 and LFM3 d1 Omni
+automatically pack up to 16 text-instruction questions from one request into
+each shared-state set. Sets also split at the configured context-window
+limit. State and media are evaluated once per set, and `usage.input_tokens`
+counts the actual evaluated rows rather than repeating the state for every
+question. Questions still retain their own options and answer IDs. The
+full-attention mask blocks direct attention between different question groups;
+shared-state rows remain visible to all questions. Packed probabilities and
+confidence can differ from evaluating the same questions individually.
+
+Requests containing spoken instructions, and runtimes without decision-group
+support, continue evaluating questions independently. Packing does not combine
+unrelated requests, apply to other decision protocols, or increase the maximum
+size of an individual prompt.
 
 Model-backed compatibility has been exercised for LFM3 d1 text and Omni media
 decisions, not decision quality. The other additional protocols, including

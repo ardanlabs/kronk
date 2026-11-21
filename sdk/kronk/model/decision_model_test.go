@@ -148,6 +148,88 @@ func decisionModelRequest(state any) model.DecisionRequest {
 	}
 }
 
+// TestLFM3D1Packing checks both the 16-question boundary and context-driven
+// splitting, through public decisions rather than native staging details.
+func TestLFM3D1Packing(t *testing.T) {
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mp, err := mdls.FullPath("LiquidAI/d1-2B-Q4_K_M")
+	if err != nil || len(mp.ModelFiles) == 0 {
+		t.Fatalf("missing LFM3 d1 fixture: %v; run make install-test-decision", err)
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	for _, window := range []int{256, 4096} {
+		t.Run(strconv.Itoa(window), func(t *testing.T) {
+			krn, err := kronk.New(model.WithModelFiles(mp.ModelFiles), model.WithContextWindow(window))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := krn.Unload(context.Background()); err != nil {
+					t.Errorf("unload: %v", err)
+				}
+			})
+			for _, state := range []any{"The object is a blue circle.", nil} {
+				req := decisionModelRequest(state)
+				if state == nil {
+					for i := range req.Questions {
+						req.Questions[i].Instructions = "The object is a blue circle. " + req.Questions[i].Instructions.(string)
+					}
+				}
+				baseline := model.DecisionResponse{Answers: make(map[string]model.DecisionAnswer)}
+				inputTokens := make(map[string]int)
+				for _, question := range req.Questions {
+					single := req
+					single.Questions = []model.DecisionQuestion{question}
+					resp, err := krn.Decision(t.Context(), single)
+					if err != nil {
+						t.Fatal(err)
+					}
+					baseline.Answers[question.ID] = resp.Answers[question.ID]
+					baseline.Usage.InputTokens += resp.Usage.InputTokens
+					inputTokens[question.ID] = resp.Usage.InputTokens
+				}
+				baseline.Model = krn.ModelID()
+				checkDecisionModelResponse(t, krn.ModelID(), baseline, "circle")
+				questions := req.Questions
+				req.Questions = nil
+				var independentTokens int
+				for i := range 17 {
+					question := questions[i%len(questions)]
+					independentTokens += inputTokens[question.ID]
+					question.ID = strconv.Itoa(i)
+					req.Questions = append(req.Questions, question)
+				}
+				got, err := krn.Decision(t.Context(), req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(got.Answers) != 17 || got.Usage.InputTokens >= independentTokens || got.Usage.OutputTokens != 0 {
+					t.Fatalf("packed decision: got %d answers, usage %+v; independent input tokens %d", len(got.Answers), got.Usage, independentTokens)
+				}
+				// Packed shared-state masking and sequential positions differ from
+				// lone full-attention prompts. Check decisions and distributions,
+				// not exact confidence equality between the two layouts.
+				for start := 0; start < 16; start += len(questions) {
+					group := model.DecisionResponse{Model: got.Model, Usage: got.Usage, Answers: make(map[string]model.DecisionAnswer)}
+					for i, question := range questions {
+						group.Answers[question.ID] = got.Answers[strconv.Itoa(start+i)]
+					}
+					checkDecisionModelResponse(t, krn.ModelID(), group, "circle")
+				}
+				if last := got.Answers["16"]; last.Type != model.DecisionQuestionTypeChoice || last.Choice != "circle" {
+					t.Errorf("last set: got %+v, want circle", last)
+				}
+				t.Logf("state=%v: input rows independent=%d packed=%d", state, independentTokens, got.Usage.InputTokens)
+			}
+		})
+	}
+}
+
 func checkDecisionModelResponse(t *testing.T, modelID string, response model.DecisionResponse, shape string) {
 	t.Helper()
 	maxFalseProbability := .5

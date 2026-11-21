@@ -26,6 +26,7 @@ func unifiedAttentionWorkspace(input Input) (gpu, cpu int64) {
 		!strings.HasPrefix(strings.ToLower(input.Architecture), "qwen") && !strings.EqualFold(input.Architecture, "lfm3") {
 		return 0, 0
 	}
+	input.BlockCount = cacheBlockCount(input)
 	slots := max(input.Slots, 1)
 	batch := input.NUBatch
 	if batch <= 0 {

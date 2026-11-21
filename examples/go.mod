@@ -5,7 +5,7 @@ go 1.27.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
-	charm.land/bubbles/v2 v2.2.1
+	charm.land/bubbles/v2 v2.2.2
 	charm.land/bubbletea/v2 v2.1.2
 	charm.land/lipgloss/v2 v2.1.1
 	github.com/ardanlabs/bucky v1.1.6
@@ -62,7 +62,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/duckdb/duckdb-go-bindings v0.20000.0 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.20001.0 // indirect
 	github.com/ebitengine/purego v0.11.3 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.40.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
@@ -86,7 +86,7 @@ require (
 	github.com/icza/bitio v1.1.0 // indirect
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4 // indirect
 	github.com/jupiterrider/ffi v0.8.0 // indirect
-	github.com/klauspost/compress v1.20.4 // indirect
+	github.com/klauspost/compress v1.20.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-runewidth v0.0.31 // indirect
@@ -98,23 +98,23 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pandatix/go-abnf v0.5.5 // indirect
-	github.com/pierrec/lz4/v4 v4.1.33 // indirect
+	github.com/pierrec/lz4/v4 v4.1.34 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.74.0 // indirect
 	github.com/prometheus/procfs v0.23.0 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/rivo/uniseg v0.4.8-0.20261110175422-3a370411ca06 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.9.0 // indirect
 	github.com/ulikunitz/xz v0.5.17 // indirect
 	github.com/xo/terminfo v1.3.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
-	go.duckdb.org/libduckdb/darwin-amd64 v0.20000.0 // indirect
-	go.duckdb.org/libduckdb/darwin-arm64 v0.20000.0 // indirect
-	go.duckdb.org/libduckdb/linux-amd64 v0.20000.0 // indirect
-	go.duckdb.org/libduckdb/linux-arm64 v0.20000.0 // indirect
-	go.duckdb.org/libduckdb/windows-amd64 v0.20000.0 // indirect
-	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.duckdb.org/libduckdb/darwin-amd64 v0.20001.0 // indirect
+	go.duckdb.org/libduckdb/darwin-arm64 v0.20001.0 // indirect
+	go.duckdb.org/libduckdb/linux-amd64 v0.20001.0 // indirect
+	go.duckdb.org/libduckdb/linux-arm64 v0.20001.0 // indirect
+	go.duckdb.org/libduckdb/windows-amd64 v0.20001.0 // indirect
+	go.opentelemetry.io/auto/sdk v1.2.2 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.47.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0 // indirect
@@ -129,7 +129,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.5 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
-	golang.org/x/exp v0.0.0-20261119141654-b15d094f3610 // indirect
+	golang.org/x/exp v0.0.0-20261121134650-e1094eeca1b5 // indirect
 	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/oauth2 v0.38.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect

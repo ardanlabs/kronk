@@ -17,6 +17,7 @@ type extendedBatchEntry struct {
 	extraSequenceIDs []llama.SeqId
 	output           extendedBatchOutput
 	decisionOrder    llama.DecisionOrder
+	decisionGroup    int32
 }
 
 // extendedBatch owns one context-bound llama BatchExt and the logical entries
@@ -269,6 +270,11 @@ func (b *extendedBatch) renderEntry(entry extendedBatchEntry) (int32, error) {
 	}
 	if entry.decisionOrder != llama.DecisionOrderNone {
 		if err := llama.BatchExtSetDecisionOrder(b.native, idx, entry.decisionOrder); err != nil {
+			return idx, err
+		}
+	}
+	if entry.decisionGroup != 0 {
+		if err := batchExtSetDecisionGroup(b.native, idx, entry.decisionGroup); err != nil {
 			return idx, err
 		}
 	}

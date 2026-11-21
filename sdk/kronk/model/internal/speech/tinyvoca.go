@@ -27,17 +27,17 @@ type TinyVoca struct {
 
 // NewTinyVoca borrows the model dictionaries and decoder pronunciation model.
 // Both native handles must outlive this adapter and its executions.
-func NewTinyVoca(mdl llama.Model, decoder mtmd.Context, maxFrames int, count func(llama.Model, string) (int, error), value func(llama.Model, string, int32) (string, bool), g2p func(mtmd.Context, string) (string, error)) (*TinyVoca, error) {
+func NewTinyVoca(mdl llama.Model, decoder mtmd.Context, maxFrames int) (*TinyVoca, error) {
 	if maxFrames != 512 {
 		return nil, fmt.Errorf("%w: Tiny-Voca is non-autoregressive and does not support MaxFrames overrides", ErrInvalidConfig)
 	}
 	if llama.ModelNCtxTrain(mdl) != 512 {
 		return nil, errors.New("Tiny-Voca requires a 512-position encoder")
 	}
-	if _, err := g2p(decoder, ""); err != nil {
+	if _, err := mtmd.GenAudioG2P(decoder, ""); err != nil {
 		return nil, fmt.Errorf("Tiny-Voca pronunciation support: %w", err)
 	}
-	renderer, err := newTTSNormalizer(mdl, count, value)
+	renderer, err := newTTSNormalizer(mdl)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func NewTinyVoca(mdl llama.Model, decoder mtmd.Context, maxFrames int, count fun
 		if len(word) > 512 {
 			return "", errors.New("Tiny-Voca unknown words must be at most 512 bytes")
 		}
-		return g2p(decoder, word)
+		return mtmd.GenAudioG2P(decoder, word)
 	}}
 	return &t, nil
 }

@@ -410,7 +410,10 @@ func TestAnalyzeModelSlidingWindow(t *testing.T) {
 		SystemRAMBytes:     128_000_000_000,
 	}
 
-	a, err := analyzeModel(info, devs)
+	// Fix batch capacity so this backend-workspace comparison does not also
+	// compare different AutoTune batch/precision tradeoffs.
+	constraints := ModelConfig{PtrPhysicalBatchSize: new(2048)}
+	a, err := AnalyzeWithConfig(info, devs, constraints)
 	if err != nil {
 		t.Fatalf("analyzeModel failed: %v", err)
 	}
@@ -435,7 +438,7 @@ func TestAnalyzeModelSlidingWindow(t *testing.T) {
 	// With the same budget both backends select the same context/slots, but
 	// Metal must also reserve F16 K/V scratch for this Gemma attention graph.
 	devs.Devices[0].Type = "gpu_cuda"
-	cuda, err := Analyze(info, devs)
+	cuda, err := AnalyzeWithConfig(info, devs, constraints)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -900,6 +903,173 @@ func TestAutoTuneWithConfigPreservesExplicitSizing(t *testing.T) {
 	}
 	if cfg.CacheTypeK == model.GGMLTypeAuto || cfg.CacheTypeV == model.GGMLTypeAuto {
 		t.Errorf("cache types: got %s/%s, want AutoTune recommendation", cfg.CacheTypeK, cfg.CacheTypeV)
+	}
+}
+
+func TestAutoTunePhysicalBatchFit(t *testing.T) {
+	// This model has 1 GiB of weights and 32 MiB of F16 KV at 8K.
+	// Its 2K/1K/512 compute estimates are about 563/422/352 MiB.
+	// These budgets distinguish reducing batch from quantizing KV first.
+	info := ModelInfo{
+		ID: "Qwen3-1B-Q8_0", Size: 1 << 30,
+		Metadata: map[string]string{
+			"general.architecture": "qwen3", "qwen3.block_count": "4",
+			"qwen3.context_length": "8192", "qwen3.embedding_length": "4096",
+			"qwen3.attention.head_count": "16", "qwen3.attention.head_count_kv": "4",
+			"qwen3.attention.key_length": "64", "qwen3.attention.value_length": "64",
+		},
+	}
+	for _, tt := range []struct {
+		name        string
+		budgetMiB   int64
+		gpus        int
+		constraints ModelConfig
+		wantBatch   int
+		wantContext int
+		wantCache   model.GGMLType
+	}{
+		{"preferred batch", 1700, 1, ModelConfig{}, 0, 8192, model.GGMLTypeF16},
+		{"F16 before Q8", 1500, 1, ModelConfig{}, 1024, 8192, model.GGMLTypeF16},
+		{"512 floor", 1450, 1, ModelConfig{}, 512, 8192, model.GGMLTypeF16},
+		{"Q8 before context", 1400, 1, ModelConfig{}, 512, 8192, model.GGMLTypeQ8_0},
+		{"context last", 1390, 1, ModelConfig{}, 512, 4096, model.GGMLTypeQ8_0},
+		{"no fit below floor", 1370, 1, ModelConfig{}, 512, 4096, model.GGMLTypeQ8_0},
+		{"unfittable explicit context", 1390, 1, ModelConfig{PtrContextWindow: new(8192)}, 512, 8192, model.GGMLTypeQ8_0},
+		{"explicit batch", 1500, 1, ModelConfig{PtrPhysicalBatchSize: new(2048)}, 2048, 4096, model.GGMLTypeQ8_0},
+		{"explicit below floor", 1400, 1, ModelConfig{PtrPhysicalBatchSize: new(256)}, 256, 8192, model.GGMLTypeF16},
+		{"explicit precision", 1400, 1, ModelConfig{CacheTypeK: model.GGMLTypeF16, CacheTypeV: model.GGMLTypeF16}, 512, 4096, model.GGMLTypeF16},
+		{"explicit context and concurrency", 1450, 1, ModelConfig{PtrContextWindow: new(8192), PtrNSeqMax: new(1)}, 512, 8192, model.GGMLTypeF16},
+		{"multi GPU tensor unchanged", 1500, 2, ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 0, 4096, model.GGMLTypeQ8_0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			devs := devices.Devices{GPUCount: tt.gpus, SupportsGPUOffload: true, SystemRAMBytes: 16 << 30}
+			for i := range tt.gpus {
+				devs.Devices = append(devs.Devices, devices.DeviceInfo{Index: i, Type: "gpu_cuda", TotalBytes: 8 << 30})
+			}
+			budget := AutoTuneBudget{GPUBytes: tt.budgetMiB << 20, SystemRAMBytes: 16 << 30}
+			cfg, err := AutoTuneWithConfigAndBudget(info, devs, tt.constraints, budget)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.ToKronkConfig().PhysicalBatchSize(); got != tt.wantBatch {
+				t.Errorf("physical batch: got %d, want %d", got, tt.wantBatch)
+			}
+			if cfg.PtrContextWindow == nil || *cfg.PtrContextWindow != tt.wantContext {
+				t.Errorf("context: got %v, want %d", cfg.PtrContextWindow, tt.wantContext)
+			}
+			if cfg.CacheTypeK != tt.wantCache || cfg.CacheTypeV != tt.wantCache {
+				t.Errorf("KV types: got %s/%s, want %s", cfg.CacheTypeK, cfg.CacheTypeV, tt.wantCache)
+			}
+			if cfg.PtrPrefillBatchSize != nil || cfg.PtrSWAFull != nil {
+				t.Fatal("batch tuning changed the prefill contribution or SWA mode")
+			}
+		})
+	}
+}
+
+func TestAnalyzeInklingFitsWeightsButNeedsSmallerBatch(t *testing.T) {
+	info := ModelInfo{
+		ID: "Inkling-2-Q8_0", Size: 8 << 30, HasProjection: true,
+		Metadata: map[string]string{
+			"general.architecture": "inkling2", "inkling2.block_count": "4",
+			"inkling2.context_length": "131072", "inkling2.embedding_length": "2048",
+			"inkling2.attention.head_count": "24", "inkling2.attention.head_count_kv": "4",
+			"inkling2.attention.key_length": "128", "inkling2.attention.value_length": "128",
+			"inkling2.attention.sliding_window": "512", "inkling2.shortconv.l_cache": "3",
+			"inkling2.attention.sliding_window_pattern": "[false true true true]",
+		},
+	}
+	devs := devices.Devices{
+		GPUCount: 1, SupportsGPUOffload: true, SystemRAMBytes: 128 << 30,
+		Devices: []devices.DeviceInfo{{Type: "gpu_cuda", FreeBytes: 32 << 30, TotalBytes: 32 << 30}},
+	}
+	constraints := ModelConfig{PtrContextWindow: new(131072), PtrNSeqMax: new(1)}
+	a, err := AnalyzeWithConfig(info, devs, constraints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Weights fit comfortably, but two 24 GiB attention-bias tensors at 2K
+	// exceed this budget. F16 with batch 512 fits without shrinking context.
+	if !a.Memory.FullGPUFit {
+		t.Fatal("fixture weights do not fit on GPU")
+	}
+	if !a.Recommended.Fits || a.Recommended.PhysicalBatchSize != 512 || a.Recommended.ContextWindow != 131072 ||
+		a.Recommended.CacheTypeK != "f16" || a.Recommended.CacheTypeV != "f16" {
+		t.Fatalf("recommendation: got %+v, want fitting 128K/F16/512", a.Recommended)
+	}
+
+	for _, tt := range []struct {
+		name     string
+		capacity *int
+		budget   *int
+		wantSize int
+		wantFits bool
+	}{
+		{"image capacity", new(640), nil, 640, true},
+		{"image token budget", nil, new(640), 640, true},
+		{"unfittable image capacity", new(1536), nil, 1536, false},
+		{"unfittable image token budget", nil, new(1536), 1536, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			constraints := constraints
+			constraints.PtrImageBatchTokenCapacity = tt.capacity
+			constraints.PtrImageTokenBudget = tt.budget
+			a, err := AnalyzeWithConfig(info, devs, constraints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a.Recommended.Fits != tt.wantFits || a.Recommended.PhysicalBatchSize != 512 {
+				t.Fatalf("recommendation: got %+v, want fits %t and requested batch 512", a.Recommended, tt.wantFits)
+			}
+			tuned, err := AutoTuneWithConfig(info, devs, constraints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tuned.PtrPhysicalBatchSize == nil || *tuned.PtrPhysicalBatchSize != 512 {
+				t.Fatalf("physical batch: got %v, want 512", tuned.PtrPhysicalBatchSize)
+			}
+			cfg := constraints.ToKronkConfig()
+			cfg.PtrPhysicalBatchSize = tuned.PtrPhysicalBatchSize
+			_, physical := cfg.GenerationBatchSizes(1, false)
+			if physical != tt.wantSize {
+				t.Errorf("effective image capacity: got %d, want %d", physical, tt.wantSize)
+			}
+		})
+	}
+
+	// With ample memory the architecture preference still wins, rather than
+	// choosing 2K merely because it fits. Explicit requests remain authoritative.
+	devs.Devices[0].FreeBytes = 128 << 30
+	devs.Devices[0].TotalBytes = 128 << 30
+	for _, tt := range []struct {
+		name     string
+		slots    int
+		physical *int
+		wantSize int
+	}{
+		{"one slot preference", 1, nil, 512},
+		{"two slot preference", 2, nil, 512},
+		{"explicit larger batch", 2, new(1024), 1024},
+		{"explicit smaller batch", 2, new(256), 256},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			constraints := constraints
+			constraints.PtrNSeqMax = new(tt.slots)
+			constraints.PtrPhysicalBatchSize = tt.physical
+			tuned, err := AutoTuneWithConfig(info, devs, constraints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := tuned.ToKronkConfig()
+			_, physical := cfg.GenerationBatchSizes(1, false)
+			if cfg.PhysicalBatchSize() != tt.wantSize || physical != tt.wantSize {
+				t.Errorf("requested/effective physical batch: got %d/%d, want %d", cfg.PhysicalBatchSize(), physical, tt.wantSize)
+			}
+			if cfg.BatchBaseSize() != 2048 || cfg.NSeqMax() != tt.slots || cfg.ContextWindow() != 131072 ||
+				cfg.CacheTypeK != model.GGMLTypeF16 || cfg.CacheTypeV != model.GGMLTypeF16 {
+				t.Errorf("preference changed other sizing: got %s", cfg)
+			}
+		})
 	}
 }
 

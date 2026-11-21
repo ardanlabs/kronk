@@ -12,8 +12,9 @@ func initDecisionProtocol(m *Model) error {
 		Model: m.model, Vocab: m.vocab,
 		ModelID: m.responseModelID(), Protocol: m.modelInfo.decisionProtocol.String(),
 		AddBOSToken: m.addBOSToken, ContextWindow: m.decision.contextWindow,
-		Calibration: m.modelInfo.profile.Decision,
-		Run:         m.runDecisionWork,
+		DecisionGroups: m.decision.mem == 0 && batchExtSetDecisionGroupFunc.Cif != nil,
+		Calibration:    m.modelInfo.profile.Decision,
+		Run:            m.runDecisionWork,
 		RenderChat: func(ctx context.Context, prompt string) (string, error) {
 			return m.applyJinjaTemplate(ctx, D{
 				"messages":             []D{{"role": RoleUser, "content": prompt}},
@@ -44,12 +45,14 @@ func (m *Model) runDecisionWork(ctx context.Context, plans []decision.Work) ([][
 				token: row.Token, hasToken: row.HasToken,
 				embedding: row.Embedding, embdWidth: len(row.Embedding),
 				positions: row.Positions, positionCount: row.PositionCount,
+				decisionGroup: row.DecisionGroup,
 			}
 		}
 		work[i] = decisionWork{
 			tokens: plan.Tokens, prefixRows: prefix, position: plan.Position,
 			prefixLen: plan.PrefixLen, readouts: readouts,
 			decisionOrder: plan.DecisionOrder, jointScores: plan.JointScores,
+			decisionGroups: plan.DecisionGroups,
 		}
 	}
 	return m.decision.run(ctx, work)

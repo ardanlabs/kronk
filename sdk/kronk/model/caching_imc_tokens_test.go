@@ -118,10 +118,23 @@ func TestProcessIMCTokenPlanSelectsLongestCompletePrefix(t *testing.T) {
 }
 
 func TestProcessIMCTokenPlanRejectsNonPrefixRender(t *testing.T) {
-	m := Model{cfg: Config{PtrCacheMinTokens: new(1)}}
-	result := m.processIMCTokenPlan(context.Background(), nil, []llama.Token{1, 2}, []llama.Token{1, 9}, nil, time.Now())
-	if result.imcTokenPlan {
-		t.Fatal("imcTokenPlan = true, want false")
+	tests := []struct {
+		name   string
+		actual []llama.Token
+		stable []llama.Token
+	}{
+		{name: "empty input"},
+		{name: "divergent render", actual: []llama.Token{1, 2}, stable: []llama.Token{1, 9}},
+		{name: "longer stable render", actual: []llama.Token{1, 2}, stable: []llama.Token{1, 2, 3}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{cfg: Config{PtrCacheMinTokens: new(1)}}
+			result := m.processIMCTokenPlan(t.Context(), nil, tt.actual, tt.stable, nil, time.Now())
+			if result.imcTokenPlan {
+				t.Fatal("imcTokenPlan = true, want false")
+			}
+		})
 	}
 }
 
@@ -274,6 +287,12 @@ func TestProcessIMCTokenPlanPreservesCompletePrompt(t *testing.T) {
 		{name: "append", cacheMin: 1, cached: []llama.Token{1}, stable: []llama.Token{1, 2}, actual: []llama.Token{1, 2, 9}, wantMatch: "append"},
 		{name: "rebuild after divergence", cacheMin: 1, cached: []llama.Token{7}, stable: []llama.Token{1, 2}, actual: []llama.Token{1, 2, 9}, wantMatch: "rebuild"},
 		{name: "below minimum", cacheMin: 10, cached: nil, stable: []llama.Token{1, 2}, actual: []llama.Token{1, 2, 9}, wantMatch: ""},
+		{name: "multi-token suffix", cacheMin: 1, cached: []llama.Token{1, 2}, stable: []llama.Token{1, 2}, actual: []llama.Token{1, 2, 9, 8}, wantMatch: "exact"},
+		{name: "suffix-free exact", cacheMin: 1, cached: []llama.Token{1, 2}, stable: []llama.Token{1, 2, 9}, actual: []llama.Token{1, 2, 9}, wantMatch: "exact"},
+		{name: "suffix-free append", cacheMin: 1, cached: []llama.Token{1}, stable: []llama.Token{1, 2, 9}, actual: []llama.Token{1, 2, 9}, wantMatch: "append"},
+		{name: "suffix-free rebuild", cacheMin: 1, cached: []llama.Token{7}, stable: []llama.Token{1, 2, 9}, actual: []llama.Token{1, 2, 9}, wantMatch: "rebuild"},
+		{name: "suffix-free below minimum", cacheMin: 3, cached: nil, stable: []llama.Token{1, 2, 9}, actual: []llama.Token{1, 2, 9}, wantMatch: ""},
+		{name: "suffix-free single token", cacheMin: 1, cached: nil, stable: []llama.Token{9}, actual: []llama.Token{9}, wantMatch: ""},
 	}
 
 	for _, tt := range tests {
@@ -297,6 +316,9 @@ func TestProcessIMCTokenPlanPreservesCompletePrompt(t *testing.T) {
 			}
 			if !slices.Equal(result.imcSamplerPromptTokens, tt.actual) {
 				t.Errorf("imcSamplerPromptTokens = %v, want complete prompt %v", result.imcSamplerPromptTokens, tt.actual)
+			}
+			if len(result.imcTailTokens) == 0 || result.imcTailTokens[len(result.imcTailTokens)-1] != tt.actual[len(tt.actual)-1] {
+				t.Errorf("inference tail = %v, want non-empty tail ending in final prompt token", result.imcTailTokens)
 			}
 
 			got := slices.Clone(tt.actual[:result.cacheIdx])

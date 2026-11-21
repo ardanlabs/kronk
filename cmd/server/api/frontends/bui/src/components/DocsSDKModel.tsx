@@ -54,7 +54,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func InitYzmaWorkarounds(path string) error</code>
               </pre>
-              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code. Call it during native initialization, before using these bindings.</p>
+              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code.</p>
             </div>
 
             <div className="doc-section" id="func-recurrentstatecopies">

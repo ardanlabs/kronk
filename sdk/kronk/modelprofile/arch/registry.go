@@ -18,6 +18,7 @@ var architectureAdapters = []architectureAdapter{
 	KnownRecurrent{},
 	LFM2{},
 	LFM3{},
+	Inkling{},
 	GLM5Next{},
 	KimiK3{},
 	QwenHybrid{},
