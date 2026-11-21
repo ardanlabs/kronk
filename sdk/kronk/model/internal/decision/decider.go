@@ -40,42 +40,60 @@ func newFinalTokenRunner(m *Runtime) (finalTokenRunner, error) {
 func (r *finalTokenRunner) run(ctx context.Context, req DecisionRequest, questions []finalTokenQuestion, answer func(DecisionQuestion, []systemOneOption, []float64) DecisionAnswer) (DecisionResponse, error) {
 	work := make([]Work, len(questions))
 	for i, question := range questions {
-		prompt, err := r.template.renderValues(question.values)
+		item, err := r.prepareQuestion(ctx, question)
 		if err != nil {
-			return DecisionResponse{}, err
+			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", req.Questions[i].ID, err)
 		}
-		if len(question.files) == 0 {
-			work[i].Tokens = r.encode(prompt, true)
-		} else {
-			rows, _, err := r.runtime.PrepareMedia(ctx, prompt, question.files)
-			if err != nil {
-				return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", req.Questions[i].ID, err)
-			}
-			if len(rows) == 0 || !rows[len(rows)-1].HasToken {
-				return DecisionResponse{}, fmt.Errorf("%w: decision prompt must end with a text readout token", ErrDecisionRequest)
-			}
-			last := rows[len(rows)-1]
-			work[i] = Work{PrefixRows: rows[:len(rows)-1], Tokens: []llama.Token{last.Token}, Position: int(last.Positions[0])}
-		}
-		if work[i].rowCount() > r.runtime.ContextWindow {
-			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d rows, limit is %d", req.Questions[i].ID, ErrDecisionBudget, work[i].rowCount(), r.runtime.ContextWindow)
-		}
-		var candidates []llama.Token
-		for _, group := range question.groups {
-			candidates = append(candidates, group...)
-		}
-		work[i].Readouts = []Readout{{Position: work[i].Position + len(work[i].Tokens) - 1, Candidates: candidates}}
+		work[i] = item
 	}
+	return r.runWork(ctx, req, questions, work, answer)
+}
+
+func (r *finalTokenRunner) prepareQuestion(ctx context.Context, question finalTokenQuestion) (Work, error) {
+	prompt, err := r.template.renderValues(question.values)
+	if err != nil {
+		return Work{}, err
+	}
+	var work Work
+	if len(question.files) == 0 {
+		work.Tokens = r.encode(prompt, true)
+	} else {
+		rows, _, err := r.runtime.PrepareMedia(ctx, prompt, question.files)
+		if err != nil {
+			return Work{}, err
+		}
+		if len(rows) == 0 || !rows[len(rows)-1].HasToken {
+			return Work{}, fmt.Errorf("%w: decision prompt must end with a text readout token", ErrDecisionRequest)
+		}
+		last := rows[len(rows)-1]
+		work = Work{PrefixRows: rows[:len(rows)-1], Tokens: []llama.Token{last.Token}, Position: int(last.Positions[0])}
+	}
+	if work.rowCount() > r.runtime.ContextWindow {
+		return Work{}, fmt.Errorf("%w: input needs %d rows, limit is %d", ErrDecisionBudget, work.rowCount(), r.runtime.ContextWindow)
+	}
+	var candidates []llama.Token
+	for _, group := range question.groups {
+		candidates = append(candidates, group...)
+	}
+	work.Readouts = []Readout{{Position: work.Position + len(work.Tokens) - 1, Candidates: candidates}}
+	return work, nil
+}
+
+func (r *finalTokenRunner) runWork(ctx context.Context, req DecisionRequest, questions []finalTokenQuestion, work []Work, answer func(DecisionQuestion, []systemOneOption, []float64) DecisionAnswer) (DecisionResponse, error) {
 	readouts, err := r.runtime.Run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: decider readout: %w", err)
 	}
-	answers := make(map[string]DecisionAnswer, len(work))
+	var outputs [][]float32
+	for _, item := range readouts {
+		outputs = append(outputs, item...)
+	}
+	answers := make(map[string]DecisionAnswer, len(questions))
 	for i, question := range questions {
 		var scores []float32
 		offset := 0
 		for _, group := range question.groups {
-			scores = append(scores, slices.Max(readouts[i][0][offset:offset+len(group)]))
+			scores = append(scores, slices.Max(outputs[i][offset:offset+len(group)]))
 			offset += len(group)
 		}
 		probabilities, err := calibratedDecisionProbabilities(r.runtime, req.Questions[i], scores)

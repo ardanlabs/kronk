@@ -20,13 +20,14 @@ type decisionReadout struct {
 }
 
 type decisionWork struct {
-	tokens        []llama.Token
-	prefixRows    []extendedBatchEntry // Owned media prefix; never borrows MTMD buffers.
-	position      int                  // Logical position of the first text token after the prefix.
-	prefixLen     int
-	readouts      []decisionReadout
-	decisionOrder []llama.DecisionOrder
-	jointScores   int
+	tokens         []llama.Token
+	prefixRows     []extendedBatchEntry // Owned media prefix; never borrows MTMD buffers.
+	position       int                  // Logical position of the first text token after the prefix.
+	prefixLen      int
+	readouts       []decisionReadout
+	decisionOrder  []llama.DecisionOrder
+	decisionGroups []int32
+	jointScores    int
 }
 
 func (w decisionWork) rowCount() int {
@@ -165,6 +166,9 @@ func (e *decisionEngine) validate(work []decisionWork) error {
 		if len(item.tokens) == 0 {
 			return fmt.Errorf("decision work[%d] has no tokens", i)
 		}
+		if len(item.decisionGroups) != 0 && len(item.decisionGroups) != len(item.tokens) {
+			return fmt.Errorf("decision work[%d] has %d decision groups for %d tokens", i, len(item.decisionGroups), len(item.tokens))
+		}
 
 		if item.rowCount() > e.contextWindow || item.rowCount() > e.maxTokens {
 			return fmt.Errorf("%w: decision work[%d] needs %d text/image rows, context limit is %d and batch limit is %d; increase context-window or prefill-batch-size", ErrDecisionBudget, i, item.rowCount(), e.contextWindow, e.maxTokens)
@@ -235,13 +239,14 @@ func (e *decisionEngine) clear() error {
 }
 
 type decisionPart struct {
-	tokens        []llama.Token
-	prefixRows    []extendedBatchEntry
-	position      int
-	sequence      llama.SeqId
-	readouts      []decisionReadout
-	decisionOrder []llama.DecisionOrder
-	jointScores   int
+	tokens         []llama.Token
+	prefixRows     []extendedBatchEntry
+	position       int
+	sequence       llama.SeqId
+	readouts       []decisionReadout
+	decisionOrder  []llama.DecisionOrder
+	decisionGroups []int32
+	jointScores    int
 }
 
 func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, bool, error) {
@@ -377,6 +382,9 @@ func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, 
 			if len(part.decisionOrder) > 0 {
 				batch.entries[idx].decisionOrder = part.decisionOrder[i]
 			}
+			if len(part.decisionGroups) > 0 {
+				batch.entries[idx].decisionGroup = part.decisionGroups[i]
+			}
 		}
 	}
 
@@ -389,13 +397,14 @@ func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float
 	parts := make([]decisionPart, len(entries))
 	for i, entry := range entries {
 		parts[i] = decisionPart{
-			tokens:        entry.work.tokens,
-			prefixRows:    entry.work.prefixRows,
-			position:      entry.work.position,
-			sequence:      llama.SeqId(i),
-			readouts:      entry.work.readouts,
-			decisionOrder: entry.work.decisionOrder,
-			jointScores:   entry.work.jointScores,
+			tokens:         entry.work.tokens,
+			prefixRows:     entry.work.prefixRows,
+			position:       entry.work.position,
+			sequence:       llama.SeqId(i),
+			readouts:       entry.work.readouts,
+			decisionOrder:  entry.work.decisionOrder,
+			decisionGroups: entry.work.decisionGroups,
+			jointScores:    entry.work.jointScores,
 		}
 	}
 

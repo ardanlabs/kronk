@@ -35,14 +35,15 @@ type AudioProtocol interface {
 // Runtime supplies borrowed model metadata and model-owned operations. Protocols
 // never create or free native contexts, schedule work, or retain MTMD resources.
 type Runtime struct {
-	Model         llama.Model
-	Vocab         llama.Vocab
-	ModelID       string
-	Protocol      string
-	AddBOSToken   bool
-	ContextWindow int
-	Calibration   modelprofile.Decision
-	Run           func(context.Context, []Work) ([][][]float32, error)
+	Model          llama.Model
+	Vocab          llama.Vocab
+	ModelID        string
+	Protocol       string
+	AddBOSToken    bool
+	ContextWindow  int
+	DecisionGroups bool // Native full-attention question isolation is available.
+	Calibration    modelprofile.Decision
+	Run            func(context.Context, []Work) ([][][]float32, error)
 	// RenderChat renders a single-user decision prompt with thinking disabled.
 	RenderChat   func(context.Context, string) (string, error)
 	PrepareMedia func(context.Context, string, [][]byte) ([]PrefixRow, int, error)
@@ -55,6 +56,7 @@ type PrefixRow struct {
 	Embedding     []float32
 	Positions     [4]llama.Pos
 	PositionCount int
+	DecisionGroup int32
 }
 
 // Readout selects logits or embeddings at one token position.
@@ -67,13 +69,14 @@ type Readout struct {
 // Work describes an inference pass. All slices remain owned by the request
 // until Run returns; the execution engine owns native staging and isolation.
 type Work struct {
-	Tokens        []llama.Token
-	PrefixRows    []PrefixRow
-	Position      int
-	PrefixLen     int
-	Readouts      []Readout
-	DecisionOrder []llama.DecisionOrder
-	JointScores   int
+	Tokens         []llama.Token
+	PrefixRows     []PrefixRow
+	Position       int
+	PrefixLen      int
+	Readouts       []Readout
+	DecisionOrder  []llama.DecisionOrder
+	DecisionGroups []int32
+	JointScores    int
 }
 
 func (w Work) rowCount() int {
