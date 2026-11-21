@@ -6,6 +6,11 @@ import "github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 // and workspaces. Architecture-specific weight facts come from normalized Input;
 // dense and MoE models reuse the same placement rules.
 func calculateModelResidency(input Input, offloadLayers int64) (activeGPU, activeCPU, expertsGPU, expertsCPU int64) {
+	if offloadLayers > 0 {
+		// Loop cache slots follow the physical blocks in native placement.
+		// Offloading those slots does not create or move another set of weights.
+		offloadLayers = max(offloadLayers-(cacheBlockCount(input)-input.BlockCount), 1)
+	}
 	activeTotal := input.ModelSizeBytes
 	if input.Weights != nil && input.MoE != nil && input.MoE.IsMoE {
 		expertsGPU, expertsCPU = calculateExpertWeights(input, max(offloadLayers-1, 0))

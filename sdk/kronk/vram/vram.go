@@ -202,7 +202,7 @@ type Result struct {
 // share a single implementation.
 func Calculate(input Input) Result {
 	kv := calculateSlotState(input)
-	offloadLayers := clampGPULayers(input.GPULayers, input.BlockCount)
+	offloadLayers := clampGPULayers(input.GPULayers, cacheBlockCount(input))
 
 	// b11513 offloads output first; it has no attention/recurrent state.
 	gpuLayers := max(offloadLayers-1, 0)

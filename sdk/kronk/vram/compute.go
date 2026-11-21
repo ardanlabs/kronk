@@ -112,6 +112,8 @@ func selectMemoryPolicy(input Input) memoryPolicy {
 		policy.compute = lfm3ComputeMemory
 	case input.ComputeKind == modelprofile.ComputeKimiK3:
 		policy.cache = kimiCache
+	case input.ComputeKind == modelprofile.ComputeInkling:
+		policy.cache = inklingCache
 	case input.ComputeKind == modelprofile.ComputeIndexed || input.IndexerKeyLength > 0:
 		policy.compute = qwen4expComputeMemory
 	}

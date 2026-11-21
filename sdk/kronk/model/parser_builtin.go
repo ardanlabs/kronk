@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/gemma"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/glm"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/gpt"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/inkling"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/kimi"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/lfm"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/llama"
@@ -21,10 +22,12 @@ import (
 )
 
 // selectDefaultParser keeps explicit protocols ahead of architecture lineages:
-// Beam XML-Harmony precedes GPT JSON-Harmony, and marked tool-call protocols
-// precede inherited architecture metadata. The catch-all remains last.
+// Inkling message blocks and Beam XML-Harmony precede GPT JSON-Harmony, and
+// marked tool-call protocols precede inherited architecture metadata.
+// The catch-all remains last.
 func selectDefaultParser(fp Fingerprint) Parser {
 	factories := [...]func(parsers.Fingerprint) (parsers.Parser, bool){
+		inkling.New,
 		beam.New,
 		gpt.New,
 		lfm.New,

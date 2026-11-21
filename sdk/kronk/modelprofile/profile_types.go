@@ -329,6 +329,8 @@ var (
 	ComputeTinyVocaBackbone = newComputeKind(21)
 	// ComputeTinyVocaDecoder identifies Tiny-Voca frame stacks and source-filter synthesis.
 	ComputeTinyVocaDecoder = newComputeKind(22)
+	// ComputeInkling identifies Inkling2's generic workspace allowance and native cache layout.
+	ComputeInkling = newComputeKind(23)
 )
 
 func newComputeKind(value uint8) ComputeKind {

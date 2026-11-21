@@ -1,6 +1,9 @@
 package vram
 
-import "github.com/ardanlabs/kronk/sdk/kronk/gguf"
+import (
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+)
 
 // calculateSlotState sizes persistent attention, indexer, and recurrent state
 // using the shared GGUF allocator formulas and normalized architecture facts.
@@ -68,7 +71,7 @@ func genericCache(input Input) gguf.KVCache {
 // placeCache assigns per-layer attention/recurrent state to the same device
 // as its transformer block, unless all cache is explicitly kept on CPU.
 func placeCache(input Input, kv gguf.KVCache, gpuLayers int64) (gpu, cpu int64) {
-	gpuLayerStart := input.BlockCount - gpuLayers
+	gpuLayerStart := cacheBlockCount(input) - gpuLayers
 	for layer, bytes := range kv.LayerMemory {
 		if !input.KVCacheOnCPU && int64(layer) >= gpuLayerStart {
 			gpu += bytes
@@ -78,4 +81,13 @@ func placeCache(input Input, kv gguf.KVCache, gpuLayers int64) (gpu, cpu int64) 
 	}
 
 	return gpu, cpu
+}
+
+// cacheBlockCount includes independent loop passes without counting their
+// shared weights again. Inkling's normalized arrays use native cache-slot order.
+func cacheBlockCount(input Input) int64 {
+	if input.ComputeKind == modelprofile.ComputeInkling {
+		return max(input.BlockCount, int64(len(input.HeadCountKVByLayer)))
+	}
+	return input.BlockCount
 }

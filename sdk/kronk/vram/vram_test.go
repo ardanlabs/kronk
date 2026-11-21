@@ -1662,3 +1662,90 @@ func TestFromBytesLFM3Memory(t *testing.T) {
 		})
 	}
 }
+
+func TestFromBytesInklingMemory(t *testing.T) {
+	// Four physical layers, with the middle two executed three times. The
+	// resulting eight cache slots have 13 full-attention and 7 SWA KV heads.
+	// F16 K+V costs 32 bytes/head/cell. Two sequences use 2048 full cells or
+	// 512 SWA cells. Each slot also stores 2560 F32 convolution bytes per
+	// sequence and state copy. Weights exist only for the four physical layers.
+	for _, tt := range []struct {
+		name                    string
+		architecture            string
+		full, cpu, varying      bool
+		passes                  string
+		copies, offload         int64
+		wantCache, wantGPUCache int64
+		wantWeights             int64
+	}{
+		{"loop full offload", "inkling2_loop", false, false, false, "3", 3, 0, 1089536, 1089536, 1000},
+		{"loop single state copy", "inkling2_loop", false, false, false, "3", 1, 0, 1007616, 1007616, 1000},
+		{"loop full SWA", "inkling2_loop", true, false, false, "3", 3, 0, 1433600, 1433600, 1000},
+		{"loop CPU cache", "inkling2_loop", false, true, false, "3", 3, 0, 1089536, 0, 1000},
+		{"loop CPU only", "inkling2_loop", false, false, false, "3", 3, -1, 1089536, 0, 0},
+		{"output and last cache slot", "inkling2_loop", false, false, false, "3", 3, 2, 1089536, 277504, 200},
+		{"only repeated cache slots offloaded", "inkling2_loop", false, false, false, "3", 3, 5, 1089536, 651264, 200},
+		{"one physical layer offloaded", "inkling2_loop", false, false, false, "3", 3, 6, 1089536, 683008, 400},
+		{"single variable pass", "inkling2_loop", false, false, true, "1", 3, 0, 438272, 438272, 1000},
+		{"non-loop architecture", "inkling2", false, false, false, "", 3, 0, 438272, 438272, 1000},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := map[string]string{"general.architecture": tt.architecture}
+			for key, value := range map[string]string{
+				"block_count": "4", "embedding_length": "128", "vocab_size": "1024",
+				"attention.head_count": "[4 8 8 4]", "attention.head_count_kv": "[1 2 4 1]",
+				"attention.key_length": "8", "attention.value_length": "8",
+				"attention.sliding_window": "128", "attention.sliding_window_pattern": "[false true false true]",
+				"shortconv.l_cache": "3", "attn_res.block_size": "1",
+				"loop.start": "1", "loop.end": "3", "loop.count": tt.passes, "loop.gate_rank": "8",
+			} {
+				metadata[tt.architecture+"."+key] = value
+			}
+			if tt.varying {
+				metadata[tt.architecture+".loop.varying"] = "true"
+			}
+			cfg := Config{ContextWindow: 1024, Slots: 2, NUBatch: 64, BytesPerElement: 2, RecurrentStateCopies: tt.copies,
+				SWAFull: tt.full, KVCacheOnCPU: tt.cpu, GPULayers: tt.offload}
+			result, err := FromBytes(deepseek41Header(t, metadata, nil), 1000, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Input.BlockCount != 4 || result.Input.ComputeKind != modelprofile.ComputeInkling {
+				t.Errorf("physical dimensions/fallback compute: got %+v", result.Input)
+			}
+			if result.SlotMemory != tt.wantCache || result.KVPerSlot != tt.wantCache/2 || result.KVVRAMBytes != tt.wantGPUCache || result.KVCPUBytes != tt.wantCache-tt.wantGPUCache {
+				t.Errorf("persistent memory total/per slot/GPU/CPU: got %d/%d/%d/%d, want %d/%d/%d/%d",
+					result.SlotMemory, result.KVPerSlot, result.KVVRAMBytes, result.KVCPUBytes,
+					tt.wantCache, tt.wantCache/2, tt.wantGPUCache, tt.wantCache-tt.wantGPUCache)
+			}
+			if result.ModelWeightsGPU != tt.wantWeights || result.ModelWeightsCPU != 1000-tt.wantWeights {
+				t.Errorf("physical weight GPU/CPU: got %d/%d, want %d/%d", result.ModelWeightsGPU, result.ModelWeightsCPU, tt.wantWeights, 1000-tt.wantWeights)
+			}
+			if tt.offload == 2 {
+				input := result.Input
+				input.ComputeBackend = "metal"
+				input.KVUnified = true
+				unified := Calculate(input)
+				// The final logical slot is full attention even though the
+				// final physical block uses SWA. Include its Metal gather,
+				// query scratch, and the full/SWA row-list device copy.
+				if got := unified.ComputeMemory.WorkspaceGPU - result.ComputeMemory.WorkspaceGPU; got != 872448 {
+					t.Errorf("loop-slot Metal attention scratch: got %d, want 872448", got)
+				}
+				if got := unified.ComputeMemory.WorkspaceCPU; got != 20480 {
+					t.Errorf("loop-slot attention lists: got %d, want 20480", got)
+				}
+			}
+			if tt.offload == 6 {
+				input := result.Input
+				input.Weights = &gguf.WeightBreakdown{AlwaysActiveBytes: 500, OutputBytes: 100, ExpertBytesTotal: 500, ExpertBytesByLayer: []int64{125, 125, 125, 125}}
+				input.MoE = &gguf.MoEInfo{IsMoE: true}
+				input.ExpertLayersOnGPU = 4
+				moe := Calculate(input)
+				if moe.ModelWeightsGPU != 325 || moe.ModelWeightsCPU != 675 || moe.KVVRAMBytes != tt.wantGPUCache {
+					t.Errorf("physical MoE placement: got GPU/CPU/cache %d/%d/%d, want 325/675/%d", moe.ModelWeightsGPU, moe.ModelWeightsCPU, moe.KVVRAMBytes, tt.wantGPUCache)
+				}
+			}
+		})
+	}
+}
