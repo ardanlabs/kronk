@@ -1,6 +1,6 @@
 {
     "$schema": "https://opencode.ai/config.json",
-    "model": "kronk/ggml-org/Inkling-2-Mini-Q8_0/AGENT",
+    "model": "kronk/unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT",
     "providers": {
         "kronk": {
             "package": "@opencode/ai/providers/openai-compatible",
