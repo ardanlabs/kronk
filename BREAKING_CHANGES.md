@@ -3,6 +3,7 @@
 ## Index
 
 - [v1.33.3](#v1333)
+  - [Inference Metrics](#v1333-inference-metrics)
   - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
   - [Internal Parser Packages](#v1333-internal-parser-packages)
   - [Shared ffmpeg Package](#v1333-shared-ffmpeg-package)
@@ -59,6 +60,52 @@
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
 ## v1.33.3
+
+### v1.33.3: Inference Metrics
+
+Inference metrics switch to GenAI names in this release with no dual-emission
+window. Update external dashboards, alerts, and recording rules before upgrading.
+The bundled Grafana dashboard is migrated.
+
+| Removed metric | Replacement |
+| --- | --- |
+| `model_request_ttft_seconds` | `gen_ai_server_time_to_first_token_seconds` |
+| `chat_request_duration_seconds` | `gen_ai_server_request_duration_seconds{gen_ai_operation_name="chat"}` |
+| `inference_request_duration_seconds` | `gen_ai_server_request_duration_seconds` filtered by `gen_ai_operation_name="embeddings"` or `"rerank"` |
+| `usage_tokens_total{kind="prompt"}` | `gen_ai_client_inference_usage_input_tokens_total` |
+| `usage_tokens_total{kind="reasoning"}` | `gen_ai_client_inference_usage_reasoning_output_tokens_total` |
+| `usage_tokens_total{kind="completion"}` | `gen_ai_client_inference_usage_output_tokens_total` minus `gen_ai_client_inference_usage_reasoning_output_tokens_total` after aggregating both to the same labels; an absent reasoning series means zero |
+| `usage_tokens_per_second` | `gen_ai_server_time_per_output_token_seconds`, measuring seconds/token rather than tokens/second |
+
+Histogram `_bucket`, `_sum`, and `_count` series use the new family names.
+For these new metrics, replace `model_id` with `gen_ai_request_model` and
+`operation="embedding"` with `gen_ai_operation_name="embeddings"`. Token kind
+is now expressed by separate counter names rather than a `kind` label. Duration
+also has `error_type` (empty on success) and `runtime`; preserve or aggregate
+these dimensions intentionally in queries. Engine, pool, queue, and IMC metrics
+retain their existing names and labels.
+
+Output tokens include reasoning; reasoning is a subset, not an additional
+contribution. Total usage is input plus output, not the sum of all three
+counters. Aggregate input modality is `unknown`, output modality is `text`,
+and reasoning has no modality label. The client-prefixed token names are a
+deliberate local/server adaptation, also used for embedding and reranking input,
+not full client-convention conformance. Chat usage remains success-only.
+
+TTFT now includes only successful requests and is published at completion,
+using the original time of the first sampled token. Requests that later fail or
+are cancelled no longer contribute to this histogram. TPOT includes successful
+requests with at least two output tokens. The reciprocal of mean TPOT is the
+harmonic mean of per-request decode TPS, not the previous arithmetic average;
+TPS percentiles cannot be preserved by merely renaming the histogram. The
+dashboard labels this statistic explicitly and places TPOT P99 on a separate
+seconds/token axis.
+
+Go callers of `metrics.ObserveChatRequestDuration` must supply its new second
+argument, the error class: `ObserveChatRequestDuration(modelID, "", duration)`
+for success, or a low-cardinality error class for failure. SDK/model-server
+inference paths supply this automatically. See Chapter 15 for the pinned
+convention revision, measurement populations, and query examples.
 
 ### v1.33.3: Speech Response Numeric Types
 

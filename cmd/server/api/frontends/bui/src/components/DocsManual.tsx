@@ -1455,7 +1455,7 @@ models:
             <li>the <code>chat_queue_wait_seconds</code> Prometheus histogram, recorded when a slot is assigned.</li>
           </ul>
           <p>For a successful job, timing starts immediately before attempting submission to the batch engine and ends at slot assignment. It does not include time blocked at the outer SDK admission gate or time spent preparing an IMC session before the submit attempt. Compare it with end-to-end request duration and time-to-first-token measurements when diagnosing latency.</p>
-          <p>Embedding and reranking expose <code>inference_requests_total</code>, <code>inference_request_duration_seconds</code>, and <code>inference_active_requests</code>, labeled by operation and runtime (currently <code>batchseq</code>). Sequence batching also publishes <code>batchseq_queue_wait_seconds</code>, <code>batchseq_items</code>, and <code>batchseq_batches_total</code>. These distinguish outer request concurrency from the number and width of native batches actually evaluated.</p>
+          <p>Embedding and reranking expose <code>inference_requests_total</code> and <code>inference_active_requests</code>, labeled by operation and runtime (currently <code>batchseq</code>); request durations land in the shared <code>gen_ai_server_request_duration_seconds</code> histogram, which carries the same <code>runtime</code> label. Sequence batching also publishes <code>batchseq_queue_wait_seconds</code>, <code>batchseq_items</code>, and <code>batchseq_batches_total</code>. These distinguish outer request concurrency from the number and width of native batches actually evaluated.</p>
           <p>The <code>inference_*</code> metrics begin after the outer SDK admission permit is acquired. They describe admitted model-layer work and do not count admission wait time or requests that time out or are cancelled before admission.</p>
           <p>Consistently increasing queue-wait time indicates contention for execution capacity; compare request volume, prompt lengths, and generation lengths. Before raising <code>nseq-max</code>, confirm that the device has memory headroom and that aggregate throughput improves under a realistic concurrent load. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for metrics, tracing, and profiling.</p>
           <hr />
@@ -4823,24 +4823,28 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
                 <td><code>model_load_seconds</code>, <code>model_load_proj_seconds</code></td>
               </tr>
               <tr>
-                <td>Inference latency</td>
-                <td><code>model_prompt_creation_seconds</code>, <code>model_prefill_seconds</code>, <code>model_prefill_ttft_seconds</code>, <code>model_request_ttft_seconds</code></td>
+                <td>Engine latency</td>
+                <td><code>model_prompt_creation_seconds</code>, <code>model_prefill_seconds</code>, <code>model_prefill_ttft_seconds</code></td>
+              </tr>
+              <tr>
+                <td>GenAI latency</td>
+                <td><code>gen_ai_server_request_duration_seconds</code>, <code>gen_ai_server_time_to_first_token_seconds</code>, <code>gen_ai_server_time_per_output_token_seconds</code></td>
+              </tr>
+              <tr>
+                <td>GenAI tokens</td>
+                <td><code>gen_ai_client_inference_usage_input_tokens_total</code>, <code>gen_ai_client_inference_usage_output_tokens_total</code>, <code>gen_ai_client_inference_usage_reasoning_output_tokens_total</code></td>
               </tr>
               <tr>
                 <td>Requests</td>
-                <td><code>chat_requests_total</code>, <code>chat_errors_total</code>, <code>chat_request_duration_seconds</code>, <code>chat_queue_wait_seconds</code></td>
+                <td><code>chat_requests_total</code>, <code>chat_errors_total</code>, <code>chat_queue_wait_seconds</code></td>
               </tr>
               <tr>
                 <td>Embedding/reranking</td>
-                <td><code>inference_requests_total</code>, <code>inference_request_duration_seconds</code>, <code>inference_active_requests</code></td>
+                <td><code>inference_requests_total</code>, <code>inference_active_requests</code></td>
               </tr>
               <tr>
                 <td>Sequence batching</td>
                 <td><code>batchseq_queue_wait_seconds</code>, <code>batchseq_items</code>, <code>batchseq_batches_total</code></td>
-              </tr>
-              <tr>
-                <td>Tokens</td>
-                <td><code>usage_tokens_total</code>, <code>usage_tokens_per_second</code></td>
               </tr>
               <tr>
                 <td>Model memory</td>
@@ -4860,7 +4864,11 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Most model and request metrics have a <code>model_id</code> label. Histograms expose <code>_bucket</code>, <code>_sum</code>, and <code>_count</code> series. Counters such as <code>usage_tokens_total</code> should normally be queried with <code>rate()</code> or <code>increase()</code>.</p>
+          <h4 id="otel-genai-semantic-conventions">OTel GenAI Semantic Conventions</h4>
+          <p>The latency metrics adopt the <a href="https://github.com/open-telemetry/semantic-conventions-genai/blob/4181b1ebe55da7edb3538636c45ae64af369b5ef/docs/gen-ai/gen-ai-metrics.md#generative-ai-model-server-metrics">OpenTelemetry GenAI model-server conventions at revision <code>4181b1e</code></a> (status: Development), rendered in Prometheus form: dots become underscores, counters gain a <code>_total</code> suffix, and duration histograms gain a <code>_seconds</code> unit suffix. They carry the convention's attributes as labels: <code>gen_ai_operation_name</code> (<code>chat</code>, <code>embeddings</code>, or the Kronk-specific <code>rerank</code>), <code>gen_ai_request_model</code>, the constant <code>gen_ai_provider_name="kronk"</code>. <code>gen_ai_server_request_duration_seconds</code> also carries the standard <code>error_type</code> attribute, which is empty on success and otherwise holds a low-cardinality error class such as <code>context-cancelled</code>, <code>tool-call-parse</code>, <code>stop-gate-flush</code>, <code>active-slot</code>, <code>terminal-delivery</code>, <code>pre-batch</code>, <code>error</code>, or <code>cancel</code>; and a Kronk-specific <code>runtime</code> label, which is <code>batch</code> for chat and <code>batchseq</code> or <code>context_pool</code> for embedding and reranking. Duration includes successful, failed, and cancelled requests. TTFT and TPOT include only successful chat requests; TTFT is published at completion using the original first-token timestamp. TPOT excludes the first token and is omitted when fewer than two output tokens were generated. Histogram buckets follow the convention's recommended boundaries, with <code>gen_ai_server_time_to_first_token_seconds</code> extended through 120 seconds so queue-heavy deployments keep tail-quantile resolution. Engine metrics (prefill, queue, pool, resman, IMC) keep Kronk-specific names, which the conventions allow as system-specific additions.</p>
+          <p>Token accounting deliberately reuses the <a href="https://github.com/open-telemetry/semantic-conventions-genai/blob/4181b1ebe55da7edb3538636c45ae64af369b5ef/docs/gen-ai/gen-ai-token-metrics.md">client inference usage counter names</a> for local model execution. This is a Kronk adaptation, not a claim of full client-convention conformance: embedding and reranking input usage also goes into the input counter, and chat counters include only successfully completed requests, not known usage from failed or cancelled chat requests. Embedding and reranking record positive input counts when available, including on errors. Input counts include cached tokens and may include media tokens. Since no reliable modality breakdown is available in these aggregate measurements, the input counter uses <code>gen_ai_token_modality="unknown"</code>, including for text-only requests. Output uses <code>text</code>; the reasoning subset counter has no modality label. Output includes reasoning tokens, so do not add the reasoning counter to output when calculating total usage. SDK and HTTP deployments use the same instruments; there is no additional client-side copy of each measurement.</p>
+          <p>Shared names improve interoperability, but dashboards and collectors must still match the instrument types, labels, populations, and convention revision. See the v1.33.3 observability migration in <code>BREAKING_CHANGES.md</code> before upgrading external dashboards, alerts, or recording rules.</p>
+          <p>Most model and request metrics have a <code>model_id</code> label; <code>gen_ai_*</code> metrics use <code>gen_ai_request_model</code> instead. Histograms expose <code>_bucket</code>, <code>_sum</code>, and <code>_count</code> series. Counters such as <code>gen_ai_client_inference_usage_input_tokens_total</code> should normally be queried with <code>rate()</code> or <code>increase()</code>.</p>
           <p>For an external Prometheus process on the same host:</p>
           <pre className="code-block"><code className="language-yaml">{`scrape_configs:
   - job_name: "kronk"
@@ -4870,13 +4878,21 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
           <p>When Prometheus runs in Docker while Kronk runs on the host, use <code>host.docker.internal:11445</code>, as the repository's configuration does. Kronk's debug listener must also be reachable from that container; a loopback-only listener is not portable across container runtimes. Select an appropriate private interface and restrict access rather than exposing profiling publicly.</p>
           <h4 id="promql-examples">PromQL Examples</h4>
           <p>Average end-to-end time to first token by model:</p>
-          <pre className="code-block"><code className="language-promql">{`rate(model_request_ttft_seconds_sum[5m])
-  / rate(model_request_ttft_seconds_count[5m])`}</code></pre>
+          <pre className="code-block"><code className="language-promql">{`rate(gen_ai_server_time_to_first_token_seconds_sum[5m])
+  / rate(gen_ai_server_time_to_first_token_seconds_count[5m])`}</code></pre>
           <p>P99 time to first token by model:</p>
           <pre className="code-block"><code className="language-promql">{`histogram_quantile(0.99,
-  sum by (le, model_id) (rate(model_request_ttft_seconds_bucket[5m])))`}</code></pre>
-          <p>Token throughput by model and kind:</p>
-          <pre className="code-block"><code className="language-promql">{`sum by (model_id, kind) (rate(usage_tokens_total[5m]))`}</code></pre>
+  sum by (le, gen_ai_request_model) (rate(gen_ai_server_time_to_first_token_seconds_bucket[5m])))`}</code></pre>
+          <p>Token throughput by model (one query per token kind — <code>rate()</code> drops <code>__name__</code>, so regex-matching all usage counters in a single query collides):</p>
+          <pre className="code-block"><code className="language-promql">{`sum by (gen_ai_request_model)
+  (rate(gen_ai_client_inference_usage_input_tokens_total[5m]))
+
+sum by (gen_ai_request_model)
+  (rate(gen_ai_client_inference_usage_output_tokens_total[5m]))`}</code></pre>
+          <p>Harmonic mean of per-request decode rates in tokens/second by model:</p>
+          <pre className="code-block"><code className="language-promql">{`1 / (rate(gen_ai_server_time_per_output_token_seconds_sum[5m])
+  / rate(gen_ai_server_time_per_output_token_seconds_count[5m]))`}</code></pre>
+          <p>This is the reciprocal of mean TPOT, not the arithmetic mean of per-request TPS. For requests at 10 and 100 TPS, it is approximately 18.2 TPS rather than 55 TPS. The bundled dashboard plots TPOT P99 on a separate right axis in seconds/token, alongside throughput on the left axis in tokens/second.</p>
           <p>Average sequence-batch width by model and operation:</p>
           <pre className="code-block"><code className="language-promql">{`rate(batchseq_items_sum[5m])
   / rate(batchseq_items_count[5m])`}</code></pre>
