@@ -256,6 +256,22 @@ export interface ModelInfoResponse {
   metadata: Record<string, string>;
   vram?: VRAM;
   model_config?: ModelConfig;
+  summary?: ModelSummary;
+}
+
+export interface ModelSummary {
+  model_type: string;
+  sequence_processing: string;
+  parameters: string;
+  quantization: string;
+  capabilities?: CatalogCapabilities;
+  mtp_source?: 'embedded' | 'companion';
+  speculation?: 'auto' | 'disabled' | 'classic' | 'mtp';
+  classic_draft?: string;
+  context_window: number | null;
+  rope_scaling?: string;
+  yarn_orig_ctx: number | null;
+  sampling?: Partial<SamplingConfig>;
 }
 
 export interface CatalogCapabilities {
@@ -424,6 +440,7 @@ export interface CatalogModelResponse extends CatalogSummary {
   model_config?: ModelConfig;
   base_config?: ModelConfig;
   catalog_file?: string;
+  summary?: ModelSummary;
 }
 
 export type CatalogModelsResponse = CatalogModelResponse[];

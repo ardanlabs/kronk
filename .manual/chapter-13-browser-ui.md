@@ -110,6 +110,23 @@ The sidebar groups related operations by subsystem.
   system, architecture, and processor combinations. Bundles are stored below
   `~/.kronk/libraries/`.
 
+Selecting a model, configuration profile, or catalog entry opens **Summary**
+before **Model Card**. It brings together trained and configured context,
+Dense/MoE parameter activation, independent sequence processing (such as
+Hybrid), media capabilities, MTP source and speculation mode, parameter count,
+layer count, quantization, file size, and core sampling values. Sampling compares GGUF
+recommendations with effective defaults, including configuration overrides and
+Kronk baselines. Missing recommendations are **Not specified**; unavailable
+facts are **Unknown**, not an assertion that a feature is unsupported.
+
+MTP sources are declarations, not proof that usable head weights and runtime
+support are present.
+Undownloaded catalog entries do not report effective configuration or sampling
+defaults. YaRN shows configured extension rather than an inferred maximum.
+Tool-calling and reasoning badges use Kronk's chat-template-based capability
+classification, not a guarantee of model-specific behavior. Existing detail tabs
+remain available.
+
 #### Bucky
 
 Bucky has separate pages for downloading and removing whisper models and
@@ -214,8 +231,8 @@ Chapter 12 explains the `open`, `management`, `authenticated`, and
   selected bundle and restart the server.
 - Model details display the effective configuration but do not persist model
   overrides. Catalog details display catalog metadata, files, templates, and
-  VRAM estimates rather than the effective model configuration. Playground
-  settings, including load mode, apply only to that test session. Edit
+  VRAM estimates; Summary also displays resolved defaults for downloaded models.
+  Playground settings, including load mode, apply only to that test session. Edit
   `~/.kronk/models/model_config.yaml` and reload the model when changing
   persistent configuration; see Chapter 3.
 - Closing a browser tab does not explicitly delete its playground session.
