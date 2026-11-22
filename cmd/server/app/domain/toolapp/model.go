@@ -12,6 +12,7 @@ import (
 	buckypool "github.com/ardanlabs/kronk/sdk/bucky/pool"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	malinapool "github.com/ardanlabs/kronk/sdk/malina/pool"
 	"github.com/ardanlabs/kronk/sdk/pool"
@@ -569,6 +570,61 @@ type ModelInfoResponse struct {
 	Metadata      map[string]string `json:"metadata"`
 	ModelConfig   *ModelConfig      `json:"model_config,omitempty"`
 	Vram          *VRAMResponse     `json:"vram,omitempty"`
+	Summary       *ModelSummary     `json:"summary,omitempty"`
+}
+
+// ModelSummary contains shared model facts and optional resolved load settings.
+type ModelSummary struct {
+	ModelType          string                      `json:"model_type"`
+	SequenceProcessing string                      `json:"sequence_processing"`
+	Parameters         string                      `json:"parameters"`
+	Quantization       string                      `json:"quantization"`
+	Capabilities       *models.CatalogCapabilities `json:"capabilities,omitempty"`
+	MTPSource          models.MTPSource            `json:"mtp_source,omitzero"`
+	Speculation        model.SpeculationMode       `json:"speculation,omitzero"`
+	ClassicDraft       string                      `json:"classic_draft,omitempty"`
+	ContextWindow      *int                        `json:"context_window"`
+	RopeScaling        model.RopeScalingType       `json:"rope_scaling,omitzero"`
+	YarnOrigCtx        *int                        `json:"yarn_orig_ctx"`
+	Sampling           map[string]float64          `json:"sampling,omitempty"`
+}
+
+func toModelSummary(mi models.ModelInfo, rmc *models.ModelConfig) ModelSummary {
+	profile := arch.ResolveForModel(mi.Metadata, mi.ID)
+	summary := ModelSummary{
+		ModelType:          "Unknown",
+		SequenceProcessing: profile.SequenceProcessing,
+		Parameters:         models.ParametersLabel(mi.Metadata),
+		Quantization:       mi.Quantization,
+		MTPSource:          models.MTPSourceFor(mi.Metadata, mi.HasMTP),
+	}
+	if profile.Architecture != "" {
+		summary.ModelType = profile.ParameterActivation()
+		caps := models.CapabilitiesForModel(mi.Metadata, mi.HasProjection, mi.ID)
+		caps.MTP = !summary.MTPSource.IsZero()
+		summary.Capabilities = &caps
+	}
+	if rmc == nil {
+		return summary
+	}
+
+	summary.ContextWindow = rmc.PtrContextWindow
+	summary.Speculation = rmc.ToKronkConfig().SpeculationMode()
+	summary.RopeScaling = rmc.RopeScaling
+	summary.YarnOrigCtx = rmc.PtrYarnOrigCtx
+	if rmc.DraftModel != nil {
+		summary.ClassicDraft = rmc.DraftModel.ModelID
+	}
+	sampling := rmc.Sampling.WithMetadataDefaults(mi.Metadata)
+	summary.Sampling = map[string]float64{
+		"temperature":    float64(sampling.Temperature),
+		"top_k":          float64(sampling.TopK),
+		"top_p":          float64(sampling.TopP),
+		"min_p":          float64(sampling.MinP),
+		"repeat_penalty": float64(sampling.RepeatPenalty),
+		"repeat_last_n":  float64(sampling.RepeatLastN),
+	}
+	return summary
 }
 
 // Encode implements the encoder interface.
@@ -1769,6 +1825,7 @@ type CatalogDetailResponse struct {
 	models.CatalogDetail
 	Vram           *VRAMResponse `json:"vram,omitempty"`
 	SWAFullDefault bool          `json:"swa_full_default"`
+	Summary        *ModelSummary `json:"summary,omitempty"`
 }
 
 // Encode implements web.Encoder for the detail payload.

@@ -543,7 +543,10 @@ func (a *app) showModel(ctx context.Context, r *http.Request) web.Encoder {
 		a.log.Info(ctx, "show-model: calculate-vram", "ERROR", err)
 	}
 
-	return toModelInfo(fi, mi, rmc, vramResp)
+	resp := toModelInfo(fi, mi, rmc, vramResp)
+	summary := toModelSummary(mi, &rmc)
+	resp.Summary = &summary
+	return resp
 }
 
 func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {

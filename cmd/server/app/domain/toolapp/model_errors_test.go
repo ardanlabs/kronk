@@ -2,7 +2,9 @@ package toolapp
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -10,6 +12,79 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestModelSummaryEncoding(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture": "qwen35moe", "general.size_label": "35B",
+		"qwen35moe.block_count": "8", "qwen35moe.expert_count": "256",
+		"qwen35moe.context_length": "131072", "qwen35moe.nextn_predict_layers": "1",
+		"general.sampling.temp": "0.8", "general.sampling.top_k": "31",
+		"general.sampling.top_p": "invalid", "general.sampling.penalty_repeat": "1.15",
+	}
+	for _, tt := range []struct {
+		name     string
+		id       string
+		config   *llamamodels.ModelConfig
+		wantCtx  *int
+		wantTemp float64
+		wantMode string
+	}{
+		{"base", "test/model", &llamamodels.ModelConfig{PtrContextWindow: new(8192)}, new(8192), 0.8, "auto"},
+		{"profile", "test/model/LONG", &llamamodels.ModelConfig{
+			PtrContextWindow: new(262144), Speculation: model.SpeculationDisabled,
+			Sampling: llamamodels.SamplingConfig{Temperature: 0.3},
+		}, new(262144), 0.3, "disabled"},
+		{"unloaded", "test/unloaded", &llamamodels.ModelConfig{}, nil, 0.8, "auto"},
+		{"remote catalog", "test/remote", nil, nil, 0, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			info := llamamodels.ModelInfoFromMetadata(tt.id, metadata, 0, true, false)
+			summary := toModelSummary(info, tt.config)
+			for _, response := range []interface {
+				Encode() ([]byte, string, error)
+			}{
+				ModelInfoResponse{Summary: &summary, Metadata: metadata},
+				CatalogDetailResponse{Summary: &summary},
+			} {
+				data, _, err := response.Encode()
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got struct {
+					Summary struct {
+						ModelType string             `json:"model_type"`
+						Sequence  string             `json:"sequence_processing"`
+						Context   *int               `json:"context_window"`
+						Source    string             `json:"mtp_source"`
+						Mode      string             `json:"speculation"`
+						Sampling  map[string]float64 `json:"sampling"`
+					} `json:"summary"`
+				}
+				if err := json.Unmarshal(data, &got); err != nil {
+					t.Fatal(err)
+				}
+				s := got.Summary
+				if s.ModelType != "MoE" || s.Sequence != "Hybrid" || s.Source != "embedded" || s.Mode != tt.wantMode {
+					t.Errorf("summary facts: got %+v, want MoE/Hybrid/embedded/%s", s, tt.wantMode)
+				}
+				if (s.Context == nil) != (tt.wantCtx == nil) || (s.Context != nil && *s.Context != *tt.wantCtx) {
+					t.Errorf("context: got %v, want %v", s.Context, tt.wantCtx)
+				}
+				if tt.config == nil {
+					if s.Sampling != nil {
+						t.Errorf("remote defaults: got %v, want unknown", s.Sampling)
+					}
+					continue
+				}
+				for key, want := range map[string]float64{"temperature": tt.wantTemp, "top_k": 31, "top_p": 0.95, "min_p": 0, "repeat_penalty": 1.15, "repeat_last_n": 64} {
+					if value, ok := s.Sampling[key]; !ok || math.Abs(value-want) > 0.000001 {
+						t.Errorf("%s: got %v (present %t), want %v", key, value, ok, want)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestMoECacheCPUShareEncoding(t *testing.T) {
 	for _, share := range []float32{0, 0.25, 1} {

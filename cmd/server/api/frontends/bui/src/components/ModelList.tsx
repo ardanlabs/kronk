@@ -7,12 +7,14 @@ import { labelWithTip } from './ParamTooltips';
 import { extractContextInfo } from '../lib/context';
 import KeyValueTable from './KeyValueTable';
 import ModelCard from './ModelCard';
+import ModelSummary from './ModelSummary';
 import CodeBlock from './CodeBlock';
 import { VRAMFormulaModal, VRAMCalculatorPanel, getCatalogConfigDefaults, useVRAMState } from './vram';
 
-type ModelListSection = 'model-card' | 'draft-card' | 'config' | 'sampling' | 'template' | 'vram';
+type ModelListSection = 'summary' | 'model-card' | 'draft-card' | 'config' | 'sampling' | 'template' | 'vram';
 
 const SECTION_LABELS: Record<ModelListSection, string> = {
+  summary: 'Summary',
   'model-card': 'Model Card',
   'draft-card': 'Draft Model Card',
   config: 'Model Configuration',
@@ -45,7 +47,7 @@ export default function ModelList() {
   const [modelInfo, setModelInfo] = useState<ModelInfoResponse | null>(null);
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<ModelListSection>('model-card');
+  const [activeSection, setActiveSection] = useState<ModelListSection>('summary');
 
   const [draftModelInfo, setDraftModelInfo] = useState<ModelInfoResponse | null>(null);
   const [draftInfoLoading, setDraftInfoLoading] = useState(false);
@@ -165,7 +167,7 @@ export default function ModelList() {
       return;
     }
     setSelectedModelId(id);
-    setActiveSection('model-card');
+    setActiveSection('summary');
     setConfirmingRemove(false);
     setRemoveError(null);
     setRemoveSuccess(null);
@@ -415,6 +417,17 @@ export default function ModelList() {
                 </button>
               ))}
             </div>
+
+            {activeSection === 'summary' && (
+              <ModelSummary
+                id={modelInfo.id}
+                provider={modelInfo.owned_by}
+                family={allModels.find(m => m.id === selectedModelId)?.model_family}
+                size={formatBytes(modelInfo.size)}
+                metadata={modelInfo.metadata ?? {}}
+                summary={modelInfo.summary}
+              />
+            )}
 
             {/* Model Configuration Section */}
             {activeSection === 'config' && (

@@ -1,6 +1,20 @@
 import { useRef, useCallback, type ReactNode } from 'react';
 
 export const PARAM_TOOLTIPS = {
+  // Model summary
+  summaryText: 'Whether Kronk classifies this as a text-input model rather than a dedicated speech-generation model.',
+  summaryImages: 'Image input capability reported by Kronk from model metadata and projection availability. This does not verify the native runtime can load the model.',
+  summaryAudio: 'Audio input capability reported by Kronk from model metadata and projection availability. Unknown means the required facts are unavailable.',
+  summaryVideo: 'Video input capability reported by Kronk from model metadata and projection availability. Unknown means the required facts are unavailable.',
+  summaryTooling: 'Kronk currently infers tool-calling capability for chat models from the presence of a chat template. This is not a guarantee that every tool format is supported.',
+  summaryReasoning: 'Kronk currently infers reasoning capability for chat models from the presence of a chat template. Model-specific reasoning behavior may differ.',
+  summaryContext: 'The resolved context window for the selected model or configuration profile. Unknown means its load configuration has not been resolved.',
+  summaryYarn: 'Reports configured YaRN scaling and the configured context window, not a guaranteed model maximum. RoPE metadata alone does not establish a supported extension limit.',
+  summaryMTPSource: 'MTP source declared by GGUF metadata or a companion file. Declared embedded heads can have stripped weights or unsupported runtime contracts; a source alone does not prove MTP will activate.',
+  summarySpeculation: 'Resolved selection mode: auto tries a classic draft, then companion MTP, then embedded MTP; disabled uses the target alone; classic and mtp require their respective drafter. Auto can fall back to target-only at load time.',
+  summaryActivation: 'Dense uses the feed-forward weights on every token. MoE routes each token to a subset of experts. This is independent of sequence processing.',
+  summarySequence: 'Attention-only, hybrid attention/recurrent, or recurrent sequence processing, independently of Dense or MoE parameter activation.',
+
   // Sampling – Generation
   temperature: 'Scales the probability distribution to control randomness. Lower values (e.g. 0.2) make output more focused and deterministic; higher values (e.g. 1.5) increase variety and creativity. Leave empty to use the model default.',
   top_p: 'Nucleus sampling — samples only from the smallest set of tokens whose cumulative probability reaches this value. Lower values (e.g. 0.5) focus on the most likely tokens; 1.0 effectively disables top-p filtering. Works alongside temperature.',

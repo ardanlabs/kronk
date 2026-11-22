@@ -91,6 +91,18 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	detail.MTPSource = models.MTPSourceFor(metadata, entry.MTP != "")
 	detail.Capabilities.MTP = !detail.MTPSource.IsZero()
 
+	var resolvedConfig *models.ModelConfig
+	if detail.Downloaded {
+		if cfg, err := a.pool.Kronk.ResolvedModelConfig(id); err != nil {
+			a.log.Info(ctx, "catalog-show", "id", id, "WARN", "resolve summary config", "ERROR", err)
+		} else {
+			resolvedConfig = &cfg
+		}
+	}
+	info := models.ModelInfoFromMetadata(id, metadata, 0, entry.MMProj != "", entry.MTP != "")
+	summary := toModelSummary(info, resolvedConfig)
+	detail.Summary = &summary
+
 	// Compute the initial VRAM estimate from the same head bytes so
 	// the detail screen renders the calculator without a second
 	// network round trip. The total file size includes the projection

@@ -8,15 +8,17 @@ import { formatBytes } from '../lib/format';
 import ResizablePanel from './ResizablePanel';
 import KeyValueTable from './KeyValueTable';
 import ModelCard from './ModelCard';
+import ModelSummary from './ModelSummary';
 import CodeBlock from './CodeBlock';
 import DownloadInfoTable from './DownloadInfoTable';
 import DownloadProgressBar from './DownloadProgressBar';
 import { VRAMFormulaModal, VRAMCalculatorPanel, getCatalogConfigDefaults, useVRAMState } from './vram';
 import { EXPERTS_ALL_ON_GPU } from './vram/constants';
 
-type DetailSection = 'model-card' | 'catalog' | 'template' | 'vram' | 'pull';
+type DetailSection = 'summary' | 'model-card' | 'catalog' | 'template' | 'vram' | 'pull';
 
 const SECTION_LABELS: Record<DetailSection, string> = {
+  summary: 'Summary',
   'model-card': 'Model Card',
   catalog: 'Catalog',
   template: 'Template',
@@ -126,7 +128,7 @@ export default function CatalogList() {
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState<string | null>(null);
 
-  const [activeSection, setActiveSection] = useState<DetailSection>('model-card');
+  const [activeSection, setActiveSection] = useState<DetailSection>('summary');
 
   // Sort state for catalog table
   type SortField = 'id' | 'owned_by' | 'model_family' | 'model_type' | 'has_projection' | 'mtp_source' | 'total_size_bytes' | 'validated';
@@ -278,7 +280,7 @@ export default function CatalogList() {
       setSelectedId(null);
       setModelInfo(null);
       setInfoError(null);
-      setActiveSection('model-card');
+      setActiveSection('summary');
     }
   }, [filteredData, selectedId]);
 
@@ -341,7 +343,7 @@ export default function CatalogList() {
     setSelectedId(null);
     setModelInfo(null);
     setInfoError(null);
-    setActiveSection('model-card');
+    setActiveSection('summary');
     try {
       // Reconcile first so any new on-disk models or schema-version
       // upgrades are picked up before listing. Best-effort: when
@@ -374,12 +376,12 @@ export default function CatalogList() {
     if (selectedId === id) {
       setSelectedId(null);
       setModelInfo(null);
-      setActiveSection('model-card');
+      setActiveSection('summary');
       return;
     }
 
     setSelectedId(id);
-    setActiveSection('model-card');
+    setActiveSection('summary');
     setInfoLoading(true);
     setInfoError(null);
     setModelInfo(null);
@@ -500,7 +502,7 @@ export default function CatalogList() {
       setRemoveSuccess(`Catalog entry "${removedId}" removed successfully`);
       setSelectedId(null);
       setModelInfo(null);
-      setActiveSection('model-card');
+      setActiveSection('summary');
       await loadCatalog();
       removeTimerRef.current = setTimeout(() => setRemoveSuccess(null), 3000);
     } catch (err) {
@@ -538,7 +540,7 @@ export default function CatalogList() {
               loadCatalog();
               setSelectedId(null);
               setModelInfo(null);
-              setActiveSection('model-card');
+              setActiveSection('summary');
               setInfoError(null);
               setConfirmingRemove(false);
               setRemoveError(null);
@@ -867,6 +869,17 @@ export default function CatalogList() {
                     </button>
                   ))}
                 </div>
+
+                {activeSection === 'summary' && modelInfo && (
+                  <ModelSummary
+                    id={modelInfo.id}
+                    provider={modelInfo.owned_by}
+                    family={modelInfo.model_family}
+                    size={modelInfo.total_size || 'Unknown'}
+                    metadata={modelInfo.model_metadata ?? {}}
+                    summary={modelInfo.summary}
+                  />
+                )}
 
                 {/* Catalog Section */}
                 {activeSection === 'catalog' && modelInfo && (

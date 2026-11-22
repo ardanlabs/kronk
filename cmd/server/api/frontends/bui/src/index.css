@@ -3081,6 +3081,149 @@ code[class*="language-"] {
     color: var(--color-light-blue);
 }
 
+/* --- Shared model and catalog summary --- */
+.model-summary {
+    container-type: inline-size;
+    padding-bottom: 8px;
+}
+
+.model-summary-name {
+    margin: 8px 0 16px;
+    color: var(--color-gray-600);
+    overflow-wrap: anywhere;
+}
+
+.model-summary-name span {
+    display: block;
+    margin-top: 4px;
+}
+
+.model-summary-capabilities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    margin-bottom: 20px;
+}
+
+.model-summary-capability {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.model-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+    gap: 20px;
+}
+
+.model-summary-grid section {
+    min-width: 0;
+}
+
+.model-summary .meta-section-title {
+    margin-bottom: 8px;
+}
+
+.model-summary .kv-table {
+    grid-template-columns: minmax(120px, 42%) minmax(0, 1fr);
+}
+
+.model-summary .kv-row {
+    gap: 16px;
+    padding: 8px 12px;
+}
+
+.model-summary-sampling {
+    margin-top: 20px;
+}
+
+.model-summary-sampling p {
+    font-size: 13px;
+    color: var(--color-gray-600);
+    margin-bottom: 10px;
+}
+
+.model-summary-sampling-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+    border-spacing: 0;
+    overflow: hidden;
+    background: var(--color-white);
+    font-size: 14px;
+}
+
+.model-summary-sampling-table th,
+.model-summary-sampling-table td {
+    padding: 8px 12px;
+    text-align: left;
+    overflow-wrap: anywhere;
+    border-bottom: 1px solid var(--color-gray-200);
+}
+
+.model-summary-sampling-table th {
+    background: transparent;
+    color: var(--color-gray-700);
+    font-size: 14px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.model-summary-sampling-table td {
+    color: var(--color-gray-900);
+}
+
+.model-summary-sampling-table thead,
+.model-summary-sampling-table tbody tr:nth-child(even) {
+    background: var(--color-gray-50);
+}
+
+.model-summary-sampling-table tbody tr:hover > * {
+    background: var(--color-gray-200);
+}
+
+.model-summary-sampling-table tbody tr:last-child td,
+.model-summary-sampling-table tbody tr:last-child th {
+    border-bottom: none;
+}
+
+@container (max-width: 520px) {
+    .model-summary-sampling-table,
+    .model-summary-sampling-table thead,
+    .model-summary-sampling-table tbody {
+        display: block;
+    }
+
+    .model-summary-sampling-table tr {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-bottom: 1px solid var(--color-gray-200);
+    }
+
+    .model-summary-sampling-table thead th:first-child {
+        display: none;
+    }
+
+    .model-summary-sampling-table tbody th {
+        grid-column: 1 / -1;
+        padding-bottom: 4px;
+    }
+
+    .model-summary-sampling-table th,
+    .model-summary-sampling-table td {
+        font-size: 13px;
+        border-bottom: none;
+    }
+
+    .model-summary-sampling-table tbody tr:last-child {
+        border-bottom: none;
+    }
+}
+
 /* --- Model card raw metadata toggle --- */
 .model-card-raw-toggle {
     margin-top: 32px;
