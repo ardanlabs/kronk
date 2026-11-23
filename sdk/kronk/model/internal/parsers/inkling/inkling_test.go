@@ -263,3 +263,137 @@ func TestFlushAndSlotIsolation(t *testing.T) {
 		t.Fatalf("reset scanner for next tool: got %+v", calls)
 	}
 }
+
+type tokenPiece struct {
+	content string
+	special bool
+}
+
+func collectTokens(t *testing.T, sm parsers.StateMachine, pieces []tokenPiece, split int, vocabEnd bool) map[parsers.Channel]string {
+	t.Helper()
+	output := make(map[parsers.Channel]string)
+	state := sm.(parsers.TokenStateMachine)
+	for i, piece := range pieces {
+		parts := []string{piece.content}
+		if !piece.special {
+			at := min(split, len(piece.content))
+			parts = []string{piece.content[:at], piece.content[at:]}
+		}
+		for _, part := range parts {
+			if part == "" {
+				continue
+			}
+			r, ended := state.ClassifyToken(part, piece.special)
+			output[r.Channel] += r.Content
+			if ended && (i != len(pieces)-1 || vocabEnd) {
+				t.Fatalf("premature EOG from piece %d (%q)", i, part)
+			}
+		}
+	}
+	if vocabEnd {
+		sm.(parsers.VocabEOGConsumer).ConsumeVocabEOG(eog)
+	}
+	flusher := sm.(parsers.StateMachineFlusher)
+	for r := flusher.Flush(); r != (parsers.Result{}); r = flusher.Flush() {
+		output[r.Channel] += r.Content
+	}
+	return output
+}
+
+func TestTokenChannels(t *testing.T) {
+	const literal = header + think + text + invoke + end + eog + " café <|end_mess"
+	pieces := []tokenPiece{
+		{header, true}, {think, true}, {literal, false}, {end, true},
+		{header, true}, {text, true}, {literal, false}, {"<|image|>", true}, {end, true},
+	}
+	sm := inkling.Parser{}.NewStateMachine()
+	for split := range len(literal) + 1 {
+		for _, nativeEOG := range []bool{false, true} {
+			sm.Reset()
+			input := append([]tokenPiece(nil), pieces...)
+			if !nativeEOG {
+				input = append(input, tokenPiece{eog, true})
+			}
+			got := collectTokens(t, sm, input, split, nativeEOG)
+			if got[parsers.ChannelAnswer] != literal+"<|image|>" || got[parsers.ChannelReasoning] != literal || got[parsers.ChannelTool] != "" {
+				t.Fatalf("split %d, native EOG %t: got channels %+v", split, nativeEOG, got)
+			}
+		}
+	}
+}
+
+func TestTokenTools(t *testing.T) {
+	valid := []tokenPiece{{header, true}, {"ping", false}, {invoke, true}, {`{"name":"ping","args":{}}`, false}, {end, true}}
+	for _, tc := range []struct {
+		name    string
+		pieces  []tokenPiece
+		wantErr bool
+	}{
+		{
+			name: "named and unnamed parallel calls with literal and special marker arguments",
+			pieces: append([]tokenPiece{
+				{header, true}, {invoke, true},
+				{`{"name":"write","args":{"id":9007199254740993,"s":"café \"quoted\" \\ `, false},
+				{header + think + text + invoke + end + eog, false},
+				{end, true}, {`"}}`, false}, {end, true},
+			}, valid...),
+		},
+		{name: "literal second frame cannot execute", pieces: append(append([]tokenPiece(nil), valid...), tokenPiece{frame("ping", `{"name":"ping","args":{}}`), false}), wantErr: true},
+		{name: "literal turn terminator", pieces: append(append([]tokenPiece(nil), valid...), tokenPiece{eog, false}), wantErr: true},
+		{name: "invalid escape before literal marker", pieces: []tokenPiece{{header, true}, {invoke, true}, {`{"name":"ping","args":{"s":"\`, false}, {end, false}, {`"}}`, false}, {end, true}}, wantErr: true},
+		{name: "invalid escape before special marker", pieces: []tokenPiece{{header, true}, {invoke, true}, {`{"name":"ping","args":{"s":"\`, false}, {end, true}, {`"}}`, false}, {end, true}}, wantErr: true},
+		{name: "native EOG inside unterminated JSON", pieces: []tokenPiece{{header, true}, {invoke, true}, {`{"name":"ping","args":{"s":"unfinished`, false}}, wantErr: true},
+		{name: "header name mismatch", pieces: []tokenPiece{{header, true}, {"other", false}, {invoke, true}, {`{"name":"ping","args":{}}`, false}, {end, true}}, wantErr: true},
+		{name: "duplicate name", pieces: []tokenPiece{{header, true}, {invoke, true}, {`{"name":"ping","name":"other","args":{}}`, false}, {end, true}}, wantErr: true},
+		{name: "nonobject args", pieces: []tokenPiece{{header, true}, {invoke, true}, {`{"name":"ping","args":[]}`, false}, {end, true}}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sm := inkling.Parser{}.NewStateMachine()
+			maxLen := 0
+			for _, piece := range tc.pieces {
+				maxLen = max(maxLen, len(piece.content))
+			}
+			for split := range maxLen + 1 {
+				sm.Reset()
+				got := collectTokens(t, sm, tc.pieces, split, true)
+				calls := (inkling.Parser{}).ToolCall(t.Context(), nil, got[parsers.ChannelTool])
+				if tc.wantErr {
+					if len(calls) != 1 || calls[0].Status != 2 || calls[0].Function.Name != "" || calls[0].Function.Arguments != nil || calls[0].Error == "" {
+						t.Fatalf("split %d: got calls %+v, want atomic rejection", split, calls)
+					}
+					continue
+				}
+				want := parsers.ToolCallArguments{
+					"id": json.Number("9007199254740993"),
+					"s":  "café \"quoted\" \\ " + header + think + text + invoke + end + eog + end,
+				}
+				if len(calls) != 2 || calls[0].Status != 0 || calls[1].Status != 0 || calls[0].Function.Name != "write" || calls[1].Function.Name != "ping" || !reflect.DeepEqual(calls[0].Function.Arguments, want) {
+					t.Fatalf("split %d: got calls %+v, want write(%#v) and ping", split, calls, want)
+				}
+			}
+		})
+	}
+	// Each mandatory frame marker must have native identity, not just matching
+	// bytes. Do not accept a valid prefix if a later sibling is forged.
+	for _, index := range []int{0, 2, 4} {
+		pieces := append(append([]tokenPiece(nil), valid...), valid...)
+		pieces[len(valid)+index].special = false
+		got := collectTokens(t, inkling.Parser{}.NewStateMachine(), pieces, 1, true)
+		calls := (inkling.Parser{}).ToolCall(t.Context(), nil, got[parsers.ChannelTool])
+		if len(calls) != 1 || calls[0].Status != 2 {
+			t.Fatalf("ordinary marker at %d: got calls %+v, want atomic rejection", index, calls)
+		}
+	}
+	// Generation can start after the template's open model header. Both named
+	// and unnamed calls must also survive a length/stop-driven Flush.
+	for _, name := range []string{"", "ping"} {
+		for _, nativeEOG := range []bool{false, true} {
+			pieces := []tokenPiece{{name, false}, {invoke, true}, {`{"name":"ping","args":{}}`, false}, {end, true}}
+			got := collectTokens(t, inkling.Parser{}.NewStateMachine(), pieces, 1, nativeEOG)
+			calls := (inkling.Parser{}).ToolCall(t.Context(), nil, got[parsers.ChannelTool])
+			if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "ping" {
+				t.Fatalf("open header %q, native EOG %t: got calls %+v", name, nativeEOG, calls)
+			}
+		}
+	}
+}

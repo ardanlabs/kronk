@@ -640,6 +640,36 @@ where necessary, and test fragmented as well as complete input. Keep generic JSO
 repair separate from family recognition. Unknown families need an intentional fallback
 or error; registration order must not create accidental model-family selection.
 
+State machines may optionally implement `TokenStateMachine.ClassifyToken(content,
+special)`. The generation engine uses that method instead of `Classify` for decoded
+output. `special` identifies one complete native vocabulary token classified as
+`CONTROL` or `USER_DEFINED`; ordinary text and request-stop-truncated pieces are
+not special. The parser still decides which tokens are protocol delimiters. GPT-OSS
+uses this distinction so ordinary tokens spelling Harmony markers remain payload.
+Qwen-compatible state machines, including Nemotron and LFM3, resolve their framing
+markers against the loaded vocabulary at slot construction. Dedicated markers require
+special-token provenance; markers encoded as ordinary text still support fragmented
+matching. This preserves Qwen's ordinary-text XML framing while protecting LFM3's
+dedicated XML framing. The vocabulary policy survives request resets, and synthetic
+reasoning initialization still uses `Classify`. XML argument parsing and schema
+normalization are unchanged. Inkling also requires complete special tokens for
+message framing. Its buffered tool frames JSON-escape literal marker text so final
+validation cannot mistake ordinary tokens for additional calls or terminators;
+decoded argument values and strict header-name validation are preserved.
+GLM/Laguna, Mistral and marked-JSON parsers also resolve marker policy from the
+loaded vocabulary. GLM retains literal argument delimiters in an escaped internal
+buffer until fields have been parsed; Laguna's ordinary-text argument tags still
+support fragmented matching. Mistral validates native call and argument-separator
+positions before handing its buffered calls to final parsing. Marked-JSON parsing
+requires native wrappers for RNJ while retaining Ripple's ordinary-text wrappers.
+Gemma also preserves native quote-token identity through final argument decoding,
+so literal quote-marker text remains string data. LFM resolves native tool framing
+without disabling ordinary-text reasoning markers and validates payloads before
+serializing wrappers for final parsing.
+These policies survive request resets without retaining request data. Remaining
+built-ins and existing custom parsers retain their text-only behavior.
+Vocabulary EOG handling remains a separate signal through `VocabEOGConsumer`.
+
 #### 20.6.4 Responses normalization
 
 The Responses API adapts to the chat/inference pipeline in `sdk/kronk/response.go`.

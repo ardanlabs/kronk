@@ -19,6 +19,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/nemotron"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/qwen"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers/toolcall"
+	yzllama "github.com/hybridgroup/yzma/pkg/llama"
 )
 
 // selectDefaultParser keeps explicit protocols ahead of architecture lineages:
@@ -56,12 +57,26 @@ func selectDefaultParser(fp Fingerprint) Parser {
 // contract. Family implementations never import their parent model package.
 type builtinParser struct {
 	parser parsers.Parser
+	vocab  yzllama.Vocab
 }
 
 func (p *builtinParser) Name() string { return p.parser.Name() }
 
 func (p *builtinParser) NewStateMachine() StateMachine {
-	return &builtinStateMachine{state: p.parser.NewStateMachine()}
+	sm := &builtinStateMachine{state: p.parser.NewStateMachine()}
+	if state, ok := sm.state.(parsers.TokenVocabularyStateMachine); ok && p.vocab != 0 {
+		state.SetTokenVocabulary(func(marker string) bool {
+			tokens := yzllama.Tokenize(p.vocab, marker, false, true)
+			if len(tokens) != 1 || yzllama.VocabGetText(p.vocab, tokens[0]) != marker {
+				return false
+			}
+			return yzllama.VocabGetAttr(p.vocab, tokens[0])&(yzllama.TokenAttrControl|yzllama.TokenAttrUserDef) != 0
+		})
+	}
+	if state, ok := sm.state.(parsers.TokenStateMachine); ok {
+		return &builtinTokenStateMachine{builtinStateMachine: sm, tokenState: state}
+	}
+	return sm
 }
 
 func (p *builtinParser) ToolCall(ctx context.Context, log applog.Logger, buf string) []ResponseToolCall {
@@ -85,6 +100,18 @@ func (p *builtinParser) AdjustParams(params Params) Params {
 
 type builtinStateMachine struct {
 	state parsers.StateMachine
+}
+
+// builtinTokenStateMachine exposes token provenance only for families that
+// consume it, leaving other built-ins on the text-only generation path.
+type builtinTokenStateMachine struct {
+	*builtinStateMachine
+	tokenState parsers.TokenStateMachine
+}
+
+func (sm *builtinTokenStateMachine) ClassifyToken(content string, special bool) (Result, bool) {
+	result, eog := sm.tokenState.ClassifyToken(content, special)
+	return publicParserResult(result), eog
 }
 
 func (sm *builtinStateMachine) Classify(content string) (Result, bool) {

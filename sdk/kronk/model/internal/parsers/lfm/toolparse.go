@@ -44,7 +44,8 @@ func parseToolCallsStrict(content string) ([]parsers.ResponseToolCall, error) {
 				return nil, errors.New("parse lfm tools: missing closing marker")
 			}
 			body := after[:closeAt]
-			bodyCalls, err := parseToolCallsStrict(body)
+			// A wrapper body is payload, never another textual framing layer.
+			bodyCalls, err := parseToolPayloadStrict(body)
 			if err != nil {
 				return nil, err
 			}
@@ -56,6 +57,14 @@ func parseToolCallsStrict(content string) ([]parsers.ResponseToolCall, error) {
 		}
 		return calls, nil
 	}
+	return parseToolPayloadStrict(trimmed)
+}
+
+func parseToolPayloadStrict(content string) ([]parsers.ResponseToolCall, error) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return nil, errors.New("parse lfm tools: empty payload")
+	}
 	if _, ok := structuralMarker(trimmed, toolOpen); ok {
 		return nil, errors.New("parse lfm tools: unexpected content outside tool marker")
 	}
@@ -65,7 +74,7 @@ func parseToolCallsStrict(content string) ([]parsers.ResponseToolCall, error) {
 	if payloads := splitPayloads(trimmed); len(payloads) > 1 {
 		var calls []parsers.ResponseToolCall
 		for _, payload := range payloads {
-			payloadCalls, err := parseToolCallsStrict(payload)
+			payloadCalls, err := parseToolPayloadStrict(payload)
 			if err != nil {
 				return nil, err
 			}
@@ -171,6 +180,7 @@ func parseJSONCalls(content string) []parsers.ResponseToolCall {
 
 func rejectDuplicateJSONKeys(content string) error {
 	decoder := json.NewDecoder(strings.NewReader(content))
+	decoder.UseNumber()
 	var walk func() error
 	walk = func() error {
 		token, err := decoder.Token()

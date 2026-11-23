@@ -12,14 +12,32 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers"
 )
 
+// tokenToolPrefix marks internal buffers whose literal '<' and NUL bytes are
+// escaped. Framing stays readable until parsing; only decoded fields are
+// unescaped, so payload cannot become an argument delimiter in a second pass.
+const tokenToolPrefix = "\x00glm:"
+
+func decodeTokenText(content string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(content, "\x00l", "<"), "\x000", "\x00")
+}
+
 // parseGLM parses GLM-style tool calls with <arg_key>/<arg_value> tags.
 // Format: get_weather<arg_key>location</arg_key><arg_value>NYC</arg_value>
 func parseGLM(content string) []parsers.ResponseToolCall {
 	var toolCalls []parsers.ResponseToolCall
 	raw := content
 	remaining := strings.TrimSpace(content)
+	tokenStream := strings.HasPrefix(remaining, tokenToolPrefix)
 
 	for remaining != "" {
+		body, encoded := strings.CutPrefix(remaining, tokenToolPrefix)
+		if tokenStream && !encoded {
+			return []parsers.ResponseToolCall{failedGLMToolCall(raw,
+				errors.New("parse glm: tool call has no native framing"))}
+		}
+		if encoded {
+			remaining = body
+		}
 		argKeyIdx := strings.Index(remaining, "<arg_key>")
 		if argKeyIdx == -1 {
 			return []parsers.ResponseToolCall{failedGLMToolCall(raw,
@@ -27,6 +45,9 @@ func parseGLM(content string) []parsers.ResponseToolCall {
 		}
 
 		name := strings.TrimSpace(remaining[:argKeyIdx])
+		if encoded {
+			name = decodeTokenText(name)
+		}
 		if name == "" {
 			return []parsers.ResponseToolCall{failedGLMToolCall(raw,
 				errors.New("parse glm: function name is empty"))}
@@ -48,6 +69,9 @@ func parseGLM(content string) []parsers.ResponseToolCall {
 			keyEnd += len("<arg_key>")
 
 			key := remaining[len("<arg_key>"):keyEnd]
+			if encoded {
+				key = decodeTokenText(key)
+			}
 			if key == "" {
 				return []parsers.ResponseToolCall{failedGLMToolCall(raw,
 					fmt.Errorf("parse glm: argument key in function %q is empty", name))}
@@ -72,6 +96,9 @@ func parseGLM(content string) []parsers.ResponseToolCall {
 			}
 
 			value := remaining[:valEnd]
+			if encoded {
+				value = decodeTokenText(value)
+			}
 			args[key] = value
 
 			remaining = remaining[valEnd+12:]
@@ -104,6 +131,9 @@ func newGLMToolCall(name string, args parsers.ToolCallArguments) parsers.Respons
 }
 
 func failedGLMToolCall(raw string, err error) parsers.ResponseToolCall {
+	if strings.HasPrefix(raw, tokenToolPrefix) {
+		raw = decodeTokenText(strings.ReplaceAll(raw, tokenToolPrefix, ""))
+	}
 	return parsers.ResponseToolCall{
 		ID:     newToolCallID(),
 		Type:   "function",

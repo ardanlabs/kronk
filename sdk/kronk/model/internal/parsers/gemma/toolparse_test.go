@@ -96,7 +96,7 @@ func TestToolCallWithSchema(t *testing.T) {
 }
 
 func TestParseGemmaArgs_QuotedJSONRemainsString(t *testing.T) {
-	args, err := parseGemmaArgs(`content:<|"|>{"enabled":true}<|"|>`)
+	args, err := parseGemmaArgs(`content:<|"|>{"enabled":true}<|"|>`, gemmaQuote)
 	if err != nil {
 		t.Fatalf("parseGemmaArgs: %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -286,6 +287,86 @@ func TestBuiltinParser_VocabEOG(t *testing.T) {
 	sm.Reset()
 	if got := sm.(StateMachineFlusher).Flush(); got != (Result{}) {
 		t.Errorf("Flush after Reset: got %+v, want no retained output", got)
+	}
+}
+
+func TestBuiltinParser_TokenProvenance(t *testing.T) {
+	withCleanRegistry(t)
+	for _, stops := range [][]string{nil, {"NEVER"}, {"<|channel|>analysis<|message|>NEVER"}, {"nel|>"}} {
+		t.Run(strings.Join(stops, ","), func(t *testing.T) {
+			parser := selectParser(Fingerprint{ChatTemplate: "<|channel|> <|message|>"})
+			sm := parser.NewStateMachine()
+			if _, ok := sm.(TokenStateMachine); !ok {
+				t.Fatal("GPT-OSS did not expose token-aware classification")
+			}
+			s := slot{
+				stateMachine: sm,
+				job:          &chatJob{ctx: t.Context(), ch: make(chan ChatResponse, 128), object: ObjectChatText},
+			}
+			e := batchEngine{model: &Model{log: noopLog}}
+			gate := newStopGate(stops)
+			payload := "Literal <|channel|>analysis<|message|>not reasoning <|return|> still answer."
+			pieces := []stopPiece{{content: "<|channel|>", special: true}, {content: "final"}, {content: "<|message|>", special: true}}
+			for i := range len(payload) {
+				pieces = append(pieces, stopPiece{content: payload[i : i+1]})
+			}
+			process := func(pieces []stopPiece) {
+				t.Helper()
+				for _, piece := range pieces {
+					if outcome := e.processDecodedPiece(&s, piece, -1, false); outcome.err != nil || outcome.parserEOG {
+						t.Fatalf("processing %q: got %+v, want no error or EOG", piece.content, outcome)
+					}
+				}
+			}
+			for _, piece := range pieces {
+				if gate == nil {
+					process([]stopPiece{piece})
+					continue
+				}
+				released, matched := gate.feed(piece)
+				process(released)
+				if matched {
+					break
+				}
+			}
+			if gate != nil {
+				process(gate.flush())
+			}
+			e.flushAllStateMachine(&s, sm.(StateMachineFlusher))
+			want := payload
+			if len(stops) > 0 && stops[0] == "nel|>" {
+				// The request stop cuts the first framing token before the
+				// answer channel opens; no answer should be invented.
+				want = ""
+			}
+			if got := s.finalContent.String(); got != want || s.finalReasoning.Len() != 0 || s.finalTooling.Len() != 0 {
+				t.Fatalf("answer/reasoning/tool: got %q/%q/%q, want %q/empty/empty", got, s.finalReasoning.String(), s.finalTooling.String(), want)
+			}
+		})
+	}
+	for _, tt := range []struct {
+		fp    Fingerprint
+		aware bool
+	}{
+		{Fingerprint{Architecture: "qwen2"}, true},
+		{Fingerprint{Architecture: "nemotron_h_moe"}, true},
+		{Fingerprint{Architecture: "lfm3", ChatTemplate: "<function= <parameter="}, true},
+		{Fingerprint{Architecture: "lfm2"}, true},
+		{Fingerprint{Architecture: "gemma4"}, true},
+		{Fingerprint{Architecture: "inkling2"}, true},
+		{Fingerprint{Architecture: "inkling2_loop"}, true},
+		{Fingerprint{Architecture: "glm4moe"}, true},
+		{Fingerprint{Architecture: "laguna", ChatTemplate: "<arg_key><arg_value>"}, true},
+		{Fingerprint{Architecture: "mistral3"}, true},
+		{Fingerprint{Architecture: "gemma3", ChatTemplate: `<tool_call>{"name":"echo","arguments":{}}</tool_call>`}, true},
+		{Fingerprint{Architecture: "ricursive", ChatTemplate: `<tool_call>{"name":"echo","arguments":{}}</tool_call>`}, true},
+		{Fingerprint{Architecture: "beam"}, false},
+		{Fingerprint{}, false},
+	} {
+		sm := selectParser(tt.fp).NewStateMachine()
+		if _, ok := sm.(TokenStateMachine); ok != tt.aware {
+			t.Errorf("parser for %+v: got token-aware %t, want %t", tt.fp, ok, tt.aware)
+		}
 	}
 }
 

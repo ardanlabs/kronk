@@ -16,12 +16,59 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers"
 )
 
+const (
+	gemmaQuote      = `<|"|>`
+	tokenQuote      = "\x00q"
+	tokenToolPrefix = "\x00gemma:"
+)
+
+// tokenQuotedJSON converts only genuine quote delimiters to JSON strings.
+// Literal NUL bytes are escaped by the state machine, so payload cannot forge
+// these private delimiters, even when it spans several decoded pieces.
+func tokenQuotedJSON(content string) (string, error) {
+	var result strings.Builder
+	for content != "" {
+		before, after, found := strings.Cut(content, tokenQuote)
+		result.WriteString(strings.ReplaceAll(before, "\x000", "\x00"))
+		if !found {
+			break
+		}
+		value, rest, closed := strings.Cut(after, tokenQuote)
+		if !closed {
+			return "", errors.New("parse gemma: native quote is not closed")
+		}
+		quoted, err := json.Marshal(strings.ReplaceAll(value, "\x000", "\x00"))
+		if err != nil {
+			return "", fmt.Errorf("parse gemma: encoding native string: %w", err)
+		}
+		result.Write(quoted)
+		content = rest
+	}
+	return result.String(), nil
+}
+
 // parseGemma parses Gemma4-style tool calls.
 // Format: call:get_weather{location:<|"|>New York City, NY<|"|>}
 // Multiple calls may appear separated by newlines or back-to-back.
 func parseGemma(ctx context.Context, log applog.Logger, content string) []parsers.ResponseToolCall {
 	var toolCalls []parsers.ResponseToolCall
 	raw := content
+	quote := gemmaQuote
+	if strings.HasPrefix(content, tokenToolPrefix) {
+		raw = strings.NewReplacer(tokenQuote, gemmaQuote, "\x000", "\x00").Replace(strings.ReplaceAll(content, tokenToolPrefix, ""))
+		var converted strings.Builder
+		for frame := range strings.SplitSeq(content[len(tokenToolPrefix):], tokenToolPrefix) {
+			text, err := tokenQuotedJSON(frame)
+			if err != nil {
+				return []parsers.ResponseToolCall{failedGemmaToolCall(raw, err)}
+			}
+			converted.WriteString(text)
+		}
+		content = converted.String()
+		// Native quotes are now JSON strings. Marker spellings left in the
+		// payload must never regain delimiter meaning during final parsing.
+		quote = ""
+	}
 
 	remaining := strings.TrimSpace(content)
 	if remaining == "" {
@@ -49,7 +96,7 @@ func parseGemma(ctx context.Context, log applog.Logger, content string) []parser
 		}
 		remaining = remaining[braceIdx:]
 
-		braceEnd := findGemmaBraceEnd(remaining)
+		braceEnd := findGemmaBraceEnd(remaining, quote)
 		if braceEnd == -1 {
 			return []parsers.ResponseToolCall{failedGemmaToolCall(raw,
 				fmt.Errorf("parse gemma: call %q argument block is not closed", name))}
@@ -74,7 +121,7 @@ func parseGemma(ctx context.Context, log applog.Logger, content string) []parser
 					"format", "gemma", "error", err, "json", jsonCandidate)
 			}
 
-			args, err = parseGemmaArgs(trimmed)
+			args, err = parseGemmaArgs(trimmed, quote)
 			if err != nil {
 				return []parsers.ResponseToolCall{failedGemmaToolCall(raw,
 					fmt.Errorf("parse gemma: call %q arguments: %w", name, err))}
@@ -110,21 +157,13 @@ func failedGemmaToolCall(raw string, err error) parsers.ResponseToolCall {
 
 // findGemmaBraceEnd finds the closing brace that matches the opening brace
 // at position 0, accounting for nested braces and Gemma's two quoting modes.
-func findGemmaBraceEnd(s string) int {
-	end := findGemmaDelimitedEnd(s)
+func findGemmaBraceEnd(s, quote string) int {
+	end := findGemmaDelimitedEnd(s, quote)
 	if end == -1 || s[0] != '{' {
 		return -1
 	}
 
 	return end - 1
-}
-
-func findClosingGemmaQuote(s string) int {
-	return strings.Index(s, "<|\"|>")
-}
-
-func findGemmaStructEnd(s string) int {
-	return findGemmaDelimitedEnd(s)
 }
 
 func findClosingStandardQuote(s string) int {
@@ -146,7 +185,7 @@ func findClosingStandardQuote(s string) int {
 	return -1
 }
 
-func findGemmaDelimitedEnd(s string) int {
+func findGemmaDelimitedEnd(s, quote string) int {
 	if len(s) == 0 || (s[0] != '{' && s[0] != '[') {
 		return -1
 	}
@@ -158,12 +197,12 @@ func findGemmaDelimitedEnd(s string) int {
 	stack := []byte{close}
 	for i := 1; i < len(s); {
 		switch {
-		case strings.HasPrefix(s[i:], "<|\"|>"):
-			quoteEnd := findClosingGemmaQuote(s[i+len("<|\"|>"):])
+		case quote != "" && strings.HasPrefix(s[i:], quote):
+			quoteEnd := strings.Index(s[i+len(quote):], quote)
 			if quoteEnd == -1 {
 				return -1
 			}
-			i += len("<|\"|>") + quoteEnd + len("<|\"|>")
+			i += len(quote) + quoteEnd + len(quote)
 
 		case s[i] == '"':
 			quoteEnd := findClosingStandardQuote(s[i+1:])
@@ -200,7 +239,7 @@ func findGemmaDelimitedEnd(s string) int {
 
 // parseGemmaArgs parses the key-value pairs inside a Gemma4 tool-call
 // argument block. Values are delimited by <|"|> tokens (acting as quotes).
-func parseGemmaArgs(raw string) (map[string]any, error) {
+func parseGemmaArgs(raw, quote string) (map[string]any, error) {
 	args := make(map[string]any)
 
 	remaining := strings.TrimSpace(raw)
@@ -222,16 +261,16 @@ func parseGemmaArgs(raw string) (map[string]any, error) {
 		var value any
 		var rest string
 
-		if strings.HasPrefix(remaining, "<|\"|>") {
-			remaining = remaining[len("<|\"|>"):]
+		if quote != "" && strings.HasPrefix(remaining, quote) {
+			remaining = remaining[len(quote):]
 
-			endQuote := findClosingGemmaQuote(remaining)
+			endQuote := strings.Index(remaining, quote)
 			if endQuote == -1 {
 				return nil, fmt.Errorf("argument %q has an unterminated gemma quote", key)
 			}
 
 			value = remaining[:endQuote]
-			rest = remaining[endQuote+len("<|\"|>"):]
+			rest = remaining[endQuote+len(quote):]
 		} else if strings.HasPrefix(remaining, "\"") {
 			remaining = remaining[1:]
 
@@ -243,13 +282,16 @@ func parseGemmaArgs(raw string) (map[string]any, error) {
 			value = remaining[:endQuote]
 			rest = remaining[endQuote+1:]
 		} else if len(remaining) > 0 && (remaining[0] == '[' || remaining[0] == '{') {
-			endIdx := findGemmaStructEnd(remaining)
+			endIdx := findGemmaDelimitedEnd(remaining, quote)
 			if endIdx == -1 {
 				return nil, fmt.Errorf("argument %q has an unterminated composite value", key)
 			}
 
 			rawValue := remaining[:endIdx]
-			jsonVal := strings.ReplaceAll(rawValue, "<|\"|>", "\"")
+			jsonVal := rawValue
+			if quote != "" {
+				jsonVal = strings.ReplaceAll(rawValue, quote, "\"")
+			}
 
 			parsed, err := decodeRepairedGemmaJSON(jsonVal)
 			if err != nil {

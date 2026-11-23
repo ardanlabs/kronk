@@ -19,6 +19,9 @@ import (
 type stateMachine struct {
 	status parsers.Channel
 
+	// Vocabulary policy survives Reset; request state never does.
+	specialMarkers map[string]bool
+
 	// Tool-call accumulation across tokens.
 	toolCallBuf  strings.Builder
 	inToolCall   bool
@@ -58,21 +61,43 @@ func (sm *stateMachine) Reset() {
 // Behavior is undefined if Classify is called after a previous call returned
 // eog=true. Reset must be invoked between requests.
 func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
-	sm.consume(content)
+	sm.consume(content, false, false)
 	return sm.nextResult(), false
 }
 
-func (sm *stateMachine) consume(content string) {
+// SetTokenVocabulary resolves framing once per slot. Qwen XML tags may be
+// ordinary text, whereas LFM3 also gives those tags dedicated tokens.
+func (sm *stateMachine) SetTokenVocabulary(isSpecial func(string) bool) {
+	sm.specialMarkers = make(map[string]bool)
+	for _, marker := range []string{"<think>", "</think>", "<tool_call>", "</tool_call>", "<|tool_call>", "<tool_call|>", "<function=", "</function>"} {
+		sm.specialMarkers[marker] = isSpecial(marker)
+	}
+}
+
+// ClassifyToken recognizes dedicated framing only as a complete special token.
+// Delimiters absent from the special vocabulary retain text-based matching.
+func (sm *stateMachine) ClassifyToken(content string, special bool) (parsers.Result, bool) {
+	sm.consume(content, true, special)
+	return sm.nextResult(), false
+}
+
+func (sm *stateMachine) consume(content string, tokenAware, special bool) {
+	tokenStart, tokenLen := len(sm.pending), len(content)
+	markerAt := func(marker string, offset int) bool {
+		return !tokenAware || !sm.specialMarkers[marker] ||
+			(special && offset == tokenStart && len(marker) == tokenLen)
+	}
 	content = sm.pending + content
 	sm.pending = ""
 	for content != "" {
 		if sm.inToolCall {
 			// Repeated standalone opener inside an open block — skip.
-			if content == "<tool_call>" || content == "<|tool_call>" {
+			if (content == "<tool_call>" || content == "<|tool_call>") && markerAt(content, 0) {
 				return
 			}
 			// Only newly appended bytes and the overlap can form a closer.
-			start := max(0, sm.toolCallBuf.Len()-len("</tool_call>")+1)
+			previousLen := sm.toolCallBuf.Len()
+			start := max(0, previousLen-len("</tool_call>")+1)
 			sm.toolCallBuf.WriteString(content)
 			sm.updateToolCallDeltas()
 			accumulated := sm.toolCallBuf.String()
@@ -82,8 +107,17 @@ func (sm *stateMachine) consume(content string) {
 			}
 			end, closer := len(accumulated), ""
 			for _, marker := range markers {
-				if i := strings.Index(accumulated[start:], marker); i >= 0 && start+i < end {
-					end, closer = start+i, marker
+				for offset := start; offset < end; {
+					i := strings.Index(accumulated[offset:], marker)
+					if i < 0 {
+						break
+					}
+					offset += i
+					if offset < end && markerAt(marker, offset-previousLen) {
+						end, closer = offset, marker
+						break
+					}
+					offset++
 				}
 			}
 			if closer == "" {
@@ -96,6 +130,7 @@ func (sm *stateMachine) consume(content string) {
 			sm.toolCallBuf.Reset()
 			sm.toolCallBuf.WriteString(accumulated[:payloadEnd])
 			sm.results = append(sm.results, sm.completeToolCall())
+			tokenStart -= end + len(closer) - previousLen
 			content = accumulated[end+len(closer):]
 			continue
 		}
@@ -105,11 +140,16 @@ func (sm *stateMachine) consume(content string) {
 			markers = append(markers, "<think>", "</think>")
 		}
 		if sm.toolCallDone {
-			content = strings.TrimLeft(content, " \t\r\n")
+			trimmed := strings.TrimLeft(content, " \t\r\n")
+			tokenStart -= len(content) - len(trimmed)
+			content = trimmed
 		}
 		matched := false
 		for i := 0; i < len(content); i++ {
 			for _, marker := range markers {
+				if !markerAt(marker, i) {
+					continue
+				}
 				if strings.HasPrefix(content[i:], marker) {
 					before := content[:i]
 					// Consume only the template's exact newline separators,
@@ -120,6 +160,7 @@ func (sm *stateMachine) consume(content string) {
 						before = strings.TrimSuffix(strings.TrimSuffix(before, "\n"), "\n")
 					}
 					sm.emit(before)
+					tokenStart -= i + len(marker)
 					content = content[i+len(marker):]
 					switch marker {
 					case "<think>":

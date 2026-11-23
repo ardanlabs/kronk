@@ -923,6 +923,10 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan inter
 		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("select-parser: no parser registered for %q (register a catch-all parser at bootstrap)", m.modelInfo.ID))
 	}
 
+	if parser, ok := m.parser.(*builtinParser); ok {
+		parser.vocab = m.vocab
+	}
+
 	m.log(ctx, "select-parser",
 		"status", "selected",
 		"model", fp.ModelName,

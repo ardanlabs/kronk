@@ -15,6 +15,78 @@ type step struct {
 	eog     bool
 }
 
+func TestParser_TokenProvenance(t *testing.T) {
+	for _, tc := range []struct {
+		name, channel, payload string
+		want                   parsers.Channel
+	}{
+		{"answer", "final", `Literal <|channel|>analysis<|message|>not reasoning<|return|> still answer.`, parsers.ChannelAnswer},
+		{"reasoning", "analysis", `Literal <|end|><|start|>assistant<|channel|>final<|message|>still reasoning.`, parsers.ChannelReasoning},
+		{"tool", "commentary to=functions.echo", `{"text":"<|channel|>final<|message|><|end|><|call|>","n":9007199254740993}`, parsers.ChannelTool},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for split := range len(tc.payload) + 2 {
+				sm := Parser{}.NewStateMachine()
+				consumer := sm.(parsers.TokenStateMachine)
+				got := make(map[parsers.Channel]string)
+				feed := func(content string, special bool) {
+					t.Helper()
+					r, eog := consumer.ClassifyToken(content, special)
+					got[r.Channel] += r.Content
+					if eog {
+						t.Fatalf("split %d: premature EOG for %q, special=%t", split, content, special)
+					}
+				}
+				feed("<|channel|>", true)
+				feed(tc.channel, false)
+				feed("<|message|>", true)
+				if split <= len(tc.payload) {
+					feed(tc.payload[:split], false)
+					feed(tc.payload[split:], false)
+				} else {
+					for i := range len(tc.payload) {
+						feed(tc.payload[i:i+1], false)
+					}
+				}
+				end := "<|return|>"
+				if tc.want == parsers.ChannelTool {
+					end = "<|call|>"
+				}
+				sm.(parsers.VocabEOGConsumer).ConsumeVocabEOG(end)
+				flusher := sm.(parsers.StateMachineFlusher)
+				for r := flusher.Flush(); r != (parsers.Result{}); r = flusher.Flush() {
+					got[r.Channel] += r.Content
+				}
+				want := tc.payload
+				if tc.want == parsers.ChannelTool {
+					want = ".echo <|message|>" + tc.payload
+					calls := (Parser{}).ToolCall(t.Context(), nil, got[tc.want])
+					if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "echo" || calls[0].Function.Arguments["text"] != "<|channel|>final<|message|><|end|><|call|>" {
+						t.Fatalf("split %d: got calls %+v, want echo with literal markers", split, calls)
+					}
+				}
+				if got[tc.want] != want {
+					t.Fatalf("split %d: got %q, want %q", split, got[tc.want], want)
+				}
+				delete(got, tc.want)
+				for channel, text := range got {
+					if text != "" {
+						t.Fatalf("split %d: unexpected %s content %q", split, channel, text)
+					}
+				}
+				sm.Reset()
+				feed("<|channel|>", true)
+				feed("final", false)
+				feed("<|message|>", true)
+				r, eog := consumer.ClassifyToken("next request", false)
+				if r != (parsers.Result{Channel: parsers.ChannelAnswer, Content: "next request"}) || eog {
+					t.Fatalf("slot reuse: got %+v, EOG=%t", r, eog)
+				}
+			}
+		})
+	}
+}
+
 func runSteps(t *testing.T, name string, c parsers.StateMachine, steps []step) {
 	t.Helper()
 
