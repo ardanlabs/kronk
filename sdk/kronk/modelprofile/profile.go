@@ -51,6 +51,7 @@ type Profile struct {
 	Role                   Role
 	Purpose                Purpose
 	MemorySemantics        MemorySemantics
+	NoPersistentCache      bool // Attention and recurrent state are batch-local, not retained in a native memory module.
 	ComputeKind            ComputeKind
 	Dimensions             Dimensions
 	Decision               Decision

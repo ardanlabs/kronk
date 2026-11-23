@@ -60,6 +60,7 @@ type Config struct {
 	TypeK                  int32         // Kronk GGML cache type ID (0 = use BytesPerElement).
 	TypeV                  int32         // Kronk GGML cache type ID (0 = use BytesPerElement).
 	Slots                  int64         // n_seq_max - number of concurrent sequences
+	NBatch                 int64         // Logical batch capacity; 0 falls back to NUBatch.
 	NUBatch                int64         // Effective physical batch size.
 	Speech                 *SpeechConfig // Resolved speech limits; nil uses defaults for detected speech artifacts.
 	GPULayers              int64         // Native offload count: output first, then blocks (0 = all, -1 = none).
@@ -125,6 +126,7 @@ type Input struct {
 	LayerEmbeddingRows    int64                    `json:"-"` // Gathered per-layer embedding rows per token.
 	RecurrentStateBytes   int64                    // State bytes per recurrent layer, sequence, and copy.
 	RecurrentStateCopies  int64                    // Current state plus speculative rollback copies.
+	NBatch                int64                    // Logical batch capacity; 0 falls back to NUBatch.
 	NUBatch               int64                    // Effective physical batch size.
 	Speech                *SpeechConfig            // Limits for the selected speech allocation family; nil uses its defaults.
 	OutputRows            int64                    // Maximum logits rows; 0 conservatively uses the full physical batch.
@@ -233,13 +235,16 @@ func Calculate(input Input) Result {
 	ownKV := input.ComputeKind == modelprofile.ComputeQwen35 || (arch.OwnKVCompanion{}).Claims(input.Architecture)
 	if ownKV && (computeContexts > 1 || input.RecurrentStateCopies > 1) && !input.MTPContext && input.NextNPredictLayers <= 1 && offloadLayers > 0 {
 		// Eligible own-KV MTP keeps target hidden rows on the output device.
-		// MTP uses one physical batch, so NUBatch is also the logical NBatch.
+		// Hidden rows cover the logical batch, even across physical batches.
 		// Reserve once for the target, including one scratch row per sequence.
 		// Older/unsupported native backends may fall back to host extraction;
 		// retain the conservative reservation rather than depend on activation.
 		// Companion planning sizes the draft graph separately, leaving only
 		// one compute context here; rollback copies still identify speculation.
-		batch := input.NUBatch
+		batch := input.NBatch
+		if batch <= 0 {
+			batch = input.NUBatch
+		}
 		if batch <= 0 {
 			batch = DefaultNUBatch
 		}

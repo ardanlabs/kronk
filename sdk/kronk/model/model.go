@@ -853,7 +853,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan inter
 	m.ctxParams.NUbatch = uint32(m.cfg.nUBatch)
 	reason := "requested-or-default"
 	switch {
-	case plan.MTP() && plan.Active():
+	case plan.MTP() && plan.Active() && m.cfg.PtrPhysicalBatchSize == nil:
 		reason = "active-mtp-policy"
 	case m.cfg.nUBatch < m.cfg.PhysicalBatchSize():
 		reason = "native-logical-capacity-limit"
@@ -1734,6 +1734,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		TypeK:                  cfg.CacheTypeK.ToVRAMType(),
 		TypeV:                  cfg.CacheTypeV.ToVRAMType(),
 		Slots:                  int64(max(cfg.NSeqMax(), 1)),
+		NBatch:                 int64(cfg.EffectiveNBatch()),
 		NUBatch:                int64(cfg.EffectiveNUBatch()),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
 		MoECacheSize:           cfg.MoECacheSize(),
@@ -1741,7 +1742,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
 		KVUnified:              cfg.KVCacheMode() == KVCacheShared,
 		VTransposed:            cfg.FlashAttention() == FlashAttentionDisabled,
-		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
+		SWAFull:                cfg.SWAFull(),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),
 		ComputeContexts:        SpeculativeContextCount(cfg),
@@ -1815,14 +1816,6 @@ func countTrue(values []bool) int {
 		}
 	}
 	return count
-}
-
-func effectiveSWAFull(configured *bool, llamaDefault bool) bool {
-	if configured != nil {
-		return *configured
-	}
-
-	return llamaDefault
 }
 
 // resolveBackendDevice maps a user-facing device name to the ggml backend

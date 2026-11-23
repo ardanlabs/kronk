@@ -2,8 +2,6 @@ package vram
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
@@ -189,6 +187,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		WeightLoading:         cfg.WeightLoading,
 		LazyTable:             LazyTableForShards(profile, shards),
 		Architecture:          profile.Architecture,
+		NoPersistentCache:     profile.NoPersistentCache,
 		ComputeBackend:        cfg.ComputeBackend,
 		ComputeKind:           profile.ComputeKind,
 		VocabularySize:        vocabularySize,
@@ -232,6 +231,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		LayerEmbeddingRows:    att.LayerEmbeddingRows,
 		RecurrentStateBytes:   att.RecurrentStateBytes,
 		RecurrentStateCopies:  recurrentStateCopies,
+		NBatch:                cfg.NBatch,
 		NUBatch:               cfg.NUBatch,
 		Speech:                cfg.Speech,
 		speechEmbeddingBytes:  speechEmbeddingBytes,
@@ -261,15 +261,6 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 	}
 
 	if profile.Architecture == "lfm3" {
-		// b11960 defaults to causal attention. Every non-causal LFM3
-		// graph is batch-local, independently of decision-head metadata.
-		if value, exists := metadata["lfm3.attention.causal"]; exists {
-			causal, err := strconv.ParseBool(strings.TrimSpace(value))
-			if err != nil {
-				return Result{}, fmt.Errorf("build-from-metadata: invalid lfm3.attention.causal: %w", err)
-			}
-			input.NoPersistentCache = !causal
-		}
 		execution := modelprofile.DecisionContractFor(profile.Decision.Type).Execution
 		if execution.Batch == modelprofile.DecisionBatchWholePrompt && execution.SingleSequence {
 			// Keep this estimate scoped to LFM3. The execution contract
@@ -277,7 +268,6 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 			input.NUBatch = cfg.ContextWindow
 			input.Slots = 1
 			input.OutputRows = 1
-			input.NoPersistentCache = true
 		}
 	}
 

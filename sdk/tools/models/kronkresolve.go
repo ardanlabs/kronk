@@ -20,25 +20,28 @@ import (
 // recommendations can take precedence over Kronk defaults.
 //
 // The catalog YAML middle layer used by the legacy resolution path is not
-// applied here.
+// applied here. The legacy nativeSWAFull argument is ignored; use PtrSWAFull
+// in the model configuration to override the compact default.
 func (m *Models) KronkResolvedConfig(modelID string, mc map[string]ModelConfig, nativeSWAFull ...bool) (model.Config, error) {
-	return m.kronkResolvedConfig(modelID, mc, nil, nativeSWAFull...)
+	return m.kronkResolvedConfig(modelID, mc, nil)
 }
 
 // KronkResolvedConfigWithBudget builds a model.Config using a stable AutoTune
 // budget. Pool callers use this so resident reservations do not affect sizing.
+// The legacy nativeSWAFull argument is ignored; model settings control SWA.
 func (m *Models) KronkResolvedConfigWithBudget(modelID string, mc map[string]ModelConfig, budget AutoTuneBudget, nativeSWAFull ...bool) (model.Config, error) {
-	return m.kronkResolvedConfig(modelID, mc, &budget, nativeSWAFull...)
+	return m.kronkResolvedConfig(modelID, mc, &budget)
 }
 
 // ResolvedModelConfigWithBudget returns the hardware-aware model configuration
 // used by KronkResolvedConfigWithBudget before it is converted to model.Config.
+// The legacy nativeSWAFull argument is ignored; model settings control SWA.
 func (m *Models) ResolvedModelConfigWithBudget(modelID string, mc map[string]ModelConfig, budget AutoTuneBudget, nativeSWAFull ...bool) (ModelConfig, error) {
-	cfg, _, _, err := m.resolvedModelConfig(modelID, mc, &budget, nativeSWAFull...)
+	cfg, _, _, err := m.resolvedModelConfig(modelID, mc, &budget)
 	return cfg, err
 }
 
-func (m *Models) resolvedModelConfig(modelID string, mc map[string]ModelConfig, budget *AutoTuneBudget, nativeSWAFull ...bool) (ModelConfig, bool, Path, error) {
+func (m *Models) resolvedModelConfig(modelID string, mc map[string]ModelConfig, budget *AutoTuneBudget) (ModelConfig, bool, Path, error) {
 	// Confirm the model is on disk before resolving anything else.
 	fp, err := m.FullPath(modelID)
 	if err != nil {
@@ -62,18 +65,15 @@ func (m *Models) resolvedModelConfig(modelID string, mc map[string]ModelConfig, 
 	// Memory-affecting user settings participate in the analysis so the
 	// recommendation is sized for the final overlaid configuration.
 	override := mc[modelID]
-	analysisOverride := override
-	if analysisOverride.PtrSWAFull == nil && len(nativeSWAFull) > 0 {
-		analysisOverride.PtrSWAFull = new(nativeSWAFull[0])
-	}
-	cfg := m.analysisDefaultsWithConfigAndBudget(modelID, analysisOverride, budget)
+	cfg := m.analysisDefaultsWithConfigAndBudget(modelID, override, budget)
 	sizing := cfg
 	if !autoTuneApplied(sizing) {
 		if info, err := m.ModelInformation(modelID); err == nil {
-			sizing = fallbackAutoTuneSizing(info, analysisOverride)
+			sizing = fallbackAutoTuneSizing(info, override)
 			cfg = sizing
 		}
 	}
+	cfg.PtrSWAFull = override.PtrSWAFull
 
 	// Layer 3: user overrides from model_config.yaml.
 	if _, ok := mc[modelID]; ok {
@@ -89,8 +89,8 @@ func (m *Models) resolvedModelConfig(modelID string, mc map[string]ModelConfig, 
 	return cfg, autoTuneApplied(sizing), fp, nil
 }
 
-func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, budget *AutoTuneBudget, nativeSWAFull ...bool) (model.Config, error) {
-	cfg, autoTuned, fp, err := m.resolvedModelConfig(modelID, mc, budget, nativeSWAFull...)
+func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, budget *AutoTuneBudget) (model.Config, error) {
+	cfg, autoTuned, fp, err := m.resolvedModelConfig(modelID, mc, budget)
 	if err != nil {
 		return model.Config{}, err
 	}
@@ -326,6 +326,7 @@ func autoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constrain
 	// 2048-token default and derives llama.cpp's internal batch capacities.
 	cfg.PtrContextWindow = new(int(rec.ContextWindow))
 	cfg.PtrNSeqMax = new(int(rec.NSeqMax))
+	cfg.PtrSWAFull = constraints.PtrSWAFull
 	cfg.PtrPhysicalBatchSize = constraints.PtrPhysicalBatchSize
 	if cfg.PtrPhysicalBatchSize == nil && rec.PhysicalBatchSize > 0 {
 		cfg.PtrPhysicalBatchSize = new(int(rec.PhysicalBatchSize))

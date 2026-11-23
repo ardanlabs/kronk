@@ -457,31 +457,6 @@ func TestSWAFull(t *testing.T) {
 	}
 }
 
-func TestEffectiveSWAFull(t *testing.T) {
-	enabled := true
-	disabled := false
-
-	tests := []struct {
-		name         string
-		configured   *bool
-		llamaDefault bool
-		want         bool
-	}{
-		{"unset uses enabled llama default", nil, true, true},
-		{"unset uses disabled llama default", nil, false, false},
-		{"explicit enabled overrides default", &enabled, false, true},
-		{"explicit disabled overrides default", &disabled, true, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := effectiveSWAFull(tt.configured, tt.llamaDefault); got != tt.want {
-				t.Errorf("effectiveSWAFull: got %t, want %t", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestModelInfoStringIncludesNSWA(t *testing.T) {
 	const nSWA = 4096
 
@@ -604,7 +579,11 @@ func TestPhysicalBatchSize(t *testing.T) {
 		{"classic reserve", new(512), 0, 9, false, 2075, 512},
 		{"image floor", new(512), 1120, 1, false, 2051, 1120},
 		{"logical cap", new(8192), 0, 1, false, 2051, 2051},
-		{"MTP default reserve", new(512), 0, 0, true, 2060, 2060},
+		{"MTP default capacity", nil, 0, 0, true, 2060, 2060},
+		{"MTP explicit capacity", new(512), 0, 0, true, 2060, 512},
+		{"MTP explicit reserve", new(257), 0, 7, true, 2069, 257},
+		{"MTP image floor", new(512), 1120, 0, true, 2060, 1120},
+		{"MTP logical cap", new(8192), 0, 0, true, 2060, 2060},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := NewConfig(WithPrefillBatchSize(2048), WithNSeqMax(3), WithImageBatchTokenCapacity(tt.floor))

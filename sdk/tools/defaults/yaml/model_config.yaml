@@ -126,7 +126,7 @@ version: 2
 #   prefill-batch-size: 2048             # Prompt tokens processed per prefill decode contribution (default: 2048)
 #   physical-batch-size: 512             # Requested compute batch size; AutoTune fills unset, constraints may raise/cap
 #   preserve_thinking: true              # Template-only; configure here rather than under sampling-parameters
-#   proj-device: CUDA1                    # Explicit mmproj device; omit for automatic (conflicts with proj-on-cpu: true)
+#   proj-device: CUDA1                   # Explicit mmproj device; omit for automatic (conflicts with proj-on-cpu: true)
 #   proj-on-cpu: true                    # Force multimodal projector (mmproj) onto CPU
 #   queue-depth: 2                       # Admission layers: 1 = slots only; 2 = one waiting layer (default: 2)
 #   rope-freq-base: 1000000              # RoPE base frequency (nil = from model, e.g., 10000 Llama, 1000000 Qwen)
@@ -134,7 +134,7 @@ version: 2
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
 #   speculation: auto                    # auto, disabled, classic, or mtp
 #   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
-#   swa-full: true                       # Full KV cache for SWA layers (unset = llama.cpp default; false = compact SWA)
+#   swa-full: false                      # Compact SWA cache by default; true overrides with full cache
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)
 #   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
 #   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)
@@ -178,10 +178,10 @@ version: 2
 #
 # bucky-models:
 #   tiny.en:
-#     nseq-max: 2                         # Concurrent Whisper states (default: 1)
-#     queue-depth: 4                      # Requests allowed to wait (default: 0)
+#     nseq-max: 2                        # Concurrent Whisper states (default: 1)
+#     queue-depth: 4                     # Requests allowed to wait (default: 0)
 #     admission-timeout: 3m              # Maximum wait for capacity (default: 3m)
-#     nthreads: 0                         # Native threads per operation (0 = whisper.cpp default)
+#     nthreads: 0                        # Native threads per operation (0 = whisper.cpp default)
 
 # ==============================================================================
 # MALINA MODEL OPTIONS
@@ -195,17 +195,17 @@ version: 2
 # malina-models:
 #   sd-1.5:
 #     concurrency: 2                     # Concurrent native contexts (default: 1)
-#     queue-depth: 2                      # Requests allowed to wait (default: 0)
+#     queue-depth: 2                     # Requests allowed to wait (default: 0)
 #     admission-timeout: 3m              # Maximum wait for capacity (default: 3m)
-#     cpu-threads: 0                      # Native CPU threads (0 = runtime default)
+#     cpu-threads: 0                     # Native CPU threads (0 = runtime default)
 
 # ==============================================================================
 
 kms: {}
 
 models:
-  # nseq-max: 1  ~67GB VRAM
-  # nseq-max: 2  ~91GB VRAM
+  # nseq-max: 1  ~46GB VRAM
+  # nseq-max: 2  ~50GB VRAM
   ggml-org/Inkling-2-Mini-Q8_0/AGENT:
     nseq-max: 1
     context-window: 131072
@@ -223,8 +223,8 @@ models:
       max_tokens: 16384
       reasoning_effort: low
 
-  # nseq-max: 1  ~63GB VRAM
-  # nseq-max: 2  ~93GB VRAM
+  # nseq-max: 1  ~38GB VRAM
+  # nseq-max: 2  ~41GB VRAM
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     nseq-max: 1
     context-window: 131072

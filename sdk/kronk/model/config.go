@@ -37,8 +37,8 @@ and preprocessing budgets are explicit opt-ins; projector defaults are unchanged
 One slot owns ordinary prefill until it finishes. Generation rows from all
 ready slots are staged first. Non-MTP reserves one row; MTP reserves 1 + nDraft
 rows per configured slot. Non-MTP can split the logical tray into physical
-ubatches. MTP preserves the existing single-physical-batch policy pending
-validation of multi-ubatch hidden-state consumption.
+ubatches. MTP defaults to one physical batch, but an explicit physical
+capacity overrides that default independently of the logical reserve.
 
 Key principles:
 - NUBatch ≤ NBatch always (enforced in adjustConfig)
@@ -266,7 +266,8 @@ type AdapterConfig struct {
 // PhysicalBatchSize requests the physical compute capacity independently of
 // the prompt contribution. When unset, it follows the legacy prefill capacity
 // unless AutoTune selects a value. Image floors can raise it, logical capacity
-// caps it, and active MTP and specialized evaluation retain their sizing policies.
+// caps it, and specialized evaluation retains its sizing policy. Explicit
+// requests apply with or without MTP; MTP's generation reserve remains logical.
 // EffectiveNUBatch reports the resolved capacity; the request is preserved.
 //
 // ImageBatchTokenCapacity provides an independent image-capacity floor for
@@ -366,11 +367,9 @@ type AdapterConfig struct {
 //
 // SWAFull controls whether models with sliding window attention (SWA) use a
 // full-size KV cache for SWA layers instead of the memory-efficient small
-// cache. When nil (default), llama.cpp's default is used.
-// When explicitly set to false, SWA layers only cache the last n_swa tokens,
-// saving significant VRAM but limiting context caching and shifting. When
-// true, SWA layers use the full context window for their KV cache, preserving
-// accuracy at the cost of higher memory usage.
+// cache. When nil or false (default), SWA uses the compact cache, saving
+// significant VRAM but limiting context caching and shifting. When true,
+// SWA layers allocate their KV cache against the full context window.
 //
 // TensorBuftOverrides is a list of tensor buffer type override patterns that
 // force matching tensors to execute on CPU instead of GPU. This is an expert-level
@@ -552,9 +551,8 @@ func (cfg Config) FlashAttention() FlashAttentionType {
 	return DerefFlashAttention(cfg.PtrFlashAttention)
 }
 
-// SWAFull reports whether a full-size sliding-window attention cache was
-// explicitly requested. Callers that need the effective value must check
-// PtrSWAFull first because nil leaves the choice to llama.cpp.
+// SWAFull reports whether a full-size sliding-window attention cache is enabled.
+// The default is false (compact), independent of the native library's default.
 func (cfg Config) SWAFull() bool { return boolOr(cfg.PtrSWAFull, false) }
 
 func (cfg Config) String() string {
@@ -1000,8 +998,9 @@ func adjustGenerationBatch(cfg Config, generationRowsPerSlot int, singlePhysical
 
 // GenerationBatchSizes derives native batch capacities for both memory planning
 // and runtime configuration. Requests do not change the logical generation reserve.
-// MTP preserves one physical batch including rollback rows. A zero row count
-// selects the configured/default MTP reserve when singlePhysicalBatch is true.
+// MTP defaults to one physical batch including rollback rows unless a physical
+// capacity is requested. A zero row count selects the configured/default MTP
+// reserve when singlePhysicalBatch is true.
 func (cfg Config) GenerationBatchSizes(generationRowsPerSlot int, singlePhysicalBatch bool) (int, int) {
 	if isEmbedOrRerankConfig(cfg) || !cfg.DecisionProtocol.IsZero() {
 		base := cfg.BatchBaseSize()
@@ -1016,7 +1015,7 @@ func (cfg Config) GenerationBatchSizes(generationRowsPerSlot int, singlePhysical
 	if cfg.PtrPhysicalBatchSize != nil {
 		nUBatch = min(nBatch, max(cfg.PhysicalBatchSize(), cfg.ImageBatchTokenCapacity(), cfg.ImageTokenBudget()))
 	}
-	if singlePhysicalBatch {
+	if singlePhysicalBatch && cfg.PtrPhysicalBatchSize == nil {
 		nUBatch = nBatch
 	}
 	return nBatch, nUBatch
@@ -1167,17 +1166,10 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		ctxParams.OpOffload = 0
 	}
 
-	// Use full-size SWA cache for sliding window attention models.
-	// When enabled, SWA layers use the full context window for their KV
-	// cache instead of the compact n_swa-sized cache, preserving accuracy
-	// at the cost of higher memory usage.
-	// When nil, preserve the value returned by llama.cpp's context defaults.
-	if cfg.PtrSWAFull != nil {
-		if *cfg.PtrSWAFull {
-			ctxParams.SwaFull = 1
-		} else {
-			ctxParams.SwaFull = 0
-		}
+	// Compact SWA is Kronk's default, regardless of the native default.
+	ctxParams.SwaFull = 0
+	if cfg.SWAFull() {
+		ctxParams.SwaFull = 1
 	}
 
 	// YaRN RoPE scaling for extended context windows.

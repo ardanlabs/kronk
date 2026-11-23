@@ -3,6 +3,7 @@
 ## Index
 
 - [v1.33.3](#v1333)
+  - [SWA Cache Default and MTP Physical Batches](#v1333-swa-cache-default-and-mtp-physical-batches)
   - [Inference Metrics](#v1333-inference-metrics)
   - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
   - [Internal Parser Packages](#v1333-internal-parser-packages)
@@ -61,21 +62,39 @@
 
 ## v1.33.3
 
+### v1.33.3: SWA Cache Default and MTP Physical Batches
+
+Models with sliding window attention now use compact SWA when `swa-full` is
+omitted, instead of inheriting the native library's default. This applies to
+the model server and SDK, with or without AutoTune. Compact SWA reduces memory
+use but limits context caching and shifting.
+
+Set `swa-full: true` in the model's configuration to retain full-cache behavior.
+SDK callers can set `model.Config.PtrSWAFull` to `new(true)`. Explicit settings
+are preserved. The legacy native-SWA-default arguments on model configuration
+resolution methods are ignored; use the model's explicit SWA setting instead.
+
+With active MTP, an explicit `physical-batch-size` is no longer expanded to the
+logical batch size. The per-slot generation reserve remains in the logical
+batch; the physical setting is the total compute capacity, subject to image
+floors and logical/native limits. To retain the previous single-physical-batch
+behavior, omit the physical setting or request the full logical capacity.
+
 ### v1.33.3: Inference Metrics
 
 Inference metrics switch to GenAI names in this release with no dual-emission
 window. Update external dashboards, alerts, and recording rules before upgrading.
 The bundled Grafana dashboard is migrated.
 
-| Removed metric | Replacement |
-| --- | --- |
-| `model_request_ttft_seconds` | `gen_ai_server_time_to_first_token_seconds` |
-| `chat_request_duration_seconds` | `gen_ai_server_request_duration_seconds{gen_ai_operation_name="chat"}` |
-| `inference_request_duration_seconds` | `gen_ai_server_request_duration_seconds` filtered by `gen_ai_operation_name="embeddings"` or `"rerank"` |
-| `usage_tokens_total{kind="prompt"}` | `gen_ai_client_inference_usage_input_tokens_total` |
-| `usage_tokens_total{kind="reasoning"}` | `gen_ai_client_inference_usage_reasoning_output_tokens_total` |
+| Removed metric                          | Replacement                                                                                                                                                                                              |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model_request_ttft_seconds`            | `gen_ai_server_time_to_first_token_seconds`                                                                                                                                                              |
+| `chat_request_duration_seconds`         | `gen_ai_server_request_duration_seconds{gen_ai_operation_name="chat"}`                                                                                                                                   |
+| `inference_request_duration_seconds`    | `gen_ai_server_request_duration_seconds` filtered by `gen_ai_operation_name="embeddings"` or `"rerank"`                                                                                                  |
+| `usage_tokens_total{kind="prompt"}`     | `gen_ai_client_inference_usage_input_tokens_total`                                                                                                                                                       |
+| `usage_tokens_total{kind="reasoning"}`  | `gen_ai_client_inference_usage_reasoning_output_tokens_total`                                                                                                                                            |
 | `usage_tokens_total{kind="completion"}` | `gen_ai_client_inference_usage_output_tokens_total` minus `gen_ai_client_inference_usage_reasoning_output_tokens_total` after aggregating both to the same labels; an absent reasoning series means zero |
-| `usage_tokens_per_second` | `gen_ai_server_time_per_output_token_seconds`, measuring seconds/token rather than tokens/second |
+| `usage_tokens_per_second`               | `gen_ai_server_time_per_output_token_seconds`, measuring seconds/token rather than tokens/second                                                                                                         |
 
 Histogram `_bucket`, `_sum`, and `_count` series use the new family names.
 For these new metrics, replace `model_id` with `gen_ai_request_model` and
