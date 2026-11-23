@@ -108,7 +108,7 @@ func TestStreamingTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := frame("write.file", `{"name":"write.file","args":{"text":`+strings.TrimSpace(encoded.String())+`,"id":9007199254740993,"nested":{"items":[true,null,2]}}}`)
-	second := frame("ping", `{"args":{},"name":"ping"}`)
+	second := frame("ping", " \n { \"args\": {}, \"name\": \"ping\" } \t")
 	wire := header + think + "Plan." + end + first + second + eog
 	check := func(t *testing.T, chunks []string, vocab string) {
 		t.Helper()
@@ -144,20 +144,31 @@ func TestStreamingTools(t *testing.T) {
 			t.Fatalf("wire arguments: got %s, %v, want JSON object string", wireArgs, err)
 		}
 	}
-	for split := range len(wire) + 1 {
-		t.Run(fmt.Sprint(split), func(t *testing.T) { check(t, []string{wire[:split], wire[split:]}, "") })
+	for _, tc := range []struct{ name, wire string }{
+		{"named", wire},
+		{"unnamed", strings.ReplaceAll(strings.ReplaceAll(wire, header+"write.file"+invoke, header+invoke), header+"ping"+invoke, header+invoke)},
+		{"mixed", strings.ReplaceAll(wire, header+"write.file"+invoke, header+invoke)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wire := tc.wire
+			for split := range len(wire) + 1 {
+				t.Run(fmt.Sprint(split), func(t *testing.T) { check(t, []string{wire[:split], wire[split:]}, "") })
+			}
+			var bytes []string
+			for i := range len(wire) {
+				bytes = append(bytes, wire[i:i+1])
+			}
+			check(t, bytes, "")
+			check(t, []string{strings.TrimSuffix(wire, eog)}, eog)
+			check(t, []string{strings.TrimSuffix(wire, eog)}, "")
+		})
 	}
-	var bytes []string
-	for i := range len(wire) {
-		bytes = append(bytes, wire[i:i+1])
-	}
-	check(t, bytes, "")
-	check(t, []string{strings.TrimSuffix(wire, eog)}, eog)
-	check(t, []string{strings.TrimSuffix(wire, eog)}, "")
 	// Also accept the open model header used by Inkling generation prefixes.
-	got := collect(t, inkling.Parser{}.NewStateMachine(), []string{strings.TrimPrefix(second, header) + eog}, "")
-	if calls := (inkling.Parser{}).ToolCall(t.Context(), nil, got[parsers.ChannelTool]); len(calls) != 1 || calls[0].Status != 0 {
-		t.Fatalf("open header: got %+v", calls)
+	for _, tool := range []string{second, frame("", " \n { \"args\": {}, \"name\": \"ping\" } \t")} {
+		got := collect(t, inkling.Parser{}.NewStateMachine(), []string{strings.TrimPrefix(tool, header) + eog}, "")
+		if calls := (inkling.Parser{}).ToolCall(t.Context(), nil, got[parsers.ChannelTool]); len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "ping" {
+			t.Fatalf("open header: got %+v", calls)
+		}
 	}
 }
 
@@ -169,6 +180,12 @@ func TestMalformedToolsAreAtomic(t *testing.T) {
 	}{
 		{"name-mismatch", frame("ping", `{"name":"other","args":{}}`)},
 		{"empty-name", frame("", `{"name":"","args":{}}`)},
+		{"unnamed-missing-name", frame("", `{"args":{}}`)},
+		{"unnamed-null-name", frame("", `{"name":null,"args":{}}`)},
+		{"unnamed-name-not-string", frame("", `{"name":7,"args":{}}`)},
+		{"unnamed-whitespace-name", frame("", `{"name":"bad name","args":{}}`)},
+		{"unnamed-marker-name", frame("", `{"name":"<|content_text|>","args":{}}`)},
+		{"unnamed-duplicate-name", frame("", `{"name":"other","name":"ping","args":{}}`)},
 		{"name-not-string", frame("ping", `{"name":7,"args":{}}`)},
 		{"missing-name", frame("ping", `{"args":{}}`)},
 		{"missing-args", frame("ping", `{"name":"ping"}`)},
@@ -189,6 +206,7 @@ func TestMalformedToolsAreAtomic(t *testing.T) {
 		{"after-eog", valid + eog + "garbage"},
 		{"tool-after-eog", valid + eog + valid},
 		{"valid-then-invalid", valid + frame("ping", `{"name":"other","args":{}}`)},
+		{"unnamed-valid-then-invalid", frame("", `{"name":"ping","args":{}}`) + frame("", `{"name":"other","args":[]}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, chunks := range [][]string{{tc.wire}, strings.Split(tc.wire, "")} {
@@ -211,7 +229,7 @@ func TestFlushAndSlotIsolation(t *testing.T) {
 	p := inkling.Parser{}
 	a, b := p.NewStateMachine(), p.NewStateMachine()
 	a.Classify(header + think + "Queued." + end + header + text + "Stale.<|end_mess")
-	b.Classify(frame("ping", `{"name":"ping","args":{}}`))
+	b.Classify(frame("", `{"name":"ping","args":{}}`))
 	a.Reset()
 	if got := a.(parsers.StateMachineFlusher).Flush(); got != (parsers.Result{}) {
 		t.Fatalf("Reset queued output: got %+v, want empty", got)

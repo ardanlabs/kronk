@@ -23,10 +23,10 @@ func parseToolCalls(raw string) []parsers.ResponseToolCall {
 			return fail(errors.New("inkling: expected model tool frame"))
 		}
 		name, body, ok := strings.Cut(frame, invoke)
-		if !ok || name == "" || strings.ContainsAny(name, " \t\r\n<>\"") {
+		if !ok || strings.ContainsAny(name, " \t\r\n<>\"") {
 			return fail(errors.New("inkling: invalid tool header"))
 		}
-		args, tail, err := decodeCall(name, body)
+		name, args, tail, err := decodeCall(name, body)
 		if err != nil {
 			return fail(err)
 		}
@@ -55,46 +55,50 @@ func parseToolCalls(raw string) []parsers.ResponseToolCall {
 // decodeCall consumes exactly one JSON envelope. Decoding before inspecting
 // framing preserves literal protocol markers and escaped quotes in arguments.
 // Duplicate envelope fields are rejected rather than silently taking the last.
-func decodeCall(name, body string) (parsers.ToolCallArguments, string, error) {
+// A supplied header name must match; otherwise the JSON name supplies it.
+func decodeCall(headerName, body string) (string, parsers.ToolCallArguments, string, error) {
 	dec := json.NewDecoder(strings.NewReader(body))
 	dec.UseNumber()
 	open, err := dec.Token()
 	if err != nil || open != json.Delim('{') {
-		return nil, "", errors.New("inkling: expected tool JSON object")
+		return "", nil, "", errors.New("inkling: expected tool JSON object")
 	}
 	fields := make(map[string]json.RawMessage)
 	for dec.More() {
 		token, err := dec.Token()
 		if err != nil {
-			return nil, "", fmt.Errorf("inkling: reading tool field: %w", err)
+			return "", nil, "", fmt.Errorf("inkling: reading tool field: %w", err)
 		}
 		key, ok := token.(string)
 		if !ok || (key != "name" && key != "args") {
-			return nil, "", errors.New("inkling: unexpected tool field")
+			return "", nil, "", errors.New("inkling: unexpected tool field")
 		}
 		if _, exists := fields[key]; exists {
-			return nil, "", fmt.Errorf("inkling: duplicate tool field %q", key)
+			return "", nil, "", fmt.Errorf("inkling: duplicate tool field %q", key)
 		}
 		var value json.RawMessage
 		if err := dec.Decode(&value); err != nil {
-			return nil, "", fmt.Errorf("inkling: decoding tool field %q: %w", key, err)
+			return "", nil, "", fmt.Errorf("inkling: decoding tool field %q: %w", key, err)
 		}
 		fields[key] = value
 	}
 	if _, err := dec.Token(); err != nil {
-		return nil, "", fmt.Errorf("inkling: closing tool JSON: %w", err)
+		return "", nil, "", fmt.Errorf("inkling: closing tool JSON: %w", err)
 	}
 	var jsonName string
-	if err := json.Unmarshal(fields["name"], &jsonName); err != nil || jsonName != name {
-		return nil, "", errors.New("inkling: tool name must match header")
+	if err := json.Unmarshal(fields["name"], &jsonName); err != nil || jsonName == "" || strings.ContainsAny(jsonName, " \t\r\n<>\"") {
+		return "", nil, "", errors.New("inkling: invalid tool name")
+	}
+	if headerName != "" && jsonName != headerName {
+		return "", nil, "", errors.New("inkling: tool name must match header")
 	}
 	argsJSON := fields["args"]
 	if len(argsJSON) == 0 || argsJSON[0] != '{' {
-		return nil, "", errors.New("inkling: args must be an object")
+		return "", nil, "", errors.New("inkling: args must be an object")
 	}
 	var args parsers.ToolCallArguments
 	if err := json.Unmarshal(argsJSON, &args); err != nil {
-		return nil, "", fmt.Errorf("inkling: decoding args: %w", err)
+		return "", nil, "", fmt.Errorf("inkling: decoding args: %w", err)
 	}
-	return args, body[dec.InputOffset():], nil
+	return jsonName, args, body[dec.InputOffset():], nil
 }

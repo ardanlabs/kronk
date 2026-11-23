@@ -291,11 +291,14 @@ func TestBuiltinParser_VocabEOG(t *testing.T) {
 
 func TestSelectParser_InklingPublicContract(t *testing.T) {
 	withCleanRegistry(t)
-	for _, architecture := range []string{"inkling2", "inkling2_loop"} {
-		t.Run(architecture, func(t *testing.T) {
-			parser := selectParser(Fingerprint{Architecture: architecture})
+	for _, tc := range []struct{ architecture, headerName string }{
+		{"inkling2", "lookup"}, {"inkling2", ""},
+		{"inkling2_loop", "lookup"}, {"inkling2_loop", ""},
+	} {
+		t.Run(tc.architecture+"/"+tc.headerName, func(t *testing.T) {
+			parser := selectParser(Fingerprint{Architecture: tc.architecture})
 			sm := parser.NewStateMachine()
-			r, eog := sm.Classify(`<|message_model|><|content_thinking|>Plan.<|end_message|><|message_model|>lookup<|content_invoke_tool_json|>{"name":"lookup","args":{"id":9007199254740993}}<|end_message|>`)
+			r, eog := sm.Classify(`<|message_model|><|content_thinking|>Plan.<|end_message|><|message_model|>` + tc.headerName + `<|content_invoke_tool_json|>{"name":"lookup","args":{"id":9007199254740993}}<|end_message|>`)
 			if r.Channel != ChannelReasoning || r.Content != "Plan." || eog {
 				t.Fatalf("Classify: got %+v, EOG %v, want reasoning", r, eog)
 			}
