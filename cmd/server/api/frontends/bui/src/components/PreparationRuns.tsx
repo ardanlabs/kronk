@@ -448,10 +448,12 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
             {!settings && <p className="prep-copy">Settings are shown while the preparation worker is reachable.</p>}
             <dl className="prep-facts">{([
               ['Dataset', datasetName(run)], ['Base version', run.base_version ? `Version ${run.base_version}` : '—'], ['Saved version', run.prepared_dataset_version ? `Version ${run.prepared_dataset_version}` : 'Nothing saved'], ['Source document', run.source_document ?? '—'],
-              ...(settings ? [['Page range', settings.page_start ? `Pages ${settings.page_start}–${settings.page_end}` : 'Entire document'], ['Record limit', settings.max_questions || 'Unlimited'], ['Preparation model', settings.model], ['Goal', goalLabel(settings.goal)], ['Instructions', settings.instructions || 'None']] : []),
+              ...(settings ? [['Page range', settings.page_start ? `Pages ${settings.page_start}–${settings.page_end}` : 'Entire document'], ['Record limit', settings.max_questions || 'Unlimited'], ['Preparation model', settings.model], ['Goal', goalLabel(settings.goal)]] : []),
               ...(run.preview?.records.length ? [['Preview examples', <button id="prep-view-preview" className="prep-inline-link" type="button" onClick={() => setReview(true)}>View {examples(run.preview.records.length)}</button>]] : []),
               ['Date created', date(run.started_at)], ['Updated', date(run.updated_at)], ['Run ID', `${run.workflow_id} · ${run.run_id}`],
-            ] as [string, React.ReactNode][]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+            ] as [string, React.ReactNode][]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+              {settings && <div className="prep-instructions"><dt>Instructions</dt><dd>{settings.instructions || 'None'}</dd></div>}
+            </dl>
           </>}
       </DetailTabs>
     </div>

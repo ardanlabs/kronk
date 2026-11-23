@@ -66,6 +66,8 @@
 .prep-qa textarea { min-height: 84px; resize: vertical; }
 .prep-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px 20px; }
 .prep-facts dd { margin: 4px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.prep-instructions { grid-column: 1 / -1; min-width: 0; }
+.prep-instructions dd { white-space: pre-wrap; line-height: 1.6; }
 .prep-warning { background: var(--color-warning-bg); color: var(--color-warning-text-alt); padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-top: 12px; }
 .prep-confirm { flex-basis: 100%; border: 1px solid var(--color-error); background: var(--color-error-bg); border-radius: 8px; padding: 14px; font-size: 14px; }
 .prep-confirm .prep-actions { margin-top: 12px; }

@@ -109,6 +109,11 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
     setCreationUncertain(destination?.uncertain ?? false);
   }, [uploadIDs]);
 
+  // The workspace stays mounted on the dashboard; each new dataset starts unnamed.
+  useEffect(() => {
+    if (visible && !datasetID) setDatasetName('');
+  }, [visible, datasetID]);
+
   useEffect(() => {
     setSelectedDataset(null);
     if (!visible || !datasetID) return;
