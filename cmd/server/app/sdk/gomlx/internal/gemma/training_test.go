@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/gob"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/gomlx/internal/checkpoint"
 	"github.com/gomlx/gomlx/core/tensors"
 	"github.com/gomlx/gomlx/ml/model"
 )
@@ -605,5 +609,276 @@ func TestTrainDatasetRejectsExistingCheckpointBeforeUpdating(t *testing.T) {
 	})
 	if !equalVariableSnapshots(adapterBefore, adapterAfter) {
 		t.Fatal("failed checkpoint preflight changed LoRA weights")
+	}
+}
+
+func TestTrainingRestartExactlyMatchesUninterrupted(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "go")
+	path := filepath.Join(t.TempDir(), "gemma.gguf")
+	writeTestModel(t, path, testConfig(), "gemma3")
+	dataset := PreparedDataset{Training: []TrainingRecord{
+		{Tokens: []int32{1, 4, 5}, Targets: []int32{4, 5, 6}, LossMask: []bool{false, true, true}},
+		{Tokens: []int32{1, 7}, Targets: []int32{7, 8}, LossMask: []bool{false, true}},
+		{Tokens: []int32{1, 9, 10, 11}, Targets: []int32{9, 10, 11, 12}, LossMask: []bool{false, false, true, true}},
+	}}
+	dataset.Validation = dataset.Training[:1]
+	newRuntime := func(t *testing.T) *Runtime {
+		t.Helper()
+		runtime, err := NewLoRARuntime(path, AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(runtime.Close)
+		return runtime
+	}
+	config := TrainingConfig{Epochs: 4, LearningRate: 0.01, WeightDecay: 0.03, BatchSize: 2, Seed: 42,
+		EarlyStoppingPatience: 2, MinimumValidationImprovement: 100, RetainedCheckpointEpochs: []int{1}, AdapterCheckpointDirectory: t.TempDir()}
+	baseline := newRuntime(t)
+	want, err := baseline.TrainDataset(t.Context(), dataset, config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOutput := filepath.Join(t.TempDir(), "baseline.gguf")
+	if err := baseline.ExportBestAdapter(want, wantOutput); err != nil {
+		t.Fatal(err)
+	}
+	wantBytes, err := os.ReadFile(wantOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantVariables := trainingVariableBytes(t, baseline)
+	// Initial, partial batch, final batch before validation, completed epoch,
+	// next epoch, early-stop commit. Every safe boundary is restartable.
+	for stopAt := 1; stopAt <= 10; stopAt++ {
+		t.Run(fmt.Sprint(stopAt), func(t *testing.T) {
+			cfg := config
+			cfg.ResumeDirectory, cfg.AdapterCheckpointDirectory = t.TempDir(), t.TempDir()
+			calls := 0
+			stop := errors.New("graceful stop")
+			cfg.SafePoint = func(_ context.Context, relative string) error {
+				if !filepath.IsLocal(relative) {
+					t.Fatalf("not relative: %q", relative)
+				}
+				if _, err := os.Stat(filepath.Join(cfg.ResumeDirectory, relative)); err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := checkpoint.ReadTraining(cfg.ResumeDirectory); err != nil {
+					t.Fatal(err)
+				}
+				calls++
+				if calls == stopAt {
+					return stop
+				}
+				return nil
+			}
+			first := newRuntime(t)
+			_, err := first.TrainDataset(t.Context(), dataset, cfg, nil)
+			if !errors.Is(err, stop) {
+				t.Fatalf("did not stop at boundary %d: %v (calls=%d)", stopAt, err, calls)
+			}
+			first.Close() // All optimizer/graph state is gone, as on server restart.
+			cfg.SafePoint = nil
+			restarted := newRuntime(t)
+			got, err := restarted.TrainDataset(t.Context(), dataset, cfg, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.BestEpoch != want.BestEpoch || got.StoppedEarly != want.StoppedEarly || len(got.Epochs) != len(want.Epochs) {
+				t.Fatalf("result differs: %+v vs %+v", got, want)
+			}
+			for i := range got.Epochs {
+				if got.Epochs[i].TrainingLoss != want.Epochs[i].TrainingLoss || got.Epochs[i].ValidationLoss != want.Epochs[i].ValidationLoss {
+					t.Fatalf("epoch metrics differ: %+v vs %+v", got.Epochs, want.Epochs)
+				}
+			}
+			if !reflect.DeepEqual(trainingVariableBytes(t, restarted), wantVariables) {
+				t.Fatal("continued optimizer/adapter output differs")
+			}
+			output := filepath.Join(t.TempDir(), "resumed.gguf")
+			if err := restarted.ExportBestAdapter(got, output); err != nil {
+				t.Fatal(err)
+			}
+			gotBytes, err := os.ReadFile(output)
+			if err != nil || !bytes.Equal(gotBytes, wantBytes) {
+				t.Fatalf("export differs: %v", err)
+			}
+		})
+	}
+}
+
+func trainingVariableBytes(t *testing.T, runtime *Runtime) map[string][]byte {
+	t.Helper()
+	values := make(map[string][]byte)
+	for variable := range runtime.base.store.IterVariables() {
+		if runtime.base.frozen[variable.Path()] || strings.HasPrefix(variable.Path(), "/metrics/") {
+			continue
+		}
+		var buffer bytes.Buffer
+		if err := variable.MustValue().GobSerialize(gob.NewEncoder(&buffer)); err != nil {
+			t.Fatal(err)
+		}
+		values[variable.Path()] = buffer.Bytes()
+	}
+	return values
+}
+
+func TestTrainingRestoreRejectsIncompatibleIdentity(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "go")
+	for _, change := range []string{"model", "adapter", "optimizer", "dataset", "seed", "epochs"} {
+		t.Run(change, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "base.gguf")
+			writeTestModel(t, path, testConfig(), "gemma3")
+			adapter := AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407}
+			dataset := PreparedDataset{Training: []TrainingRecord{{Tokens: []int32{1, 4}, Targets: []int32{4, 5}, LossMask: []bool{false, true}}}}
+			stop := errors.New("stop")
+			config := TrainingConfig{Epochs: 2, LearningRate: 0.01, BatchSize: 1,
+				AdapterCheckpointDirectory: t.TempDir(), ResumeDirectory: t.TempDir(),
+				SafePoint: func(context.Context, string) error { return stop }}
+			first, err := NewLoRARuntime(path, adapter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = first.TrainDataset(t.Context(), dataset, config, nil)
+			first.Close()
+			if !errors.Is(err, stop) {
+				t.Fatal(err)
+			}
+			switch change {
+			case "model":
+				file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, writeErr := file.Write([]byte("changed model identity"))
+				if err := errors.Join(writeErr, file.Close()); err != nil {
+					t.Fatal(err)
+				}
+			case "adapter":
+				adapter.Alpha++
+			case "optimizer":
+				config.LearningRate *= 2
+			case "dataset":
+				dataset.Training[0].Targets[1]++
+			case "seed":
+				config.Seed++
+			case "epochs":
+				config.Epochs++
+			}
+			config.SafePoint = nil
+			second, err := NewLoRARuntime(path, adapter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer second.Close()
+			if _, err := second.TrainDataset(t.Context(), dataset, config, nil); err == nil || !strings.Contains(err.Error(), "identity differs") {
+				t.Fatalf("accepted incompatible %s: %v", change, err)
+			}
+		})
+	}
+}
+
+func TestTrainingRestartAfterUncommittedEpochExport(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "go")
+	path := filepath.Join(t.TempDir(), "base.gguf")
+	writeTestModel(t, path, testConfig(), "gemma3")
+	adapter := AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407}
+	dataset := PreparedDataset{Training: []TrainingRecord{{Tokens: []int32{1, 4}, Targets: []int32{4, 5}, LossMask: []bool{false, true}}}}
+	interrupted := errors.New("crash after inference export but before epoch commit")
+	config := TrainingConfig{Epochs: 2, LearningRate: 0.01, BatchSize: 1,
+		AdapterCheckpointDirectory: t.TempDir(), ResumeDirectory: t.TempDir(),
+		PersistCheckpoint: func(TrainingResult) error { return interrupted }}
+	first, err := NewLoRARuntime(path, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = first.TrainDataset(t.Context(), dataset, config, nil)
+	first.Close()
+	if !errors.Is(err, interrupted) {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(config.AdapterCheckpointDirectory, "epoch-01")); err != nil {
+		t.Fatal(err)
+	}
+	config.PersistCheckpoint = nil
+	second, err := NewLoRARuntime(path, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	updates := 0
+	result, err := second.TrainDataset(t.Context(), dataset, config, func(TrainingProgress) { updates++ })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updates != 1 || len(result.Epochs) != 2 {
+		t.Fatalf("replayed committed optimizer batch or lost epochs: updates=%d result=%+v", updates, result)
+	}
+	second.Close()
+	third, err := NewLoRARuntime(path, adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer third.Close()
+	completed, err := third.TrainDataset(t.Context(), dataset, config, func(TrainingProgress) { t.Fatal("replayed completed run") })
+	if err != nil || !reflect.DeepEqual(completed, result) {
+		t.Fatalf("completed run did not round-trip: %+v %v", completed, err)
+	}
+}
+
+func TestTrainingRestoreFailsClosedOnCorruption(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "go")
+	for _, target := range []string{"generation", "best-export"} {
+		t.Run(target, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "base.gguf")
+			writeTestModel(t, path, testConfig(), "gemma3")
+			adapter := AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407}
+			dataset := PreparedDataset{Training: []TrainingRecord{{Tokens: []int32{1, 4}, Targets: []int32{4, 5}, LossMask: []bool{false, true}}}}
+			config := TrainingConfig{Epochs: 2, LearningRate: 0.01, BatchSize: 1,
+				AdapterCheckpointDirectory: t.TempDir(), ResumeDirectory: t.TempDir()}
+			calls := 0
+			generation := ""
+			config.SafePoint = func(_ context.Context, relative string) error {
+				calls++
+				if calls == 3 {
+					generation = filepath.Join(config.ResumeDirectory, relative)
+					return context.Canceled
+				}
+				return nil
+			}
+			first, err := NewLoRARuntime(path, adapter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = first.TrainDataset(t.Context(), dataset, config, nil)
+			first.Close()
+			if !errors.Is(err, context.Canceled) {
+				t.Fatal(err)
+			}
+			corrupt := generation
+			if target == "best-export" {
+				files, err := filepath.Glob(filepath.Join(config.AdapterCheckpointDirectory, "epoch-01", "*.bin"))
+				if err != nil || len(files) != 1 {
+					t.Fatalf("checkpoint payloads: %v %v", files, err)
+				}
+				corrupt = files[0]
+			}
+			data, err := os.ReadFile(corrupt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data[len(data)/2] ^= 1
+			if err := os.WriteFile(corrupt, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config.SafePoint = func(context.Context, string) error { t.Fatal("acknowledged corrupt state"); return nil }
+			second, err := NewLoRARuntime(path, adapter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer second.Close()
+			if _, err := second.TrainDataset(t.Context(), dataset, config, nil); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+				t.Fatalf("corrupt %s did not fail closed: %v", target, err)
+			}
+		})
 	}
 }

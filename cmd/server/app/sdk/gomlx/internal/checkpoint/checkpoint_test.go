@@ -1,9 +1,13 @@
 package checkpoint
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,5 +89,139 @@ func writeCheckpoint(t *testing.T, directory string, variables []variable, paylo
 	}
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTrainingCommitRestoreAndCorruption(t *testing.T) {
+	store := model.NewStore()
+	defer store.Finalize()
+	store.VariableWithValue("/base", []float32{123}).SetTrainable(false)
+	store.VariableWithValue("/layer/lora/a", []float32{1, 2})
+	store.VariableWithValue("/AdamOptimizer/layer/lora/a_1st_moment", []float32{0.1, 0.2}).SetTrainable(false)
+	store.VariableWithValue("/global_step", int64(7)).SetTrainable(false)
+	store.VariableWithValue("/#rngState", []uint64{42, 43}).SetTrainable(false)
+	excluded := map[string]bool{"/base": true}
+	directory := t.TempDir()
+	if _, _, err := ReadTraining(directory); !errors.Is(err, ErrNoTrainingCheckpoint) {
+		t.Fatal(err)
+	}
+	first, err := SaveTraining(directory, store, excluded, []byte("first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstBytes, err := os.ReadFile(filepath.Join(directory, first))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, variables, err := ReadTraining(directory)
+	if err != nil || string(state) != "first" {
+		t.Fatalf("read: %q %v", state, err)
+	}
+	for _, variable := range variables {
+		if variable.Path == "/base" {
+			t.Fatal("serialized frozen base weights")
+		}
+	}
+	fresh := model.NewStore()
+	defer fresh.Finalize()
+	fresh.VariableWithValue("/base", []float32{456}).SetTrainable(false)
+	if err := RestoreTraining(fresh, excluded, variables); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fresh.GetVariable("/base").MustValue().Value(), []float32{456}) {
+		t.Fatal("restored base weights")
+	}
+	for _, variable := range variables {
+		if !reflect.DeepEqual(fresh.GetVariable(variable.Path).MustValue().Value(), store.GetVariable(variable.Path).MustValue().Value()) {
+			t.Fatalf("value differs: %s", variable.Path)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(directory, "training-orphan.chk"), []byte("incomplete"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, ".latest-orphan"), []byte("incomplete"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadTraining(directory); err != nil {
+		t.Fatalf("orphan interrupted commit affected latest: %v", err)
+	}
+	second, err := SaveTraining(directory, store, excluded, []byte("second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchanged, err := os.ReadFile(filepath.Join(directory, first))
+	if err != nil || !bytes.Equal(firstBytes, unchanged) || second == first {
+		t.Fatal("generation not immutable")
+	}
+	secondPath := filepath.Join(directory, second)
+	good, err := os.ReadFile(secondPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(directory, "training-latest.json")
+	pointer, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadTraining(directory); err == nil || errors.Is(err, ErrNoTrainingCheckpoint) {
+		t.Fatalf("missing manifest silently reset committed work: %v", err)
+	}
+	if err := os.WriteFile(manifest, pointer, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, corruption := range []string{"truncated", "modified", "missing"} {
+		t.Run(corruption, func(t *testing.T) {
+			data := bytes.Clone(good)
+			switch corruption {
+			case "truncated":
+				data = data[:len(data)/2]
+			case "modified":
+				data[len(data)/2] ^= 1
+			case "missing":
+				if err := os.Remove(secondPath); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if corruption != "missing" {
+				if err := os.WriteFile(secondPath, data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, _, err := ReadTraining(directory); err == nil || errors.Is(err, ErrNoTrainingCheckpoint) {
+				t.Fatalf("corrupt commit must fail closed, got %v", err)
+			}
+			if err := os.WriteFile(secondPath, good, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	variables[0].Path = "/base"
+	if err := RestoreTraining(fresh, excluded, variables); err == nil {
+		t.Fatal("accepted frozen variable")
+	}
+}
+
+func TestTrainingRestoreRejectsDuplicateAndInvalidTensor(t *testing.T) {
+	store := model.NewStore()
+	defer store.Finalize()
+	value := tensors.FromValue([]float32{1})
+	defer value.FinalizeAll()
+	var buffer bytes.Buffer
+	if err := value.GobSerialize(gob.NewEncoder(&buffer)); err != nil {
+		t.Fatal(err)
+	}
+	for _, variables := range [][]TrainingVariable{
+		{{Path: "/a", Tensor: []byte("invalid")}},
+		{{Path: "/a", Tensor: buffer.Bytes()}, {Path: "/a", Tensor: buffer.Bytes()}},
+	} {
+		if err := RestoreTraining(store, nil, variables); err == nil {
+			t.Fatal("accepted invalid state")
+		}
+		if store.NumVariables() != 0 {
+			t.Fatal("invalid restore modified store")
+		}
 	}
 }

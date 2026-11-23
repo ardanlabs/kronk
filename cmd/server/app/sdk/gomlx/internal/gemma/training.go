@@ -1,8 +1,15 @@
 package gemma
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/gob"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -328,4 +335,172 @@ func activeLossPositions(mask []bool) int {
 		}
 	}
 	return count
+}
+
+// resumeState describes the next computation, including the partial epoch.
+// Shuffle randomness is a pure function of seed and epoch. All graph random
+// state is captured with the non-base store variables (dropout is disabled).
+type resumeState struct {
+	Identity        [32]byte
+	Epoch           int
+	Next            int
+	Completed       int
+	WeightedLoss    float64
+	AnswerTokens    int
+	Result          TrainingResult
+	StopBest        float64
+	StopMisses      int
+	StopInitialized bool
+	ExportDigests   map[string][32]byte
+}
+
+func (runtime *Runtime) trainingIdentity(dataset PreparedDataset, config TrainingConfig) ([32]byte, error) {
+	hash := sha256.New()
+	file, err := os.Open(runtime.base.path)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	_, readErr := io.Copy(hash, file)
+	closeErr := file.Close()
+	if readErr != nil {
+		return [32]byte{}, readErr
+	}
+	if closeErr != nil {
+		return [32]byte{}, closeErr
+	}
+	// Gob deliberately omits callback funcs; paths are part of the contract so
+	// existing inference checkpoints cannot silently point at another workdir.
+	if err := gob.NewEncoder(hash).Encode(config); err != nil {
+		return [32]byte{}, err
+	}
+	if err := json.NewEncoder(hash).Encode(struct {
+		Backend string
+		Model   Config
+		Adapter AdapterConfig
+		Dataset PreparedDataset
+	}{runtime.Backend(), runtime.base.config, *runtime.adapterConfig, dataset}); err != nil {
+		return [32]byte{}, err
+	}
+	return [32]byte(hash.Sum(nil)), nil
+}
+
+func (runtime *Runtime) restoreTraining(dataset PreparedDataset, config TrainingConfig, initial TrainingResult) (resumeState, error) {
+	state := resumeState{Epoch: 1, Result: initial}
+	if config.ResumeDirectory == "" {
+		return state, nil
+	}
+	identity, err := runtime.trainingIdentity(dataset, config)
+	if err != nil {
+		return state, fmt.Errorf("identify training: %w", err)
+	}
+	state.Identity = identity
+	data, variables, err := checkpoint.ReadTraining(config.ResumeDirectory)
+	if errors.Is(err, checkpoint.ErrNoTrainingCheckpoint) {
+		for epoch := 1; epoch <= config.Epochs; epoch++ {
+			path := filepath.Join(config.AdapterCheckpointDirectory, fmt.Sprintf("epoch-%02d", epoch))
+			if _, err := os.Lstat(path); !os.IsNotExist(err) {
+				return state, fmt.Errorf("adapter checkpoint %q exists or cannot be inspected without committed training state", path)
+			}
+		}
+		return state, nil
+	}
+	if err != nil {
+		return state, fmt.Errorf("read training checkpoint: %w", err)
+	}
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&state); err != nil {
+		return state, fmt.Errorf("decode training progress: %w", err)
+	}
+	if state.Identity != identity {
+		return state, fmt.Errorf("training checkpoint model, configuration, or prepared dataset identity differs")
+	}
+	steps := (len(dataset.Training) + config.BatchSize - 1) / config.BatchSize
+	if state.Epoch < 1 || state.Epoch > config.Epochs+1 || state.Next < 0 || state.Next > len(dataset.Training) ||
+		state.Next != len(dataset.Training) && state.Next%config.BatchSize != 0 ||
+		state.Completed != (state.Epoch-1)*steps+(state.Next+config.BatchSize-1)/config.BatchSize || len(state.Result.Epochs) != state.Epoch-1 {
+		return state, fmt.Errorf("invalid training checkpoint cursor")
+	}
+	digests, err := hashTrainingExports(state.Result)
+	if err != nil {
+		return state, fmt.Errorf("validate training exports: %w", err)
+	}
+	if !maps.Equal(digests, state.ExportDigests) {
+		return state, fmt.Errorf("training export checkpoint checksum mismatch")
+	}
+	if runtime.trainer != nil {
+		runtime.trainer.ResetComputationGraphs()
+		runtime.trainer = nil
+	}
+	if state.Completed > 0 {
+		// NewTrainer deletes its learning-rate variable. Construct it before
+		// installing the complete optimizer snapshot, not after it.
+		runtime.ensureTrainer(config.LearningRate, config.WeightDecay)
+	}
+	if err := checkpoint.RestoreTraining(runtime.base.store, runtime.base.frozen, variables); err != nil {
+		return state, err
+	}
+	// Only uncommitted epoch exports can be discarded. Durable mode retains
+	// superseded committed exports so a crash never invalidates an older commit.
+	for epoch := state.Epoch; epoch <= config.Epochs; epoch++ {
+		if err := os.RemoveAll(filepath.Join(config.AdapterCheckpointDirectory, fmt.Sprintf("epoch-%02d", epoch))); err != nil {
+			return state, err
+		}
+	}
+	return state, nil
+}
+
+func (runtime *Runtime) commitTraining(ctx context.Context, config TrainingConfig, state resumeState, stopper earlyStopper) error {
+	if config.ResumeDirectory == "" {
+		return nil
+	}
+	state.StopBest, state.StopMisses, state.StopInitialized = stopper.best, stopper.misses, stopper.initialized
+	var err error
+	state.ExportDigests, err = hashTrainingExports(state.Result)
+	if err != nil {
+		return err
+	}
+	var buffer bytes.Buffer
+	if err := gob.NewEncoder(&buffer).Encode(state); err != nil {
+		return err
+	}
+	path, err := checkpoint.SaveTraining(config.ResumeDirectory, runtime.base.store, runtime.base.frozen, buffer.Bytes())
+	if err != nil {
+		return fmt.Errorf("commit training progress: %w", err)
+	}
+	if config.SafePoint != nil {
+		return config.SafePoint(ctx, path)
+	}
+	return nil
+}
+
+func hashTrainingExports(result TrainingResult) (map[string][32]byte, error) {
+	digests := make(map[string][32]byte)
+	for _, epoch := range result.Epochs {
+		if epoch.Checkpoint == "" {
+			continue
+		}
+		entries, err := os.ReadDir(epoch.Checkpoint)
+		if err != nil {
+			return nil, err
+		}
+		if len(entries) == 0 {
+			return nil, fmt.Errorf("empty adapter checkpoint %q", epoch.Checkpoint)
+		}
+		for _, entry := range entries {
+			if !entry.Type().IsRegular() {
+				return nil, fmt.Errorf("invalid adapter checkpoint file %q", entry.Name())
+			}
+			path := filepath.Join(epoch.Checkpoint, entry.Name())
+			file, err := os.Open(path)
+			if err != nil {
+				return nil, err
+			}
+			hash := sha256.New()
+			_, readErr := io.Copy(hash, file)
+			if err := errors.Join(readErr, file.Close()); err != nil {
+				return nil, err
+			}
+			digests[path] = [32]byte(hash.Sum(nil))
+		}
+	}
+	return digests, nil
 }
