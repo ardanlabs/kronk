@@ -230,8 +230,8 @@ schema = 3
     version = "v2.27.0"
     hash = "sha256-QeAIji8DHk227kAw/L0mgkTCXzTy+b7SXht1Ba3Vkl4="
   [mod."github.com/gorilla/websocket"]
-    version = "v1.5.3"
-    hash = "sha256-vTIGEFMEi+30ZdO6ffMNJ/kId6pZs5bbyqov8xe9BM0="
+    version = "v1.5.4-0.20240701034025-d67f41855da4"
+    hash = "sha256-nr3MGZ/Ne2RBr/MvQ1g2dl4hZcomIj2kHUXMZk1ZbaU="
   [mod."github.com/grpc-ecosystem/grpc-gateway/v2"]
     version = "v2.34.0"
     hash = "sha256-Eo7qRl7wYawYqaCksQAC0UqztR/DuikFY5hZZlnE158="
