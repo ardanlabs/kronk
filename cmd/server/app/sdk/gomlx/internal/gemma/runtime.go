@@ -85,6 +85,10 @@ func newRuntime(modelPath string, adapterConfig *AdapterConfig) (*Runtime, error
 		base.store,
 		func(scope *model.Scope, tokens *graph.Node) *graph.Node {
 			if adapterConfig != nil {
+				// Go's backend otherwise embeds inference variables as constants.
+				// Mutable adapters must remain parameters even in forward graphs.
+				// This model has dropout disabled in both train and eval modes.
+				scope.Store().SetTraining(tokens.Graph(), true)
 				restore := installLoRAWeights(scope, tokens.Graph(), base.config, *adapterConfig)
 				defer restore()
 			}
@@ -182,10 +186,25 @@ func (runtime *Runtime) trainBatch(records []TrainingRecord, learningRate, weigh
 	if runtime.trainer != nil && (learningRate != runtime.learningRate || weightDecay != runtime.weightDecay) {
 		return 0, fmt.Errorf("optimizer settings differ from the initialized runtime")
 	}
+	runtime.ensureTrainer(learningRate, weightDecay)
+	metrics, err := runtime.trainer.TrainStep(trainingBatch(records, runtime.base.config.MaxSequenceLength))
+	if err != nil {
+		return 0, fmt.Errorf("train Gemma LoRA step: %w", err)
+	}
+	return metricLoss(metrics, "train Gemma LoRA step")
+}
+
+func (runtime *Runtime) ensureTrainer(learningRate, weightDecay float64) {
 	if runtime.trainer == nil {
 		config := runtime.base.config
 		adapterConfig := *runtime.adapterConfig
 		modelFn := func(scope *model.Scope, _ any, inputs []*graph.Node) []*graph.Node {
+			// Keep mutable adapter parameters live during validation too. The
+			// transformer has dropout disabled; metrics still see eval mode.
+			g := inputs[0].Graph()
+			training := scope.Store().IsTraining(g)
+			scope.Store().SetTraining(g, true)
+			defer scope.Store().SetTraining(g, training)
 			restore := installLoRAWeights(scope, inputs[0].Graph(), config, adapterConfig)
 			defer restore()
 			return []*graph.Node{newTransformer(scope, config).Logits(inputs[0], transformer.CallOptions{})}
@@ -202,12 +221,6 @@ func (runtime *Runtime) trainBatch(records []TrainingRecord, learningRate, weigh
 		runtime.learningRate = learningRate
 		runtime.weightDecay = weightDecay
 	}
-
-	metrics, err := runtime.trainer.TrainStep(trainingBatch(records, runtime.base.config.MaxSequenceLength))
-	if err != nil {
-		return 0, fmt.Errorf("train Gemma LoRA step: %w", err)
-	}
-	return metricLoss(metrics, "train Gemma LoRA step")
 }
 
 func (runtime *Runtime) beginTrainingPhase(learningRate, weightDecay float64) error {

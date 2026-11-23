@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
-import { FINE_TUNING_MODEL_ID, DEFAULT_TRAINING_OPTIONS, requestMessage, retryDelay, trainingPath, trainingStepLabels, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
+import { FINE_TUNING_MODEL_ID, DEFAULT_TRAINING_OPTIONS, requestMessage, retryDelay, runStopState, trainingPath, trainingStepLabels, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
 import { useModelList } from '../contexts/ModelListContext';
 import type { PreparationDataset, TrainingOptions, TrainingRun as Run } from '../types';
 import { FieldLabel } from './ParamTooltips';
@@ -60,8 +60,8 @@ function TrainingStepCell({ run }: { run: Run }) {
   const outcome = result(run);
   if (outcome) return <><span className={`prep-main${outcome === 'accepted' ? ' dash-done-text' : ''}`}>{outcome === 'needs_improvement' ? 'Adapter trained' : <><span aria-hidden="true">✓ </span>Adapter ready</>}</span><span className="prep-sub">Took {span(run.started_at, run.closed_at)}</span></>;
   if (run.status === 'failed') return <><span className="prep-main">Failed during {(trainingStepLabels[failedStep(run)?.name ?? run.step ?? ''] ?? 'training').toLowerCase()}</span><span className="prep-sub">Open for the reason</span></>;
-  if (run.status === 'stopped') return <><span className="prep-main">Stopped</span><span className="prep-sub">Cancelled · cannot resume</span></>;
-  if (run.status === 'paused' || run.status === 'pause_requested') return <><span className="prep-main">{run.status === 'paused' ? 'Paused' : 'Pausing'}</span><span className="prep-sub">{trainingStepLabels[run.step ?? ''] ?? 'Training'}</span></>;
+  if (run.status === 'stopped') return <><span className="prep-main">Cancelled</span><span className="prep-sub">Permanent · cannot resume</span></>;
+  if (runStopState(run)) return <><span className="prep-main">{runStopState(run) === 'stopped' ? 'Stopped' : 'Stopping…'}</span><span className="prep-sub">{trainingStepLabels[run.step ?? ''] ?? 'Training'}</span></>;
   if (run.status === 'queued') return <><span className="prep-main">Waiting for a worker</span><span className="prep-sub">Not started</span></>;
   const percent = progress ? Math.min(100, Math.floor(progress.completed / progress.total * 100)) : null;
   return <>
@@ -83,9 +83,8 @@ export function trainingLabel(run: Run) {
   const outcome = result(run);
   if (outcome) return `Trained · ${results[outcome].label}`;
   if (run.status === 'failed') return 'Training failed';
-  if (run.status === 'stopped') return 'Training stopped';
-  if (run.status === 'paused') return 'Training paused';
-  if (run.status === 'pause_requested') return 'Training pausing';
+  if (run.status === 'stopped') return 'Training cancelled';
+  if (runStopState(run)) return runStopState(run) === 'stopped' ? 'Training stopped · can resume' : 'Stopping training…';
   if (run.status === 'queued') return 'Training queued';
   const progress = liveProgress(run);
   if (!progress) return 'Training';
@@ -367,12 +366,10 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
-  const [confirmStop, setConfirmStop] = useState(false);
   const [requestedRevision, setRequestedRevision] = useState(0);
-  const [stopRequested, setStopRequested] = useState(false);
-  const paused = run.status === 'paused';
-  const pausing = run.status === 'pause_requested';
-  const disabled = !!busy || run.state_stale || requestedRevision > run.control_revision || stopRequested;
+  const paused = runStopState(run) === 'stopped';
+  const pausing = runStopState(run) === 'stopping' || busy === 'pause' || (!paused && requestedRevision > run.control_revision);
+  const disabled = !!busy || run.state_stale || requestedRevision > run.control_revision || pausing;
   useEffect(() => { setNotice(''); }, [run.status, run.control_revision]);
 
   async function control(action: 'pause' | 'resume') {
@@ -386,7 +383,7 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
       const receipt = await api.controlTraining(run.workflow_id, run.run_id, action, { request_id: id, expected_revision: run.control_revision });
       trainingControlIDs.delete(key);
       setRequestedRevision(receipt.revision);
-      setNotice(action === 'pause' ? 'Pause requested. Waiting for the current operation to finish.' : 'Resume requested. Waiting for the worker.');
+      setNotice(action === 'pause' ? 'Stop requested. Waiting for the worker to save its progress.' : 'Resume requested. Waiting for the worker.');
     } catch (err) {
       if (err instanceof ApiError && (err.status === 400 || err.status === 409)) trainingControlIDs.delete(key);
       setActionError(err instanceof ApiError && err.status === 409 ? 'The run changed. Refreshing its status before you try again.' : requestMessage(err, 'The request could not be confirmed. Check the run status before retrying.'));
@@ -396,22 +393,6 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
     }
   }
 
-  async function stop() {
-    if (disabled) return;
-    setBusy('stop');
-    setActionError('');
-    try {
-      await api.stopTrainingRun(run.workflow_id, run.run_id);
-      setStopRequested(true);
-      setConfirmStop(false);
-      setNotice('Stop requested. Waiting for the worker to cancel this run.');
-    } catch (err) {
-      setActionError(requestMessage(err, 'Stop could not be confirmed. Check the run status before retrying.'));
-    } finally {
-      setBusy('');
-      onRefresh();
-    }
-  }
   const previousStatus = useRef(run.status);
   useEffect(() => {
     if (previousStatus.current !== run.status && (run.status === 'failed' || notAccepted(run))) setDetailTab('issues');
@@ -423,11 +404,11 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
     const status = steps.find((item) => item.name === name)?.status;
     if (status === 'completed' || status === 'failed') return status;
     if (name !== run.step) return 'pending';
-    return run.status === 'stopped' ? 'stopped' : paused ? 'paused' : run.status === 'running' || pausing ? 'running' : 'pending';
+    return run.status === 'stopped' ? 'stopped' : paused ? 'paused' : pausing ? 'pausing' : run.status === 'running' ? 'running' : 'pending';
   };
   const chips = <ol className="step-chips" aria-label="Steps">{trainingSteps.map((name) => {
     const state = stepState(name);
-    return <li key={name} className={`step-chip step-chip-${state}`} aria-current={state === 'running' || state === 'paused' ? 'step' : undefined}><span aria-hidden="true">{stepGlyphs[state]}</span>{trainingStepLabels[name]}<span className="prep-sr-only">: {stepStateLabels[state].toLowerCase()}</span></li>;
+    return <li key={name} className={`step-chip step-chip-${state === 'pausing' ? 'running' : state}`} aria-current={state === 'running' || state === 'paused' || state === 'pausing' ? 'step' : undefined}><span aria-hidden="true">{stepGlyphs[state]}</span>{trainingStepLabels[name]}<span className="prep-sr-only">: {stepStateLabels[state].toLowerCase()}</span></li>;
   })}</ol>;
 
   let card: ReactNode;
@@ -459,7 +440,7 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
         <div className="live-ring live-ring-idle" aria-hidden="true"><span className="ring-text">{failed ? '×' : '■'}</span></div>
       </div>
       <div className="live-main">
-        <span className="fine-eyebrow">{failed ? 'Failed' : 'Stopped'} · step {Math.max(0, trainingSteps.indexOf(step ?? '')) + 1} of {trainingSteps.length}</span>
+        <span className="fine-eyebrow">{failed ? 'Failed' : 'Cancelled'} · step {Math.max(0, trainingSteps.indexOf(step ?? '')) + 1} of {trainingSteps.length}</span>
         <h3 id="train-card-title" tabIndex={-1}>{trainingStepLabels[step ?? ''] ?? 'Training'}</h3>
         <p className="prep-copy">{failed ? failureText(run) || 'An unexpected error stopped this run. See Issues for the available troubleshooting details.' : 'This training was cancelled and cannot be resumed.'} No adapter was saved; the dataset is unchanged.</p>
       </div>
@@ -469,34 +450,29 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
   } else {
     const queued = run.status === 'queued';
     const remainingSeconds = progress?.remaining_seconds;
-    const timing = run.status !== 'running' ? '' : remainingSeconds ? `About ${timeLeft(remainingSeconds * 1000)} left` : progress && progress.completed >= progress.total ? 'Finishing up…' : 'Estimating time left…';
+    const timing = run.status !== 'running' || paused || pausing ? '' : remainingSeconds ? `About ${timeLeft(remainingSeconds * 1000)} left` : progress && progress.completed >= progress.total ? 'Finishing up…' : 'Estimating time left…';
     card = <section className={`fine-panel live-hero live-hero-${paused ? 'paused' : pausing ? 'pausing' : queued ? 'queued' : 'running'}`} aria-labelledby="train-card-title">
       <div className="live-gauge">
         <div className={`live-ring${percent === null ? queued || paused ? ' live-ring-idle' : ' live-ring-spin' : ''}`} style={{ '--pct': percent ?? 0 } as React.CSSProperties} aria-hidden="true">
-          {percent !== null ? <><span className="ring-num">{percent}%</span><span className="ring-text">of this step</span></> : <span className="ring-text">{paused ? 'Paused' : queued ? 'Queued' : 'Working'}</span>}
+          {percent !== null ? <><span className="ring-num">{percent}%</span><span className="ring-text">of this step</span></> : <span className="ring-text">{paused ? 'Stopped' : pausing ? 'Stopping…' : queued ? 'Queued' : 'Working'}</span>}
         </div>
         {timing && <p className="live-time">{timing}</p>}
       </div>
       <div className="live-main">
-        <span className="fine-eyebrow">{paused ? 'Paused' : pausing ? 'Pausing' : queued ? 'Queued' : `Step ${index} of ${trainingSteps.length}`}</span>
+        <span className="fine-eyebrow">{paused ? 'Stopped' : pausing ? 'Stopping…' : queued ? 'Queued' : `Step ${index} of ${trainingSteps.length}`}</span>
         <h3 id="train-card-title" tabIndex={-1}>{queued ? 'Waiting for a worker' : trainingStepLabels[run.step ?? ''] ?? 'Training'}</h3>
-        <p className="prep-copy">{paused ? 'Training is paused. Resume continues this run without restarting the current step. Keep the server running: the worker and model memory stay reserved, and run timeouts still apply.' : pausing ? 'Pause requested. The current batch or operation finishes before the run pauses; it has not paused yet.' : queued ? 'Training starts on its own when the earlier training finishes. One training runs at a time; preparations do not hold it up.' : stepCopy[run.step ?? ''] ?? 'This training keeps going while you browse.'}</p>
+        <p className="prep-copy">{paused ? 'Training is stopped. Resume continues from the last saved progress. For older runs that keep their worker in memory, keep the server running; those runs are not restart-safe.' : pausing ? 'The current batch or operation finishes and saves before training stops. Wait for Stopped before resuming.' : queued ? 'Training starts on its own when the earlier training finishes. One training runs at a time; preparations do not hold it up.' : stepCopy[run.step ?? ''] ?? 'This training keeps going while you browse.'}</p>
         {progress && <p className="live-count"><strong>{progress.completed} of {progress.total}</strong> {run.step === 'train' ? 'training steps' : run.step === 'evaluate' ? 'answers · the base model answers every question, then the adapter' : ''}{settings && run.step === 'train' ? ` · up to ${settings.maximum_epochs} ${settings.maximum_epochs === 1 ? 'epoch' : 'epochs'}` : ''}</p>}
       </div>
       <div className="live-steps">{chips}</div>
       <div className="live-foot">
         <p>{[queued ? `Queued ${duration(now - Date.parse(run.started_at))} ago` : `Started ${duration(now - Date.parse(run.started_at))} ago`, `${trainedOn(run)}${run.training_dataset_version ? ` v${run.training_dataset_version}` : ''}`, baseModelName].join(' · ')}</p>
         <div className="live-controls">
-          {run.control_stage === 'training' && <button className="btn btn-secondary btn-compact" type="button" disabled={disabled} title={paused || pausing ? 'Continue this run without restarting optimization' : 'Pause between batches or operations; model memory stays reserved'} onClick={() => void control(paused || pausing ? 'resume' : 'pause')}>
-            {busy === 'pause' || busy === 'resume' ? 'Sending…' : paused || pausing ? 'Resume' : 'Pause'}
+          {run.control_stage === 'training' && <button className="btn btn-secondary btn-compact" type="button" disabled={disabled} title={paused ? 'Resume this run from its saved progress' : 'Stop after saving progress; this run can be resumed'} onClick={() => void control(paused ? 'resume' : 'pause')}>
+            {pausing ? 'Stopping…' : busy === 'resume' ? 'Sending…' : paused ? 'Resume' : 'Stop'}
           </button>}
-          <button className="btn btn-secondary btn-compact btn-quiet-danger" type="button" disabled={disabled} onClick={() => setConfirmStop(true)}>Stop training…</button>
         </div>
       </div>
-      {confirmStop && <div className="prep-confirm live-confirm" role="group" aria-label="Confirm training cancellation">
-        <p><strong>Stop this training?</strong> This cancels the run, not pauses it. It cannot be resumed. The dataset and earlier adapters stay unchanged.</p>
-        <div className="prep-actions"><button className="btn btn-danger" type="button" disabled={disabled} onClick={() => void stop()}>{busy === 'stop' ? 'Stopping…' : 'Stop run'}</button><button className="btn btn-secondary" type="button" disabled={!!busy} onClick={() => setConfirmStop(false)}>Keep this run</button></div>
-      </div>}
     </section>;
   }
 
@@ -520,7 +496,7 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
       {shownTab === 'steps' && <ol className="run-timeline">{trainingSteps.map((name, at) => {
         const state = stepState(name);
         const step = steps.find((item) => item.name === name);
-        const detail = state === 'completed' ? `Took ${span(step?.started_at, step?.closed_at)}` : state === 'failed' ? `Failed ${date(step?.closed_at ?? run.closed_at)}${step && step.attempt > 1 ? ` after ${step.attempt} attempts` : ''}` : state === 'stopped' ? `Stopped ${date(run.closed_at)}` : 'Not started';
+        const detail = state === 'completed' ? `Took ${span(step?.started_at, step?.closed_at)}` : state === 'failed' ? `Failed ${date(step?.closed_at ?? run.closed_at)}${step && step.attempt > 1 ? ` after ${step.attempt} attempts` : ''}` : state === 'stopped' ? `Cancelled ${date(run.closed_at)}` : 'Not started';
         return <li key={name} className={`run-step run-step-${state} fine-step-${state === 'stopped' ? 'failed' : state}`}>
           <span className="fine-step-marker" aria-hidden="true">{state === 'pending' ? at + 1 : stepGlyphs[state]}</span>
           <div className="run-step-body"><div className="run-step-title"><strong>{trainingStepLabels[name]}</strong><span className="run-step-state">{stepStateLabels[state]}</span></div><span className="prep-sub">{detail}</span></div>

@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../services/api';
-import { preparationSteps as steps, requestMessage as message, sentence, stepLabel, trainingStepLabels } from '../contexts/FineTuningRunnerContext';
+import { preparationSteps as steps, requestMessage as message, runStopState, sentence, stepLabel, trainingStepLabels } from '../contexts/FineTuningRunnerContext';
 import type { PreparationDataset, PreparationOptions, TrainingPreviewRecord, TrainingRun } from '../types';
 import { FieldLabel } from './ParamTooltips';
 import { DatasetTrainings, duration, setupPath, useDatasetTrainings } from './TrainingRun';
@@ -14,8 +14,8 @@ const goalLabel = (goal?: string) => goals.find(([key]) => key === goal)?.[1] ??
 type Display = 'queued' | 'running' | 'recovering' | 'pausing' | 'paused' | 'review' | 'waiting' | 'completed' | 'needs_improvement' | 'failed' | 'stopped';
 const statuses: Record<Display, { label: string; glyph: string }> = {
   queued: { label: 'Queued', glyph: '○' }, running: { label: 'Running', glyph: '●' }, recovering: { label: 'Recovering', glyph: '↻' },
-  pausing: { label: 'Pausing', glyph: '◑' }, paused: { label: 'Paused', glyph: '‖' }, review: { label: 'Waiting for review', glyph: '◐' },
-  waiting: { label: 'Waiting', glyph: '◐' }, failed: { label: 'Failed', glyph: '×' }, stopped: { label: 'Stopped', glyph: '■' }, completed: { label: 'Completed', glyph: '✓' },
+  pausing: { label: 'Stopping…', glyph: '◑' }, paused: { label: 'Stopped', glyph: '‖' }, review: { label: 'Waiting for review', glyph: '◐' },
+  waiting: { label: 'Waiting', glyph: '◐' }, failed: { label: 'Failed', glyph: '×' }, stopped: { label: 'Cancelled', glyph: '■' }, completed: { label: 'Completed', glyph: '✓' },
   needs_improvement: { label: 'Not accepted', glyph: '' },
 };
 const closed = ['completed', 'failed', 'stopped', 'needs_improvement'];
@@ -24,8 +24,7 @@ export const reviewable = (run: TrainingRun) => run.status === 'waiting' && run.
 function display(run: TrainingRun): Display {
   if (run.status === 'needs_improvement' || (run.status === 'completed' && run.evaluation_result === 'needs_improvement')) return 'needs_improvement';
   if (run.status === 'completed' || run.status === 'failed' || run.status === 'stopped') return run.status;
-  // A paused run waiting at a checkpoint still reports waiting; the control says it is paused.
-  if (run.control_action === 'pause') return run.status === 'pause_requested' ? 'pausing' : 'paused';
+  if (runStopState(run)) return runStopState(run) === 'stopping' ? 'pausing' : 'paused';
   if (run.status === 'waiting') return reviewable(run) ? 'review' : 'waiting';
   if (run.status === 'recovering' || run.status === 'running') return run.status;
   return 'queued';
@@ -76,9 +75,9 @@ export function Progress({ run }: { run: TrainingRun }) {
   const cap = progress.step === 'generate' ? run.settings?.max_questions : 0;
   return <><span className="prep-sub">{progress.completed} of {progress.total}{progress.step === 'extract' ? ' pages read' : ''}{cap ? ` · stops as soon as ${records(cap)} are saved, which can be before this count finishes` : ''}</span><div className="prep-track" role="progressbar" aria-label={`${stepLabel(progress.step)} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div></>;
 }
-export type StepState = 'completed' | 'running' | 'review' | 'paused' | 'failed' | 'stopped' | 'pending';
-export const stepStateLabels: Record<StepState, string> = { completed: 'Done', running: 'Running', review: 'Waiting for you', paused: 'Paused', failed: 'Failed', stopped: 'Stopped', pending: 'Not started' };
-export const stepGlyphs: Record<StepState, string> = { completed: '✓', running: '●', review: '●', paused: '‖', failed: '×', stopped: '■', pending: '○' };
+export type StepState = 'completed' | 'running' | 'review' | 'pausing' | 'paused' | 'failed' | 'stopped' | 'pending';
+export const stepStateLabels: Record<StepState, string> = { completed: 'Done', running: 'Running', review: 'Waiting for you', pausing: 'Stopping…', paused: 'Stopped', failed: 'Failed', stopped: 'Cancelled', pending: 'Not started' };
+export const stepGlyphs: Record<StepState, string> = { completed: '✓', running: '●', review: '●', pausing: '◑', paused: '‖', failed: '×', stopped: '■', pending: '○' };
 const clock = (value?: string) => value ? new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—';
 const span = (from?: string, to?: string) => from && to ? duration(Date.parse(to) - Date.parse(from)) : '';
 const pages = (start?: number, end?: number) => start ? `${start}–${end}` : 'Entire document';
@@ -95,7 +94,7 @@ function timeline(run: TrainingRun, state: Display) {
     if (step?.status === 'completed') stepState = 'completed';
     else if (step?.status === 'failed' || (current && state === 'failed')) stepState = 'failed';
     else if (current && state === 'stopped') stepState = 'stopped';
-    else if (current && active(run)) stepState = state === 'review' ? 'review' : state === 'paused' || state === 'pausing' ? 'paused' : 'running';
+    else if (current && active(run)) stepState = state === 'review' ? 'review' : state === 'paused' || state === 'pausing' ? state : 'running';
     return { name, label, state: stepState, step };
   });
 }
@@ -104,7 +103,7 @@ function stepDetail(run: TrainingRun, item: ReturnType<typeof timeline>[number])
   switch (item.state) {
     case 'completed': return step?.closed_at ? `Finished ${clock(step.closed_at)}${step.started_at ? ` · took ${span(step.started_at, step.closed_at)}` : ''}` : 'Done';
     case 'failed': return `Failed at ${clock(step?.closed_at ?? run.closed_at)}${step && step.attempt > 1 ? ` after ${step.attempt} attempts` : ''}`;
-    case 'stopped': return `Stopped at ${clock(run.closed_at)} by a cancel request`;
+    case 'stopped': return `Cancelled at ${clock(run.closed_at)}`;
     case 'pending': return 'Not started';
   }
   return step?.started_at ? `Started ${clock(step.started_at)}` : 'Started';
@@ -131,7 +130,7 @@ const progressUnits: Record<string, string> = { extract: 'pages read', generate:
 export function RunActivity({ run, now }: { run: TrainingRun; now: number }) {
   const progress = run.progress?.stage === run.stage && run.progress?.step === run.step ? run.progress : undefined;
   const label = run.stage === 'training' ? trainingStepLabels[run.step ?? ''] ?? 'Training' : stepLabel(run.step);
-  const text = run.status === 'running' ? progress?.message || (run.step === 'extract' ? 'Waiting for document extraction results. Page counts update after a conversion batch finishes.' : 'In progress.')
+  const text = run.status === 'running' && !runStopState(run) ? progress?.message || (run.step === 'extract' ? 'Waiting for document extraction results. Page counts update after a conversion batch finishes.' : 'In progress.')
     : statuses[display(run)].label;
   const units = progress?.message === 'Generating additional records to reach the requested count' ? 'records' : progress?.message === 'Generating evaluation questions' ? 'evaluation questions' : progressUnits[progress?.step ?? ''] ?? 'work units completed';
   const counts = progress && progress.completed > 0 && progress.message !== 'Source extraction complete' ? `${progress.completed}${progress.total > 0 ? ` of ${progress.total}` : ''} ${units}` : '';
@@ -183,8 +182,9 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
   const [busy, setBusy] = useState('');
-  const [confirmStop, setConfirmStop] = useState(false);
+  const [requestedRevision, setRequestedRevision] = useState(0);
   const [review, setReview] = useState(false);
+  const [viewedCheckpoint, setViewedCheckpoint] = useState('');
   const [reviewError, setReviewError] = useState('');
   const [, rerender] = useReducer((count: number) => count + 1, 0);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -207,7 +207,8 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
     if (shownState.current !== state) setNotice('');
     shownState.current = state;
   }, [state]);
-  const paused = active(run) && run.control_action === 'pause';
+  const paused = state === 'paused';
+  const stopping = state === 'pausing' || busy === 'pause' || requestedRevision > run.control_revision;
   const ready = state === 'completed' && !!run.prepared_dataset_id && !!run.prepared_dataset_version;
   const settings = run.settings;
   const now = useNow(active(run) && visible);
@@ -266,12 +267,15 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
     }
   }
   function control(target: TrainingRun, action: 'pause' | 'resume') {
+    if (busy || stopping) return;
     const key = `${runKey(target)}:${action}:${target.control_revision}`;
     const id = controlIDs.get(key) ?? `control-${crypto.randomUUID()}`;
     controlIDs.set(key, id);
     const body = { request_id: id, expected_revision: target.control_revision };
-    return act(action, () => action === 'pause' ? api.pausePreparation(target.workflow_id, target.run_id, body) : api.continuePreparation(target.workflow_id, target.run_id, body),
-      action === 'pause' ? 'Pause requested. The run pauses after it saves its current progress.' : 'Continue requested. The run resumes from its saved progress.', controlIDs, key);
+    return act(action, async () => {
+      const receipt = await (action === 'pause' ? api.pausePreparation(target.workflow_id, target.run_id, body) : api.continuePreparation(target.workflow_id, target.run_id, body));
+      setRequestedRevision(receipt.revision);
+    }, action === 'pause' ? 'Stop requested. Waiting for the worker to save its progress.' : 'Resume requested. The run resumes from its saved progress.', controlIDs, key);
   }
   const reviewRecords = draft ?? run.preview?.records ?? [];
   const fieldLabel = (field: 'prompt' | 'target') => settings?.goal === 'question_answer' || !settings ? field === 'prompt' ? 'Question' : 'Answer' : field === 'prompt' ? 'Input' : 'Expected output';
@@ -283,7 +287,7 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
     (reviewTrigger.current ?? document.getElementById('prep-view-preview'))?.focus();
   }
   async function acceptReview() {
-    if (!run.checkpoint || !validReview) return;
+    if (!run.checkpoint || !validReview || busy) return;
     const checkpoint = run.checkpoint.id;
     const id = reviewIDs.get(checkpoint) ?? `review-${crypto.randomUUID()}`;
     reviewIDs.set(checkpoint, id);
@@ -314,18 +318,18 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
   const read = state === 'running' ? pagesRead(run) : 0;
   const timing = state !== 'running' ? '' : read ? `${read} pages read` : left > 0 ? `About ${timeLeft(left)} left` : estimate || (stepProgress && stepProgress.completed >= stepProgress.total) ? 'Finishing up…' : 'Estimating time left…';
   const sincePhrase = (value?: string) => value ? duration(now - Date.parse(value)) : '—';
-  const eyebrow = state === 'queued' ? 'Queued' : state === 'failed' ? `Failed · step ${index} of 4` : state === 'stopped' ? `Stopped · step ${index} of 4`
-    : state === 'review' ? `Step ${index} of 4 · waiting for you` : state === 'paused' ? `Paused · step ${index} of 4` : state === 'pausing' ? `Pausing · step ${index} of 4` : `Step ${index} of 4`;
+  const eyebrow = state === 'queued' ? 'Queued' : state === 'failed' ? `Failed · step ${index} of 4` : state === 'stopped' ? `Cancelled · step ${index} of 4`
+    : state === 'review' ? `Step ${index} of 4 · waiting for you` : state === 'paused' ? `Stopped · step ${index} of 4` : state === 'pausing' ? `Stopping… · step ${index} of 4` : `Step ${index} of 4`;
   const title = state === 'queued' ? 'Waiting for a worker' : state === 'review' || (state === 'paused' && reviewable(run)) ? 'Review the preview' : state === 'waiting' ? 'Waiting' : stepLabel(stoppedAt ?? run.step);
   const copy = state === 'queued' ? 'The run starts on its own when a preparation worker is free.'
     : state === 'review' ? 'The preview is ready. Check and edit the examples, then accept them to build the full dataset. Nothing else happens until you do.'
-    : state === 'paused' ? reviewable(run) ? 'Saved progress is kept. You can still review the preview; after you accept it, the run stays paused until you select Continue.' : 'Saved progress is kept. Continue picks up where it stopped, even after a restart.'
-    : state === 'pausing' ? 'The current unit of work finishes and saves, then the run pauses.'
+    : state === 'paused' ? reviewable(run) ? 'Saved progress is kept. You can still review the preview; after you accept it, the run stays stopped until you select Resume.' : 'Saved progress is kept. Resume picks up where it stopped.'
+    : state === 'pausing' ? 'The current unit of work finishes and saves before the run stops. Wait for Stopped before resuming.'
     : state === 'recovering' ? 'The worker was lost. The run resumes from its saved progress.'
     : state === 'failed' ? `${failureText(run)} See issues for details.`
-    : state === 'stopped' ? 'Stopped by you. This run cannot be resumed.'
+    : state === 'stopped' ? 'This run was permanently cancelled and cannot be resumed.'
     : state === 'waiting' ? 'The run is waiting at a checkpoint.' : stepCopy[run.step ?? ''] ?? 'This run keeps going while you browse. Leaving this screen never stops it.';
-  const ring = state === 'review' ? 'Your turn' : state === 'queued' ? 'Queued' : state === 'paused' ? 'Paused' : state === 'pausing' ? 'Pausing' : state === 'recovering' ? 'Recovering' : state === 'failed' ? '×' : state === 'stopped' ? '■' : 'Working';
+  const ring = state === 'review' ? 'Your turn' : state === 'queued' ? 'Queued' : state === 'paused' ? 'Stopped' : state === 'pausing' ? 'Stopping…' : state === 'recovering' ? 'Recovering' : state === 'failed' ? '×' : state === 'stopped' ? '■' : 'Working';
   const nextVersion = run.base_version ? `Will add version ${run.base_version + 1}` : 'Will create version 1';
   const facts = active(run)
     ? [state === 'queued' ? `Queued ${sincePhrase(run.started_at)} ago` : paused ? `Started ${sincePhrase(run.started_at)} ago` : `Running for ${sincePhrase(run.started_at)}`, nextVersion, 'Records are saved after the last step']
@@ -346,7 +350,7 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
     ...(datasetID ? [['trainings', `Training runs${trainings.runs.length ? ` (${trainings.runs.length})` : ''}`] as [string, string]] : []),
   ];
   const shownTab = tabs.some(([key]) => key === detailTab) ? detailTab : state === 'failed' ? 'issues' : finishedRun ? 'steps' : 'dataset';
-  const reviewButton = (primary: boolean) => <button ref={reviewTrigger} className={`btn ${primary ? 'btn-primary hero-action' : 'btn-secondary'}`} disabled={!run.preview} onClick={() => setReview(true)}>Review preview</button>;
+  const reviewButton = (primary: boolean) => <button ref={reviewTrigger} className={`btn ${primary ? 'btn-primary hero-action' : 'btn-secondary'}`} disabled={!run.preview} onClick={() => { setViewedCheckpoint(run.checkpoint?.id ?? ''); setReview(true); }}>Review preview</button>;
   // A run that saved nothing can still lead to training when its dataset's saved versions are trainable.
   const trainable = finishedRun && !!dataset?.version && dataset.training_ready;
   // The run's own flag was saved when it finished; the dataset reports the current rule for the same version.
@@ -356,13 +360,12 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
   const trainPath = datasetID && trainVersion ? setupPath(datasetID, trainVersion, { preparation: run.workflow_id, run: run.run_id }) : '/fine-tuning';
   const evaluation = dataset ? Math.min(dataset.validation_questions, dataset.validation_needed) + Math.min(dataset.test_questions, dataset.test_needed) : 0;
   const evaluationNeeded = dataset ? dataset.validation_needed + dataset.test_needed : 0;
-  const continueButton = <button className="btn btn-primary hero-action" disabled={!!busy} onClick={() => void control(run, 'resume')}>{busy === 'resume' ? 'Sending…' : 'Continue preparation'}</button>;
 
   return <>
     <div className="prep-detail prep-run-detail">
       {notice && <p className="prep-notice" role="status">{notice}</p>}
       {actionError && <p className="prep-field-error prep-action-error" role="alert">{actionError}</p>}
-      {run.state_stale && active(run) && <p className="prep-warning" role="status">Showing the last saved status{run.observed_at ? ` from ${date(run.observed_at)}` : ''}. The preparation worker is not reporting right now. Pause, Continue, and Stop requests are kept and take effect when it reconnects.</p>}
+      {run.state_stale && active(run) && <p className="prep-warning" role="status">Showing the last saved status{run.observed_at ? ` from ${date(run.observed_at)}` : ''}. The preparation worker is not reporting right now. Stop and Resume requests are kept and take effect when it reconnects.</p>}
       {state === 'completed' ? <section className="fine-panel done-card" aria-labelledby="run-card-title">
         <div className="prep-done-header">
           <div className="done-top"><span className="dash-done-mark" aria-hidden="true">✓</span><div>
@@ -394,20 +397,20 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
           {trainable && <p className="prep-copy"><strong>{dataset.name} version {dataset.version} has {records(dataset.record_count)} and can still be used for training.</strong></p>}
           {stepProgress && <p className="live-count"><strong>{stepProgress.completed} of {stepProgress.total}</strong> {progressUnits[stepProgress.step] ?? ''}{cap ? ` · stops once ${records(cap)} are saved` : ''}</p>}
           {reviewable(run) && draft && <p className="prep-copy">You have unsent edits.</p>}
-          {(reviewable(run) || paused || (finishedRun && trainable)) && <div className="prep-actions">
-            {paused ? <>{continueButton}{reviewable(run) && reviewButton(false)}</> : reviewable(run) ? reviewButton(true)
+          {(reviewable(run) || (finishedRun && trainable)) && <div className="prep-actions">
+            {reviewable(run) ? <>{reviewButton(false)}{!!viewedCheckpoint && viewedCheckpoint === run.checkpoint?.id && <button className="btn btn-primary hero-action" disabled={!validReview || !!busy} onClick={() => void acceptReview()}>{busy === 'review' ? 'Sending…' : 'Accept and continue'}</button>}</>
               : <Link className="btn btn-primary run-train" to={trainPath}>Continue to training →</Link>}
           </div>}
+          {reviewable(run) && reviewError && <p className="prep-field-error" role="alert">{reviewError}</p>}
+          {reviewable(run) && !validReview && <p className="prep-copy">Complete each {fieldLabel('prompt').toLowerCase()} and {fieldLabel('target').toLowerCase()} in the preview to continue.</p>}
         </div>
-        <div className="live-steps"><ol className="step-chips" aria-label="Steps">{tl.map((item) => <li key={item.name} className={`step-chip step-chip-${item.state}`} aria-current={['running', 'review', 'paused'].includes(item.state) ? 'step' : undefined}><span aria-hidden="true">{stepGlyphs[item.state]}</span>{item.label}<span className="prep-sr-only">: {stepStateLabels[item.state].toLowerCase()}</span></li>)}</ol></div>
+        <div className="live-steps"><ol className="step-chips" aria-label="Steps">{tl.map((item) => <li key={item.name} className={`step-chip step-chip-${item.state === 'pausing' ? 'running' : item.state}`} aria-current={['running', 'review', 'pausing', 'paused'].includes(item.state) ? 'step' : undefined}><span aria-hidden="true">{stepGlyphs[item.state]}</span>{item.label}<span className="prep-sr-only">: {stepStateLabels[item.state].toLowerCase()}</span></li>)}</ol></div>
         <div className="live-foot">
           <p>{facts.join(' · ')}</p>
           {active(run) && <div className="live-controls">
-            {!paused && <button className="btn btn-secondary btn-compact" disabled={!!busy} title="Pause after the current save; progress is kept" onClick={() => void control(run, 'pause')}><span aria-hidden="true">‖</span>{busy === 'pause' ? 'Sending…' : 'Pause'}</button>}
-            <button className="btn btn-secondary btn-compact btn-quiet-danger" disabled={!!busy} title="Cancel this run; it cannot be resumed" onClick={() => setConfirmStop(true)}><span aria-hidden="true">■</span>Stop preparation…</button>
+            <button className="btn btn-secondary btn-compact" disabled={!!busy || stopping} title={paused ? 'Resume this run from its saved progress' : 'Stop after saving progress; this run can be resumed'} onClick={() => void control(run, paused ? 'resume' : 'pause')}>{!paused && <span aria-hidden="true">■</span>}{stopping ? 'Stopping…' : busy === 'resume' ? 'Sending…' : paused ? 'Resume' : 'Stop'}</button>
           </div>}
         </div>
-        {confirmStop && active(run) && <div className="prep-confirm live-confirm" role="group" aria-label="Confirm cancellation"><p><strong>Stop this preparation?</strong> Stop means cancellation, not pause. This run cannot be resumed; saved dataset versions stay unchanged.</p><div className="prep-actions"><button className="btn btn-danger" disabled={!!busy} onClick={() => { setConfirmStop(false); void act('stop', () => api.stopTrainingRun(run.workflow_id, run.run_id), 'Stop requested. The run closes after it cancels.'); }}>Stop run</button><button className="btn btn-secondary" onClick={() => setConfirmStop(false)}>Keep this run</button></div></div>}
       </section>}
       <RunActivity key={runKey(run)} run={run} now={now} />
       <DetailTabs tabs={tabs} shown={shownTab} onSelect={setDetailTab}>
@@ -468,7 +471,7 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
       {reviewOpen && <div className="prep-review-body">
         <header className="prep-review-header"><div><span className="prep-sub">{datasetName(run)} · {examples(reviewRecords.length)}</span><h3 id="prep-review-title">Review preview examples</h3></div><button autoFocus className="btn btn-secondary" onClick={closeReview}>Close preview</button></header>
         <div className="prep-review-content">
-          <p className="prep-copy">{reviewable(run) ? 'Check each example against its source. Edits stay here until accepted; reloading discards them.' : 'Read-only preview. This run is not waiting for review.'}</p>
+          <p className="prep-copy">{reviewable(run) ? 'Check each example against its source. Close the preview, then select Accept and continue on the preparation card. Edits stay here until accepted; reloading discards them.' : 'Read-only preview. This run is not waiting for review.'}</p>
           {run.preview?.warnings?.map((warning) => <p key={warning} className="prep-warning">{previewWarning(warning)}</p>)}
           <div className="prep-records">{reviewRecords.map((record, index) => <article className="prep-qa" key={index}>
             <h4>Example {index + 1} of {reviewRecords.length}</h4>
@@ -482,7 +485,6 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
         </div>
         <footer className="prep-review-footer">
           <span className={reviewError ? 'prep-field-error' : 'prep-copy'} role="status">{reviewError || (!validReview ? `Complete each ${fieldLabel('prompt').toLowerCase()} and ${fieldLabel('target').toLowerCase()} to continue.` : draft ? 'Unsent edits · closing keeps your changes' : reviewable(run) ? 'Accepting continues preparation, not training.' : 'Read-only examples')}</span>
-          {reviewable(run) && <button className="btn btn-primary" disabled={!validReview || busy === 'review'} onClick={() => void acceptReview()}>{busy === 'review' ? 'Sending…' : 'Accept and build dataset'}</button>}
         </footer>
       </div>}
     </dialog>

@@ -779,13 +779,36 @@ func (j *Job) trainingContext(ctx context.Context, input tmprl.StepContext[Reque
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return optimization.StepContext{}, err
 	}
-	scratch, err := os.MkdirTemp("", "moxie-training-")
-	if err != nil {
-		return optimization.StepContext{}, err
+	var scratch string
+	pausePoint := input.PausePoint
+	var safePoint func(context.Context, string) error
+	if input.SafePoint != nil {
+		// One persistent computation directory per step, inside the run's
+		// workspace. A new worker must find the same optimizer checkpoint.
+		const directory = "computation"
+		if err := input.Workspace.MkdirAll(directory, 0o700); err != nil {
+			return optimization.StepContext{}, err
+		}
+		scratch = filepath.Join(input.Workspace.Name(), directory, r.Step)
+		if err := input.Workspace.MkdirAll(filepath.Join(directory, r.Step), 0o700); err != nil {
+			return optimization.StepContext{}, err
+		}
+		safePoint = func(ctx context.Context, file string) error {
+			if file == "" {
+				return input.SafePoint(ctx, "")
+			}
+			return input.SafePoint(ctx, filepath.Join(directory, r.Step, file))
+		}
+		pausePoint = func(ctx context.Context) error { return safePoint(ctx, "") }
+	} else {
+		scratch, err = os.MkdirTemp("", "moxie-training-")
+		if err != nil {
+			return optimization.StepContext{}, err
+		}
 	}
 	return optimization.StepContext{
 		Artifacts: r.Artifacts.Training, Workspace: input.Workspace, Trainer: j.cfg.Trainer,
-		Job:     optimization.TrainingJob{ModelID: r.Request.Model, Model: modelPath, Training: r.Request.Training, Dataset: state.Dataset, Workdir: scratch, PausePoint: input.PausePoint},
+		Job:     optimization.TrainingJob{ModelID: r.Request.Model, Model: modelPath, Training: r.Request.Training, Dataset: state.Dataset, Workdir: scratch, PausePoint: pausePoint, SafePoint: safePoint},
 		Records: records, Fingerprint: key, Publish: input.Publish,
 	}, nil
 }
@@ -907,7 +930,9 @@ func (j *Job) optimize(step optimization.StepHandler) tmprl.StepHandler[Request,
 		if err != nil {
 			return tmprl.StepResult[Artifacts]{}, stepError(err)
 		}
-		defer os.RemoveAll(resources.Job.Workdir)
+		if input.SafePoint == nil {
+			defer os.RemoveAll(resources.Job.Workdir)
+		}
 		output, err := step.Execute(ctx, resources)
 		artifacts := input.Request.Artifacts
 		artifacts.Training = output.Artifacts

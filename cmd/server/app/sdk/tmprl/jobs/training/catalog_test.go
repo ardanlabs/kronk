@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -76,8 +77,8 @@ func TestRunDeletionSharedVersionsAndRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	add("prep-a", "a", "When does harbor A open?", 1)
-	add("prep-b", "b", "When does harbor B open?", 2)
+	add("prep-a", "a", "When does harbor A open?", 0)
+	add("prep-b", "b", "When does harbor B open?", 1)
 	seed := func(id, mode, status string, version int) tmprl.Execution {
 		t.Helper()
 		e := tmprl.Execution{WorkflowID: "workflow-" + id, RunID: id}
@@ -261,25 +262,40 @@ type pausedTrainer struct {
 	trainer
 	entered chan struct{}
 	release chan struct{}
+	once    sync.Once
 }
 
 func (t *pausedTrainer) Train(ctx context.Context, input optimization.TrainingJob, publish func(tmprl.Progress)) (optimization.TrainingCandidate, error) {
-	close(t.entered)
+	t.once.Do(func() { close(t.entered) })
 	select {
 	case <-ctx.Done():
 		return optimization.TrainingCandidate{}, ctx.Err()
 	case <-t.release:
 	}
-	if input.PausePoint == nil {
-		return optimization.TrainingCandidate{}, errors.New("training did not receive its pause point")
+	if input.SafePoint == nil {
+		return optimization.TrainingCandidate{}, errors.New("training did not receive its durable safe point")
 	}
-	if err := input.PausePoint(ctx); err != nil {
+	path := filepath.Join(input.Workdir, "optimizer.json")
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(path, []byte("saved optimizer"), 0o600); err != nil {
+			return optimization.TrainingCandidate{}, err
+		}
+	} else if err != nil {
+		return optimization.TrainingCandidate{}, err
+	}
+	if err := input.SafePoint(ctx, "optimizer.json"); err != nil {
 		return optimization.TrainingCandidate{}, err
 	}
 	return t.trainer.Train(ctx, input, publish)
 }
 
 func TestCatalogTrainingControlsRecoverLostReceipt(t *testing.T) {
+	for _, action := range []string{"resume", "delete"} {
+		t.Run(action, func(t *testing.T) { testCatalogTrainingControls(t, action) })
+	}
+}
+
+func testCatalogTrainingControls(t *testing.T, action string) {
 	db, _ := newCatalogDatabase(t)
 	env := newTestEnvironment(t)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
@@ -305,7 +321,8 @@ func TestCatalogTrainingControlsRecoverLostReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range workerJob.Workers() {
+	workers := workerJob.Workers()
+	for _, w := range workers {
 		if err := w.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -316,7 +333,7 @@ func TestCatalogTrainingControlsRecoverLostReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	run, err := j.Start(ctx, job.Request{ID: "training-controls-" + env.TaskQueue, Model: "gemma", DatasetID: upload.ID})
-	if err != nil || run.ControlStage != "training" || !run.PauseInPlace {
+	if err != nil || run.ControlStage != "training" || run.PauseInPlace {
 		t.Fatalf("new training did not opt into controls: %+v %v", run, err)
 	}
 	select {
@@ -333,13 +350,22 @@ func TestCatalogTrainingControlsRecoverLostReceipt(t *testing.T) {
 		t.Fatalf("lost receipt was not exercised: %v", err)
 	}
 	close(compute.release)
-	paused := awaitStatus(t, ctx, j, run.Execution, func(s job.State) bool { return s.Status == tmprl.StatusPaused })
-	if paused.Step != "train" || compute.attempts.Load() != 0 {
+	paused := awaitStatus(t, ctx, j, run.Execution, func(s job.State) bool { return s.Status == tmprl.StatusPaused && s.WorkerHost == "" })
+	if paused.Step != "train" || paused.WorkerHost != "" || paused.ControlCheckpoint == "" || paused.ControlAcknowledgedRevision != 1 || compute.attempts.Load() != 0 {
 		t.Fatalf("pause did not stop inside optimization: %+v", paused)
+	}
+	for _, w := range workers {
+		w.Stop()
 	}
 	restarted, err := job.New(env.Client, cfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, w := range restarted.Workers() {
+		if err := w.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(w.Stop)
 	}
 	if err := restarted.Reconcile(ctx); err != nil {
 		t.Fatal(err)
@@ -349,6 +375,22 @@ func TestCatalogTrainingControlsRecoverLostReceipt(t *testing.T) {
 	}
 	if receipt, err := restarted.TrainingControl(ctx, run.Execution, pause); err != nil || receipt.Revision != 1 {
 		t.Fatalf("pause receipt could not be replayed: %+v %v", receipt, err)
+	}
+	if action == "delete" {
+		preview, err := restarted.PreviewDeletion(ctx, run.Execution)
+		if err != nil || len(preview.Blockers) != 0 {
+			t.Fatalf("stopped run cannot be deleted: %+v %v", preview, err)
+		}
+		if _, err := restarted.DeleteRun(ctx, run.Execution, preview.Revision); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := restarted.TrainingControl(ctx, run.Execution, tmprl.ControlRequest{RequestID: "resume", Action: "resume", ExpectedRevision: 1}); !errors.Is(err, job.ErrNotFound) {
+			t.Fatalf("deleted run accepted Resume: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(cfg.StorageRoot, "training-jobs", run.RunID)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("deleted checkpoint workspace remains: %v", err)
+		}
+		return
 	}
 	if _, err := restarted.TrainingControl(ctx, run.Execution, tmprl.ControlRequest{RequestID: "resume", Action: "resume", ExpectedRevision: 1}); err != nil {
 		t.Fatal(err)

@@ -13,8 +13,10 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/generate"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/internal/checkpoint"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/preview"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/verify"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
@@ -159,13 +161,18 @@ func TestUnits(t *testing.T) {
 				return
 			}
 			plan, plannedExclusions, err := extract.SourceUnits(document, tc.goal)
-			if err != nil || !reflect.DeepEqual(exclusions, plannedExclusions) || len(exclusions) != tc.exclusions || len(got) != len(tc.want) {
+			if err != nil || !reflect.DeepEqual(exclusions, plannedExclusions) || len(exclusions) != tc.exclusions || len(got) != len(plan) {
 				t.Fatalf("Units = %+v, exclusions %+v; plan exclusions %+v, error %v", got, exclusions, plannedExclusions, err)
 			}
+			seen := make(map[string]bool)
 			for i, unit := range got {
-				if !reflect.DeepEqual(unit, plan[i*len(plan)/len(got)]) || !reflect.DeepEqual(unit.Targets, []string{tc.want[i]}) {
+				if i < len(tc.want) && (!reflect.DeepEqual(unit, plan[i*len(plan)/len(tc.want)]) || !reflect.DeepEqual(unit.Targets, []string{tc.want[i]})) {
 					t.Fatalf("unit %d = %+v; want exact sampled plan and target %q", i, unit, tc.want[i])
 				}
+				if seen[unit.Reference] {
+					t.Fatalf("duplicate reserve passage %s", unit.Reference)
+				}
+				seen[unit.Reference] = true
 				if !strings.Contains(unit.Evidence, "[SOURCE ") || !strings.Contains(unit.Evidence, "[FOCAL BEGIN]\n") || !strings.Contains(unit.Evidence, "\n[FOCAL END]") {
 					t.Fatalf("unit lost source or focal boundaries: %+v", unit)
 				}
@@ -259,7 +266,7 @@ func TestPreviewDocumentContextIsolation(t *testing.T) {
 				t.Fatal(err)
 			}
 			units, _, err := preview.Units(document, preparation.GoalQuestionAnswer, 1)
-			if err != nil || len(units) != 1 {
+			if err != nil || len(units) == 0 {
 				t.Fatalf("selected units = %+v, %v", units, err)
 			}
 			var verification []providers.Message
@@ -407,6 +414,140 @@ func TestPreviewSafePointContinuation(t *testing.T) {
 				t.Fatalf("preview continuation changed reviewable output: %+v, %v", result, err)
 			}
 		})
+	}
+}
+
+func TestPreviewReachesRequestedCountBeforeFullGeneration(t *testing.T) {
+	for _, limit := range []int{0, 5} {
+		for _, stop := range []string{"none", "staged", "committed", "legacy-staged", "legacy-committed"} {
+			t.Run(fmt.Sprintf("limit-%d-stop-%s", limit, stop), func(t *testing.T) {
+				input := inputFor(t, 3, passages)
+				input.Preparation.Input.Request.MaxQuestions = limit
+				full := false
+				var previewSources, fullSources []string
+				input.Preparation.Completer = completer(func(_ context.Context, request providers.CompletionRequest) (providers.Completion, error) {
+					if request.EnableThinking {
+						outcomes := make(map[string]string)
+						for i := range strings.Count(request.Messages[1].Content, "[RECORD ") {
+							outcomes[fmt.Sprintf("record_%d", i+1)] = "pass"
+						}
+						data, err := json.Marshal(outcomes)
+						return providers.Completion{Content: string(data)}, err
+					}
+					var decisions []map[string]any
+					for i, block := range strings.Split(request.Messages[1].Content, "[EVIDENCE ")[1:] {
+						_, focal, ok := strings.Cut(block, "[FOCAL BEGIN]\n")
+						if !ok {
+							t.Fatal("missing focal source")
+						}
+						quote, _, _ := strings.Cut(focal, "\n[FOCAL END]")
+						prefix := "Preview"
+						if full {
+							prefix = "Remaining"
+							fullSources = append(fullSources, quote)
+						} else {
+							previewSources = append(previewSources, quote)
+						}
+						row := map[string]any{"evidence_id": i + 1, "reason": "none", "examples": []map[string]any{{"prompt": fmt.Sprintf("%s: what does this say about %s?", prefix, quote), "answer_quote": quote, "target_id": 0}}}
+						if !full && quote == passages[0] {
+							row["reason"], row["examples"] = "no_supported_example", []any{}
+						}
+						decisions = append(decisions, row)
+					}
+					data, err := json.Marshal(map[string]any{"decisions": decisions})
+					return providers.Completion{Content: string(data)}, err
+				})
+				paused := errors.New("stop during preview refill")
+				if stop != "none" {
+					input.SafePoint = func(_ context.Context, path string) error {
+						data, err := input.Workspace.ReadFile(path)
+						if err != nil {
+							return err
+						}
+						var saved checkpoint.State
+						if err := json.Unmarshal(data, &saved); err != nil {
+							return err
+						}
+						if strings.HasSuffix(stop, "staged") && len(saved.GenerationDecisions) > 0 || strings.HasSuffix(stop, "committed") && len(saved.Records) == 2 {
+							return paused
+						}
+						return nil
+					}
+					if _, err := (preview.Step{}).Execute(t.Context(), input); !errors.Is(err, paused) {
+						t.Fatalf("Stop did not preserve preview progress: %v", err)
+					}
+					if strings.HasPrefix(stop, "legacy-") {
+						// Older in-progress checkpoints retained only the initial sample.
+						data, err := input.Workspace.ReadFile("preview/steps.json")
+						var saved checkpoint.State
+						if err != nil || json.Unmarshal(data, &saved) != nil {
+							t.Fatalf("cannot read stopped preview: %v", err)
+						}
+						saved.Units = saved.Units[:3]
+						if err := tmprl.WriteJSON(input.Workspace, "preview/steps.json", saved); err != nil {
+							t.Fatal(err)
+						}
+					}
+					reopened, err := os.OpenRoot(input.Workspace.Name())
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { reopened.Close() })
+					input.Workspace, input.SafePoint = reopened, nil
+				}
+				got, err := (preview.Step{}).Execute(t.Context(), input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				result := got.Artifacts.Preview
+				if result == nil || result.RecordCount != 3 || len(result.Preview) != 3 {
+					t.Fatalf("requested 3 preview records, got %+v", result)
+				}
+				wantSources := []string{passages[0], passages[2], passages[4], passages[1]}
+				if !reflect.DeepEqual(previewSources, wantSources) {
+					t.Fatalf("preview skipped reserves, repeated committed work, or generated beyond its target: %v", previewSources)
+				}
+				for i, want := range []string{passages[2], passages[4], passages[1]} {
+					if result.Preview[i].Target != want {
+						t.Fatalf("preview record %d = %+v; want %s", i, result.Preview[i], want)
+					}
+				}
+				if _, err := input.Workspace.Stat(checkpoint.File); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("full generation started before acceptance: %v", err)
+				}
+				if limit == 0 {
+					return
+				}
+				payload, err := json.Marshal(preparation.Review{Records: result.Preview})
+				if err != nil {
+					t.Fatal(err)
+				}
+				review, err := preview.ValidateReview(input.Preparation.Input.Request, result, payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				input.Review, input.ReviewID, input.Artifacts = &review, "accepted-preview", got.Artifacts
+				full = true
+				if _, err := (extract.Step{}).Execute(t.Context(), input); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := (generate.Step{Verify: verify.Batch}).Execute(t.Context(), input); err != nil {
+					t.Fatal(err)
+				}
+				completed, err := (verify.Step{}).Execute(t.Context(), input)
+				if err != nil || completed.Artifacts.Preparation == nil || completed.Artifacts.Preparation.RecordCount != 5 || len(fullSources) != 2 {
+					t.Fatalf("expected 3 approved + 2 new = 5: %+v; new sources %v; error %v", completed, fullSources, err)
+				}
+				data, err := input.Workspace.ReadFile("dataset.jsonl")
+				if err != nil {
+					t.Fatal(err)
+				}
+				records, err := training.ReadRecords(t.Context(), strings.NewReader(string(data)))
+				if err != nil || len(records) != 5 || !reflect.DeepEqual(records[:3], review.Records) {
+					t.Fatalf("saved dataset changed approved previews or total count: %+v, %v", records, err)
+				}
+			})
+		}
 	}
 }
 
@@ -823,7 +964,7 @@ func TestPreviewMultilineReviewRoundTrip(t *testing.T) {
 func TestPreviewExplicitOmissionsResolve(t *testing.T) {
 	for _, all := range []bool{false, true} {
 		t.Run(fmt.Sprintf("exclude-all-%t", all), func(t *testing.T) {
-			input := inputFor(t, 3, passages)
+			input := inputFor(t, 3, passages[:3])
 			calls := 0
 			input.Preparation.Completer = completer(func(ctx context.Context, request providers.CompletionRequest) (providers.Completion, error) {
 				if request.EnableThinking {
@@ -889,7 +1030,7 @@ func TestPreviewExplicitOmissionsResolve(t *testing.T) {
 func TestPreviewGenerationRepairReservations(t *testing.T) {
 	for _, exhaust := range []bool{false, true} {
 		t.Run(fmt.Sprintf("exhaust-%t", exhaust), func(t *testing.T) {
-			input := inputFor(t, 3, passages)
+			input := inputFor(t, 3, passages[:3])
 			full := []byte("full preparation must remain untouched")
 			if err := input.Workspace.WriteFile("steps.json", full, 0600); err != nil {
 				t.Fatal(err)

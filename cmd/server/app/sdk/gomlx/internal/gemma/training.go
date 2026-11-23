@@ -25,6 +25,13 @@ type TrainingConfig struct {
 	PersistCheckpoint            func(TrainingResult) error
 	// PausePoint waits between optimizer batches while retaining the live trainer.
 	PausePoint func(context.Context) error
+	// ResumeDirectory opts into durable training and restores its latest commit.
+	// The directory must be persistent and have only one writer.
+	ResumeDirectory string
+	// SafePoint receives an immutable file path relative to ResumeDirectory,
+	// only after the complete checkpoint is durable. An error stops training;
+	// the caller must Close the runtime to release its resources.
+	SafePoint func(context.Context, string) error
 }
 
 // EpochMetrics reports the measured losses after one complete epoch.
@@ -109,6 +116,9 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 	if config.AdapterCheckpointDirectory == "" {
 		return TrainingResult{}, fmt.Errorf("adapter checkpoint directory is required")
 	}
+	if config.SafePoint != nil && config.ResumeDirectory == "" {
+		return TrainingResult{}, fmt.Errorf("safe point requires a resume directory")
+	}
 	retainedEpochs := make(map[int]bool, len(config.RetainedCheckpointEpochs))
 	for _, epoch := range config.RetainedCheckpointEpochs {
 		if epoch <= 0 || epoch > config.Epochs {
@@ -116,7 +126,7 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 		}
 		retainedEpochs[epoch] = true
 	}
-	for epoch := 1; epoch <= config.Epochs; epoch++ {
+	for epoch := 1; config.ResumeDirectory == "" && epoch <= config.Epochs; epoch++ {
 		path := filepath.Join(config.AdapterCheckpointDirectory, fmt.Sprintf("epoch-%02d", epoch))
 		if _, err := os.Lstat(path); err == nil {
 			return TrainingResult{}, fmt.Errorf("adapter checkpoint path %q already exists", path)
@@ -143,16 +153,34 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 	}
 
 	result := TrainingResult{Epochs: make([]EpochMetrics, 0, config.Epochs), BestValidationLoss: math.Inf(1)}
+	state, err := runtime.restoreTraining(dataset, config, result)
+	if err != nil {
+		return result, err
+	}
+	result = state.Result
 	stopper := earlyStopper{
 		patience: config.EarlyStoppingPatience, minimumImprovement: config.MinimumValidationImprovement,
+		best: state.StopBest, misses: state.StopMisses, initialized: state.StopInitialized,
+	}
+	if config.ResumeDirectory != "" {
+		// Materialize adapter initialization and random state before the first update.
+		if _, err := runtime.Run(dataset.Training[0].Tokens); err != nil {
+			return result, err
+		}
+		if err := runtime.commitTraining(ctx, config, state, stopper); err != nil {
+			return result, err
+		}
+	}
+	if result.StoppedEarly {
+		return result, nil
 	}
 	totalSteps := config.Epochs * stepsPerEpoch
-	completedSteps := 0
-	for epoch := 1; epoch <= config.Epochs; epoch++ {
+	completedSteps := state.Completed
+	for epoch := state.Epoch; epoch <= config.Epochs; epoch++ {
 		order := deterministicOrder(len(dataset.Training), config.Seed, epoch)
-		var weightedLoss float64
-		var answerTokens int
-		for start := 0; start < len(order); start += config.BatchSize {
+		weightedLoss := state.WeightedLoss
+		answerTokens := state.AnswerTokens
+		for start := state.Next; start < len(order); start += config.BatchSize {
 			if err := context.Cause(ctx); err != nil {
 				return result, err
 			}
@@ -177,6 +205,11 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 			completedSteps++
 			if progress != nil {
 				progress(TrainingProgress{Epoch: epoch, CompletedSteps: completedSteps, TotalSteps: totalSteps})
+			}
+			state.Epoch, state.Next, state.Completed = epoch, end, completedSteps
+			state.WeightedLoss, state.AnswerTokens, state.Result = weightedLoss, answerTokens, result
+			if err := runtime.commitTraining(ctx, config, state, stopper); err != nil {
+				return result, err
 			}
 		}
 		if err := context.Cause(ctx); err != nil {
@@ -210,6 +243,11 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 			if err := checkpoint.SaveAdapter(checkpointPath, runtime.base.store); err != nil {
 				return TrainingResult{}, fmt.Errorf("save epoch %d adapter checkpoint: %w", epoch, err)
 			}
+			if config.ResumeDirectory != "" {
+				if err := checkpoint.SyncTree(checkpointPath); err != nil {
+					return result, err
+				}
+			}
 			metrics.Checkpoint = checkpointPath
 		}
 		if improved {
@@ -238,21 +276,36 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 					return result, fmt.Errorf("persist removal of superseded epoch %d adapter checkpoint: %w", previousBestEpoch, err)
 				}
 			}
-			if err := os.RemoveAll(previousBestCheckpoint); err != nil {
+			if err := removeSupersededCheckpoint(config, previousBestCheckpoint); err != nil {
 				return result, fmt.Errorf("remove superseded epoch %d adapter checkpoint: %w", previousBestEpoch, err)
 			}
 		}
-		if stopper.observe(validationLoss) {
+		stop := stopper.observe(validationLoss)
+		if stop {
 			result.StoppedEarly = true
 			if config.PersistCheckpoint != nil {
 				if err := config.PersistCheckpoint(result); err != nil {
 					return result, fmt.Errorf("persist early stop after epoch %d: %w", epoch, err)
 				}
 			}
+		}
+		state.Epoch, state.Next, state.Completed = epoch+1, 0, completedSteps
+		state.WeightedLoss, state.AnswerTokens, state.Result = 0, 0, result
+		if err := runtime.commitTraining(ctx, config, state, stopper); err != nil {
+			return result, err
+		}
+		if stop {
 			break
 		}
 	}
 	return result, nil
+}
+
+func removeSupersededCheckpoint(config TrainingConfig, path string) error {
+	if config.ResumeDirectory != "" {
+		return nil
+	}
+	return os.RemoveAll(path)
 }
 
 func deterministicOrder(count int, seed uint64, epoch int) []int {

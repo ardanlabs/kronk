@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { requestMessage, stepLabel, trainingPath, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
+import { requestMessage, runStopState, stepLabel, trainingPath, useFineTuningRunner } from '../contexts/FineTuningRunnerContext';
 import { api, ApiError } from '../services/api';
 import type { TrainingRun } from '../types';
 import { active, Badge, datasetName, date, failedStep, PreparationRunView, Progress, records, remaining, reviewable, runKey, version } from './PreparationRuns';
@@ -16,8 +16,8 @@ const PAGE_SIZE = 10;
 // The status filter runs on the server before paging.
 const filters: [string, string, string[]][] = [
   ['all', 'All', []], ['queued', 'Queued', ['queued']], ['running', 'Running', ['running', 'recovering']],
-  ['paused', 'Paused', ['pause_requested', 'paused']], ['review', 'Waiting for review', ['waiting']],
-  ['completed', 'Completed', ['completed', 'needs_improvement']], ['failed', 'Failed', ['failed']], ['stopped', 'Stopped', ['stopped']],
+  ['paused', 'Stopped / stopping', ['pause_requested', 'paused']], ['review', 'Waiting for review', ['waiting']],
+  ['completed', 'Completed', ['completed', 'needs_improvement']], ['failed', 'Failed', ['failed']], ['stopped', 'Cancelled', ['stopped']],
 ];
 
 // StepCell says where a run is. A saved version also links to its latest training.
@@ -27,8 +27,8 @@ function StepCell({ run, training }: { run: TrainingRun; training?: TrainingRun 
     ? <><span className="prep-main dash-done-text"><span aria-hidden="true">✓ </span>Completed</span><span className="prep-sub">{records(run.dataset_record_count)} in version {run.prepared_dataset_version} · {run.training_ready ? 'ready for training' : 'needs 20 training records to train'}</span>{training && <Link className="dash-train-link" to={trainingPath(training)}>{trainingLabel(training)}</Link>}</>
     : <><span className="prep-main">Finished</span><span className="prep-sub">No saved version</span></>;
   if (run.status === 'failed') return <><span className="prep-main">Failed during {stepLabel(failedStep(run)?.name ?? run.step).toLowerCase()}</span><span className="prep-sub">Open for details</span></>;
-  if (run.status === 'stopped') return <><span className="prep-main">Stopped</span><span className="prep-sub">Cancelled · cannot resume</span></>;
-  if (run.control_action === 'pause') return <><span className="prep-main">{stepLabel(run.step)}</span><span className="prep-sub">{run.status === 'pause_requested' ? 'Pausing after the current save' : 'Paused · saved progress kept'}</span></>;
+  if (run.status === 'stopped') return <><span className="prep-main">Cancelled</span><span className="prep-sub">Permanent · cannot resume</span></>;
+  if (runStopState(run)) return <><span className="prep-main">{stepLabel(run.step)}</span><span className="prep-sub">{runStopState(run) === 'stopping' ? 'Stopping… waiting for the current save' : 'Stopped · saved progress kept · can resume'}</span></>;
   if (reviewable(run)) return <><span className="prep-main">Preview ready</span><span className="prep-sub">Your review is needed</span></>;
   if (run.status === 'queued') return <><span className="prep-main">Waiting for a worker</span><span className="prep-sub">Not started</span></>;
   return <><span className="prep-main">{stepLabel(run.step)}</span>{run.status === 'recovering' ? <span className="prep-sub">Resuming from saved progress</span> : <Progress run={run} />}{eta && <span className="dash-eta">{eta}</span>}</>;

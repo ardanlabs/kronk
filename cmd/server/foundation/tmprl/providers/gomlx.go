@@ -3,8 +3,11 @@ package providers
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +58,8 @@ type TrainingJob struct {
 	Workdir          string                      `json:"workdir"`
 	PredictionTokens int                         `json:"prediction_tokens"`
 	PausePoint       func(context.Context) error `json:"-"`
+	// SafePoint receives a committed file relative to Workdir and may suspend.
+	SafePoint func(context.Context, string) error `json:"-"`
 }
 
 // TrainingCandidate identifies a trained checkpoint and its selection metrics.
@@ -146,13 +151,22 @@ func (t *GoMLX) Train(ctx context.Context, job TrainingJob, publish func(tmprl.P
 	if err := errors.Join(prepareErr, release()); err != nil {
 		return TrainingCandidate{}, err
 	}
+	resumeDirectory := ""
+	pausePoint := job.PausePoint
+	if job.SafePoint != nil {
+		resumeDirectory = job.Workdir
+		// The engine must save optimizer state before it can acknowledge Stop.
+		pausePoint = nil
+	}
 	// Release the KMS tokenizer before allocating training graphs.
 	result, err := runtime.TrainDataset(ctx, prepared, engine.TrainingConfig{
 		Epochs: job.Training.MaximumEpochs, BatchSize: job.Training.BatchSize,
 		LearningRate: job.Training.LearningRate, Seed: uint64(job.Training.Seed),
 		EarlyStoppingPatience: 3, MinimumValidationImprovement: 0.0001,
 		AdapterCheckpointDirectory: filepath.Join(job.Workdir, "epochs"),
-		PausePoint:                 job.PausePoint,
+		PausePoint:                 pausePoint,
+		ResumeDirectory:            resumeDirectory,
+		SafePoint:                  job.SafePoint,
 	}, func(p engine.TrainingProgress) {
 		publish(tmprl.Progress{Stage: "train", Completed: p.CompletedSteps, Total: p.TotalSteps, Message: fmt.Sprintf("Training epoch %d", p.Epoch)})
 	})
@@ -162,14 +176,24 @@ func (t *GoMLX) Train(ctx context.Context, job TrainingJob, publish func(tmprl.P
 	if err := ctx.Err(); err != nil {
 		return TrainingCandidate{}, err
 	}
-	if job.PausePoint != nil {
+	if job.SafePoint == nil && job.PausePoint != nil {
 		if err := job.PausePoint(ctx); err != nil {
 			return TrainingCandidate{}, err
 		}
 	}
 	path := filepath.Join(job.Workdir, "candidate.gguf")
-	if err := runtime.ExportBestAdapter(result, path); err != nil {
+	exportPath := path
+	if job.SafePoint != nil {
+		exportPath = path + "." + rand.Text()
+		defer os.Remove(exportPath)
+	}
+	if err := runtime.ExportBestAdapter(result, exportPath); err != nil {
 		return TrainingCandidate{}, err
+	}
+	if exportPath != path {
+		if err := os.Rename(exportPath, path); err != nil {
+			return TrainingCandidate{}, err
+		}
 	}
 	candidate := TrainingCandidate{Path: path, BestEpoch: result.BestEpoch, ValidationLoss: result.BestValidationLoss}
 	for _, metrics := range result.Epochs {
@@ -186,6 +210,71 @@ func (t *GoMLX) Predict(ctx context.Context, job TrainingJob, adapter string, re
 	if job.PredictionTokens < 1 {
 		return nil, fmt.Errorf("%w: prediction token budget must be positive", tmprl.ErrInvalidArgument)
 	}
+	var saved struct {
+		Identity string
+		Answers  []string
+	}
+	var root *os.Root
+	checkpoint := "base-answers.json"
+	if job.SafePoint != nil {
+		root, err = os.OpenRoot(job.Workdir)
+		if err != nil {
+			return nil, err
+		}
+		defer root.Close()
+		var modelHashes [2][sha256.Size]byte
+		if adapter != "" {
+			checkpoint = "adapter-answers.json"
+		}
+		for i, path := range []string{job.Model, adapter} {
+			if i == 1 && path == "" {
+				continue
+			}
+			file, err := os.Open(path)
+			if err != nil {
+				return nil, err
+			}
+			hash := sha256.New()
+			_, readErr := io.Copy(hash, tmprl.ContextReader{Context: ctx, Reader: file})
+			if err := errors.Join(readErr, file.Close()); err != nil {
+				return nil, err
+			}
+			modelHashes[i] = [sha256.Size]byte(hash.Sum(nil))
+		}
+		identity, err := json.Marshal([]any{job.ModelID, job.Model, job.Training, job.PredictionTokens, records, modelHashes})
+		if err != nil {
+			return nil, err
+		}
+		digest := fmt.Sprintf("%x", sha256.Sum256(identity))
+		data, readErr := root.ReadFile(checkpoint)
+		switch {
+		case readErr == nil:
+			if err := json.Unmarshal(data, &saved); err != nil {
+				return nil, err
+			}
+			if saved.Identity != digest || len(saved.Answers) > len(records) {
+				return nil, fmt.Errorf("saved evaluation does not match this run")
+			}
+		case errors.Is(readErr, os.ErrNotExist):
+			saved.Identity = digest
+		default:
+			return nil, readErr
+		}
+		answers = saved.Answers
+		if answered != nil {
+			answered(len(answers))
+		}
+		reference := ""
+		if readErr == nil {
+			reference = checkpoint
+		}
+		if err := job.SafePoint(ctx, reference); err != nil {
+			return nil, err
+		}
+		if len(answers) == len(records) {
+			return answers, nil
+		}
+	}
 	krn, release, err := t.acquire(ctx, job, adapter)
 	if err != nil {
 		return nil, err
@@ -194,8 +283,8 @@ func (t *GoMLX) Predict(ctx context.Context, job TrainingJob, adapter string, re
 	if err := validateContext(ctx, krn, TrainingDataset{Test: records}, job.PredictionTokens); err != nil {
 		return nil, err
 	}
-	for _, record := range records {
-		if job.PausePoint != nil {
+	for _, record := range records[len(answers):] {
+		if job.SafePoint == nil && job.PausePoint != nil {
 			if err := job.PausePoint(ctx); err != nil {
 				return nil, err
 			}
@@ -215,6 +304,15 @@ func (t *GoMLX) Predict(ctx context.Context, job TrainingJob, adapter string, re
 		// An answer cut off at the token budget or left empty is kept as given:
 		// it cannot match its target, so it counts as wrong instead of failing.
 		answers = append(answers, response.Choices[0].Message.Content)
+		if root != nil {
+			saved.Answers = answers
+			if err := tmprl.WriteJSON(root, checkpoint, saved); err != nil {
+				return nil, err
+			}
+			if err := job.SafePoint(ctx, checkpoint); err != nil {
+				return nil, err
+			}
+		}
 		if answered != nil {
 			answered(len(answers))
 		}

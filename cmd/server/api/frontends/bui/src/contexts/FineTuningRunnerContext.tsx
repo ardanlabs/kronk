@@ -20,6 +20,13 @@ export const DEFAULT_TRAINING_OPTIONS: TrainingOptions = {
 const terminalStatuses = new Set(['completed', 'needs_improvement', 'failed', 'stopped']);
 const activeStatuses = ['queued', 'running', 'recovering', 'pause_requested', 'paused', 'waiting'];
 
+// Keep cancellation distinct from a resumable stop. A pause intent alone does not
+// mean the worker has saved its progress and acknowledged the stop.
+export function runStopState(run: TrainingRun): 'stopping' | 'stopped' | null {
+  if (terminalStatuses.has(run.status) || run.control_action !== 'pause') return null;
+  return run.control_revision > 0 && (run.control_acknowledged_revision ?? 0) >= run.control_revision ? 'stopped' : 'stopping';
+}
+
 // preparationPath is where the dashboard shows a run.
 export const preparationPath = (run: TrainingRun) => `/fine-tuning?${new URLSearchParams({ preparation: run.workflow_id, run: run.run_id })}`;
 export const trainingPath = (run: TrainingRun) => `/fine-tuning?${new URLSearchParams({ training: run.workflow_id, run: run.run_id })}`;
@@ -249,8 +256,8 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       documents, documentsUploading, submitting, preparationRun, error, adopting, adoptionError,
       preparationActivity: documentsUploading ? { kind: 'preparation', title: 'Uploading documents…', stage: documents.filter((item) => !item.upload && !item.error).map((item) => item.file.name).join(', '), completed: 0, total: 0 }
         : activePreparation?.stage === 'preparation' ? {
-          kind: 'preparation', paused: activePreparation.control_action === 'pause',
-          title: activePreparation.control_action === 'pause' ? activePreparation.status === 'pause_requested' ? 'Pausing preparation…' : 'Preparation paused'
+          kind: 'preparation', paused: runStopState(activePreparation) === 'stopped',
+          title: runStopState(activePreparation) ? runStopState(activePreparation) === 'stopping' ? 'Stopping preparation…' : 'Preparation stopped'
             : activePreparation.status === 'waiting' ? activePreparation.checkpoint?.name === 'preview-review' ? 'Preview ready for review' : 'Preparation waiting…'
             : activePreparation.status === 'queued' ? 'Preparation queued…' : 'Preparing dataset…',
           stage: activePreparation.status === 'queued' ? 'Waiting for a worker'
@@ -259,7 +266,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
           completed: activePreparation.progress?.completed ?? 0, total: activePreparation.progress?.total ?? 0,
         } : null,
       trainingActivity: trainingJob ? {
-        kind: 'training', title: trainingJob.status === 'queued' ? 'Training queued…' : 'Training…', path: trainingPath(trainingJob),
+        kind: 'training', paused: runStopState(trainingJob) === 'stopped', title: runStopState(trainingJob) === 'stopping' ? 'Stopping training…' : runStopState(trainingJob) === 'stopped' ? 'Training stopped' : trainingJob.status === 'queued' ? 'Training queued…' : 'Training…', path: trainingPath(trainingJob),
         stage: trainingJob.status === 'queued' ? 'Waiting for a worker' : trainingStepLabels[trainingJob.step ?? ''] ?? 'Training',
         completed: trainingJob.progress?.completed ?? 0, total: trainingJob.progress?.total ?? 0,
       } : null,

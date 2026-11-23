@@ -217,6 +217,9 @@ type Run struct {
 	TrainingReady          bool            `json:"training_ready"`
 	EvaluationAvailable    bool            `json:"evaluation_available"`
 	AdapterAvailable       bool            `json:"adapter_available"`
+
+	ControlAcknowledgedRevision int64 `json:"control_acknowledged_revision"`
+
 	// A training run's dataset version, its settings (present only when the live
 	// run is readable; the base model is not echoed), and its evaluation outcome:
 	// accepted, not_compared, or needs_improvement once it finishes.
@@ -571,8 +574,9 @@ func toAppRun(run datasets.State) Run {
 	result := Run{
 		JobID: run.JobID, AttemptID: run.AttemptID, ObservationRevision: run.ObservationRevision, ObservedAt: run.ObservedAt,
 		ControlRevision: run.ControlRevision, ControlAction: run.ControlAction,
-		ControlStage: run.ControlStage,
-		WorkflowID:   run.WorkflowID, RunID: run.RunID, Status: string(run.Status),
+		ControlAcknowledgedRevision: run.ControlAcknowledgedRevision,
+		ControlStage:                run.ControlStage,
+		WorkflowID:                  run.WorkflowID, RunID: run.RunID, Status: string(run.Status),
 		PreparationOnly: run.Request.PreparationOnly,
 		Stage:           string(run.Stage), Step: run.Step, StateStale: run.StateStale,
 		StartedAt: run.StartedAt, UpdatedAt: run.UpdatedAt, ClosedAt: run.ClosedAt,

@@ -595,7 +595,8 @@ func TestReadState(t *testing.T) {
 	state := tmprl.Run[training.Request, training.Artifacts]{
 		Status: tmprl.StatusPaused, Stage: "preparation", Step: "generate", StartedAt: stamp, UpdatedAt: stamp,
 		ControlRevision: 7, ControlAction: "pause",
-		Request: training.Request{Model: "/private/model.gguf"}, WorkerHost: "private-worker",
+		ControlAcknowledgedRevision: 6,
+		Request:                     training.Request{Model: "/private/model.gguf"}, WorkerHost: "private-worker",
 		Stages: []tmprl.StageState{{Name: "preparation", Status: tmprl.StatusPaused, Steps: []tmprl.StepState{
 			{Name: "extract", Status: tmprl.StatusCompleted, Attempt: 1, ClosedAt: stamp},
 			{Name: "generate", Status: tmprl.StatusPaused, Attempt: 3},
@@ -630,6 +631,9 @@ func TestReadState(t *testing.T) {
 	}
 	if got.ControlRevision != 7 || got.ControlAction != "pause" {
 		t.Fatalf("missing control revision/action: %+v", got)
+	}
+	if got.ControlAcknowledgedRevision != 6 {
+		t.Fatalf("stop acknowledgement was lost or advanced: %+v", got)
 	}
 	if len(got.Stages) != 2 || len(got.Stages[0].Steps) != 2 || got.Stages[0].Name != "preparation" || got.Stages[0].Status != "paused" || got.Stages[0].Steps[0].Name != "extract" || got.Stages[0].Steps[0].Status != "completed" || !got.Stages[0].Steps[0].ClosedAt.Equal(stamp) || got.Stages[0].Steps[1].Name != "generate" || got.Stages[0].Steps[1].Status != "paused" || got.Stages[0].Steps[1].Attempt != 3 {
 		t.Fatalf("unexpected stage state: %+v", got.Stages)

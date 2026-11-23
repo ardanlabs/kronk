@@ -186,6 +186,28 @@ The SQL-backed run list can still show saved observations while Temporal is
 unavailable. No failed submission is automatically replayed by an HTTP request.
 Other Kronk inference services remain available throughout these outages.
 
+In the fine-tuning dashboard, **Stop** requests a resumable stop, not permanent
+cancellation. **Stopping…** means the current operation is finishing and saving;
+wait for **Stopped**, then select **Resume** to continue the same run with its
+original dataset version and settings. Preparation keeps its saved records;
+new training runs also save optimizer progress and evaluation answers. Stopped
+runs release their worker and do not consume active-work time limits while idle.
+
+An explicitly stopped run remains stopped after restarting Kronk. Preserve its
+Moxie storage at the same path, PostgreSQL catalog, Temporal history, base model,
+and computation backend. Missing, corrupt, or incompatible committed training
+checkpoints fail rather than silently restarting optimization. Tokenization can
+repeat after resuming; completed optimizer updates and saved evaluation answers
+are restored. An abrupt crash can repeat computation since the last committed
+checkpoint; it is not equivalent to waiting for an acknowledged Stop.
+
+Training runs submitted before durable training checkpoints were introduced
+retain their original in-memory pause behavior: keep Kronk running to resume
+those runs. Previously cancelled runs remain **Cancelled**, without Resume.
+**Delete** is separate and permanent: review its confirmation before removing
+a stopped or finished run and its selected artifacts. Resume checkpoints remain
+in the run's workspace until deletion and require additional disk space.
+
 The equivalent `model_config.yaml` settings are all under `kms.moxie`:
 
 ```yaml

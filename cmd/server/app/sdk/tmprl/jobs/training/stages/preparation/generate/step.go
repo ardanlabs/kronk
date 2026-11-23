@@ -38,6 +38,9 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 	}
 	p := input.Preparation
 	limit := p.Input.Request.MaxQuestions
+	if p.Input.Kind == preparation.PreparationPreview {
+		limit = p.Input.Request.PreviewRecords
+	}
 	if p.Completer == nil {
 		return tmprl.StepResult[preparation.Artifacts]{}, fmt.Errorf("%w: preparation completer is required", preparation.ErrInvalidArgument)
 	}
@@ -146,12 +149,25 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 		return nil
 	}
 	commitBatch := func(end int) error {
+		// Keep preview diversity when a passage supplies multiple examples:
+		// take one from each passage before taking second or third examples.
+		if p.Input.Kind == preparation.PreparationPreview {
+			for round := range 3 {
+				for _, decision := range state.GenerationDecisions {
+					if round < len(decision.Records) && len(state.Records) < target {
+						state.Records = append(state.Records, decision.Records[round])
+					}
+				}
+			}
+		}
 		for _, decision := range state.GenerationDecisions {
 			records := decision.Records
 			if target > 0 {
 				records = records[:min(len(records), max(0, target-len(state.Records)))]
 			}
-			state.Records = append(state.Records, records...)
+			if p.Input.Kind == preparation.PreparationFull {
+				state.Records = append(state.Records, records...)
+			}
 			switch {
 			case !decision.Complete:
 				reason := fmt.Sprintf("generation failed after %d batch requests; valid candidates retained: %s", state.GenerationAttempts, decision.Reason)
@@ -181,7 +197,9 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 			}
 			if len(state.Records) >= target {
 				state.Next = len(state.Units)
-				state.Result.Warnings = append(state.Result.Warnings, "Record limit reached; the remaining passages were not used")
+				if p.Input.Kind == preparation.PreparationFull {
+					state.Result.Warnings = append(state.Result.Warnings, "Record limit reached; the remaining passages were not used")
+				}
 				if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 					return err
 				}

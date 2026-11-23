@@ -177,7 +177,7 @@ func Load(ctx context.Context, input preparation.StepContext, initialize bool) (
 		end := min(state.Next+5, len(state.Units))
 		// A record limit shrinks the last batch to the records still needed.
 		validSize := len(state.GenerationDecisions) == end-state.Next
-		if p.Input.Request.MaxQuestions > 0 {
+		if p.Input.Request.MaxQuestions > 0 || p.Input.Kind == preparation.PreparationPreview {
 			validSize = len(state.GenerationDecisions) <= end-state.Next
 		}
 		if state.GenerationAttempts == 0 || state.Generated || state.EvaluationNext != 0 || verifiedEarly || !validSize {

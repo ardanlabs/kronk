@@ -34,6 +34,7 @@ type BaseModel struct {
 	path   string
 	config Config
 	store  *model.Store
+	frozen map[string]bool
 }
 
 // LoadBaseModel validates and loads an F32 or Q8_0 Gemma 3 GGUF. The source
@@ -100,8 +101,12 @@ func LoadBaseModel(path string) (*BaseModel, error) {
 		variable.SetTrainable(false)
 	}
 
+	frozen := make(map[string]bool)
+	for variable := range store.IterVariables() {
+		frozen[variable.Path()] = true
+	}
 	succeeded = true
-	return &BaseModel{path: path, config: config, store: store}, nil
+	return &BaseModel{path: path, config: config, store: store, frozen: frozen}, nil
 }
 
 // Config returns the architecture discovered in the GGUF.

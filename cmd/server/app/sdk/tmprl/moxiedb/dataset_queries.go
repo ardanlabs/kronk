@@ -369,6 +369,8 @@ func (db *DB) BeginDeletion(ctx context.Context, d Deletion) error {
 	// training attempt added since the preview, or an action still being delivered,
 	// before deleting any history or files. Lineage to a surviving attempt also
 	// prevents cleanup rather than silently changing that attempt's provenance.
+	// Paused executions are eligible only after the job owner has verified that
+	// their durable checkpoint is acknowledged and their worker is released.
 	var changedScope bool
 	err = tx.QueryRowContext(ctx, `SELECT EXISTS (
 	  SELECT FROM jobs j JOIN job_attempts a USING(job_id)
@@ -376,7 +378,7 @@ func (db *DB) BeginDeletion(ctx context.Context, d Deletion) error {
 	    AND NOT ($3::jsonb->'executions' @> jsonb_build_array(jsonb_build_object('namespace',a.temporal_namespace,'workflow_id',a.workflow_id,'run_id',a.run_id)))
 	) OR EXISTS (
 	  SELECT FROM job_attempts a WHERE (($3::jsonb->'executions' @> jsonb_build_array(jsonb_build_object('namespace',a.temporal_namespace,'workflow_id',a.workflow_id,'run_id',a.run_id))) OR (a.temporal_namespace=$4 AND a.workflow_id=$5 AND a.run_id=$6))
-	    AND (COALESCE(a.execution_status,'') IN ('','queued','running','recovering','waiting','pause_requested','paused') OR EXISTS(SELECT FROM job_intents i WHERE i.attempt_id=a.attempt_id AND i.state IN ('pending','needs_attention')))
+	    AND (COALESCE(a.execution_status,'') IN ('','queued','running','recovering','waiting','pause_requested') OR EXISTS(SELECT FROM job_intents i WHERE i.attempt_id=a.attempt_id AND i.state IN ('pending','needs_attention')))
 	) OR EXISTS (
 	  SELECT FROM job_attempts child JOIN job_attempts parent ON parent.attempt_id=child.previous_attempt_id
 	  WHERE $3::jsonb->'executions' @> jsonb_build_array(jsonb_build_object('namespace',parent.temporal_namespace,'workflow_id',parent.workflow_id,'run_id',parent.run_id))

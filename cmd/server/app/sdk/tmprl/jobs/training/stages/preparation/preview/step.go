@@ -69,13 +69,24 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 		}
 	}
 
-	if !exists {
+	if !state.Generated {
 		units, exclusions, err := Units(document, resources.Input.Request.Goal, resources.Input.Request.PreviewRecords)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		state.Units = units
-		state.Result.Exclusions = exclusions
+		// Append reserve passages without moving a resumed batch or its cursor.
+		seen := make(map[string]bool, len(state.Units))
+		for _, unit := range state.Units {
+			seen[unit.Reference] = true
+		}
+		for _, unit := range units {
+			if !seen[unit.Reference] {
+				state.Units = append(state.Units, unit)
+			}
+		}
+		if !exists {
+			state.Result.Exclusions = exclusions
+		}
 		if err := ctx.Err(); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}

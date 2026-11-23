@@ -43,7 +43,13 @@ func (j *Job) checkDeletion(ctx context.Context, e tmprl.Execution) error {
 		return fmt.Errorf("%w: execution is not a Moxie run", tmprl.ErrInvalidArgument)
 	}
 	if info.GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING || info.GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_UNSPECIFIED {
-		return fmt.Errorf("%w: stop the run before deleting its artifacts", tmprl.ErrControlConflict)
+		run, err := j.jobs.Get(ctx, e)
+		if err != nil {
+			return executionError(err)
+		}
+		if run.Status != tmprl.StatusPaused || run.PauseInPlace || run.WorkerHost != "" || run.ControlAction != "pause" || run.ControlAcknowledgedRevision != run.ControlRevision {
+			return fmt.Errorf("%w: stop the run before deleting its artifacts", tmprl.ErrControlConflict)
+		}
 	}
 	return nil
 }
@@ -56,6 +62,17 @@ func (j *Job) deleteExecution(ctx context.Context, e tmprl.Execution) error {
 	}
 	if !tmprl.ValidName(e.RunID) {
 		return fmt.Errorf("%w: invalid workspace identity", tmprl.ErrInvalidArgument)
+	}
+	// The deletion fence is already committed. Close only this idle execution
+	// before removing its history, so no later Resume can reuse its workspace.
+	description, describeErr := j.client.DescribeWorkflowExecution(ctx, e.WorkflowID, e.RunID)
+	if describeErr == nil && description.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
+		if err := j.client.TerminateWorkflow(ctx, e.WorkflowID, e.RunID, "Confirmed permanent run deletion"); err != nil {
+			return executionError(err)
+		}
+	}
+	if _, missing := errors.AsType[*serviceerror.NotFound](describeErr); describeErr != nil && !missing {
+		return executionError(describeErr)
 	}
 	_, err := j.client.WorkflowService().DeleteWorkflowExecution(ctx, &workflowservice.DeleteWorkflowExecutionRequest{
 		Namespace: j.cfg.Namespace, WorkflowExecution: &common.WorkflowExecution{WorkflowId: e.WorkflowID, RunId: e.RunID},
@@ -175,7 +192,8 @@ func (j *Job) previewDeletion(ctx context.Context, e tmprl.Execution) (DeletionP
 			result.Snapshots = append(result.Snapshots, DeletionSnapshot{Version: version.Version, RemovedRecords: info.Dataset.RecordCount, SHA256: info.SHA256, Delete: true})
 		}
 	}
-	if !tmprl.Status(entry.Attempt.ExecutionStatus.String).Terminal() || len(entry.Pending) != 0 {
+	selectedStatus := tmprl.Status(entry.Attempt.ExecutionStatus.String)
+	if !selectedStatus.Terminal() && selectedStatus != tmprl.StatusPaused || len(entry.Pending) != 0 {
 		result.Blockers = append(result.Blockers, "Stop the selected run and settle its pending actions before deleting it.")
 	}
 	if result.DatasetID != "" {
@@ -189,9 +207,10 @@ func (j *Job) previewDeletion(ctx context.Context, e tmprl.Execution) (DeletionP
 					continue
 				}
 				execution := DeletionExecution{other.Attempt.TemporalNamespace, other.Attempt.WorkflowID, other.Attempt.RunID.String}
-				active := !tmprl.Status(other.Attempt.ExecutionStatus.String).Terminal() || len(other.Pending) != 0
+				status := tmprl.Status(other.Attempt.ExecutionStatus.String)
+				active := !status.Terminal() && status != tmprl.StatusPaused || len(other.Pending) != 0
 				if other.Job.Mode != "training" {
-					if active {
+					if !status.Terminal() || len(other.Pending) != 0 {
 						result.ContinuingPreparation = append(result.ContinuingPreparation, execution)
 					}
 					continue
@@ -493,7 +512,6 @@ func (j *Job) catalogSubmit(ctx context.Context, input Request) (tmprl.Run[Reque
 		command.Submission.ControlStage = "preparation"
 	case validated.Prepare == nil:
 		command.Submission.ControlStage = "training"
-		command.Submission.PauseInPlace = true
 	}
 	payload, err := commandPayload(command)
 	if err != nil {
@@ -693,13 +711,26 @@ func (j *Job) PreparationControl(ctx context.Context, e tmprl.Execution, request
 	return j.runControl(ctx, e, request, "preparation")
 }
 
-// TrainingControl pauses or resumes a new training-only run without restarting
-// its active optimizer. Older and combined runs retain their original protocol.
+// TrainingControl suspends or resumes a training-only run. New executions save
+// optimizer state and release their worker; older runs retain in-memory pauses.
 func (j *Job) TrainingControl(ctx context.Context, e tmprl.Execution, request tmprl.ControlRequest) (tmprl.ControlReceipt, error) {
 	return j.runControl(ctx, e, request, "training")
 }
 
 func (j *Job) runControl(ctx context.Context, e tmprl.Execution, request tmprl.ControlRequest, stage string) (tmprl.ControlReceipt, error) {
+	if j.cfg.MoxieDB == nil {
+		return tmprl.ControlReceipt{}, ErrUnavailable
+	}
+	var receipt tmprl.ControlReceipt
+	err := j.cfg.Datasets.WithLock(ctx, func(ctx context.Context) error {
+		var err error
+		receipt, err = j.runControlLocked(ctx, e, request, stage)
+		return err
+	})
+	return receipt, err
+}
+
+func (j *Job) runControlLocked(ctx context.Context, e tmprl.Execution, request tmprl.ControlRequest, stage string) (tmprl.ControlReceipt, error) {
 	if err := e.Validate(); err != nil {
 		return tmprl.ControlReceipt{}, err
 	}
@@ -708,6 +739,13 @@ func (j *Job) runControl(ctx context.Context, e tmprl.Execution, request tmprl.C
 	}
 	if j.cfg.MoxieDB == nil {
 		return tmprl.ControlReceipt{}, ErrUnavailable
+	}
+	deleted, err := j.cfg.MoxieDB.IsDeletedExecution(ctx, j.cfg.Namespace, e.WorkflowID, e.RunID)
+	if err != nil {
+		return tmprl.ControlReceipt{}, err
+	}
+	if deleted {
+		return tmprl.ControlReceipt{}, ErrNotFound
 	}
 	entry, err := j.cfg.MoxieDB.GetCatalogExecution(ctx, j.cfg.Namespace, e.WorkflowID, e.RunID)
 	if err != nil {
@@ -748,7 +786,7 @@ func (j *Job) runControl(ctx context.Context, e tmprl.Execution, request tmprl.C
 		if err != nil {
 			return tmprl.ControlReceipt{}, executionError(err)
 		}
-		if run.ControlStage != stage || run.Status.Terminal() || stage == "training" && !run.PauseInPlace || stage == "preparation" && !run.Request.PreparationOnly {
+		if run.ControlStage != stage || run.Status.Terminal() || stage == "preparation" && !run.Request.PreparationOnly {
 			return tmprl.ControlReceipt{}, tmprl.ErrControlConflict
 		}
 	}

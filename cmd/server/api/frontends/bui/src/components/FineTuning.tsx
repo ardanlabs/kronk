@@ -423,7 +423,7 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
                 </select>
                 {limitExamples && <>
                   <FieldLabel htmlFor="fine-max-questions" tooltipKey="fineTuningMaxQuestions">Requested records</FieldLabel>
-                  <input id="fine-max-questions" className="form-input" type="number" autoComplete="off" data-lpignore="true" min={1} step={1} required value={maxQuestions} disabled={busy} aria-invalid={!!capError} aria-describedby={`fine-cap-help${capError ? ' fine-cap-error' : ''}`} onChange={(event) => setMaxQuestions(event.target.value)} />
+                  <input id="fine-max-questions" className="form-input" type="text" inputMode="numeric" autoComplete="off" data-lpignore="true" required value={maxQuestions} disabled={busy} aria-invalid={!!capError} aria-describedby={`fine-cap-help${capError ? ' fine-cap-error' : ''}`} onChange={(event) => setMaxQuestions(event.target.value)} />
                   {capError && <p id="fine-cap-error" className="fine-error">{capError}</p>}
                 </>}
                 <p id="fine-cap-help" className="fine-action-note">Counts verified records from each document, including reviewed records and evaluation questions. Preparation makes additional passes to reach your count and replaces rejected candidates. A passage can supply more than three records, including different questions about supported facts. If three passes add no verified records, preparation saves the available records with a warning instead of failing for a shortfall. Unlimited makes one pass.</p>

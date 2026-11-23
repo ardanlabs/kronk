@@ -76,7 +76,8 @@ func ValidateReview(request preparation.PreparationRequest, saved *preparation.P
 	return preparation.Review{Records: reviewed}, nil
 }
 
-// Units samples the same structural source plan used by full preparation.
+// Units orders the structural source plan with an evenly spaced sample first.
+// Remaining passages replace omissions until the preview record target is met.
 func Units(document providers.Document, goal preparation.Goal, count int) ([]preparation.SourceUnit, []preparation.SourceExclusion, error) {
 	if count < 1 || count > 5 {
 		return nil, nil, fmt.Errorf("%w: preview count must be between 1 and 5", preparation.ErrInvalidArgument)
@@ -86,9 +87,17 @@ func Units(document providers.Document, goal preparation.Goal, count int) ([]pre
 		return nil, exclusions, err
 	}
 	count = min(count, len(units))
-	selected := make([]preparation.SourceUnit, count)
+	selected := make([]preparation.SourceUnit, 0, len(units))
+	sampled := make(map[string]bool, count)
 	for i := range count {
-		selected[i] = units[i*len(units)/count]
+		unit := units[i*len(units)/count]
+		selected = append(selected, unit)
+		sampled[unit.Reference] = true
+	}
+	for _, unit := range units {
+		if !sampled[unit.Reference] {
+			selected = append(selected, unit)
+		}
 	}
 	return selected, exclusions, nil
 }

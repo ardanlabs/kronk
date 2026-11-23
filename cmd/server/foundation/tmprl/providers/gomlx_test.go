@@ -36,6 +36,70 @@ func (s inferenceStub) TokenizeIDs(ctx context.Context, input string) ([]int32, 
 
 func (s inferenceStub) ModelConfig() model.Config { return s.cfg }
 
+func TestGoMLXPredictResumesSavedAnswers(t *testing.T) {
+	for _, adapted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("adapted=%t", adapted), func(t *testing.T) {
+			dir := t.TempDir()
+			adapter := ""
+			if adapted {
+				adapter = filepath.Join(dir, "candidate.gguf")
+				if err := os.WriteFile(adapter, []byte("adapter"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			records := []Record{{Prompt: "first"}, {Prompt: "second"}, {Prompt: "third"}}
+			stopped := errors.New("stopped after saving one answer")
+			base := filepath.Join(dir, "base.gguf")
+			if err := os.WriteFile(base, []byte("base"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			job := TrainingJob{ModelID: "base", Model: base, Workdir: dir, PredictionTokens: 10}
+			job.SafePoint = func(_ context.Context, file string) error {
+				if file != "" {
+					return stopped
+				}
+				return nil
+			}
+			var prompts []string
+			releases := 0
+			newTrainer := func() *GoMLX {
+				return &GoMLX{acquire: func(context.Context, TrainingJob, string) (inferenceModel, func() error, error) {
+					return inferenceStub{
+						cfg: model.Config{PtrContextWindow: new(512)},
+						tokenize: func(context.Context, model.D) (model.TokenizeResponse, error) {
+							return model.TokenizeResponse{Tokens: 2}, nil
+						},
+						chat: func(_ context.Context, input model.D) (model.ChatResponse, error) {
+							prompt := input["messages"].([]model.D)[0]["content"].(string)
+							prompts = append(prompts, prompt)
+							return model.ChatResponse{Choices: []model.Choice{{Message: &model.ResponseMessage{Content: "answer " + prompt}}}}, nil
+						},
+					}, func() error { releases++; return nil }, nil
+				}}
+			}
+			if _, err := newTrainer().Predict(t.Context(), job, adapter, records, nil); !errors.Is(err, stopped) || releases != 1 {
+				t.Fatalf("stop failed to save and release: releases=%d error=%v", releases, err)
+			}
+			job.SafePoint = func(context.Context, string) error { return nil }
+			answers, err := newTrainer().Predict(t.Context(), job, adapter, records, nil)
+			if err != nil || !reflect.DeepEqual(answers, []string{"answer first", "answer second", "answer third"}) || !reflect.DeepEqual(prompts, []string{"first", "second", "third"}) || releases != 2 {
+				t.Fatalf("resume lost or repeated answers: answers=%v prompts=%v releases=%d error=%v", answers, prompts, releases, err)
+			}
+			records[1].Prompt = "different"
+			if _, err := newTrainer().Predict(t.Context(), job, adapter, records, nil); err == nil || len(prompts) != 3 {
+				t.Fatal("changed evaluation silently reused or reset saved answers")
+			}
+			records[1].Prompt = "second"
+			if err := os.WriteFile(base, []byte("replaced model at the same path"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := newTrainer().Predict(t.Context(), job, adapter, records, nil); err == nil || len(prompts) != 3 {
+				t.Fatal("replaced base model silently reused saved answers")
+			}
+		})
+	}
+}
+
 func TestGoMLXPredictProtectedInput(t *testing.T) {
 	for _, adapter := range []string{"", "candidate.gguf"} {
 		t.Run("adapter="+adapter, func(t *testing.T) {
