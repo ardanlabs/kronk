@@ -62,6 +62,10 @@ func Generic(metadata Metadata) modelprofile.Profile {
 	if arch == "modern-bert" {
 		profile.ComputeKind = modelprofile.ComputeModernBERT
 	}
+	switch arch {
+	case "gemma-embedding", "modern-bert", "clef":
+		profile.NoPersistentCache = true
+	}
 	if arch == "gemma3" && profile.Attention.SlidingWindow <= 0 {
 		// RNJ uses Gemma3's ordinary KV graph. SWA Gemma3 graphs remain
 		// on the fallback until their separate mask policy is validated.

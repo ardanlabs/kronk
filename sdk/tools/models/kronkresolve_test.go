@@ -68,6 +68,17 @@ func TestKronkResolvedConfigBasePath(t *testing.T) {
 	if cfg.BasePath != basePath {
 		t.Errorf("BasePath: got %q, want %q", cfg.BasePath, basePath)
 	}
+	for _, full := range []*bool{nil, new(false), new(true)} {
+		cfg, err := m.KronkResolvedConfig("example/model-Q8_0", map[string]ModelConfig{
+			"example/model-Q8_0": {PtrSWAFull: full},
+		}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := full != nil && *full; cfg.SWAFull() != want {
+			t.Errorf("SWAFull: got %t, want %t", cfg.SWAFull(), want)
+		}
+	}
 }
 
 func TestResolveAdapters(t *testing.T) {

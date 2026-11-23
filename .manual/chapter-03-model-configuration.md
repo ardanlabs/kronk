@@ -232,7 +232,8 @@ the selected context to the model's training context and a maximum of 128K
 tokens. It searches supported context buckets from largest to smallest. At
 each context it tries `f16` first and then `q8_0` before considering a smaller
 context, trying the eligible physical batch sizes within each cache type.
-It never changes SWA mode: full remains the default and compact is opt-in.
+It does not search SWA modes to fit memory. Models with sliding window attention
+default to compact SWA. An explicit `swa-full` setting always takes precedence.
 The usual minimum candidate is 4K, but a smaller training context is
 not expanded to 4K. Fit checks use both VRAM and host RAM where applicable; on
 unified-memory systems, they use the combined footprint. CPU-only analysis can
@@ -366,10 +367,12 @@ some-provider/some-swa-model:
   swa-full: false
 ```
 
-When unset, Kronk leaves the choice to llama.cpp. Explicitly setting `false`
-uses the compact sliding-window cache, which can save memory but limits context
-caching and shifting. Setting `true` requests the full cache at a higher memory
-cost. This key has no effect on models without SWA metadata.
+Compact SWA is the default for both the model server and SDK, with or without
+AutoTune. Omitting `swa-full` or setting it to `false` uses the compact
+sliding-window cache, which saves memory but limits context caching and shifting.
+Set `swa-full: true` to request the full cache at a higher memory cost.
+This setting changes cache allocation, not the model's attention window.
+It has no effect on models without SWA metadata.
 
 ### 3.4 GPU and Memory Placement
 
@@ -621,7 +624,7 @@ Text scheduling, image capacity, and image preprocessing are configured separate
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
 | `prefill-batch-size` | `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
-| `physical-batch-size` | Unset | Requested physical compute capacity for generation, independent of the prompt contribution; constrained by image floors, logical capacity, and MTP policy |
+| `physical-batch-size` | Unset | Requested physical compute capacity for generation, independent of the prompt contribution; applies with or without MTP, constrained by image floors and logical/native capacity |
 | `image-batch-token-capacity` | `0` (no additional floor) | Independent native capacity floor for image chunks; does not change text scheduling or image detail |
 | `image-token-budget` | Unset (projector default) | Explicit preprocessing budget for supported projectors; lowering it may reduce image resolution and detail |
 
@@ -672,10 +675,17 @@ Embedding, reranking, and specialized decision evaluation retain their own sizin
 and effective capacities are reported separately. Non-causal media chunks still
 must fit in one physical batch; oversized chunks return an error.
 
-Kronk adds generation capacity automatically; users do not need to calculate an
-allowance for active slots or draft tokens. With active MTP, Kronk keeps the
-work in one physical batch, so `physical-batch-size` cannot divide that work
-into smaller compute batches. MTP may therefore require more compute memory.
+Kronk adds generation capacity to the logical batch automatically; users do not
+need to calculate an allowance for active slots or draft tokens. The logical
+capacity is the prefill contribution plus one row per slot without MTP, or
+`1 + nDraft` rows per slot with MTP. An explicit `physical-batch-size` remains
+the requested total compute capacity, not that size plus a generation allowance.
+For example, prefill 512, one slot, and three MTP draft tokens require 516
+logical rows; an explicit physical size of 512 still processes at most 512 rows
+per physical batch. Any positive physical size can be requested, including 515,
+subject to the image floors and logical/native limits above.
+When the physical size is unset, active MTP defaults to fitting the logical work
+in one physical batch.
 See [Chapter 6](https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp)
 for MTP configuration and limitations.
 
@@ -706,8 +716,9 @@ of being split or aborting the process. Increase `image-batch-token-capacity`
 and reload the model to process that chunk.
 
 After loading, inspect the `batch-sizing` debug logs and Slots diagnostics to
-compare requested settings with effective runtime capacities. Image requirements,
-active MTP, and native context limits can change the effective physical capacity.
+compare requested settings with effective runtime capacities. Image requirements
+and logical/native context limits can change an explicitly requested physical
+capacity; MTP does not add its generation reserve to that request.
 
 ![How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/08-wait-for-execution-slot.svg)
 

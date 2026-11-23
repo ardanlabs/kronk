@@ -885,6 +885,16 @@ func TestCalculateMTPDeviceRows(t *testing.T) {
 			if got := result.ComputeBufferEst - EstimateComputeBuffer(input); got != tt.want {
 				t.Errorf("device reservation: got %d, want %d", got, tt.want)
 			}
+			input.NBatch = 139
+			result = Calculate(input)
+			want := int64(0)
+			if tt.want > 0 {
+				// 29 F32 columns × (139 logical rows + 3 scratch rows).
+				want = 16472
+			}
+			if got := result.ComputeBufferEst - EstimateComputeBuffer(input); got != want {
+				t.Errorf("split-batch device reservation: got %d, want %d", got, want)
+			}
 		})
 	}
 }
@@ -1580,6 +1590,33 @@ func TestFromBytesKimiK31Memory(t *testing.T) {
 				t.Errorf("partial GPU cache: got %d, want %d", partial.KVVRAMBytes, (tt.want-135168)*3/8)
 			}
 		})
+	}
+}
+
+func TestFromBytesEmbeddingGemmaMemory(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture":        "gemma-embedding",
+		"gemma-embedding.block_count": "4", "gemma-embedding.embedding_length": "256",
+		"gemma-embedding.attention.head_count": "8", "gemma-embedding.attention.head_count_kv": "2",
+		"gemma-embedding.attention.key_length": "32", "gemma-embedding.attention.value_length": "32",
+		"gemma-embedding.attention.sliding_window": "512",
+	}
+	var compact int64
+	for _, full := range []bool{false, true} {
+		result, err := FromBytes(deepseek41Header(t, metadata, nil), 1<<30, Config{
+			ContextWindow: 8192, Slots: 2, NUBatch: 1024, BytesPerElement: 2, SWAFull: full,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.SlotMemory != 0 || result.KVVRAMBytes != 0 || result.KVCPUBytes != 0 {
+			t.Errorf("encoder persistent cache: got %d/%d/%d, want zero", result.SlotMemory, result.KVVRAMBytes, result.KVCPUBytes)
+		}
+		if !full {
+			compact = result.TotalVRAM
+		} else if result.TotalVRAM != compact {
+			t.Errorf("full encoder estimate: got %d, want compact %d", result.TotalVRAM, compact)
+		}
 	}
 }
 

@@ -1073,6 +1073,134 @@ func TestAnalyzeInklingFitsWeightsButNeedsSmallerBatch(t *testing.T) {
 	}
 }
 
+func TestAutoTuneSWA(t *testing.T) {
+	devs := devices.Devices{
+		GPUCount: 1, SupportsGPUOffload: true, SystemRAMBytes: 128 << 30,
+		Devices: []devices.DeviceInfo{{Type: "gpu_cuda", FreeBytes: 128 << 30, TotalBytes: 128 << 30}},
+	}
+	for _, architecture := range []string{"inkling2", "inkling2_loop", "gemma4", "qwen2"} {
+		info := ModelInfo{ID: "SWA-Q8_0", Size: 8 << 30, Metadata: map[string]string{
+			"general.architecture": architecture,
+		}}
+		for key, value := range map[string]string{
+			"block_count": "4", "context_length": "131072", "embedding_length": "2048",
+			"attention.head_count": "24", "attention.head_count_kv": "4",
+			"attention.key_length": "128", "attention.value_length": "128",
+			"attention.sliding_window": "512", "shortconv.l_cache": "3",
+			"attention.sliding_window_pattern": "[false true true true]",
+			"loop.start":                       "1", "loop.end": "3", "loop.count": "3",
+			"attn_res.block_size": "1", "loop.gate_rank": "8",
+		} {
+			info.Metadata[architecture+"."+key] = value
+		}
+		compact, err := AnalyzeWithConfig(info, devs, ModelConfig{
+			PtrContextWindow: new(131072), PtrNSeqMax: new(1), PtrSWAFull: new(false),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		compactBytes := compact.Recommended.EstimatedVRAMBytes
+		for _, tt := range []struct {
+			name string
+			full *bool
+			want bool
+		}{
+			{"compact default", nil, false},
+			{"explicit compact", new(false), false},
+			{"explicit full", new(true), true},
+		} {
+			t.Run(architecture+"/"+tt.name, func(t *testing.T) {
+				constraints := ModelConfig{PtrContextWindow: new(131072), PtrNSeqMax: new(1), PtrSWAFull: tt.full}
+				cfg, err := AutoTuneWithConfig(info, devs, constraints)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := cfg.ToKronkConfig().SWAFull(); got != tt.want {
+					t.Errorf("SWA full: got %t, want %t", got, tt.want)
+				}
+				a, err := AnalyzeWithConfig(info, devs, constraints)
+				if err != nil {
+					t.Fatal(err)
+				}
+				switch {
+				case tt.want && a.Recommended.EstimatedVRAMBytes <= compactBytes:
+					t.Errorf("full estimate: got %d, want greater than compact %d", a.Recommended.EstimatedVRAMBytes, compactBytes)
+				case !tt.want && a.Recommended.EstimatedVRAMBytes != compactBytes:
+					t.Errorf("compact estimate: got %d, want %d", a.Recommended.EstimatedVRAMBytes, compactBytes)
+				}
+			})
+		}
+	}
+}
+
+func TestAnalyzeBatchLocalSWA(t *testing.T) {
+	devs := devices.Devices{
+		GPUCount: 1, SupportsGPUOffload: true, UnifiedMemory: true, SystemRAMBytes: 128 << 30,
+		Devices: []devices.DeviceInfo{{Type: "gpu_metal", FreeBytes: 128 << 30, TotalBytes: 128 << 30}},
+	}
+	for _, tt := range []struct {
+		name, architecture, causal, decision string
+		noCache                              bool
+	}{
+		{"embedding encoder", "gemma-embedding", "", "", true},
+		{"noncausal LFM3", "lfm3", "false", "", true},
+		{"LFM3 decision", "lfm3", "false", "lfm3-d1", true},
+		{"LFM3 decision contract", "lfm3", "", "lfm3-d1-omni", true},
+		{"causal LFM3 default", "lfm3", "", "", false},
+		{"causal LFM3 explicit", "lfm3", "true", "", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			info := ModelInfo{ID: tt.name, Size: 1 << 30, Metadata: map[string]string{
+				"general.architecture": tt.architecture,
+			}}
+			for key, value := range map[string]string{
+				"block_count": "4", "context_length": "32768", "embedding_length": "256", "vocab_size": "1024",
+				"attention.head_count": "8", "attention.head_count_kv": "2",
+				"attention.key_length": "32", "attention.value_length": "32", "attention.sliding_window": "512",
+			} {
+				info.Metadata[tt.architecture+"."+key] = value
+			}
+			if tt.architecture == "lfm3" {
+				info.Metadata["lfm3.attention.head_count_kv"] = "[0 2 0 4]"
+				info.Metadata["lfm3.attention.sliding_window_pattern"] = "[false true false false]"
+				info.Metadata["lfm3.shortconv.l_cache"] = "3"
+			}
+			if tt.causal != "" {
+				info.Metadata["lfm3.attention.causal"] = tt.causal
+			}
+			if tt.decision != "" {
+				info.Metadata["lfm3.decision.type"] = tt.decision
+			}
+			constraints := ModelConfig{PtrContextWindow: new(8192), PtrNSeqMax: new(1), PtrSWAFull: new(false)}
+			compact, err := AnalyzeWithConfig(info, devs, constraints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			constraints.PtrSWAFull = new(true)
+			full, err := AnalyzeWithConfig(info, devs, constraints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.noCache && full.Recommended.EstimatedVRAMBytes != compact.Recommended.EstimatedVRAMBytes {
+				t.Errorf("batch-local estimate depends on SWA cache mode: got %d/%d", compact.Recommended.EstimatedVRAMBytes, full.Recommended.EstimatedVRAMBytes)
+			}
+			if !tt.noCache && full.Recommended.EstimatedVRAMBytes <= compact.Recommended.EstimatedVRAMBytes {
+				t.Error("causal LFM3 lost its full/compact cache distinction")
+			}
+			if tt.decision != "" {
+				constraints.PtrPrefillBatchSize = new(1024)
+				smaller, err := AnalyzeWithConfig(info, devs, constraints)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if smaller.Recommended.EstimatedVRAMBytes != full.Recommended.EstimatedVRAMBytes {
+					t.Error("whole-prompt decision estimate depends on generation prefill size")
+				}
+			}
+		})
+	}
+}
+
 func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 	info := ModelInfo{
 		ID:   "Qwen3-8B-Q8_0",
@@ -1131,8 +1259,8 @@ func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 			}
 		})
 	}
-	// Companion MTP must reserve the full physical tray regardless of a smaller
-	// request; ordinary text must actually use that smaller compute estimate.
+	// Both ordinary text and companion MTP honor the physical request in
+	// compute estimates without reducing their logical generation reserves.
 	constraints := ModelConfig{PtrContextWindow: new(8192), PtrNSeqMax: new(3), PtrPhysicalBatchSize: new(512)}
 	small, err := AnalyzeWithConfig(info, devs, constraints)
 	if err != nil {
@@ -1156,8 +1284,8 @@ func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mtpSmall.Recommended.EstimatedVRAMBytes != mtpLarge.Recommended.EstimatedVRAMBytes {
-		t.Fatal("MTP physical request changed the full-tray reservation")
+	if mtpSmall.Recommended.EstimatedVRAMBytes >= mtpLarge.Recommended.EstimatedVRAMBytes {
+		t.Fatal("MTP physical size did not reduce the memory estimate")
 	}
 }
 

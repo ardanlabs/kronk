@@ -295,6 +295,8 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		weightLoading:       runtimeCfg.VRAMWeightLoading(devs),
 		lazyTable:           info.lazyTable,
 		architecture:        profile.Architecture,
+		noPersistentCache:   profile.NoPersistentCache,
+		decisionExecution:   modelprofile.DecisionContractFor(profile.Decision.Type).Execution,
 		computeKind:         profile.ComputeKind,
 		attention:           profile.Attention,
 		vocabSize:           vocabSize,
@@ -334,7 +336,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		singlePhysicalBatch: singlePhysicalBatch,
 		kvCacheOnCPU:        cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
 		kvUnified:           runtimeCfg.KVCacheMode() == model.KVCacheShared,
-		swaFull:             cfg.PtrSWAFull == nil || *cfg.PtrSWAFull,
+		swaFull:             runtimeCfg.SWAFull(),
 	}
 	for _, device := range devs.Devices {
 		if backend, ok := strings.CutPrefix(device.Type, "gpu_"); ok {
@@ -440,6 +442,8 @@ type profileInput struct {
 	batchConfig         model.Config
 	generationRows      int
 	singlePhysicalBatch bool
+	noPersistentCache   bool
+	decisionExecution   modelprofile.DecisionExecution
 	kvCacheOnCPU        bool
 	kvUnified           bool
 	swaFull             bool
@@ -697,10 +701,17 @@ func autoTensorParallel(profile modelprofile.Profile, devs devices.Devices, cfg 
 func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRecommendation) vram.Result {
 	batchCfg := p.batchConfig
 	batchCfg.PtrNSeqMax = new(int(slots))
-	_, physical := batchCfg.GenerationBatchSizes(p.generationRows, p.singlePhysicalBatch)
+	logical, physical := batchCfg.GenerationBatchSizes(p.generationRows, p.singlePhysicalBatch)
 
 	if p.class == "embedding" || p.class == "rerank" {
 		physical = batchCfg.BatchBaseSize()
+	}
+	var outputRows int64
+	if p.architecture == "lfm3" && p.decisionExecution.Batch == modelprofile.DecisionBatchWholePrompt && p.decisionExecution.SingleSequence {
+		// Match the native decision graph: one complete prompt and readout,
+		// independently of generation prefill or physical batch requests.
+		logical, physical = int(contextWindow), int(contextWindow)
+		slots, outputRows = 1, 1
 	}
 
 	headCountKV := p.attn.FullHeadCountKV
@@ -729,6 +740,7 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 		WeightLoading:         p.weightLoading,
 		LazyTable:             p.lazyTable,
 		Architecture:          p.architecture,
+		NoPersistentCache:     p.noPersistentCache,
 		ComputeKind:           p.computeKind,
 		CompressRatios:        p.attention.CompressRatios,
 		KVSources:             p.attention.KVSources,
@@ -777,7 +789,9 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 		IndexerTopK:           p.attention.IndexerTopK,
 		RecurrentStateBytes:   p.attn.RecurrentStateBytes,
 		RecurrentStateCopies:  1,
+		NBatch:                int64(logical),
 		NUBatch:               int64(physical),
+		OutputRows:            outputRows,
 		KVUnified:             p.kvUnified,
 		EmbeddingLength:       p.embLen,
 		GPULayers:             gpuLayers,

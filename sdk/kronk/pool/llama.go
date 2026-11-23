@@ -26,7 +26,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 // Llama is the loader.Loader[*kronk.Kronk] implementation for the
@@ -79,7 +78,6 @@ func (l *Llama) ResolvedModelConfig(modelID string) (models.ModelConfig, error) 
 		modelID,
 		l.modelConfig,
 		l.autoTuneBudget(modelID),
-		effectiveSWAFull(model.Config{}),
 	)
 }
 
@@ -90,7 +88,6 @@ func (l *Llama) ResolvedKronkConfig(modelID string) (model.Config, error) {
 		modelID,
 		l.modelConfig,
 		l.autoTuneBudget(modelID),
-		effectiveSWAFull(model.Config{}),
 	)
 }
 
@@ -135,6 +132,11 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		nseq = 1
 	}
 
+	logical, _ := cfg.GenerationBatchSizes(int(model.RecurrentStateCopies(cfg, false)), model.SpeculativeContextCount(cfg) > 1)
+	if cfg.EffectiveNBatch() > 0 {
+		logical = cfg.EffectiveNBatch()
+	}
+
 	vramCfg := vram.Config{
 		WeightLoading:          cfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
 		ComputeBackend:         devices.Backend(),
@@ -143,13 +145,14 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		TypeK:                  cfg.CacheTypeK.ToVRAMType(),
 		TypeV:                  cfg.CacheTypeV.ToVRAMType(),
 		Slots:                  nseq,
+		NBatch:                 int64(logical),
 		NUBatch:                effectivePrefillBatchSize(cfg),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
 		MoECacheSize:           cfg.MoECacheSize(),
 		GPULayers:              int64(cfg.NGpuLayers()),
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
 		KVUnified:              cfg.KVCacheMode() == model.KVCacheShared,
-		SWAFull:                effectiveSWAFull(cfg),
+		SWAFull:                cfg.SWAFull(),
 		VTransposed:            cfg.FlashAttention() == model.FlashAttentionDisabled,
 		RecurrentStateCopies:   model.RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: model.RecurrentStateCopies(cfg, true),
@@ -167,10 +170,12 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 
 	if result.Input.NextNPredictLayers > 0 && result.Input.ComputeContexts > 1 {
 		// Embedded MTP is identified from the artifact, not the requested batch
-		// size. Reserve the complete tray even when the user requests a smaller ubatch.
-		_, physical := cfg.GenerationBatchSizes(0, true)
+		// size. Keep its logical reserve independent of the physical request.
+		logical, physical := cfg.GenerationBatchSizes(0, true)
+		vramCfg.NBatch = int64(logical)
 		vramCfg.NUBatch = int64(physical)
 		input := result.Input
+		input.NBatch = vramCfg.NBatch
 		input.NUBatch = vramCfg.NUBatch
 		result = vram.Calculate(input)
 	}
@@ -653,16 +658,6 @@ func (l *Llama) Display(krn *kronk.Kronk, _ string) loader.Display {
 	}
 }
 
-// effectiveSWAFull mirrors modelCtxParams without mutating the user config:
-// explicit values win, while nil uses the default exported by the loaded
-// llama.cpp library.
-func effectiveSWAFull(cfg model.Config) bool {
-	if cfg.PtrSWAFull != nil {
-		return *cfg.PtrSWAFull
-	}
-	return llama.ContextDefaultParams().SwaFull != 0
-}
-
 func effectivePrefillBatchSize(cfg model.Config) int64 {
 	if cfg.EffectiveNUBatch() > 0 {
 		return int64(cfg.EffectiveNUBatch())
@@ -695,7 +690,7 @@ func (l *Llama) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 		return cfg, nil
 	}
 
-	cfg, err := l.models.KronkResolvedConfigWithBudget(req.ModelID, l.modelConfig, l.autoTuneBudget(req.ModelID), effectiveSWAFull(model.Config{}))
+	cfg, err := l.models.KronkResolvedConfigWithBudget(req.ModelID, l.modelConfig, l.autoTuneBudget(req.ModelID))
 	if err != nil {
 		return model.Config{}, fmt.Errorf("resolve-config: unable to retrieve model config: %w", err)
 	}

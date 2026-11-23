@@ -8,7 +8,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 // AutoTuneConfig seeds unset settings from a hardware-aware analysis of the model and
@@ -81,9 +80,6 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 			constraints.DraftModel.ModelID = cfg.PtrDraftModel.ModelFiles[0]
 		}
 	}
-	if constraints.PtrSWAFull == nil {
-		constraints.PtrSWAFull = new(llama.ContextDefaultParams().SwaFull != 0)
-	}
 	var base models.ModelConfig
 	if budget == nil {
 		base, err = models.AutoTuneWithConfig(info, devices.List(), constraints)
@@ -131,6 +127,7 @@ func restoreAutoTunedFields(tuned *model.Config, recommended model.Config) {
 	tuned.PtrSplitMode = recommended.PtrSplitMode
 	tuned.PtrNGpuLayers = recommended.PtrNGpuLayers
 	tuned.PtrPhysicalBatchSize = recommended.PtrPhysicalBatchSize
+	tuned.PtrSWAFull = recommended.PtrSWAFull
 }
 
 func autoTuneLogValues(cfg model.Config, constraints models.ModelConfig) ([]string, []string) {

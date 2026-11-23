@@ -2,6 +2,7 @@ package arch
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -27,6 +28,17 @@ func (LFM3) Apply(metadata Metadata, profile *modelprofile.Profile) error {
 	profile.MemorySemantics = modelprofile.MemoryRecurrent
 	profile.ComputeKind = modelprofile.ComputeLFM3
 	profile.TiedOutputFallback = true
+	if value, exists := metadata.values["lfm3.attention.causal"]; exists {
+		causal, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return fmt.Errorf("invalid lfm3.attention.causal: %w", err)
+		}
+		profile.NoPersistentCache = !causal
+	}
+	execution := modelprofile.DecisionContractFor(profile.Decision.Type).Execution
+	if execution.Batch == modelprofile.DecisionBatchWholePrompt && execution.SingleSequence && execution.NonCausal {
+		profile.NoPersistentCache = true
+	}
 	blocks := profile.Dimensions.BlockCount
 	if blocks <= 0 {
 		return nil
