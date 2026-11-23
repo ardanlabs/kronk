@@ -65,7 +65,7 @@ export default function DeleteRunButton({ run, onDeleted }: { run: TrainingRun; 
   const dependents = Math.max(0, (preview?.executions.length ?? 1) - 1);
 
   return <>
-    <button className="btn btn-secondary run-delete-trigger" type="button" aria-label={`Delete ${training ? 'training' : 'preparation'} run for ${name}, created ${new Date(run.started_at).toLocaleString()}`} onClick={() => { setPreview(null); setError(''); setNotice(''); setOpen(true); }}>Delete</button>
+    <button className="btn btn-danger run-delete-trigger" type="button" aria-label={`Delete ${training ? 'training' : 'preparation'} run for ${name}, created ${new Date(run.started_at).toLocaleString()}`} onClick={() => { setPreview(null); setError(''); setNotice(''); setOpen(true); }}>Delete</button>
     <dialog ref={dialog} className="run-delete-dialog" aria-labelledby={titleID} aria-describedby={descriptionID} onCancel={(event) => { event.preventDefault(); close(); }}>
       <div className="run-delete-body">
         <h2 id={titleID}>Delete this {training ? 'training' : 'preparation'} run?</h2>

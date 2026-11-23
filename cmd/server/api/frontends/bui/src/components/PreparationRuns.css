@@ -17,7 +17,6 @@
 .prep-run-link:hover { text-decoration: underline; }
 .prep-row-action { text-align: right; }
 .run-row-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
-.run-delete-trigger { color: var(--color-error); }
 .run-delete-dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; border: 1px solid var(--color-gray-300); border-radius: 10px; background: var(--color-white); color: var(--color-gray-900); text-align: left; }
 .run-delete-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .run-delete-body { padding: 24px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }

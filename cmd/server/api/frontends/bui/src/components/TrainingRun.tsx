@@ -468,7 +468,7 @@ function TrainingRunView({ run, visible, onRefresh }: { run: Run; visible: boole
       <div className="live-foot">
         <p>{[queued ? `Queued ${duration(now - Date.parse(run.started_at))} ago` : `Started ${duration(now - Date.parse(run.started_at))} ago`, `${trainedOn(run)}${run.training_dataset_version ? ` v${run.training_dataset_version}` : ''}`, baseModelName].join(' · ')}</p>
         <div className="live-controls">
-          {run.control_stage === 'training' && <button className="btn btn-secondary btn-compact" type="button" disabled={disabled} title={paused ? 'Resume this run from its saved progress' : 'Stop after saving progress; this run can be resumed'} onClick={() => void control(paused ? 'resume' : 'pause')}>
+          {run.control_stage === 'training' && <button className={`btn btn-secondary btn-compact${!paused && !disabled ? ' btn-quiet-danger' : ''}`} type="button" disabled={disabled} title={paused ? 'Resume this run from its saved progress' : 'Stop after saving progress; this run can be resumed'} onClick={() => void control(paused ? 'resume' : 'pause')}>
             {pausing ? 'Stopping…' : busy === 'resume' ? 'Sending…' : paused ? 'Resume' : 'Stop'}
           </button>}
         </div>

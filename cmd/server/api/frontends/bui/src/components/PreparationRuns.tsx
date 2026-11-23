@@ -37,12 +37,6 @@ export function version(run: TrainingRun) {
   return active(run) ? `Builds on version ${run.base_version}` : `Nothing saved · version ${run.base_version} unchanged`;
 }
 export const records = (count: number) => `${count} ${count === 1 ? 'record' : 'records'}`;
-// previewWarning rewrites the developer wording earlier runs saved for left-out document parts.
-const previewWarning = (warning: string) => {
-  const count = Number(/^(\d+) (?:structural\/resource )?source exclusions(?: recorded)?; (?:see|inspect) source_exclusions$/.exec(warning)?.[1]);
-  if (!count) return warning;
-  return `${count === 1 ? '1 part of the document was' : `${count} parts of the document were`} left out, such as page headers and footers, tables, pictures, or passages too long to use. Records come from the rest of the text.`;
-};
 const examples = (count: number) => `${count} ${count === 1 ? 'example' : 'examples'}`;
 export const datasetName = (run: TrainingRun) => run.target_dataset_name ?? run.target_dataset_id ?? 'Preparation run';
 export const failedStep = (run: TrainingRun) => run.stages.flatMap((stage) => stage.steps).find((step) => step.status === 'failed');
@@ -408,7 +402,7 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
         <div className="live-foot">
           <p>{facts.join(' · ')}</p>
           {active(run) && <div className="live-controls">
-            <button className="btn btn-secondary btn-compact" disabled={!!busy || stopping} title={paused ? 'Resume this run from its saved progress' : 'Stop after saving progress; this run can be resumed'} onClick={() => void control(run, paused ? 'resume' : 'pause')}>{!paused && <span aria-hidden="true">■</span>}{stopping ? 'Stopping…' : busy === 'resume' ? 'Sending…' : paused ? 'Resume' : 'Stop'}</button>
+            <button className={`btn btn-secondary btn-compact${!paused && !busy && !stopping ? ' btn-quiet-danger' : ''}`} disabled={!!busy || stopping} title={paused ? 'Resume this run from its saved progress' : 'Stop after saving progress; this run can be resumed'} onClick={() => void control(run, paused ? 'resume' : 'pause')}>{!paused && <span aria-hidden="true">■</span>}{stopping ? 'Stopping…' : busy === 'resume' ? 'Sending…' : paused ? 'Resume' : 'Stop'}</button>
           </div>}
         </div>
       </section>}
@@ -472,7 +466,6 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
         <header className="prep-review-header"><div><span className="prep-sub">{datasetName(run)} · {examples(reviewRecords.length)}</span><h3 id="prep-review-title">Review preview examples</h3></div><button autoFocus className="btn btn-secondary" onClick={closeReview}>Close preview</button></header>
         <div className="prep-review-content">
           <p className="prep-copy">{reviewable(run) ? 'Check each example against its source. Close the preview, then select Accept and continue on the preparation card. Edits stay here until accepted; reloading discards them.' : 'Read-only preview. This run is not waiting for review.'}</p>
-          {run.preview?.warnings?.map((warning) => <p key={warning} className="prep-warning">{previewWarning(warning)}</p>)}
           <div className="prep-records">{reviewRecords.map((record, index) => <article className="prep-qa" key={index}>
             <h4>Example {index + 1} of {reviewRecords.length}</h4>
             {(['prompt', 'target'] as const).map((field) => <div className="form-group" key={field}>
