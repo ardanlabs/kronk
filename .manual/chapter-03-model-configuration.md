@@ -206,7 +206,7 @@ When `context-window` and `nseq-max` are specified but the KV cache types are
 omitted, automatic tuning uses this priority:
 
 1. Preserve the configured context window and concurrency.
-2. Try `f16` for both KV caches. For ordinary single-GPU generation with no
+2. Try `f16` for both KV caches. For ordinary GPU generation with no
    explicit physical batch size, try the preferred batch first, then halve it
    down to 512 before reducing cache precision.
 3. If `f16` does not fit, try `q8_0` with the same batch candidates at the same
@@ -655,16 +655,20 @@ be processed in smaller compute batches. This can enable layer-split multi-GPU
 pipeline overlap within a submission.
 
 Explicit positive physical sizes override AutoTune's recommendation. AutoTune
-initially recommends 512 for ordinary text models using multiple selected GPUs
-with layer splitting and full GPU offload. Single-GPU and other execution modes
-start with the architecture's preferred batch or the runtime default when the
-setting is omitted. For ordinary
-single-GPU generation, AutoTune can halve the physical batch down to 512 to
+initially recommends 512 for non-speculative generation using multiple selected
+GPUs, including vision-capable models, layer or tensor splitting, partial GPU
+offload, and CPU-resident KV caches. Selecting only one GPU or disabling GPU
+offload does not activate this default. Single-GPU generation starts with the
+architecture's preferred batch or the runtime default when the setting is
+omitted. For ordinary GPU generation, AutoTune can halve the physical batch down to 512 to
 fit the estimated memory budget before quantizing KV or reducing context.
 Vision-capable language models participate in this search while respecting
 configured image-capacity and image-token-budget floors. It does not search
-smaller batches for multi-GPU, evaluation, or active MTP/separate-draft execution.
-For eligible single-GPU generation, Inkling2 models (including Inkling2 Loop)
+smaller batches for evaluation or active MTP/separate-draft execution, which
+also retain their existing starting batch policies. Models with disabled
+speculation are eligible for the multi-GPU default even if they support MTP or
+have a separate draft configured.
+For eligible GPU generation, Inkling2 models (including Inkling2 Loop)
 prefer 512 even when a larger batch fits the estimate, to limit their large
 relative-position attention workspace. This is a tuning preference, not a hard
 limit; explicit physical batch sizes still take precedence.

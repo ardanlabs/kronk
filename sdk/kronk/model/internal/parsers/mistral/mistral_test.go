@@ -333,3 +333,153 @@ func TestParser_WhitespaceOnlyEOSIsAnswer(t *testing.T) {
 		t.Fatalf("Flush: got %+v, want empty repeated flush", got)
 	}
 }
+
+func TestParser_TokenProvenance(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	tokens, ok := c.(parsers.TokenStateMachine)
+	if !ok {
+		t.Fatal("missing TokenStateMachine")
+	}
+	vocabulary, ok := c.(parsers.TokenVocabularyStateMachine)
+	if !ok {
+		t.Fatal("missing TokenVocabularyStateMachine")
+	}
+	vocabulary.SetTokenVocabulary(func(string) bool { return true })
+	input := `[TOOL_CALLS]echo[ARGS]{}`
+	for split := range len(input) + 1 {
+		c.Reset()
+		var results []parsers.Result
+		for _, chunk := range []string{input[:split], input[split:]} {
+			got, eog := tokens.ClassifyToken(chunk, false)
+			if eog {
+				t.Fatal("unexpected EOG")
+			}
+			results = appendResult(results, got)
+		}
+		for got := c.(parsers.StateMachineFlusher).Flush(); got != (parsers.Result{}); got = c.(parsers.StateMachineFlusher).Flush() {
+			results = appendResult(results, got)
+		}
+		var answer string
+		for _, got := range results {
+			if got.Content != "" && got.Channel != parsers.ChannelAnswer {
+				t.Errorf("split %d: got %+v, want answer", split, got)
+			}
+			answer += got.Content
+		}
+		if answer != input {
+			t.Errorf("split %d: got %q, want %q", split, answer, input)
+		}
+	}
+}
+
+func TestParser_TokenVocabularyPolicies(t *testing.T) {
+	for _, dedicated := range []bool{false, true} {
+		for _, marker := range streamMarkers {
+			for split := range len(marker) + 1 {
+				c := Parser{}.NewStateMachine()
+				c.(parsers.TokenVocabularyStateMachine).SetTokenVocabulary(func(string) bool { return dedicated })
+				tokens := c.(parsers.TokenStateMachine)
+				var results []parsers.Result
+				for _, chunk := range []string{marker[:split], marker[split:]} {
+					got, _ := tokens.ClassifyToken(chunk, false)
+					if got != (parsers.Result{}) {
+						results = appendResult(results, got)
+					}
+				}
+				got, _ := tokens.ClassifyToken("body", false)
+				if got != (parsers.Result{}) {
+					results = appendResult(results, got)
+				}
+				for got := c.(parsers.StateMachineFlusher).Flush(); got != (parsers.Result{}); got = c.(parsers.StateMachineFlusher).Flush() {
+					results = appendResult(results, got)
+				}
+				want := parsers.Result{Channel: parsers.ChannelAnswer, Content: marker + "body"}
+				if !dedicated {
+					want.Content = "body"
+					switch marker {
+					case toolCallsMarker:
+						want = parsers.Result{Channel: parsers.ChannelTool, Content: marker + "body"}
+					case "<think>", "[THINK]":
+						want.Channel = parsers.ChannelReasoning
+					}
+				}
+				if len(results) != 1 || results[0] != want {
+					t.Errorf("dedicated %v marker %q split %d: got %+v, want %+v", dedicated, marker, split, results, want)
+				}
+			}
+		}
+	}
+}
+
+func TestParser_NativeReasoningCompatibilityAndReuse(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	c.(parsers.TokenVocabularyStateMachine).SetTokenVocabulary(func(marker string) bool {
+		return marker == "[THINK]" || marker == "[/THINK]" || marker == toolCallsMarker || marker == argsMarker
+	})
+	tokens := c.(parsers.TokenStateMachine)
+	for _, pair := range [][2]string{{"[THINK]", "[/THINK]"}, {"<think>", "</think>"}} {
+		c.Reset()
+		tokens.ClassifyToken(pair[0], true)
+		if got, _ := tokens.ClassifyToken("plan", false); got != (parsers.Result{Channel: parsers.ChannelReasoning, Content: "plan"}) {
+			t.Fatalf("got %+v, want reasoning", got)
+		}
+		tokens.ClassifyToken(pair[1], true)
+		if got, _ := tokens.ClassifyToken("answer", false); got != (parsers.Result{Channel: parsers.ChannelAnswer, Content: "answer"}) {
+			t.Fatalf("got %+v, want answer", got)
+		}
+	}
+	// Discard an unfinished native call and queued/pending text on slot reuse.
+	tokens.ClassifyToken(toolCallsMarker, true)
+	tokens.ClassifyToken("echo", false)
+	tokens.ClassifyToken(argsMarker, true)
+	c.Reset()
+	if got := c.(parsers.StateMachineFlusher).Flush(); got != (parsers.Result{}) {
+		t.Fatalf("after Reset: got %+v, want empty", got)
+	}
+	if got, _ := tokens.ClassifyToken(toolCallsMarker, false); got != (parsers.Result{Channel: parsers.ChannelAnswer, Content: toolCallsMarker}) {
+		t.Errorf("after Reset: got %+v, want literal marker", got)
+	}
+	// Text-only callers and synthetic initialization remain compatible.
+	c.Reset()
+	c.Classify("[THINK]")
+	if got, _ := tokens.ClassifyToken("plan", false); got.Channel != parsers.ChannelReasoning || got.Content != "plan" {
+		t.Errorf("synthetic initialization: got %+v, want reasoning", got)
+	}
+}
+
+func TestParser_OrdinaryVocabularyCallsEverySplit(t *testing.T) {
+	input := `[TOOL_CALLS]echo[ARGS]{"text":"[ARGS] [TOOL_CALLS]"}[TOOL_CALLS]second[ARGS]{}`
+	for split := range len(input) + 1 {
+		c := Parser{}.NewStateMachine()
+		c.(parsers.TokenVocabularyStateMachine).SetTokenVocabulary(func(string) bool { return false })
+		tokens := c.(parsers.TokenStateMachine)
+		tokens.ClassifyToken(input[:split], false)
+		tokens.ClassifyToken(input[split:], false)
+		got := c.(parsers.StateMachineFlusher).Flush()
+		calls := (Parser{}).ToolCall(t.Context(), nil, got.Content)
+		if got.Content != input || len(calls) != 2 || calls[0].Status != 0 || calls[0].Function.Arguments["text"] != "[ARGS] [TOOL_CALLS]" {
+			t.Errorf("split %d: got buffer %+v calls %+v, want two calls with literal marker data", split, got, calls)
+		}
+	}
+}
+
+func TestParser_SpecialPiecesMustBeCompleteMarkers(t *testing.T) {
+	for _, marker := range streamMarkers {
+		for split := 1; split < len(marker); split++ {
+			c := Parser{}.NewStateMachine()
+			c.(parsers.TokenVocabularyStateMachine).SetTokenVocabulary(func(string) bool { return true })
+			tokens := c.(parsers.TokenStateMachine)
+			var answer string
+			for _, piece := range []string{marker[:split], marker[split:]} {
+				got, _ := tokens.ClassifyToken(piece, true)
+				if got.Channel != parsers.ChannelAnswer {
+					t.Errorf("marker %q split %d: got %+v, want answer", marker, split, got)
+				}
+				answer += got.Content
+			}
+			if answer != marker {
+				t.Errorf("got %q, want %q", answer, marker)
+			}
+		}
+	}
+}

@@ -10,6 +10,11 @@ import (
 )
 
 type stateMachine struct {
+	// Vocabulary policy belongs to the slot and survives request resets.
+	specialMarkers map[string]bool
+	toolDone       bool
+	tokenAware     bool
+
 	channel parsers.Channel
 	pending string
 	tool    strings.Builder
@@ -25,6 +30,8 @@ type stateMachine struct {
 
 // Reset returns the state machine to its initial state.
 func (sm *stateMachine) Reset() {
+	sm.toolDone = false
+	sm.tokenAware = false
 	sm.channel = parsers.ChannelAnswer
 	sm.pending = ""
 	sm.tool.Reset()
@@ -39,7 +46,36 @@ func (sm *stateMachine) Reset() {
 
 // Classify classifies one decoded output fragment.
 func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
-	sm.process(sm.pending + content)
+	return sm.classify(content, false, false)
+}
+
+// SetTokenVocabulary resolves which framing markers require native provenance.
+func (sm *stateMachine) SetTokenVocabulary(isSpecial func(string) bool) {
+	sm.specialMarkers = make(map[string]bool)
+	for _, marker := range []string{toolOpen, toolClose, thinkOpen, thinkClose} {
+		sm.specialMarkers[marker] = isSpecial(marker)
+	}
+}
+
+// ClassifyToken accepts dedicated markers only as complete special tokens.
+func (sm *stateMachine) ClassifyToken(content string, special bool) (parsers.Result, bool) {
+	return sm.classify(content, true, special)
+}
+
+func (sm *stateMachine) classify(content string, tokenAware, special bool) (parsers.Result, bool) {
+	sm.tokenAware = tokenAware
+	text := sm.pending + content
+	tokenStart, totalLen := len(sm.pending), len(text)
+	markerAt := func(marker string, pos int) bool {
+		return !tokenAware || !sm.specialMarkers[marker] ||
+			(special && pos == tokenStart && len(marker) == len(content))
+	}
+	sm.process(text, tokenAware, func(marker string, pos, remaining int) bool {
+		if pos < 0 {
+			return !tokenAware || !sm.specialMarkers[marker]
+		}
+		return markerAt(marker, totalLen-remaining+pos)
+	})
 	if len(sm.queue) == 0 {
 		return parsers.Result{}, false
 	}
@@ -48,11 +84,11 @@ func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
 	return result, false
 }
 
-func (sm *stateMachine) process(text string) {
+func (sm *stateMachine) process(text string, tokenAware bool, markerAt func(string, int, int) bool) {
 	sm.pending = ""
 	for text != "" {
 		if sm.inTool {
-			closeAt, safeAt, ok := sm.toolCloser(text)
+			closeAt, safeAt, ok := sm.toolCloser(text, markerAt)
 			if !ok {
 				sm.tool.WriteString(text[:safeAt])
 				sm.pending = text[safeAt:]
@@ -62,26 +98,36 @@ func (sm *stateMachine) process(text string) {
 			sm.tool.WriteString(text[:closeAt])
 			body := sm.tool.String()
 			sm.updateDeltas(body)
+			// Validate before textual serialization can erase native boundaries.
+			if tokenAware {
+				if _, err := parseToolPayloadStrict(body); err != nil {
+					body = "<invalid-tool-payload>" + body
+				}
+			}
 			sm.enqueue(parsers.ChannelTool, toolOpen+body+toolClose)
 			sm.tool.Reset()
 			sm.inTool = false
+			sm.toolDone = true
 			sm.quote = 0
 			sm.escaped = false
 			text = text[closeAt+len(toolClose):]
 			continue
 		}
 
-		at, marker := nextMarker(text)
+		at, marker := nextMarker(text, markerAt)
 		if marker == "" {
-			at = partialMarkerSuffix(text)
+			at = partialMarkerSuffix(text, markerAt)
 			if at < 0 {
 				at = len(text)
 			}
-			sm.enqueue(sm.channel, text[:at])
+			sm.enqueueText(text[:at], tokenAware)
 			sm.pending = text[at:]
 			return
 		}
-		sm.enqueue(sm.channel, text[:at])
+		sm.enqueueText(text[:at], tokenAware)
+		if tokenAware && sm.toolDone && marker != toolOpen {
+			sm.enqueue(parsers.ChannelTool, "<unexpected-content-after-tool>"+marker)
+		}
 		text = text[at+len(marker):]
 		switch marker {
 		case thinkOpen:
@@ -90,12 +136,13 @@ func (sm *stateMachine) process(text string) {
 			sm.channel = parsers.ChannelAnswer
 		case toolOpen:
 			sm.inTool = true
+			sm.toolDone = false
 			sm.seen = 0
 		}
 	}
 }
 
-func (sm *stateMachine) toolCloser(text string) (int, int, bool) {
+func (sm *stateMachine) toolCloser(text string, markerAt func(string, int, int) bool) (int, int, bool) {
 	for pos := 0; pos < len(text); pos++ {
 		ch := text[pos]
 		if sm.quote != 0 {
@@ -112,14 +159,24 @@ func (sm *stateMachine) toolCloser(text string) (int, int, bool) {
 			sm.quote = ch
 			continue
 		}
-		if strings.HasPrefix(text[pos:], toolClose) {
+		if markerAt(toolClose, pos, len(text)) && strings.HasPrefix(text[pos:], toolClose) {
 			return pos, pos, true
 		}
 	}
-	if sm.quote != 0 {
+	if sm.quote != 0 || !markerAt(toolClose, -1, len(text)) {
 		return 0, len(text), false
 	}
 	return 0, partialSuffix(text, toolClose), false
+}
+
+func (sm *stateMachine) enqueueText(content string, tokenAware bool) {
+	if tokenAware && sm.toolDone {
+		if strings.TrimSpace(content) != "" {
+			sm.enqueue(parsers.ChannelTool, "<unexpected-content-after-tool>"+content)
+		}
+		return
+	}
+	sm.enqueue(sm.channel, content)
 }
 
 func (sm *stateMachine) enqueue(channel parsers.Channel, content string) {
@@ -142,6 +199,9 @@ func (sm *stateMachine) Flush() parsers.Result {
 	}
 	if sm.inTool {
 		content := toolOpen + sm.tool.String() + sm.pending
+		if sm.tokenAware {
+			content += "<missing-tool-close>"
+		}
 		sm.tool.Reset()
 		sm.pending = ""
 		sm.inTool = false
@@ -154,6 +214,9 @@ func (sm *stateMachine) Flush() parsers.Result {
 	}
 	content := sm.pending
 	sm.pending = ""
+	if sm.tokenAware && sm.toolDone {
+		return parsers.Result{Channel: parsers.ChannelTool, Content: "<unexpected-content-after-tool>" + content}
+	}
 	return parsers.Result{Channel: sm.channel, Content: content}
 }
 
@@ -276,11 +339,11 @@ func skipString(content string, pos int) int {
 	return pos
 }
 
-func nextMarker(content string) (int, string) {
+func nextMarker(content string, markerAt func(string, int, int) bool) (int, string) {
 	at := len(content)
 	var found string
 	for _, marker := range []string{toolOpen, thinkOpen, thinkClose} {
-		if pos := strings.Index(content, marker); pos >= 0 && pos < at {
+		if pos := strings.Index(content, marker); pos >= 0 && pos < at && markerAt(marker, pos, len(content)) {
 			at, found = pos, marker
 		}
 	}
@@ -296,10 +359,12 @@ func partialSuffix(content, marker string) int {
 	return len(content)
 }
 
-func partialMarkerSuffix(content string) int {
+func partialMarkerSuffix(content string, markerAt func(string, int, int) bool) int {
 	at := len(content)
 	for _, marker := range []string{toolOpen, thinkOpen, thinkClose} {
-		at = min(at, partialSuffix(content, marker))
+		if markerAt(marker, -1, len(content)) {
+			at = min(at, partialSuffix(content, marker))
+		}
 	}
 	if at == len(content) {
 		return -1

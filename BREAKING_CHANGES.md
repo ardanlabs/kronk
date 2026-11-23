@@ -3,7 +3,10 @@
 ## Index
 
 - [v1.33.3](#v1333)
+  - [Custom llama.cpp Bundle Metadata](#v1333-custom-llamacpp-bundle-metadata)
+  - [Custom Grammar Token Rules](#v1333-custom-grammar-token-rules)
   - [SWA Cache Default and MTP Physical Batches](#v1333-swa-cache-default-and-mtp-physical-batches)
+  - [Multi-GPU AutoTune Batch Default](#v1333-multi-gpu-autotune-batch-default)
   - [Inference Metrics](#v1333-inference-metrics)
   - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
   - [Internal Parser Packages](#v1333-internal-parser-packages)
@@ -62,6 +65,33 @@
 
 ## v1.33.3
 
+### v1.33.3: Custom llama.cpp Bundle Metadata
+
+Custom llama.cpp library directories exposing native capability discovery now
+require a readable `version.json` alongside the shared libraries. Its `version`
+must identify the actual llama.cpp build as `b<number>` (an optional `@digest`
+suffix is accepted). Kronk uses this to distinguish the capability ABI before
+and after b12619; missing or unrecognized metadata now fails initialization
+instead of guessing the native layout.
+
+Bundles installed by `kronk libs` already include this file. For custom bundles,
+retain their installation metadata or create `version.json` with the actual
+build tag, for example `{"version":"b12633"}` for libraries built from b12633.
+Do not relabel older libraries as a newer build. Libraries predating native
+capability discovery retain their existing fallback without this requirement.
+
+### v1.33.3: Custom Grammar Token Rules
+
+Custom GBNF grammars now treat tokens explicitly named in token rules as opaque
+to character rules throughout the grammar. A wildcard such as `.*` or a
+character class no longer consumes those tokens. Token rules also cannot match
+after a character rule has consumed part of the same tokenizer token.
+
+If a grammar mixes token terminals with character rules, add explicit token
+alternatives wherever named tokens must remain accepted instead of relying on
+wildcards or character classes to consume them. Character-only grammars,
+including Kronk's generated JSON-schema grammars, do not need this migration.
+
 ### v1.33.3: SWA Cache Default and MTP Physical Batches
 
 Models with sliding window attention now use compact SWA when `swa-full` is
@@ -79,6 +109,20 @@ logical batch size. The per-slot generation reserve remains in the logical
 batch; the physical setting is the total compute capacity, subject to image
 floors and logical/native limits. To retain the previous single-physical-batch
 behavior, omit the physical setting or request the full logical capacity.
+
+### v1.33.3: Multi-GPU AutoTune Batch Default
+
+AutoTune now defaults the requested physical batch to 512 for non-speculative
+generation using multiple selected GPUs, including vision models, tensor
+splitting, partial GPU offload, and CPU-resident KV caches. These configurations
+previously started from the architecture preference or runtime default and can
+now have different memory use, cache precision, and prefill throughput.
+
+Set `physical-batch-size` explicitly to retain a previous capacity, for example
+`physical-batch-size: 2048`. Explicit settings remain authoritative; image floors
+and logical/native capacity still determine the effective batch. Evaluation,
+active MTP/separate-draft execution, and CPU-only configurations retain their
+existing starting policies.
 
 ### v1.33.3: Inference Metrics
 

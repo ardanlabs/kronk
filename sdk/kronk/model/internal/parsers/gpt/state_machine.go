@@ -1,6 +1,7 @@
 package gpt
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers"
@@ -36,6 +37,21 @@ func (sm *stateMachine) Reset() {
 func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
 	sm.inputBuf += content
 	eog := sm.consume(false)
+	return sm.nextResult(), eog
+}
+
+// ClassifyToken recognizes Harmony framing only when the vocabulary identifies
+// a complete special token. Ordinary tokens spelling a marker remain payload.
+func (sm *stateMachine) ClassifyToken(content string, special bool) (parsers.Result, bool) {
+	var eog bool
+	switch {
+	case !special || !slices.Contains(harmonyMarkers, content):
+		sm.consumeText(content)
+	case sm.status == parsers.ChannelTool && sm.collecting && toolMarkerIsData(sm.toolCallBuf.String(), content):
+		sm.toolCallBuf.WriteString(content)
+	default:
+		eog = sm.consumeMarker(content)
+	}
 	return sm.nextResult(), eog
 }
 

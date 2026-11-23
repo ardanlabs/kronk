@@ -49,6 +49,19 @@ type StateMachine interface {
 	Reset()
 }
 
+// TokenStateMachine optionally distinguishes complete native CONTROL or
+// USER_DEFINED tokens from ordinary decoded text. Classify remains available
+// for text-only callers and synthetic protocol initialization.
+type TokenStateMachine interface {
+	ClassifyToken(content string, special bool) (r Result, eog bool)
+}
+
+// TokenVocabularyStateMachine optionally resolves framing markers against the
+// loaded vocabulary before use. The classifier is only needed during setup.
+type TokenVocabularyStateMachine interface {
+	SetTokenVocabulary(isSpecial func(string) bool)
+}
+
 // VocabEOGConsumer optionally consumes native framing also classified as EOG.
 type VocabEOGConsumer interface {
 	ConsumeVocabEOG(content string)

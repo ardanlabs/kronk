@@ -224,6 +224,20 @@ A grammar restricts which tokens can be emitted; it does not guarantee a
 complete result. A response cut short by `max_tokens`, context limits, or
 cancellation can still contain an incomplete JSON value.
 
+Custom GBNF token rules match whole tokenizer tokens. Token IDs can be listed
+or grouped into inclusive ranges, for example `<[1000,1005-1010]>`; prefixing
+the expression with `!` negates the set. IDs are specific to the model's
+vocabulary, not portable between models.
+
+With the pinned llama.cpp b12651 runtime, any token explicitly named in a token
+rule is excluded from character rules throughout that grammar, including `.*`
+and character classes. A token rule also cannot match after a character rule
+has consumed part of that token's text. When upgrading custom grammars that mix
+token terminals with character rules, add explicit token alternatives wherever
+those named tokens must be accepted; do not rely on a wildcard to consume them.
+Character-only grammars, including Kronk's generated JSON-schema grammars, do
+not need this token-rule migration.
+
 ## 10.7 Token Log Probabilities
 
 Set `logprobs: true` to return the log probability of each generated token.

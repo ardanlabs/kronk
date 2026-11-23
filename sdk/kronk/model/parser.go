@@ -78,6 +78,16 @@ type StateMachine interface {
 	Reset()
 }
 
+// TokenStateMachine optionally classifies decoded output with native token
+// provenance. The engine calls ClassifyToken instead of Classify when supported.
+// special is true only when content is one complete vocabulary token marked
+// CONTROL or USER_DEFINED. Ordinary text, UTF-8 assembly, and truncated tokens
+// are not special, even when their text spells a protocol marker.
+// Implementations decide which special tokens have protocol meaning.
+type TokenStateMachine interface {
+	ClassifyToken(content string, special bool) (r Result, eog bool)
+}
+
 // VocabEOGConsumer is optionally implemented by state machines whose native
 // framing uses a token that the vocabulary also classifies as end-of-generation.
 type VocabEOGConsumer interface {

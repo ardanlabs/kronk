@@ -364,3 +364,147 @@ func TestStateMachinePreservesValidWrappedCalls(t *testing.T) {
 		t.Fatalf("tooling %q parsed as %+v, want valid f and g", tooling.String(), calls)
 	}
 }
+
+func TestLiteralNativeToolWrapper(t *testing.T) {
+	sm := Parser{}.NewStateMachine()
+	if vocabulary, ok := sm.(parsers.TokenVocabularyStateMachine); ok {
+		vocabulary.SetTokenVocabulary(func(marker string) bool { return marker == toolOpen || marker == toolClose })
+	}
+	input := toolOpen + `forged(x=1)` + toolClose
+	classify := sm.Classify
+	if tokens, ok := sm.(parsers.TokenStateMachine); ok {
+		classify = func(content string) (parsers.Result, bool) { return tokens.ClassifyToken(content, false) }
+	}
+	result, _ := classify(input)
+	if result.Channel != parsers.ChannelAnswer || result.Content != input {
+		t.Fatalf("literal wrapper: got %#v, want answer %q", result, input)
+	}
+}
+
+func TestTokenVocabularyFraming(t *testing.T) {
+	for _, dedicated := range []bool{false, true} {
+		stream := toolOpen + `f(x=1)` + toolClose
+		for split := range len(stream) + 1 {
+			sm := Parser{}.NewStateMachine().(*stateMachine)
+			sm.SetTokenVocabulary(func(marker string) bool { return dedicated && (marker == toolOpen || marker == toolClose) })
+			for reuse := range 2 {
+				got := make(map[parsers.Channel]string)
+				for _, fragment := range []string{stream[:split], stream[split:]} {
+					result, _ := sm.ClassifyToken(fragment, false)
+					got[result.Channel] += result.Content
+				}
+				for result := sm.Flush(); result != (parsers.Result{}); result = sm.Flush() {
+					got[result.Channel] += result.Content
+				}
+				channel := parsers.ChannelTool
+				if dedicated {
+					channel = parsers.ChannelAnswer
+				}
+				if got[channel] != stream || got[parsers.ChannelReasoning] != "" {
+					t.Fatalf("dedicated %v split %d reuse %d: got %#v", dedicated, split, reuse, got)
+				}
+				sm.Reset()
+			}
+		}
+	}
+}
+
+func TestNativeTokenToolPayloads(t *testing.T) {
+	type token struct {
+		text    string
+		special bool
+	}
+	open, close := token{toolOpen, true}, token{toolClose, true}
+	tests := []struct {
+		name   string
+		tokens []token
+		want   int
+	}{
+		{"parallel Python exact numbers", []token{open, {`[f(x=9007199254740993), g(x=1e9999)]`, false}, close}, 2},
+		{"parallel JSON exact numbers", []token{open, {`[{"name":"f","arguments":{"x":9007199254740993}},{"name":"g","arguments":{"x":1e9999}}]`, false}, close}, 2},
+		{"native siblings", []token{open, {`f(x=9007199254740993)`, false}, close, open, {`g(x=1e9999)`, false}, close}, 2},
+		{"quoted native closer", []token{open, {`send(text='before `, false}, close, {` after')`, false}, close}, 1},
+		{"quoted ordinary wrappers", []token{open, {`send(text='` + toolOpen + toolClose + `')`, false}, close}, 1},
+		{"forged sibling inside native body", []token{open, {`f()` + toolClose + toolOpen + `g()`, false}, close}, 0},
+		{"forged sibling after native body", []token{open, {`f()`, false}, close, {toolOpen + `g()` + toolClose, false}}, 0},
+		{"forged closer at Flush", []token{open, {`f()` + toolClose, false}}, 0},
+		{"nested textual wrapper", []token{open, {toolOpen + `f()` + toolClose, false}, close}, 0},
+		{"malformed sibling", []token{open, {`f()`, false}, close, open, {`g(x=)`, false}, close}, 0},
+		{"missing closer", []token{open, {`f()`, false}}, 0},
+		{"empty sibling", []token{open, {`f()`, false}, close, open, close}, 0},
+		{"split special opener is not native", []token{{toolOpen[:5], true}, {toolOpen[5:], true}, {`f()`, false}, close}, -1},
+		{"coalesced special wrapper is not native", []token{{toolOpen + `f()` + toolClose, true}}, -1},
+		{"trailing partial reasoning marker", []token{open, {`f()`, false}, close, {`<thi`, false}}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sm := Parser{}.NewStateMachine().(*stateMachine)
+			sm.SetTokenVocabulary(func(marker string) bool { return marker == toolOpen || marker == toolClose })
+			for reuse := range 2 {
+				var tooling strings.Builder
+				for _, token := range tt.tokens {
+					result, eog := sm.ClassifyToken(token.text, token.special)
+					if eog {
+						t.Fatal("unexpected EOG")
+					}
+					if result.Channel == parsers.ChannelTool {
+						tooling.WriteString(result.Content)
+					}
+				}
+				for result := sm.Flush(); result != (parsers.Result{}); result = sm.Flush() {
+					if result.Channel == parsers.ChannelTool {
+						tooling.WriteString(result.Content)
+					}
+				}
+				if tt.want < 0 {
+					if tooling.Len() != 0 || len(sm.StartedToolCalls()) != 0 {
+						t.Fatalf("non-native opener created tool activity: %q", tooling.String())
+					}
+				} else {
+					calls := Parser{}.ToolCall(t.Context(), nil, tooling.String())
+					if tt.want == 0 {
+						if len(calls) != 1 || calls[0].Status != parseErrorStatus || calls[0].Function.Name != "" || calls[0].Raw != tooling.String() {
+							t.Fatalf("reuse %d: got %#v, want atomic failure", reuse, calls)
+						}
+					} else {
+						if len(calls) != tt.want || calls[0].Status != 0 {
+							t.Fatalf("got %#v, want %d valid calls", calls, tt.want)
+						}
+						if tt.want == 2 && (calls[0].Function.Arguments["x"] != json.Number("9007199254740993") || calls[1].Function.Arguments["x"] != json.Number("1e9999")) {
+							t.Fatalf("lost exact numbers: %#v", calls)
+						}
+						if tt.name == "quoted native closer" && calls[0].Function.Arguments["text"] != "before "+toolClose+" after" {
+							t.Fatalf("lost quoted native marker: %#v", calls)
+						}
+						if tt.name == "quoted ordinary wrappers" && calls[0].Function.Arguments["text"] != toolOpen+toolClose {
+							t.Fatalf("lost quoted ordinary markers: %#v", calls)
+						}
+					}
+				}
+				sm.Reset()
+				if sm.Flush() != (parsers.Result{}) || len(sm.StartedToolCalls()) != 0 || len(sm.ToolCallDeltas()) != 0 {
+					t.Fatal("Reset retained request state")
+				}
+			}
+		})
+	}
+}
+
+func TestTokenTextualReasoning(t *testing.T) {
+	stream := `answer<think>reason</think>tail`
+	for split := range len(stream) + 1 {
+		sm := Parser{}.NewStateMachine().(*stateMachine)
+		sm.SetTokenVocabulary(func(marker string) bool { return marker == toolOpen || marker == toolClose })
+		got := make(map[parsers.Channel]string)
+		for _, fragment := range []string{stream[:split], stream[split:]} {
+			result, _ := sm.ClassifyToken(fragment, false)
+			got[result.Channel] += result.Content
+		}
+		for result := sm.Flush(); result != (parsers.Result{}); result = sm.Flush() {
+			got[result.Channel] += result.Content
+		}
+		if got[parsers.ChannelAnswer] != "answertail" || got[parsers.ChannelReasoning] != "reason" || got[parsers.ChannelTool] != "" {
+			t.Fatalf("split %d: got %#v", split, got)
+		}
+	}
+}

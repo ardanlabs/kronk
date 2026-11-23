@@ -1,6 +1,7 @@
 package mistral
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers"
@@ -14,6 +15,10 @@ type stateMachine struct {
 	toolCallBuf strings.Builder
 	inToolCall  bool
 	output      []parsers.Result
+	// Vocabulary policy survives Reset. Provenance is request-local.
+	specialMarkers map[string]bool
+	toolMarkers    map[int]bool
+	tokenAware     bool
 }
 
 var streamMarkers = []string{toolCallsMarker, "<think>", "</think>", "[THINK]", "[/THINK]"}
@@ -26,23 +31,55 @@ func (sm *stateMachine) Reset() {
 	sm.toolCallBuf.Reset()
 	sm.inToolCall = false
 	sm.output = nil
+	sm.toolMarkers = nil
+	sm.tokenAware = false
 }
 
 // Classify classifies a single decoded chunk.
 func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
+	return sm.classify(content, false, false)
+}
+
+// SetTokenVocabulary resolves dedicated framing without changing the shared
+// parser's supported reasoning spellings.
+func (sm *stateMachine) SetTokenVocabulary(isSpecial func(string) bool) {
+	sm.specialMarkers = make(map[string]bool)
+	for _, marker := range append([]string{argsMarker}, streamMarkers...) {
+		sm.specialMarkers[marker] = isSpecial(marker)
+	}
+}
+
+// ClassifyToken requires complete native tokens for dedicated markers.
+func (sm *stateMachine) ClassifyToken(content string, special bool) (parsers.Result, bool) {
+	return sm.classify(content, true, special)
+}
+
+func (sm *stateMachine) classify(content string, tokenAware, special bool) (parsers.Result, bool) {
+	sm.tokenAware = sm.tokenAware || tokenAware
 	if sm.inToolCall {
+		if special && (content == toolCallsMarker || content == argsMarker) {
+			if sm.toolMarkers == nil {
+				sm.toolMarkers = make(map[int]bool)
+			}
+			sm.toolMarkers[sm.toolCallBuf.Len()] = true
+		}
 		sm.toolCallBuf.WriteString(content)
 	} else {
+		tokenStart := sm.pending.Len()
 		sm.pending.WriteString(content)
-		sm.scan()
+		sm.scan(tokenAware, special, tokenStart, len(content))
 	}
 	return sm.popOutput(), false
 }
 
-func (sm *stateMachine) scan() {
+func (sm *stateMachine) scan(tokenAware, special bool, tokenStart, tokenLen int) {
+	allowed := func(marker string, offset int) bool {
+		return !tokenAware || !sm.specialMarkers[marker] ||
+			(special && offset == tokenStart && len(marker) == tokenLen)
+	}
 	for sm.pending.Len() > 0 {
 		candidate := sm.pending.String()
-		at, marker := nextMarker(candidate)
+		at, marker := nextMarker(candidate, allowed)
 		if at >= 0 {
 			sm.emit(candidate[:at])
 			rest := candidate[at+len(marker):]
@@ -50,16 +87,18 @@ func (sm *stateMachine) scan() {
 			if marker == toolCallsMarker {
 				sm.inToolCall = true
 				sm.status = parsers.ChannelTool
+				sm.toolMarkers = map[int]bool{0: true}
 				sm.toolCallBuf.WriteString(marker)
 				sm.toolCallBuf.WriteString(rest)
 				return
 			}
 			sm.setReasoning(marker)
+			tokenStart -= at + len(marker)
 			sm.pending.WriteString(rest)
 			continue
 		}
 
-		keep := partialMarkerSuffix(candidate)
+		keep := partialMarkerSuffix(candidate, allowed)
 		sm.emit(candidate[:len(candidate)-keep])
 		sm.pending.Reset()
 		sm.pending.WriteString(candidate[len(candidate)-keep:])
@@ -97,24 +136,31 @@ func (sm *stateMachine) popOutput() parsers.Result {
 	return result
 }
 
-func nextMarker(content string) (int, string) {
+func nextMarker(content string, allowed func(string, int) bool) (int, string) {
 	at := -1
 	marker := ""
 	for _, candidate := range streamMarkers {
-		index := strings.Index(content, candidate)
-		if index >= 0 && (at < 0 || index < at) {
-			at = index
-			marker = candidate
+		for start := 0; start < len(content); {
+			index := strings.Index(content[start:], candidate)
+			if index < 0 {
+				break
+			}
+			index += start
+			if allowed(candidate, index) && (at < 0 || index < at) {
+				at = index
+				marker = candidate
+			}
+			start = index + 1
 		}
 	}
 	return at, marker
 }
 
-func partialMarkerSuffix(content string) int {
+func partialMarkerSuffix(content string, allowed func(string, int) bool) int {
 	for length := min(len(content), len(toolCallsMarker)-1); length > 0; length-- {
 		suffix := content[len(content)-length:]
 		for _, marker := range streamMarkers {
-			if strings.HasPrefix(marker, suffix) {
+			if strings.HasPrefix(marker, suffix) && allowed(marker, len(content)-length) {
 				return length
 			}
 		}
@@ -131,6 +177,17 @@ func (sm *stateMachine) Flush() parsers.Result {
 	}
 	if sm.toolCallBuf.Len() > 0 {
 		content := sm.toolCallBuf.String()
+		if sm.tokenAware {
+			_, err := parseCallsWithMarkers(content, func(marker string, offset int) bool {
+				return !sm.specialMarkers[marker] || sm.toolMarkers[offset]
+			})
+			if errors.Is(err, errTokenProvenance) {
+				// The final parser has no token metadata. Carry failure across
+				// that boundary without allowing textual reparsing to bless it.
+				content = invalidTokenFrame + content
+			}
+			// Other syntax errors are reported by the final parser verbatim.
+		}
 		sm.toolCallBuf.Reset()
 		sm.inToolCall = false
 		return parsers.Result{Channel: parsers.ChannelTool, Content: content}

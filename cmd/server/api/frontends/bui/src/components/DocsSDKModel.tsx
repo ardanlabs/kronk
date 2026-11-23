@@ -1403,6 +1403,16 @@ export default function DocsSDKModel() {
               <p className="doc-description">Template provides the template file name.</p>
             </div>
 
+            <div className="doc-section" id="type-tokenstatemachine">
+              <h4>TokenStateMachine</h4>
+              <pre className="code-block">
+                <code>{`type TokenStateMachine interface {
+	ClassifyToken(content string, special bool) (r Result, eog bool)
+}`}</code>
+              </pre>
+              <p className="doc-description">TokenStateMachine optionally classifies decoded output with native token provenance. The engine calls ClassifyToken instead of Classify when supported. special is true only when content is one complete vocabulary token marked CONTROL or USER_DEFINED. Ordinary text, UTF-8 assembly, and truncated tokens are not special, even when their text spells a protocol marker. Implementations decide which special tokens have protocol meaning.</p>
+            </div>
+
             <div className="doc-section" id="type-tokenizeresponse">
               <h4>TokenizeResponse</h4>
               <pre className="code-block">
@@ -3421,6 +3431,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-storageconfig">StorageConfig</a></li>
                 <li><a href="#type-streamingresponselogger">StreamingResponseLogger</a></li>
                 <li><a href="#type-template">Template</a></li>
+                <li><a href="#type-tokenstatemachine">TokenStateMachine</a></li>
                 <li><a href="#type-tokenizeresponse">TokenizeResponse</a></li>
                 <li><a href="#type-toolawarestatemachine">ToolAwareStateMachine</a></li>
                 <li><a href="#type-toolcallarguments">ToolCallArguments</a></li>

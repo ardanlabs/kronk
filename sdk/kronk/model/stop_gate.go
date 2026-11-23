@@ -4,6 +4,7 @@ import "strings"
 
 type stopPiece struct {
 	content           string
+	special           bool
 	logprob           *ContentLogprob
 	utf8Logprobs      []*ContentLogprob
 	provisionalReason bool
@@ -92,6 +93,7 @@ func (g *stopGate) takeBefore(offset int, truncate bool) []stopPiece {
 			keepAt = i + 1
 		case consumed < offset && truncate:
 			piece.content = piece.content[:offset-consumed]
+			piece.special = false
 			piece.logprob = nil
 			emitted = append(emitted, piece)
 			keepAt = i + 1

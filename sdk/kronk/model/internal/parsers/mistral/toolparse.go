@@ -18,13 +18,23 @@ const (
 	toolCallsMarker = "[TOOL_CALLS]"
 	argsMarker      = "[ARGS]"
 	parseError      = 2
+	// invalidTokenFrame is a private failure envelope between streaming and
+	// final parsing. It cannot turn malformed text into a successful call.
+	invalidTokenFrame = "\x00mistral-untrusted-frame\x00"
 )
+
+var errTokenProvenance = errors.New("tool call marker lacks native token provenance")
 
 // parseMistral parses the complete Mistral native tool-call stream. The
 // grammar is deliberately all-or-nothing: a malformed sibling invalidates
 // the complete stream.
 func parseMistral(ctx context.Context, log applog.Logger, content string) []parsers.ResponseToolCall {
+	raw, invalid := strings.CutPrefix(content, invalidTokenFrame)
+	content = raw
 	calls, err := parseCalls(content)
+	if invalid {
+		err = errTokenProvenance
+	}
 	if err == nil {
 		return calls
 	}
@@ -43,6 +53,10 @@ func parseMistral(ctx context.Context, log applog.Logger, content string) []pars
 }
 
 func parseCalls(content string) ([]parsers.ResponseToolCall, error) {
+	return parseCallsWithMarkers(content, nil)
+}
+
+func parseCallsWithMarkers(content string, allowed func(string, int) bool) ([]parsers.ResponseToolCall, error) {
 	cursor := skipASCIIWhitespace(content, 0)
 	var calls []parsers.ResponseToolCall
 
@@ -50,11 +64,17 @@ func parseCalls(content string) ([]parsers.ResponseToolCall, error) {
 		if !strings.HasPrefix(content[cursor:], toolCallsMarker) {
 			return nil, errors.New("tool call marker is missing")
 		}
+		if allowed != nil && !allowed(toolCallsMarker, cursor) {
+			return nil, errTokenProvenance
+		}
 		cursor += len(toolCallsMarker)
 
 		argsOffset := strings.Index(content[cursor:], argsMarker)
 		if argsOffset < 0 {
 			return nil, errors.New("tool call arguments marker is missing")
+		}
+		if allowed != nil && !allowed(argsMarker, cursor+argsOffset) {
+			return nil, errTokenProvenance
 		}
 		name := strings.Trim(content[cursor:cursor+argsOffset], " \t\r\n")
 		if strings.TrimSpace(name) == "" {

@@ -1,6 +1,7 @@
 package inkling
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/parsers"
@@ -26,6 +27,53 @@ func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
 	sm.input += content
 	sm.consume(false)
 	return sm.pop(), sm.ended
+}
+
+// ClassifyToken recognizes message framing only as complete special tokens.
+// Ordinary marker spellings remain payload, including inside tool arguments.
+func (sm *stateMachine) ClassifyToken(content string, special bool) (parsers.Result, bool) {
+	framing := special && slices.Contains([]string{messageModel, thinking, text, invoke, endMessage, endSampling}, content)
+	if framing && content == endSampling {
+		sm.ConsumeVocabEOG(content)
+		return sm.pop(), sm.ended
+	}
+	if framing && !(sm.channel == parsers.ChannelTool && sm.quoted) {
+		return sm.Classify(content)
+	}
+	switch sm.channel {
+	case parsers.ChannelAnswer, parsers.ChannelReasoning:
+		sm.emit(sm.channel, content)
+	default:
+		sm.appendTokenText(content)
+	}
+	return sm.pop(), sm.ended
+}
+
+// appendTokenText keeps literal '<' out of the buffered frame syntax. In JSON
+// strings the Unicode escape preserves the argument value; outside JSON it is
+// invalid, so ordinary text cannot forge a tool frame or its terminators.
+func (sm *stateMachine) appendTokenText(content string) {
+	for content != "" {
+		prefix, tail, found := strings.Cut(content, "<")
+		sm.input += prefix
+		if sm.channel == parsers.ChannelTool {
+			sm.scanTools()
+		}
+		if !found {
+			return
+		}
+		literal := `\u003c`
+		if sm.escaped {
+			// Do not repair an invalid JSON escape such as \< into a
+			// valid escaped backslash followed by the letters u003c.
+			literal = "<"
+		}
+		sm.input += literal
+		if sm.channel == parsers.ChannelTool {
+			sm.scanTools()
+		}
+		content = tail
+	}
 }
 
 // ConsumeVocabEOG retains the native turn terminator for final validation.

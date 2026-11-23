@@ -87,9 +87,18 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 	// Convert token to text, buffering partial UTF-8 codepoints.
 	l := llama.TokenToPiece(e.model.vocab, token, buf, 0, true)
 
+	// Only opt-in parsers need the native classification. A piece assembled
+	// with bytes from an earlier token is text, not one complete special token.
+	var special bool
+	if _, ok := s.stateMachine.(TokenStateMachine); ok && len(s.utf8Buf) == 0 {
+		attr := llama.VocabGetAttr(e.model.vocab, token)
+		special = attr&(llama.TokenAttrControl|llama.TokenAttrUserDef) != 0
+	}
+
 	s.utf8Buf = append(s.utf8Buf, buf[:l]...)
 
 	complete, remainder := extractCompleteUTF8(s.utf8Buf)
+	special = special && len(complete) == int(l)
 
 	// Convert to string BEFORE mutating the buffer. The complete slice
 	// shares the same backing array as s.utf8Buf, so we must copy via
@@ -172,7 +181,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 	// Preserve the original immediate path when request stops are not active.
 	// In particular, classification precedes accounting and max-token checks.
 	if s.stopGate == nil {
-		outcome := e.processDecodedPiece(s, stopPiece{content: content, logprob: s.currentLogprob}, len(s.logprobsData)-1, false)
+		outcome := e.processDecodedPiece(s, stopPiece{content: content, special: special, logprob: s.currentLogprob}, len(s.logprobsData)-1, false)
 		if outcome.parserEOG {
 			s.stopSource = "parser-eog"
 			e.finishSlot(s, nil)
@@ -197,6 +206,7 @@ func (e *batchEngine) handleToken(s *slot, token llama.Token, iBatch int32, buf 
 
 	piece := stopPiece{
 		content:           content,
+		special:           special,
 		logprob:           s.currentLogprob,
 		utf8Logprobs:      s.stopUTF8Logprobs,
 		provisionalReason: s.reasonFlag > 0,
@@ -254,7 +264,15 @@ func (e *batchEngine) processDecodedPiece(s *slot, piece stopPiece, logprobIndex
 		s.rawOutput.WriteString(piece.content)
 	}
 
-	result, eog := s.stateMachine.Classify(piece.content)
+	var result Result
+	var eog bool
+	switch state := s.stateMachine.(type) {
+	case TokenStateMachine:
+		result, eog = state.ClassifyToken(piece.content, piece.special)
+	default:
+		result, eog = state.Classify(piece.content)
+	}
+
 	if s.suppressTools && result.Channel == ChannelTool {
 		result.Channel = ChannelAnswer
 	}

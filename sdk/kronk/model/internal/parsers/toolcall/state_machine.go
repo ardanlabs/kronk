@@ -11,6 +11,9 @@ var closeMarkers = []string{"</tool_call>", "<tool_call|>"}
 
 // stateMachine incrementally extracts marked JSON tool calls.
 type stateMachine struct {
+	// Vocabulary policy is slot-owned and survives request resets.
+	specialMarkers map[string]bool
+
 	status   parsers.Channel
 	pending  string
 	tool     strings.Builder
@@ -22,14 +25,40 @@ type stateMachine struct {
 }
 
 func (sm *stateMachine) Reset() {
-	*sm = stateMachine{status: parsers.ChannelAnswer}
+	*sm = stateMachine{status: parsers.ChannelAnswer, specialMarkers: sm.specialMarkers}
 }
 
 func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
+	return sm.classify(content, false, false)
+}
+
+// SetTokenVocabulary resolves dedicated markers while preserving ordinary-text
+// framing for templates such as Ripple's and the shared reasoning spellings.
+func (sm *stateMachine) SetTokenVocabulary(isSpecial func(string) bool) {
+	sm.specialMarkers = make(map[string]bool)
+	for _, markers := range [][]string{openMarkers, closeMarkers, {"<think>", "</think>"}} {
+		for _, marker := range markers {
+			sm.specialMarkers[marker] = isSpecial(marker)
+		}
+	}
+}
+
+// ClassifyToken requires complete special-token provenance for dedicated markers.
+func (sm *stateMachine) ClassifyToken(content string, special bool) (parsers.Result, bool) {
+	return sm.classify(content, true, special)
+}
+
+func (sm *stateMachine) classify(content string, tokenAware, special bool) (parsers.Result, bool) {
+	tokenStart, tokenLen := len(sm.pending), len(content)
 	sm.pending += content
+	totalLen := len(sm.pending)
+	markerAt := func(marker string) bool {
+		return !tokenAware || !sm.specialMarkers[marker] ||
+			(special && totalLen-len(sm.pending) == tokenStart && len(marker) == tokenLen)
+	}
 	for sm.pending != "" {
 		if sm.inTool {
-			marker, partial := matchingMarker(sm.pending, closeMarkers)
+			marker, partial := matchingMarker(sm.pending, closeMarkers, markerAt)
 			if !sm.inString && marker != "" {
 				sm.pending = sm.pending[len(marker):]
 				body := sm.tool.String()
@@ -52,7 +81,7 @@ func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
 			continue
 		}
 
-		marker, partial := matchingMarker(sm.pending, openMarkers)
+		marker, partial := matchingMarker(sm.pending, openMarkers, markerAt)
 		if marker != "" {
 			sm.pending = sm.pending[len(marker):]
 			sm.beginTool()
@@ -70,17 +99,18 @@ func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
 			sm.pending = ""
 			break
 		}
-		if strings.HasPrefix(sm.pending, "<think>") {
+		marker, partial = matchingMarker(sm.pending, []string{"<think>", "</think>"}, markerAt)
+		if marker == "<think>" {
 			sm.pending = sm.pending[len("<think>"):]
 			sm.status = parsers.ChannelReasoning
 			continue
 		}
-		if strings.HasPrefix(sm.pending, "</think>") {
+		if marker == "</think>" {
 			sm.pending = sm.pending[len("</think>"):]
 			sm.status = parsers.ChannelAnswer
 			continue
 		}
-		if partialControlMarker(sm.pending) {
+		if partial {
 			break
 		}
 		sm.enqueue(sm.status, sm.pending[:1])
@@ -88,15 +118,6 @@ func (sm *stateMachine) Classify(content string) (parsers.Result, bool) {
 	}
 
 	return sm.dequeue(), false
-}
-
-func partialControlMarker(s string) bool {
-	for _, marker := range []string{"<think>", "</think>"} {
-		if strings.HasPrefix(marker, s) {
-			return true
-		}
-	}
-	return false
 }
 
 func completeObjectSequence(body string) bool {
@@ -114,14 +135,14 @@ func completeObjectSequence(body string) bool {
 	return true
 }
 
-func matchingMarker(s string, markers []string) (string, bool) {
+func matchingMarker(s string, markers []string, markerAt func(string) bool) (string, bool) {
 	for _, marker := range markers {
-		if strings.HasPrefix(s, marker) {
+		if markerAt(marker) && strings.HasPrefix(s, marker) {
 			return marker, false
 		}
 	}
 	for _, marker := range markers {
-		if strings.HasPrefix(marker, s) {
+		if markerAt(marker) && strings.HasPrefix(marker, s) {
 			return "", true
 		}
 	}
