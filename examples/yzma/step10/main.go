@@ -160,13 +160,9 @@ func runCase(mdl llama.Model, projFile string, nSlots int, memory *memoryMonitor
 	}
 	defer mtmd.Free(mctx)
 	memory.mark("decoder-loaded")
-	caps, err := mtmd.HelperGetCapabilities(mdl, mctx)
-	if err != nil {
-		return err
-	}
-	if !caps.AudioGen {
-		return errors.New("model and projector do not support audio generation")
-	}
+	// Do not call Yzma's capability helper until its struct-return ABI is
+	// fixed (https://github.com/hybridgroup/yzma/issues/509). The speech
+	// helper's SetInput rejects unsupported audio-generation pipelines.
 
 	// =========================================================================
 	// Share model and decoder weights, but keep each sequence's request state.

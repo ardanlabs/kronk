@@ -576,7 +576,7 @@ func (m *Model) loadCapabilities(ctx context.Context) error {
 		m.log(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
 	}
 
-	capabilities, err := mtmd.HelperGetCapabilities(m.model, m.mtmdMetaCtx)
+	capabilities, err := helperGetCapabilities(m.model, m.mtmdMetaCtx)
 	m.mtmdCapsKnown = err == nil
 	if err != nil {
 		// Older bundles lack the helper; preserve their existing input checks.
