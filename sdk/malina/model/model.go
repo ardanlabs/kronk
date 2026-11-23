@@ -72,7 +72,7 @@ type Config struct {
 	ControlNetPath              string
 	MotionModulePath            string
 	ADetailerPath               string
-	PhotoMakerPath              string
+	MOSSImageEditLoraPath       string
 	TensorTypeRules             string
 	Concurrency                 int
 	QueueDepth                  int
@@ -173,6 +173,13 @@ func WithMotionModulePath(path string) Option {
 func WithADetailerPath(path string) Option {
 	return func(cfg *Config) {
 		cfg.ADetailerPath = path
+	}
+}
+
+// WithMOSSImageEditLoraPath selects the MOSS-Image Edit HQ workflow and its LoRA.
+func WithMOSSImageEditLoraPath(path string) Option {
+	return func(cfg *Config) {
+		cfg.MOSSImageEditLoraPath = path
 	}
 }
 
@@ -325,25 +332,26 @@ func validateConfig(cfg Config) error {
 	return nil
 }
 
-// GenerateParams controls one text-to-image generation. ImagePreprocessRules
-// contains semicolon-separated native target=...,key=value rules applied to
-// temporary input-image pixels; it does not mutate the caller's images.
+// GenerateParams controls one image generation. A zero Canny value disables
+// edge preprocessing; use NewCannyParams to enable it for a control image.
+// RefImages supplies reference conditioning for instruction-based editing,
+// distinct from InitImage's img2img starting latent and Strength.
 type GenerateParams struct {
-	Prompt               string
-	NegativePrompt       string
-	ImagePreprocessRules string
-	Width                int
-	Height               int
-	Steps                int
-	CFGScale             float32
-	Seed                 int64
-	InitImage            image.Image
-	Strength             float32
-	ControlImage         image.Image
-	ControlStrength      float32
-	ControlType          ControlType
-	Canny                *CannyParams
-	Progress             func(GenerationProgress)
+	Prompt          string
+	NegativePrompt  string
+	Width           int
+	Height          int
+	Steps           int
+	CFGScale        float32
+	Seed            int64
+	InitImage       image.Image
+	RefImages       []image.Image
+	Strength        float32
+	ControlImage    image.Image
+	ControlStrength float32
+	ControlType     ControlType
+	Canny           CannyParams
+	Progress        func(GenerationProgress)
 }
 
 // GenerationProgress reports context-local work. Total == 0 means unknown.
@@ -392,8 +400,8 @@ func (p GenerateParams) Validate() error {
 	if strings.TrimSpace(p.Prompt) == "" {
 		return errors.Join(ErrInvalidRequest, errors.New("prompt is required"))
 	}
-	if strings.IndexByte(p.Prompt, 0) >= 0 || strings.IndexByte(p.NegativePrompt, 0) >= 0 || strings.IndexByte(p.ImagePreprocessRules, 0) >= 0 {
-		return errors.Join(ErrInvalidRequest, errors.New("prompts and image preprocessing rules cannot contain NUL bytes"))
+	if strings.IndexByte(p.Prompt, 0) >= 0 || strings.IndexByte(p.NegativePrompt, 0) >= 0 {
+		return errors.Join(ErrInvalidRequest, errors.New("prompts cannot contain NUL bytes"))
 	}
 	if p.Width < 64 || p.Width > maxImageDimension || p.Height < 64 || p.Height > maxImageDimension || p.Width%8 != 0 || p.Height%8 != 0 || p.Width*p.Height > maxImagePixels {
 		return errors.Join(ErrInvalidRequest, fmt.Errorf("dimensions must be multiples of 8 between 64 and %d and at most %d pixels", maxImageDimension, maxImagePixels))
@@ -415,6 +423,17 @@ func (p GenerateParams) Validate() error {
 	if !p.ControlType.IsZero() && p.ControlImage == nil {
 		return errors.Join(ErrInvalidRequest, errors.New("control type requires a control image"))
 	}
+	for _, ref := range p.RefImages {
+		if ref == nil {
+			return errors.Join(ErrInvalidRequest, errors.New("reference image cannot be nil"))
+		}
+		if err := validateInitImage(ref); err != nil {
+			return err
+		}
+	}
+	if p.Canny != (CannyParams{}) && p.ControlImage == nil {
+		return errors.Join(ErrInvalidRequest, errors.New("canny preprocessing requires a control image"))
+	}
 	if p.ControlImage != nil {
 		if err := validateInitImage(p.ControlImage); err != nil {
 			return err
@@ -422,7 +441,7 @@ func (p GenerateParams) Validate() error {
 		if p.ControlStrength <= 0 || !finite(float64(p.ControlStrength)) {
 			return errors.Join(ErrInvalidRequest, errors.New("control strength must be positive and finite"))
 		}
-		if p.Canny != nil {
+		if p.Canny != (CannyParams{}) {
 			values := []float32{p.Canny.HighThreshold, p.Canny.LowThreshold, p.Canny.Weak, p.Canny.Strong}
 			for _, value := range values {
 				if value < 0 || value > 1 || !finite(float64(value)) {
@@ -444,22 +463,35 @@ type DetailParams struct {
 	Image          image.Image
 	Prompt         string
 	NegativePrompt string
-	ExtraArgs      string
+	InpaintWidth   int
+	InpaintHeight  int
 	Steps          int
+	Strength       float32
 	CFGScale       float32
 	Seed           int64
+	Confidence     float32
+	InputSize      int
+	TopK           int
+	Padding        int
+	MaskBlur       float32
 	Progress       func(GenerationProgress)
 }
 
 // NewDetailParams returns ADetailer refinement defaults.
 func NewDetailParams() DetailParams {
-	return DetailParams{ExtraArgs: "input_size=640,confidence=0.3,inpaint_width=64,inpaint_height=64", Steps: 20, CFGScale: 7, Seed: -1}
+	return DetailParams{InpaintWidth: 64, InpaintHeight: 64, Steps: 20, Strength: 0.75, CFGScale: 7, Seed: -1, Confidence: 0.3, InputSize: 640, TopK: 4, Padding: 32, MaskBlur: 4}
 }
 
 // Validate checks whether parameters describe a supported ADetailer request.
 func (p DetailParams) Validate() error {
 	if p.Image == nil {
 		return errors.Join(ErrInvalidRequest, errors.New("detail image is required"))
+	}
+	if p.InpaintWidth < 64 || p.InpaintWidth > maxImageDimension || p.InpaintHeight < 64 || p.InpaintHeight > maxImageDimension || p.InpaintWidth%64 != 0 || p.InpaintHeight%64 != 0 {
+		return errors.Join(ErrInvalidRequest, errors.New("inpaint dimensions must be multiples of 64 between 64 and 1024"))
+	}
+	if !finite(float64(p.Strength)) || p.Strength <= 0 || p.Strength > 1 || !finite(float64(p.Confidence)) || p.Confidence < 0 || p.Confidence > 1 || p.InputSize <= 0 || p.InputSize > math.MaxInt32 || p.TopK <= 0 || p.TopK > math.MaxInt32 || p.Padding < 0 || p.Padding > math.MaxInt32 || !finite(float64(p.MaskBlur)) || p.MaskBlur < 0 {
+		return errors.Join(ErrInvalidRequest, errors.New("invalid refinement strength or region settings"))
 	}
 
 	bounds := p.Image.Bounds()
@@ -479,22 +511,20 @@ func (p DetailParams) Validate() error {
 	return request.Validate()
 }
 
-// VideoParams controls one video generation. ImagePreprocessRules contains
-// semicolon-separated native target=...,key=value rules applied to temporary
-// input-image pixels; it does not mutate the caller's images.
+// VideoParams controls one video generation. AnimateDiff requires dimensions
+// divisible by 64 and does not support InitImage or RefAudios.
 type VideoParams struct {
-	Prompt               string
-	NegativePrompt       string
-	ImagePreprocessRules string
-	Width                int
-	Height               int
-	Steps                int
-	Seed                 int64
-	Frames               int
-	FPS                  int
-	InitImage            image.Image
-	RefAudios            []Audio
-	Progress             func(GenerationProgress)
+	Prompt         string
+	NegativePrompt string
+	Width          int
+	Height         int
+	Steps          int
+	Seed           int64
+	Frames         int
+	FPS            int
+	InitImage      image.Image
+	RefAudios      []Audio
+	Progress       func(GenerationProgress)
 }
 
 // NewVideoParams returns conservative AnimateDiff generation defaults.
@@ -507,7 +537,6 @@ func (p VideoParams) Validate() error {
 	request := NewGenerateParams()
 	request.Prompt = p.Prompt
 	request.NegativePrompt = p.NegativePrompt
-	request.ImagePreprocessRules = p.ImagePreprocessRules
 	request.Width = p.Width
 	request.Height = p.Height
 	request.Steps = p.Steps
@@ -557,19 +586,19 @@ type Audio struct {
 
 // GeneratedVideo contains owned frames, optional generated audio, and the
 // effective frame rate reported by stable-diffusion.cpp. GenerationInfo contains
-// the native sdcpp.generation/v1 JSON record. Seed retains the requested seed;
-// the resolved seed is available in GenerationInfo.
+// executed DGL source, not JSON. Seed retains the requested seed. A zero Audio
+// value (empty Data) means no generated audio.
 type GeneratedVideo struct {
 	Frames         []image.Image
-	Audio          *Audio
+	Audio          Audio
 	FPS            int
 	Seed           int64
 	GenerationInfo string
 }
 
-// GeneratedImage contains an owned PNG and generation metadata. GenerationInfo
-// contains the native sdcpp.generation/v1 JSON record, separate from the PNG.
-// Seed retains the requested seed; GenerationInfo includes the resolved seed.
+// GeneratedImage contains an owned PNG and executed DGL source in GenerationInfo,
+// separate from the PNG. Seed retains the requested seed. Copying the struct
+// shares the PNG slice; it does not copy its storage.
 type GeneratedImage struct {
 	PNG            []byte
 	Width          int
@@ -578,7 +607,8 @@ type GeneratedImage struct {
 	GenerationInfo string
 }
 
-// ModelInfo describes a loaded model.
+// ModelInfo describes a model context. ModelVersion is empty for bundled DGL
+// workflows, whose weights are selected and loaded during execution.
 type ModelInfo struct {
 	ModelPath          string
 	DiffusionModelPath string
@@ -593,7 +623,6 @@ type Model struct {
 	mu       sync.Mutex
 	config   Config
 	ctx      sd.Context
-	detailer sd.ADetailerContext
 	version  string
 	stop     context.Context
 	cancel   context.CancelFunc
@@ -651,7 +680,9 @@ func withGeneration(ctx context.Context, stop context.Context, run func() error)
 	return run()
 }
 
-// NewModel loads one reusable native model context.
+// NewModel creates one reusable native model context. Generic model support is
+// checked during construction. Bundled DGL workflows defer weight loading and
+// model validation until execution.
 func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -661,7 +692,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	var handle sd.Context
-	var detailer sd.ADetailerContext
 	var modelVersion string
 
 	err := withNative(ctx, func() error {
@@ -682,8 +712,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		params.AudioEncoderPath = cfg.AudioEncoderPath
 		params.TAESDPath = cfg.TAESDPath
 		params.ControlNetPath = cfg.ControlNetPath
-		params.MotionModulePath = cfg.MotionModulePath
-		params.PhotoMakerPath = cfg.PhotoMakerPath
 		params.TensorTypeRules = cfg.TensorTypeRules
 		params.LinearScale = cfg.LinearScale
 		params.AttnScale = cfg.AttnScale
@@ -706,7 +734,17 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			return fmt.Errorf("creating context: %w", err)
 		}
 
-		videoModel := cfg.MotionModulePath != "" || cfg.AudioEncoderPath != ""
+		// DGL workflows supply their own model paths. Generic capability queries
+		// would load unrelated generic-generation weights into the lazy context.
+		if cfg.MotionModulePath != "" || cfg.ADetailerPath != "" || cfg.MOSSImageEditLoraPath != "" {
+			if err := ctx.Err(); err != nil {
+				sd.FreeContext(handle)
+				return err
+			}
+			return nil
+		}
+
+		videoModel := cfg.AudioEncoderPath != ""
 		var supported bool
 		if videoModel {
 			supported, err = sd.ContextSupportsVideoGeneration(handle)
@@ -732,20 +770,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			return fmt.Errorf("reading model version: %w", err)
 		}
 
-		if cfg.ADetailerPath != "" {
-			detailer, err = sd.NewADetailerContext(cfg.ADetailerPath, params.NThreads, "cpu", "")
-			if err != nil {
-				sd.FreeContext(handle)
-				handle = 0
-				return fmt.Errorf("creating ADetailer context: %w", err)
-			}
-		}
-
 		if err := ctx.Err(); err != nil {
-			if detailer != 0 {
-				sd.FreeADetailerContext(detailer)
-				detailer = 0
-			}
 			sd.FreeContext(handle)
 			handle = 0
 			return err
@@ -759,12 +784,11 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	stop, cancel := context.WithCancel(context.Background())
 	m := Model{
-		config:   cfg,
-		ctx:      handle,
-		detailer: detailer,
-		version:  modelVersion,
-		stop:     stop,
-		cancel:   cancel,
+		config:  cfg,
+		ctx:     handle,
+		version: modelVersion,
+		stop:    stop,
+		cancel:  cancel,
 	}
 
 	return &m, nil
@@ -772,7 +796,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 // Generate runs synchronous text-to-image generation. Calls on this Model are
 // serialized, while independent Model contexts may generate concurrently.
-// Canceling ctx interrupts native generation and resets the context for reuse.
+// Canceling ctx requests cooperative native cancellation and waits for execution
+// to stop before returning the context for reuse.
 func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedImage, error) {
 	if err := params.Validate(); err != nil {
 		return GeneratedImage{}, err
@@ -793,10 +818,43 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 		return GeneratedImage{}, err
 	}
 
+	if m.config.MOSSImageEditLoraPath != "" {
+		if params.InitImage == nil || len(params.RefImages) != 0 || params.ControlImage != nil || params.Width%16 != 0 || params.Height%16 != 0 {
+			return GeneratedImage{}, errors.Join(ErrInvalidRequest, errors.New("MOSS editing requires an init image and dimensions divisible by 16; ControlNet is unsupported"))
+		}
+		input, err := imageToRGB(params.InitImage)
+		if err != nil {
+			return GeneratedImage{}, err
+		}
+		p := sd.MOSSImageEditParamsInit()
+		p.DiffusionModelPath = m.config.DiffusionModelPath
+		p.LLMPath = m.config.LLMPath
+		p.LLMVisionPath = m.config.LLMVisionPath
+		p.TokenizerPath = m.config.TokenizerPath
+		p.VAEPath = m.config.VAEPath
+		p.LoraPath = m.config.MOSSImageEditLoraPath
+		p.Prompt = params.Prompt
+		p.NegativePrompt = params.NegativePrompt
+		p.Width = int32(params.Width)
+		p.Height = int32(params.Height)
+		p.Steps = int32(params.Steps)
+		p.CFGScale = params.CFGScale
+		p.Seed = params.Seed
+		var raw sd.SDImage
+		err = m.runGeneration(ctx, params.Progress, func() error {
+			var err error
+			raw, err = sd.EditMOSSImage(m.ctx, input, p)
+			return err
+		})
+		if err != nil {
+			return GeneratedImage{}, err
+		}
+		return encodeImage(raw, params.Seed)
+	}
+
 	p := sd.ImgGenParamsInit()
 	p.Prompt = params.Prompt
 	p.NegativePrompt = params.NegativePrompt
-	p.ImagePreprocess.Rules = params.ImagePreprocessRules
 	p.Width = int32(params.Width)
 	p.Height = int32(params.Height)
 	p.Steps = int32(params.Steps)
@@ -811,6 +869,13 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 		if err != nil {
 			return GeneratedImage{}, err
 		}
+	}
+	for _, ref := range params.RefImages {
+		raw, err := imageToRGB(ref)
+		if err != nil {
+			return GeneratedImage{}, err
+		}
+		p.RefImages = append(p.RefImages, raw)
 	}
 
 	if params.ControlImage != nil {
@@ -844,18 +909,20 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 		return GeneratedImage{}, err
 	}
 
-	var raw *sd.SDImage
+	var raw sd.SDImage
 	err := m.runGeneration(ctx, params.Progress, func() error {
-		if p.ControlImage != nil && params.Canny != nil {
-			if err := sd.PreprocessCanny(p.ControlImage, sd.CannyParams{
+		if params.Canny != (CannyParams{}) {
+			control, err := sd.PreprocessCanny(p.ControlImage, sd.CannyParams{
 				HighThreshold: params.Canny.HighThreshold,
 				LowThreshold:  params.Canny.LowThreshold,
 				Weak:          params.Canny.Weak,
 				Strong:        params.Canny.Strong,
 				Inverse:       params.Canny.Inverse,
-			}); err != nil {
+			})
+			if err != nil {
 				return fmt.Errorf("preprocessing Canny image: %w", err)
 			}
+			p.ControlImage = control
 		}
 
 		var err error
@@ -872,8 +939,10 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 
 func (m *Model) runGeneration(ctx context.Context, progress func(GenerationProgress), generate func() error) error {
 	return withGeneration(ctx, m.stop, func() (retErr error) {
-		if progress != nil {
-			if err := sd.SetGenerationProgressCallback(m.ctx, func(event sd.GenerationProgress) {
+		var callbackMu sync.Mutex
+		var callbackCancelErr error
+		if err := sd.SetGenerationProgressCallback(m.ctx, func(event sd.GenerationProgress) {
+			if progress != nil && ctx.Err() == nil && m.stop.Err() == nil {
 				progress(GenerationProgress{
 					Stage:      event.Stage,
 					Detail:     event.Detail,
@@ -882,15 +951,23 @@ func (m *Model) runGeneration(ctx context.Context, progress func(GenerationProgr
 					Completed:  event.Completed,
 					Total:      event.Total,
 				})
-			}); err != nil {
-				return fmt.Errorf("register generation progress: %w", err)
 			}
-			defer func() {
-				if err := sd.SetGenerationProgressCallback(m.ctx, nil); err != nil {
-					retErr = errors.Join(retErr, ErrNativeGeneration, fmt.Errorf("clear generation progress: %w", err))
-				}
-			}()
+			// An idle native context does not retain cancellation. Recheck on
+			// entry to execution and after user callbacks so cancellation racing
+			// with startup or requested from a callback is honored.
+			if ctx.Err() != nil || m.stop.Err() != nil {
+				callbackMu.Lock()
+				callbackCancelErr = errors.Join(callbackCancelErr, sd.CancelGeneration(m.ctx, sd.CancelAll))
+				callbackMu.Unlock()
+			}
+		}); err != nil {
+			return fmt.Errorf("register generation progress: %w", err)
 		}
+		defer func() {
+			if err := sd.SetGenerationProgressCallback(m.ctx, nil); err != nil {
+				retErr = errors.Join(retErr, ErrNativeGeneration, fmt.Errorf("clear generation progress: %w", err))
+			}
+		}()
 
 		type cancelResult struct {
 			requested bool
@@ -914,9 +991,11 @@ func (m *Model) runGeneration(ctx context.Context, progress func(GenerationProgr
 		close(nativeDone)
 
 		canceled := <-cancelDone
-		var cancelErr error
+		callbackMu.Lock()
+		cancelErr := callbackCancelErr
+		callbackMu.Unlock()
 		if canceled.requested {
-			cancelErr = errors.Join(canceled.err, sd.CancelGeneration(m.ctx, sd.CancelReset))
+			cancelErr = errors.Join(cancelErr, canceled.err, sd.CancelGeneration(m.ctx, sd.CancelReset))
 		}
 
 		if err := ctx.Err(); err != nil {
@@ -939,8 +1018,8 @@ func (m *Model) runGeneration(ctx context.Context, progress func(GenerationProgr
 	})
 }
 
-// Detail detects faces and returns the final refined image. Inpainting uses
-// strength 0.75; ExtraArgs can override region settings such as inpaint dimensions.
+// Detail detects faces and returns the final refined image. Canceling ctx
+// requests cooperative native cancellation and waits for execution to stop.
 func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage, error) {
 	if err := params.Validate(); err != nil {
 		return GeneratedImage{}, err
@@ -952,8 +1031,8 @@ func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage
 		return GeneratedImage{}, errors.New("detail: model is unloaded")
 	}
 
-	if m.detailer == 0 {
-		return GeneratedImage{}, errors.Join(ErrInvalidRequest, errors.New("detail operation requires an ADetailer model"))
+	if m.config.ADetailerPath == "" || m.config.ModelPath == "" {
+		return GeneratedImage{}, errors.Join(ErrInvalidRequest, errors.New("detail operation requires an SD 1.5 checkpoint and ADetailer detector"))
 	}
 
 	input, err := imageToRGB(params.Image)
@@ -961,37 +1040,33 @@ func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage
 		return GeneratedImage{}, err
 	}
 
-	inpaint := sd.ImgGenParamsInit()
-	inpaint.Prompt = params.Prompt
-	inpaint.NegativePrompt = params.NegativePrompt
-	inpaint.Width = int32(params.Image.Bounds().Dx())
-	inpaint.Height = int32(params.Image.Bounds().Dy())
-	inpaint.Steps = int32(params.Steps)
-	inpaint.CFGScale = params.CFGScale
-	inpaint.Seed = params.Seed
-	// Malina leaves default-equal fields unset. ADetailer's native strength
-	// now defaults to 0.4, so explicitly retain Kronk's previous 0.75 strength.
-	inpaint.Options = sd.Options{"strength": float32(0.75)}
-
-	var images []*sd.SDImage
+	var raw sd.SDImage
 	err = m.runGeneration(ctx, params.Progress, func() error {
 		var err error
-		images, err = sd.ADetailImage(m.detailer, m.ctx, input, sd.ADetailerParams{
+		raw, err = sd.RefineFaces(m.ctx, input, sd.FaceRefinementParams{
+			ModelPath:      m.config.ModelPath,
+			DetectorPath:   m.config.ADetailerPath,
 			Prompt:         params.Prompt,
 			NegativePrompt: params.NegativePrompt,
-			ExtraArgs:      params.ExtraArgs,
-		}, inpaint)
+			InpaintWidth:   int32(params.InpaintWidth),
+			InpaintHeight:  int32(params.InpaintHeight),
+			Steps:          int32(params.Steps),
+			Strength:       params.Strength,
+			CFGScale:       params.CFGScale,
+			Seed:           params.Seed,
+			Confidence:     params.Confidence,
+			InputSize:      int32(params.InputSize),
+			TopK:           int32(params.TopK),
+			Padding:        int32(params.Padding),
+			MaskBlur:       params.MaskBlur,
+		})
 		return err
 	})
 	if err != nil {
 		return GeneratedImage{}, err
 	}
 
-	if len(images) == 0 {
-		return GeneratedImage{}, errors.Join(ErrNativeGeneration, errors.New("ADetailer returned no images"))
-	}
-
-	return encodeImage(images[len(images)-1], params.Seed)
+	return encodeImage(raw, params.Seed)
 }
 
 // GenerateVideo runs synchronous video generation.
@@ -1010,6 +1085,9 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 	if m.config.MotionModulePath == "" && m.config.AudioEncoderPath == "" {
 		return GeneratedVideo{}, errors.Join(ErrInvalidRequest, errors.New("video generation requires a motion module or audio encoder"))
 	}
+	if m.config.MotionModulePath != "" && (m.config.ModelPath == "" || params.InitImage != nil || len(params.RefAudios) != 0 || params.Width%64 != 0 || params.Height%64 != 0) {
+		return GeneratedVideo{}, errors.Join(ErrInvalidRequest, errors.New("AnimateDiff requires an SD 1.5 checkpoint and dimensions divisible by 64; image and audio conditioning are unsupported"))
+	}
 
 	p, err := sd.VideoGenParamsInit()
 	if err != nil {
@@ -1018,7 +1096,6 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 
 	p.Prompt = params.Prompt
 	p.NegativePrompt = params.NegativePrompt
-	p.ImagePreprocess.Rules = params.ImagePreprocessRules
 	p.Width = int32(params.Width)
 	p.Height = int32(params.Height)
 	p.Sample.Steps = int32(params.Steps)
@@ -1043,9 +1120,20 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 		}
 	}
 
-	var raw *sd.VideoGenerationResult
+	var raw sd.VideoGenerationResult
 
 	err = m.runGeneration(ctx, params.Progress, func() error {
+		if m.config.MotionModulePath != "" {
+			var err error
+			raw, err = sd.GenerateAnimateDiff(m.ctx, sd.AnimateDiffParams{
+				ModelPath: m.config.ModelPath, MotionModulePath: m.config.MotionModulePath,
+				Prompt: params.Prompt, NegativePrompt: params.NegativePrompt,
+				Width: int32(params.Width), Height: int32(params.Height),
+				Frames: int32(params.Frames), Steps: int32(params.Steps),
+				Seed: params.Seed, CFGScale: 7, FPS: int32(params.FPS),
+			})
+			return err
+		}
 		var err error
 		raw, err = sd.GenerateVideoWithInfo(m.ctx, p)
 		return err
@@ -1063,12 +1151,10 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 	}
 
 	result := GeneratedVideo{Frames: frames, FPS: int(raw.FPS), Seed: params.Seed, GenerationInfo: raw.GenerationInfo}
-	if raw.Audio != nil {
-		result.Audio = &Audio{
-			SampleRate: raw.Audio.SampleRate,
-			Channels:   raw.Audio.Channels,
-			Data:       append([]float32(nil), raw.Audio.Data...),
-		}
+	result.Audio = Audio{
+		SampleRate: raw.Audio.SampleRate,
+		Channels:   raw.Audio.Channels,
+		Data:       append([]float32(nil), raw.Audio.Data...),
 	}
 
 	return result, nil
@@ -1091,10 +1177,6 @@ func (m *Model) Unload() error {
 	}
 
 	if err := withNative(context.Background(), func() error {
-		if m.detailer != 0 {
-			sd.FreeADetailerContext(m.detailer)
-			m.detailer = 0
-		}
 		sd.FreeContext(m.ctx)
 		return nil
 	}); err != nil {
@@ -1138,9 +1220,9 @@ func validateInitImage(src image.Image) error {
 	return nil
 }
 
-func imageToRGB(src image.Image) (*sd.SDImage, error) {
+func imageToRGB(src image.Image) (sd.SDImage, error) {
 	if err := validateInitImage(src); err != nil {
-		return nil, err
+		return sd.SDImage{}, err
 	}
 
 	bounds := src.Bounds()
@@ -1163,10 +1245,10 @@ func imageToRGB(src image.Image) (*sd.SDImage, error) {
 		}
 	}
 
-	return &raw, nil
+	return raw, nil
 }
 
-func encodeImage(raw *sd.SDImage, seed int64) (GeneratedImage, error) {
+func encodeImage(raw sd.SDImage, seed int64) (GeneratedImage, error) {
 	rgba, err := decodeImage(raw)
 	if err != nil {
 		return GeneratedImage{}, fmt.Errorf("encoding PNG: %w", err)
@@ -1188,8 +1270,8 @@ func encodeImage(raw *sd.SDImage, seed int64) (GeneratedImage, error) {
 	return image, nil
 }
 
-func decodeImage(raw *sd.SDImage) (*image.RGBA, error) {
-	if raw == nil || raw.Channel != 3 || len(raw.Data) != int(raw.Width*raw.Height*3) {
+func decodeImage(raw sd.SDImage) (*image.RGBA, error) {
+	if raw.Channel != 3 || len(raw.Data) != int(raw.Width*raw.Height*3) {
 		return nil, errors.New("invalid RGB image")
 	}
 

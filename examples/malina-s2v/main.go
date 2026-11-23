@@ -109,8 +109,8 @@ func run() error {
 	}
 
 	outputAudio := drivingAudio
-	if video.Audio != nil {
-		outputAudio = *video.Audio
+	if len(video.Audio.Data) != 0 {
+		outputAudio = video.Audio
 	}
 	wavPath := strings.TrimSuffix(outputFile, filepath.Ext(outputFile)) + ".wav"
 	if err := saveWAV(wavPath, outputAudio); err != nil {

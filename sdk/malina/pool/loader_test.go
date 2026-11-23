@@ -156,6 +156,18 @@ func TestResolveConfigRejectsUpscaler(t *testing.T) {
 	}
 }
 
+func TestResolveConfigMapsMOSSImageEdit(t *testing.T) {
+	models, files := testModels(t, malinamodels.BundleMOSSImageEditHQ, 1)
+	sd := newStableDiffusion(discardLog, models, nil, nil)
+	cfg, err := sd.resolveConfig(malinamodels.BundleMOSSImageEditHQ.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MOSSImageEditLoraPath != files[malinamodels.RoleLora.String()] || cfg.LLMVisionPath != files[malinamodels.RoleLLMVision.String()] {
+		t.Errorf("MOSS workflow paths: got %+v, want LoRA and vision projector from manifest", cfg)
+	}
+}
+
 func TestFailedLoadReleasesReservation(t *testing.T) {
 	models, files := testModels(t, malinamodels.BundleSD15, 1)
 	if err := os.Remove(files[malinamodels.RoleModel.String()]); err != nil {

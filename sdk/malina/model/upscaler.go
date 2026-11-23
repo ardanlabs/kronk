@@ -21,8 +21,8 @@ type UpscalerConfig struct {
 	ParamsBackend string
 }
 
-// UpscaledImage contains owned pixels and the native sdcpp.generation/v1 JSON
-// record, including upscale.upscale_factor. Both remain valid after Unload.
+// UpscaledImage contains owned pixels and executed DGL source in GenerationInfo.
+// Both remain valid after Unload.
 // GenerationInfo is separate from the pixels and is not embedded when encoding
 // the image as PNG or JPEG.
 type UpscaledImage struct {
@@ -159,7 +159,7 @@ func (u *Upscaler) UpscaleWithInfo(ctx context.Context, input image.Image) ([]Up
 		return nil, err
 	}
 
-	var output []*sd.SDImage
+	var output []sd.SDImage
 	err = withGeneration(ctx, context.Background(), func() error {
 		output, err = sd.UpscaleImage(u.ctx, raw)
 		return err

@@ -776,6 +776,21 @@ and is not attributable to the client or request consuming the stream. This
 route also requires the `image-generations` inference permission in
 `full-protected` mode.
 
+For request-local progress instead, set `stream: true` in the generation JSON
+body or `stream=true` in the edit multipart fields. The POST returns SSE with
+named `progress` events (`scope: "request"`, `stage`, `detail`, `unit`,
+`sample_pass`, `step`, `steps`, `percent`), followed by a `result` event containing
+the normal image response or an `error` event containing `code` and `message`.
+A zero `steps` means unknown total work. Disconnecting requests cooperative
+native cancellation. Requests without streaming retain their JSON response.
+
+MOSS Image Edit HQ requires `/v1/images/edits` and dimensions divisible by 16.
+Qwen Image 2.1 requires dimensions divisible by 32; Qwen and Klein Base edit
+with reference conditioning rather than generic img2img. Automatic edit sizes
+align to each model's required multiple. Generic `strength` does not control
+these three editing workflows. Klein Base defaults to CFG 4 and Qwen to CFG 6;
+both default to 20 steps. Other image models retain CFG 7.
+
 ControlNet, ADetailer, video generation, and upscaling remain available through
 the Malina SDK rather than the model-server API.
 

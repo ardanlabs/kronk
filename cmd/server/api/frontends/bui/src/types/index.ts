@@ -1252,6 +1252,7 @@ export interface MalinaModelEntry {
   description: string;
   size: number;
   basic_text_to_image: boolean;
+  image_to_image: boolean;
 }
 
 export interface MalinaModelsResponse {
@@ -1271,6 +1272,7 @@ export interface MalinaCatalogEntry {
   license: string;
   gated: boolean;
   basic_text_to_image: boolean;
+  image_to_image: boolean;
   files: MalinaCatalogFile[];
 }
 
@@ -1310,8 +1312,12 @@ export interface ImageGenerationResponse {
 }
 
 export interface ImageProgressEvent {
-  scope: 'global';
+  scope: 'global' | 'request';
   status: 'connected' | 'progress';
+  stage?: string;
+  detail?: string;
+  unit?: string;
+  sample_pass?: number;
   step?: number;
   steps?: number;
   percent?: number;

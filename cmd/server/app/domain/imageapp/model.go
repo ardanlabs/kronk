@@ -9,6 +9,10 @@ type progressEvent struct {
 	Steps          int     `json:"steps"`
 	Percent        float64 `json:"percent"`
 	SecondsPerStep float32 `json:"seconds_per_step"`
+	Stage          string  `json:"stage,omitempty"`
+	Detail         string  `json:"detail,omitempty"`
+	Unit           string  `json:"unit,omitempty"`
+	SamplePass     int32   `json:"sample_pass,omitempty"`
 }
 
 type generationRequest struct {
@@ -22,6 +26,7 @@ type generationRequest struct {
 	Steps          *int     `json:"steps"`
 	CFGScale       *float32 `json:"cfg_scale"`
 	Seed           *int64   `json:"seed"`
+	Stream         bool     `json:"stream"`
 }
 
 type generationResponse struct {

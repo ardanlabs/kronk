@@ -20,6 +20,7 @@ type MalinaModelEntry struct {
 	Description      string `json:"description"`
 	Size             int64  `json:"size"`
 	BasicTextToImage bool   `json:"basic_text_to_image"`
+	ImageToImage     bool   `json:"image_to_image"`
 }
 
 // MalinaModelsResponse lists installed stable-diffusion model bundles.
@@ -48,6 +49,7 @@ type MalinaCatalogEntry struct {
 	License          string              `json:"license"`
 	Gated            bool                `json:"gated"`
 	BasicTextToImage bool                `json:"basic_text_to_image"`
+	ImageToImage     bool                `json:"image_to_image"`
 	Files            []MalinaCatalogFile `json:"files"`
 }
 
@@ -99,6 +101,7 @@ func (a *app) listMalinaModels(ctx context.Context, r *http.Request) web.Encoder
 			Description:      bundle.Description,
 			Size:             bundle.Size,
 			BasicTextToImage: bundle.BasicTextToImage,
+			ImageToImage:     bundle.BasicTextToImage || bundle.Name.Equal(malinamodels.BundleMOSSImageEditHQ),
 		})
 	}
 
@@ -126,6 +129,7 @@ func (a *app) listMalinaCatalog(ctx context.Context, r *http.Request) web.Encode
 			License:          bundle.License,
 			Gated:            bundle.Gated,
 			BasicTextToImage: bundle.BasicTextToImage,
+			ImageToImage:     bundle.BasicTextToImage || bundle.Name.Equal(malinamodels.BundleMOSSImageEditHQ),
 			Files:            files,
 		}
 	}

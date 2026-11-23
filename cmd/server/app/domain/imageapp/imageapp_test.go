@@ -89,6 +89,44 @@ func TestEditParams(t *testing.T) {
 	}
 }
 
+func TestNewBundleParameters(t *testing.T) {
+	source := image.NewRGBA(image.Rect(0, 0, 139, 119))
+	for _, tt := range []struct {
+		model         string
+		cfg           float32
+		width, height int
+		reference     bool
+	}{
+		{"moss-image-edit-hq", 7, 128, 112, false},
+		{"qwen-image-2.1", 6, 128, 96, true},
+		{"flux2-klein-base-4b", 4, 136, 112, true},
+	} {
+		t.Run(tt.model, func(t *testing.T) {
+			req := generationRequest{Model: tt.model, Prompt: "make the sky blue"}
+			params, err := editParams(req, source, 0.75)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if params.Width != tt.width || params.Height != tt.height || params.CFGScale != tt.cfg || params.Steps != 20 {
+				t.Fatalf("parameters: got %+v, want %dx%d, CFG %v and 20 steps", params, tt.width, tt.height, tt.cfg)
+			}
+			if tt.reference {
+				if params.InitImage != nil || len(params.RefImages) != 1 || params.RefImages[0] != source {
+					t.Fatalf("reference edit: got init %v and references %v, want source as reference only", params.InitImage, params.RefImages)
+				}
+			} else if params.InitImage == nil || len(params.RefImages) != 0 {
+				t.Fatal("MOSS edit must supply its workflow input image")
+			}
+			if tt.model != "flux2-klein-base-4b" {
+				req.Size = "136x112"
+				if _, err := editParams(req, source, 0.75); err == nil {
+					t.Fatal("unaligned explicit size accepted")
+				}
+			}
+		})
+	}
+}
+
 func TestEditParamsRejectsStrength(t *testing.T) {
 	source := image.NewRGBA(image.Rect(0, 0, 128, 128))
 	req := generationRequest{Model: "sd-1.5", Prompt: "watercolor"}

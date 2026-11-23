@@ -1152,66 +1152,52 @@ class ApiService {
     return this.pullBackendModel('malina', source, onMessage, onError, onComplete);
   }
 
-  streamImageProgress(
-    onMessage: (data: ImageProgressEvent) => void,
-    onError: (error: string) => void,
-  ): () => void {
-    const controller = new AbortController();
-
-    this.fetch(`${this.baseUrl}/images/events`, {
-      method: 'GET',
-      headers: this.headers(),
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          onError(`HTTP ${response.status}`);
-          return;
+  private async readImageResponse(
+    response: Response,
+    onProgress?: (event: ImageProgressEvent) => void,
+  ): Promise<ImageGenerationResponse> {
+    if (!response.ok) throw new Error(await this.parseErrorMessage(response));
+    if (!response.headers.get('Content-Type')?.includes('text/event-stream')) return response.json();
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Streaming not supported');
+    const decoder = new TextDecoder();
+    let buffer = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) throw new Error('Image stream ended before a result was received');
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() || '';
+        for (const frame of frames) {
+          const lines = frame.split(/\r?\n/);
+          const name = lines.find((line) => line.startsWith('event: '))?.slice(7);
+          const data = lines.filter((line) => line.startsWith('data: ')).map((line) => line.slice(6)).join('\n');
+          if (!data) continue;
+          const event = JSON.parse(data);
+          if (name === 'progress') onProgress?.(event as ImageProgressEvent);
+          if (name === 'result') return event as ImageGenerationResponse;
+          if (name === 'error') throw new Error(event.message || 'Image generation failed');
         }
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-          onError('Streaming not supported');
-          return;
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            try {
-              onMessage(JSON.parse(line.slice(6)) as ImageProgressEvent);
-            } catch {
-              // Ignore malformed events and keep listening for progress.
-            }
-          }
-        }
-
-        if (!controller.signal.aborted) {
-          onError('Progress stream ended');
-        }
-      })
-      .catch((err) => {
-        if (err.name !== 'AbortError') {
-          onError(err.message || 'Connection error');
-        }
-      });
-
-    return () => controller.abort();
+      }
+    } finally {
+      await reader.cancel();
+      reader.releaseLock();
+    }
   }
 
-  async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
-    return this.request<ImageGenerationResponse>('/images/generations', {
+  async generateImage(
+    request: ImageGenerationRequest,
+    onProgress?: (event: ImageProgressEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<ImageGenerationResponse> {
+    const response = await this.fetch(`${this.baseUrl}/images/generations`, {
       method: 'POST',
-      body: JSON.stringify(request),
+      headers: this.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ ...request, stream: !!onProgress }),
+      signal,
     });
+    return this.readImageResponse(response, onProgress);
   }
 
   async decide(request: DecisionRequest): Promise<DecisionResponse> {
@@ -1221,12 +1207,18 @@ class ApiService {
     });
   }
 
-  async editImage(request: ImageEditRequest, image: File): Promise<ImageGenerationResponse> {
+  async editImage(
+    request: ImageEditRequest,
+    image: File,
+    onProgress?: (event: ImageProgressEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<ImageGenerationResponse> {
     const form = new FormData();
     form.append('model', request.model);
     form.append('prompt', request.prompt);
     form.append('image', image, image.name);
     form.append('response_format', 'b64_json');
+    form.append('stream', String(!!onProgress));
     if (request.negative_prompt) form.append('negative_prompt', request.negative_prompt);
     if (request.size) form.append('size', request.size);
     if (request.steps !== undefined) form.append('steps', String(request.steps));
@@ -1238,12 +1230,9 @@ class ApiService {
       method: 'POST',
       headers: this.headers(),
       body: form,
+      signal,
     });
-    if (!response.ok) {
-      throw new Error(await this.parseErrorMessage(response));
-    }
-
-    return response.json();
+    return this.readImageResponse(response, onProgress);
   }
 
   // ── Accuracy app ──

@@ -62,7 +62,7 @@ func run() error {
 	params.Height = input.Bounds().Dy()
 	params.ControlImage = input
 	canny := model.NewCannyParams()
-	params.Canny = &canny
+	params.Canny = canny
 
 	result, err := mln.Generate(ctx, params)
 	if err != nil {

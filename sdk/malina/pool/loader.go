@@ -198,7 +198,9 @@ func (sd *StableDiffusion) resolveConfig(modelID string) (model.Config, error) {
 	cfg.ControlNetPath = files[malinamodels.RoleControlNet.String()]
 	cfg.MotionModulePath = files[malinamodels.RoleMotionModule.String()]
 	cfg.ADetailerPath = files[malinamodels.RoleADetailer.String()]
-	cfg.PhotoMakerPath = files[malinamodels.RolePhotoMaker.String()]
+	if manifest.Bundle.Equal(malinamodels.BundleMOSSImageEditHQ) {
+		cfg.MOSSImageEditLoraPath = files[malinamodels.RoleLora.String()]
+	}
 	cfg.AudioEncoderPath = files[malinamodels.RoleAudioEncoder.String()]
 
 	return cfg, nil

@@ -56,8 +56,8 @@ schema = 3
     version = "v1.14.0"
     hash = "sha256-SojgWQ3CbBYtmjQgZNvyqsmcz2t9zOF9gfpwcH1gYPQ="
   [mod."github.com/ardanlabs/malina"]
-    version = "v1.2.3"
-    hash = "sha256-8VHcDdG1b4PdD0QzDiNqGdbEitQhFWrwmWL2vVr2DaM="
+    version = "v1.2.5"
+    hash = "sha256-Kxvp3b7qCwZDTsOQ+gCx1KlS8y1Pt7EWz249tbCVhoA="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.2"
     hash = "sha256-8KmSQolXTl2aBo9bY8/dmby82ItHVHiYLRu/UNGRF8Q="
@@ -251,8 +251,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.33.1-0.20261119115438-ba9c7e926b5d"
-    hash = "sha256-Pys7LUNRkrknNhX9GTypv1kGVx28Vr5fjqmKppV9FyM="
+    version = "v1.33.1-0.20261123193522-ba6e127cb960"
+    hash = "sha256-x8stcqIrvRSA99VdQmcv+Cl3GWagQclDKjc4IE7q6oY="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -467,13 +467,13 @@ schema = 3
     version = "v0.316.0"
     hash = "sha256-em307g9mE4qMaPNKo+O5V1MeGWDcT3NJaCu9vH4fIfY="
   [mod."google.golang.org/genproto"]
-    version = "v0.0.0-20261118221215-c8830f628b3f"
-    hash = "sha256-KuWhHMS+tEW8b+AG5Yo6Z9j1uj+A3mTeZttnLYsOqVE="
+    version = "v0.0.0-20261123191846-1e707ab9fbc2"
+    hash = "sha256-PRWLHicmBVEsKML70Ndhbig3G7eHRsXMVRo0v/ZRjQo="
   [mod."google.golang.org/genproto/googleapis/api"]
-    version = "v0.0.0-20261118221215-c8830f628b3f"
-    hash = "sha256-m7LuG0iABzA5uDG5LSDaZ+cBBy3SWpkaR8OiRxiHnX8="
+    version = "v0.0.0-20261123191846-1e707ab9fbc2"
+    hash = "sha256-fqFusMV5vIoM/R+DH7F8Nrs4L7xEUio06C7vJFc3A64="
   [mod."google.golang.org/genproto/googleapis/rpc"]
-    version = "v0.0.0-20261118221215-c8830f628b3f"
+    version = "v0.0.0-20261123191846-1e707ab9fbc2"
     hash = "sha256-qBJJ3Go2HqyEE+jp6FMafhXbMBbA/PIXvbdROnLPAYA="
   [mod."google.golang.org/grpc"]
     version = "v1.85.0"

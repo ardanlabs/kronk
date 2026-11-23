@@ -274,7 +274,7 @@ func (b *extendedBatch) renderEntry(entry extendedBatchEntry) (int32, error) {
 		}
 	}
 	if entry.decisionGroup != 0 {
-		if err := batchExtSetDecisionGroup(b.native, idx, entry.decisionGroup); err != nil {
+		if err := llama.BatchExtSetDecisionGroup(b.native, idx, entry.decisionGroup); err != nil {
 			return idx, err
 		}
 	}

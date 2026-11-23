@@ -46,6 +46,8 @@ var (
 	RoleADetailer = newFileRole("adetailer")
 	// RoleAudioEncoder identifies audio_encoder.
 	RoleAudioEncoder = newFileRole("audio_encoder")
+	// RoleLora identifies lora.
+	RoleLora = newFileRole("lora")
 )
 
 func newFileRole(value string) FileRole {

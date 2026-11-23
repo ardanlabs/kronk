@@ -40,16 +40,15 @@ export default function ImageGenerator() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImageGenerationResponse | null>(null);
   const [progress, setProgress] = useState<ImageProgressEvent | null>(null);
-  const [progressConnected, setProgressConnected] = useState(false);
-  const [progressError, setProgressError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const generationRef = useRef<AbortController | null>(null);
 
   const loadModels = useCallback(async () => {
     setModelsLoading(true);
     setModelsError(null);
     try {
       const response = await api.listMalinaModels();
-      setModels((response.models ?? []).filter((model) => model.basic_text_to_image));
+      setModels((response.models ?? []).filter((model) => model.basic_text_to_image || model.image_to_image));
     } catch (err) {
       setModelsError((err as Error).message);
       setModels([]);
@@ -62,17 +61,7 @@ export default function ImageGenerator() {
     void loadModels();
   }, [loadModels]);
 
-  useEffect(() => api.streamImageProgress(
-    (event) => {
-      setProgressConnected(true);
-      setProgressError(null);
-      if (event.status === 'progress') setProgress(event);
-    },
-    (message) => {
-      setProgressConnected(false);
-      setProgressError(message);
-    },
-  ), []);
+  useEffect(() => () => generationRef.current?.abort(), []);
 
   useEffect(() => {
     if (models.length === 0) return;
@@ -95,8 +84,17 @@ export default function ImageGenerator() {
     () => models.find((model) => model.id === selectedModel),
     [models, selectedModel],
   );
+  const editOnly = !!selected && !selected.basic_text_to_image;
+  const referenceEditing = selectedModel === 'qwen-image-2.1' || selectedModel === 'flux2-klein-base-4b';
+  useEffect(() => {
+    if (editOnly) setMode('image');
+  }, [editOnly]);
+  useEffect(() => {
+    setCFGScale(selectedModel === 'flux2-klein-base-4b' ? 4 : selectedModel === 'qwen-image-2.1' ? 6 : 7);
+    setSteps(20);
+  }, [selectedModel]);
   const image = result?.data[0];
-  const canSubmit = !!selectedModel && !!prompt.trim() && (mode === 'text' || !!source) && !submitting;
+  const canSubmit = !!selected && !!prompt.trim() && ((mode === 'text' && !editOnly) || !!source) && !submitting;
 
   const acceptFile = useCallback((file: File) => {
     if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
@@ -125,6 +123,8 @@ export default function ImageGenerator() {
     setError(null);
     setResult(null);
     setProgress(null);
+    const controller = new AbortController();
+    generationRef.current = controller;
     try {
       const request: ImageEditRequest = {
         model: selectedModel,
@@ -136,17 +136,18 @@ export default function ImageGenerator() {
         seed: seed <= 0 ? -1 : seed,
       };
       if (mode === 'image' && source) {
-        request.strength = strength;
-        setResult(await api.editImage(request, source.file));
+        if (!editOnly && !referenceEditing) request.strength = strength;
+        setResult(await api.editImage(request, source.file, setProgress, controller.signal));
       } else {
-        setResult(await api.generateImage(request));
+        setResult(await api.generateImage(request, setProgress, controller.signal));
       }
     } catch (err) {
-      setError((err as Error).message);
+      setError(controller.signal.aborted ? 'Cancellation requested. Native work stops cooperatively.' : (err as Error).message);
     } finally {
+      generationRef.current = null;
       setSubmitting(false);
     }
-  }, [canSubmit, cfgScale, mode, negativePrompt, prompt, seed, selectedModel, size, source, steps, strength]);
+  }, [canSubmit, cfgScale, editOnly, mode, negativePrompt, prompt, referenceEditing, seed, selectedModel, size, source, steps, strength]);
 
   const downloadImage = useCallback(() => {
     if (!image) return;
@@ -162,7 +163,7 @@ export default function ImageGenerator() {
     <div className="image-generator-page">
       <div className="page-header">
         <h2>Image Generator</h2>
-        <p>Generate a PNG from a text prompt using an installed Malina model.</p>
+        <p>Generate or edit a PNG using an installed Malina model.</p>
       </div>
 
       {modelsError && (
@@ -184,7 +185,7 @@ export default function ImageGenerator() {
               className={`btn ${mode === 'text' ? 'btn-primary' : 'btn-secondary'}`}
               type="button"
               onClick={() => setMode('text')}
-              disabled={submitting}
+              disabled={submitting || editOnly}
             >
               Text to image
             </button>
@@ -217,6 +218,18 @@ export default function ImageGenerator() {
           {selected && (
             <p className="image-generator-model-info">
               {selected.description} ({formatBytes(selected.size)})
+            </p>
+          )}
+          {editOnly && (
+            <p className="image-generator-model-info">
+              Image-editing workflow: upload a source image and describe the change.
+              Output dimensions must be multiples of 16. Strength is not used.
+            </p>
+          )}
+          {referenceEditing && (
+            <p className="image-generator-model-info">
+              Image mode uses the upload as a reference for instruction-based editing; strength is not used.
+              {selectedModel === 'qwen-image-2.1' && ' Output dimensions must be multiples of 32. Research/evaluation only; commercial use requires a separate license.'}
             </p>
           )}
 
@@ -314,7 +327,7 @@ export default function ImageGenerator() {
                 <FieldLabel htmlFor="image-generator-seed" tooltipKey="imageGeneratorSeed">Seed (≤ 0 = random)</FieldLabel>
                 <input id="image-generator-seed" className="form-input" type="number" step={1} value={seed} onChange={(event) => setSeed(Number(event.target.value))} disabled={submitting} />
               </div>
-              {mode === 'image' && (
+              {mode === 'image' && !editOnly && !referenceEditing && (
                 <div>
                   <FieldLabel htmlFor="image-generator-strength" tooltipKey="imageGeneratorStrength">Strength</FieldLabel>
                   <input id="image-generator-strength" className="form-input" type="number" min={0.01} max={1} step={0.01} value={strength} onChange={(event) => setStrength(Number(event.target.value))} disabled={submitting} />
@@ -326,6 +339,11 @@ export default function ImageGenerator() {
           <button className="btn btn-primary" type="submit" disabled={!canSubmit}>
             {submitting ? 'Generating…' : mode === 'image' ? 'Transform Image' : 'Generate Image'}
           </button>
+          {submitting && (
+            <button className="btn btn-danger" type="button" onClick={() => generationRef.current?.abort()}>
+              Cancel generation
+            </button>
+          )}
           {error && <div className="alert alert-error">{error}</div>}
         </form>
 
@@ -341,19 +359,19 @@ export default function ImageGenerator() {
 
           <div className="image-generator-progress" role="status" aria-live="polite">
             <div className="image-generator-progress-header">
-              <strong>Global Malina activity</strong>
+              <strong>Request progress</strong>
               <span>
-                {progress?.percent !== undefined
-                  ? `${progress.percent.toFixed(progress.percent < 10 ? 1 : 0)}%`
-                  : progressConnected ? 'Listening' : 'Unavailable'}
+                {!submitting ? image ? 'Complete' : error ? 'Stopped' : 'Idle'
+                  : progress?.steps && progress.percent !== undefined
+                    ? `${progress.percent.toFixed(progress.percent < 10 ? 1 : 0)}%`
+                    : 'Working'}
               </span>
             </div>
-            <progress max={100} value={progress?.percent ?? 0} />
+            <progress max={100} value={!submitting ? image ? 100 : 0 : progress?.steps ? progress.percent : undefined} />
             <small>
-              {progress && progress.step !== undefined && progress.steps !== undefined
-                ? `Latest update: ${progress.step} / ${progress.steps}${progress.seconds_per_step ? ` · ${progress.seconds_per_step.toFixed(2)} s/step` : ''}. `
-                : progressError ? `${progressError}. ` : 'Waiting for model loading or generation progress. '}
-              This server-wide feed is not tied to this request.
+              {progress
+                ? `${progress.stage || 'Working'}${progress.detail ? ` — ${progress.detail}` : ''}${progress.steps ? ` · ${progress.step} / ${progress.steps} ${progress.unit || ''}` : ' · total work unknown'}${progress.sample_pass ? ` · pass ${progress.sample_pass}` : ''}`
+                : submitting ? 'Waiting for model loading or generation progress.' : 'Progress from this request appears here.'}
             </small>
           </div>
 

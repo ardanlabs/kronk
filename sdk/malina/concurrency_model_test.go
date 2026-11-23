@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -22,12 +23,92 @@ import (
 	"github.com/ardanlabs/kronk/sdk/malina/model"
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
+	"github.com/ardanlabs/malina/pkg/sd"
 )
 
 const (
 	firstSteps  = 10
 	secondSteps = 11
 )
+
+// These workflows cancel at DGL entry, before any model file is read. No model
+// fixture is needed, but the pinned native library and local Malina fix are.
+func TestMalinaWorkflowCancellation(t *testing.T) {
+	libPath := os.Getenv("MALINA_LIB")
+	if libPath == "" {
+		t.Skip("MALINA_LIB is required for native workflow checks")
+	}
+	if err := malina.Init(malina.WithLibPath(libPath)); err != nil {
+		t.Fatal(err)
+	}
+	for _, workflow := range []string{"detail", "animatediff", "moss"} {
+		t.Run(workflow, func(t *testing.T) {
+			missing := filepath.Join(t.TempDir(), "missing.safetensors")
+			cfg, err := model.NewConfig(model.WithModelPath(missing))
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch workflow {
+			case "detail":
+				cfg.ADetailerPath = missing
+			case "animatediff":
+				cfg.MotionModulePath = missing
+			case "moss":
+				cfg.DiffusionModelPath = missing
+				cfg.LLMPath = missing
+				cfg.LLMVisionPath = missing
+				cfg.TokenizerPath = missing
+				cfg.VAEPath = missing
+				cfg.MOSSImageEditLoraPath = missing
+			}
+			handle, err := malina.NewWithContext(t.Context(), model.WithConfig(cfg))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := handle.Unload(t.Context()); err != nil {
+					t.Error(err)
+				}
+			}()
+			run := func(ctx context.Context, progress func(model.GenerationProgress)) error {
+				switch workflow {
+				case "detail":
+					p := model.NewDetailParams()
+					p.Image = image.NewRGBA(image.Rect(0, 0, 64, 64))
+					p.Prompt, p.Progress = "portrait", progress
+					_, err := handle.Detail(ctx, p)
+					return err
+				case "animatediff":
+					p := model.NewVideoParams()
+					p.Prompt, p.Progress = "walking cat", progress
+					_, err := handle.GenerateVideo(ctx, p)
+					return err
+				default:
+					p := model.NewGenerateParams()
+					p.InitImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
+					p.Prompt, p.Progress = "blue sky", progress
+					_, err := handle.Generate(ctx, p)
+					return err
+				}
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var events atomic.Int64
+			if err := run(ctx, func(model.GenerationProgress) { events.Add(1); cancel() }); !errors.Is(err, context.Canceled) || errors.Is(err, model.ErrNativeGeneration) {
+				t.Fatalf("cancel workflow: got %v, want context.Canceled without native failure", err)
+			}
+			if events.Load() != 1 || handle.ActiveGenerations() != 0 {
+				t.Fatalf("after cancellation: got %d events and %d active calls, want 1 and 0", events.Load(), handle.ActiveGenerations())
+			}
+			if err := run(t.Context(), nil); !errors.Is(err, model.ErrNativeGeneration) || errors.Is(err, context.Canceled) {
+				t.Fatalf("reuse: got %v, want missing-model native failure, not stale cancellation", err)
+			}
+			if events.Load() != 1 {
+				t.Errorf("old callback fired after reuse: got %d events, want 1", events.Load())
+			}
+		})
+	}
+}
 
 type progressOverlap struct {
 	mu       sync.Mutex
@@ -37,13 +118,14 @@ type progressOverlap struct {
 	overlaps bool
 }
 
-func (po *progressOverlap) observe(step int, steps int, _ float32) {
+func (po *progressOverlap) observe(event model.GenerationProgress) {
 	po.mu.Lock()
 	defer po.mu.Unlock()
 
-	if !po.enabled || step <= 0 {
+	if !po.enabled || event.Stage != "sampling" || event.Completed <= 0 {
 		return
 	}
+	step, steps := int(event.Completed), int(event.Total)
 	if steps != firstSteps && steps != secondSteps {
 		return
 	}
@@ -92,7 +174,6 @@ func TestMalinaModelInference(t *testing.T) {
 	var progress progressOverlap
 	if err := malina.Init(
 		malina.WithLibPath(malinalibs.Path("")),
-		malina.WithProgress(progress.observe),
 	); err != nil {
 		t.Fatalf("malina.Init() error = %v", err)
 	}
@@ -127,6 +208,7 @@ func TestMalinaModelInference(t *testing.T) {
 					return
 				}
 				events = append(events, event)
+				progress.observe(event)
 			}
 			<-start
 			_, err := handle.Generate(t.Context(), request)
@@ -191,16 +273,19 @@ func TestMalinaModelInference(t *testing.T) {
 	}
 
 	var info struct {
-		Schema string `json:"schema"`
-		Seed   string `json:"seed"`
+		Seed json.Number `json:"seed"`
 	}
-	if err := json.Unmarshal([]byte(generated.GenerationInfo), &info); err != nil {
+	metadata, err := sd.GenerationMetadata(generated.GenerationInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(metadata), &info); err != nil {
 		t.Fatalf("generation metadata after unload: %v", err)
 	}
-	if info.Schema != "sdcpp.generation/v1" || generated.Seed != -1 {
-		t.Errorf("metadata: got schema %q, requested seed %d, want sdcpp.generation/v1 and -1", info.Schema, generated.Seed)
+	if generated.Seed != -1 || !strings.Contains(generated.GenerationInfo, "fn main") {
+		t.Errorf("metadata: got source %q, requested seed %d, want executed DGL and -1", generated.GenerationInfo, generated.Seed)
 	}
-	if _, err := strconv.ParseUint(info.Seed, 10, 64); err != nil {
+	if _, err := strconv.ParseUint(info.Seed.String(), 10, 64); err != nil {
 		t.Errorf("resolved seed: got %q, want a nonnegative native seed", info.Seed)
 	}
 }
@@ -260,17 +345,8 @@ func TestMalinaUpscaleMetadata(t *testing.T) {
 			}
 		}
 	}
-	var info struct {
-		Schema  string `json:"schema"`
-		Upscale struct {
-			Factor int `json:"upscale_factor"`
-		} `json:"upscale"`
-	}
-	if err := json.Unmarshal([]byte(results[0].GenerationInfo), &info); err != nil {
-		t.Fatalf("metadata after unload: %v", err)
-	}
-	if info.Schema != "sdcpp.generation/v1" || info.Upscale.Factor != 4 {
-		t.Errorf("metadata: got %+v, want sdcpp.generation/v1 and factor 4", info)
+	if !strings.Contains(results[0].GenerationInfo, "fn main") || !strings.Contains(results[0].GenerationInfo, "upscale") || json.Valid([]byte(results[0].GenerationInfo)) {
+		t.Errorf("generation info: got %q, want executed upscale DGL", results[0].GenerationInfo)
 	}
 }
 
@@ -315,17 +391,8 @@ func TestMalinaDetailMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Detail(): %v", err)
 	}
-	var info struct {
-		Inpaint struct {
-			Strength float64 `json:"strength"`
-			Seed     string  `json:"seed"`
-		} `json:"inpaint_params"`
-	}
-	if err := json.Unmarshal([]byte(generated.GenerationInfo), &info); err != nil {
-		t.Fatal(err)
-	}
-	if info.Inpaint.Strength != 0.75 || info.Inpaint.Seed != "42" {
-		t.Errorf("inpainting metadata: got %+v, want strength 0.75 and seed 42", info.Inpaint)
+	if !strings.Contains(generated.GenerationInfo, "fn main(image)") || !strings.Contains(generated.GenerationInfo, "strength = 0.75") || !strings.Contains(generated.GenerationInfo, "42 + region.index") {
+		t.Errorf("generation info: got %q, want face refinement DGL with strength 0.75 and seed 42", generated.GenerationInfo)
 	}
 	output, err := png.Decode(bytes.NewReader(generated.PNG))
 	if err != nil {

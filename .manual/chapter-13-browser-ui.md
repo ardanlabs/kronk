@@ -77,8 +77,10 @@ The sidebar groups related operations by subsystem.
   uploaded PNG or JPEG with an installed Malina model. Generation settings
   include negative prompt, output size, steps, CFG scale, seed, and
   image-to-image strength. The result includes a download action and image
-  dimensions. A server-wide activity panel displays Malina model-loading and
-  generation progress. See
+  dimensions. Request-local progress shows workflow stages and sampling progress;
+  Cancel generation requests cooperative cancellation. MOSS supports image mode
+  only; Qwen Image 2.1 and Klein Base use reference-image editing without a
+  strength control. See
   [Chapter 19](https://www.kronkai.com/manual#chapter-19-malina-image-generation).
 
 #### System
