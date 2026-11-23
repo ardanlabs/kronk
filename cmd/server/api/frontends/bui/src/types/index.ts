@@ -1491,6 +1491,18 @@ export interface PreparationDataset {
   test_needed: number;
 }
 
+// The confirmation uses the exact deletion scope and revision from the server.
+export interface RunDeletionPreview {
+  revision: string;
+  dataset_id?: string;
+  dataset_version?: number;
+  deletes_dataset: boolean;
+  executions: { namespace: string; workflow_id: string; run_id: string }[];
+  snapshots: { version: number; removed_records: number; sha256: string; delete: boolean }[];
+  continuing_preparation: { namespace: string; workflow_id: string; run_id: string }[];
+  blockers: string[];
+}
+
 // Statuses and ordered stages/steps come from the job runner.
 export interface TrainingRunsResponse {
   runs: TrainingRun[];

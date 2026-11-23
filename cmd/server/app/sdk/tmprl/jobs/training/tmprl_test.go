@@ -160,6 +160,16 @@ func newCatalogDatabase(t *testing.T) (*moxiedb.DB, *sql.DB) {
 	if _, err := setup.ExecContext(t.Context(), "INSERT INTO schema_migrations(version,checksum) VALUES (1,$1)", fmt.Sprintf("%x", sha256.Sum256(migration))); err != nil {
 		t.Fatal(err)
 	}
+	migration, err = os.ReadFile(filepath.Join("..", "..", "moxiedb", "migrations", "002_deletions.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(t.Context(), string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(t.Context(), "INSERT INTO schema_migrations(version,checksum) VALUES (2,$1)", fmt.Sprintf("%x", sha256.Sum256(migration))); err != nil {
+		t.Fatal(err)
+	}
 	db, err := moxiedb.Open(t.Context(), u.String())
 	if err != nil {
 		t.Fatal(err)

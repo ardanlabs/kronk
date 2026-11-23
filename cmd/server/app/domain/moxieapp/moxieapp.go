@@ -151,6 +151,34 @@ func (a *app) removeDocument(ctx context.Context, r *http.Request) web.Encoder {
 	return toAppDataset(dataset)
 }
 
+func (a *app) previewDeletion(ctx context.Context, r *http.Request) web.Encoder {
+	web.GetWriter(ctx).Header().Set("Cache-Control", "no-store")
+	preview, err := a.training.PreviewDeletion(ctx, tmprl.Execution{WorkflowID: r.PathValue("workflow_id"), RunID: r.PathValue("run_id")})
+	if err != nil {
+		return toAppError(err)
+	}
+	return RunDeletion{DeletionPreview: preview}
+}
+
+func (a *app) deleteRun(ctx context.Context, r *http.Request) web.Encoder {
+	web.GetWriter(ctx).Header().Set("Cache-Control", "no-store")
+	revision := r.URL.Query().Get("revision")
+	if revision == "" {
+		return errs.Errorf(errs.InvalidArgument, "preview and confirm the deletion scope first")
+	}
+	preview, err := a.training.DeleteRun(ctx, tmprl.Execution{WorkflowID: r.PathValue("workflow_id"), RunID: r.PathValue("run_id")}, revision)
+	if errors.Is(err, tmprl.ErrControlConflict) {
+		return errs.New(errs.Aborted, err)
+	}
+	if errors.Is(err, moxiedb.ErrConflict) {
+		return errs.Errorf(errs.Aborted, "deletion scope changed or a dependent action is pending; refresh the deletion preview")
+	}
+	if err != nil {
+		return toAppError(err)
+	}
+	return RunDeletion{DeletionPreview: preview}
+}
+
 func (a *app) downloadDatasetVersion(ctx context.Context, r *http.Request) web.Encoder {
 	version, err := strconv.Atoi(r.PathValue("version"))
 	if err != nil || version < 1 {

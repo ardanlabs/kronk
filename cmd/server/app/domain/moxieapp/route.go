@@ -52,4 +52,6 @@ func Routes(webApp *web.App, cfg Config) {
 	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/evaluation", cfg.readiness((*app).evaluation, (*app).requireJob), access.Management())
 	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/adapter", cfg.readiness((*app).adapter, (*app).requireJob), access.Management())
 	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/dataset", cfg.readiness((*app).dataset, (*app).requireRuns), access.Management())
+	webApp.HandlerFunc(http.MethodGet, "v1", "/training/runs/{workflow_id}/{run_id}/deletion", cfg.readiness((*app).previewDeletion, (*app).requireJob), access.Administration())
+	webApp.HandlerFunc(http.MethodDelete, "v1", "/training/runs/{workflow_id}/{run_id}", cfg.readiness((*app).deleteRun, (*app).requireJob), access.Administration())
 }

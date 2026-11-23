@@ -111,6 +111,50 @@ type datasetSnapshot struct {
 	Digest        string                `json:"digest"`
 }
 
+// DeleteVersions physically removes only the explicitly selected snapshots.
+// Other snapshots are never rewritten. The caller journals the operation and
+// holds WithLock through catalog updates.
+// An empty, metadata-only base allows already admitted preparation to publish
+// after the last usable snapshot has been removed. It is not an available version.
+func (s *Store) DeleteVersions(ctx context.Context, id string, versions []int) error {
+	if !ValidID(id) || slices.ContainsFunc(versions, func(v int) bool { return v < 1 }) {
+		return fmt.Errorf("%w: invalid deletion identity", tmprl.ErrInvalidArgument)
+	}
+	return s.WithLock(ctx, func(ctx context.Context) error {
+		root, err := os.OpenRoot(s.root)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		dir, err := root.Open(id)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		defer dir.Close()
+		for _, version := range versions {
+			snapshot, err := s.read(ctx, id, version)
+			if errors.Is(err, ErrDatasetNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			// Persist only identity/name/timestamps, never the deleted records.
+			base := datasetSnapshot{Dataset: Dataset{ID: id, Name: snapshot.Dataset.Name, Version: version, CreatedAt: snapshot.Dataset.CreatedAt, UpdatedAt: snapshot.Dataset.UpdatedAt}}
+			if err := tmprl.WriteJSON(root, filepath.Join(id, ".base.json"), base); err != nil {
+				return err
+			}
+			if err := root.Remove(filepath.Join(id, strconv.Itoa(version)+".json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		return dir.Sync()
+	})
+}
+
 // Store persists immutable snapshots outside individual job workspaces.
 // Atomic exclusive links serialize publishers, including different processes.
 type Store struct{ root string }
@@ -240,10 +284,16 @@ func (s *Store) Records(ctx context.Context, id string, version int) ([]training
 // Add publishes only this document's verified contribution. Concurrent additions
 // merge against the latest version; removed documents are never resurrected.
 func (s *Store) Add(ctx context.Context, id string, baseVersion int, addition Addition) (Dataset, error) {
-	return s.write(ctx, func(ctx context.Context) (Dataset, error) { return s.add(ctx, id, baseVersion, addition) })
+	return s.AddAt(ctx, id, baseVersion, addition, 0)
 }
 
-func (s *Store) add(ctx context.Context, id string, baseVersion int, addition Addition) (Dataset, error) {
+// AddAt publishes at a catalog-reserved version, above any deleted versions.
+// A zero nextVersion retains the file-only allocation behavior.
+func (s *Store) AddAt(ctx context.Context, id string, baseVersion int, addition Addition, nextVersion int) (Dataset, error) {
+	return s.write(ctx, func(ctx context.Context) (Dataset, error) { return s.add(ctx, id, baseVersion, addition, nextVersion) })
+}
+
+func (s *Store) add(ctx context.Context, id string, baseVersion int, addition Addition, nextVersion int) (Dataset, error) {
 	if addition.PublicationID == "" || addition.Source.ID == "" || addition.Source.Name == "" || baseVersion < 1 || len(addition.Records) == 0 {
 		return Dataset{}, fmt.Errorf("%w: prepared document, records, and base version are required", tmprl.ErrInvalidArgument)
 	}
@@ -266,6 +316,22 @@ func (s *Store) add(ctx context.Context, id string, baseVersion int, addition Ad
 	digest, operation := hex.EncodeToString(hash[:]), "add/"+addition.PublicationID
 	for range 10 {
 		snapshot, err := s.read(ctx, id, 0)
+		if errors.Is(err, ErrDatasetNotFound) && nextVersion > baseVersion {
+			root, readErr := os.OpenRoot(s.root)
+			if readErr != nil {
+				return Dataset{}, readErr
+			}
+			file, readErr := root.Open(filepath.Join(id, ".base.json"))
+			if readErr == nil {
+				readErr = json.NewDecoder(io.LimitReader(file, 1<<20)).Decode(&snapshot)
+				file.Close()
+			}
+			root.Close()
+			if readErr != nil || snapshot.Dataset.ID != id || len(snapshot.Contributions) != 0 {
+				return Dataset{}, ErrDatasetNotFound
+			}
+			err = nil
+		}
 		if err != nil {
 			return Dataset{}, err
 		}
@@ -281,7 +347,7 @@ func (s *Store) add(ctx context.Context, id string, baseVersion int, addition Ad
 				return previous.Dataset, nil
 			}
 		}
-		if baseVersion > snapshot.Dataset.Version {
+		if baseVersion > snapshot.Dataset.Version && nextVersion <= baseVersion {
 			return Dataset{}, ErrDatasetConflict
 		}
 		for _, contribution := range snapshot.Contributions {
@@ -303,6 +369,12 @@ func (s *Store) add(ctx context.Context, id string, baseVersion int, addition Ad
 		if err := training.ValidateRecords(snapshot.records()); err != nil {
 			return Dataset{}, fmt.Errorf("%w: combined dataset: %s", ErrDatasetConflict, err)
 		}
+		if nextVersion > 0 {
+			if nextVersion <= snapshot.Dataset.Version {
+				return Dataset{}, ErrDatasetConflict
+			}
+			snapshot.Dataset.Version = nextVersion - 1
+		}
 		snapshot.advance(operation, digest)
 		if err := s.publish(ctx, snapshot); errors.Is(err, ErrDatasetConflict) {
 			continue
@@ -317,17 +389,17 @@ func (s *Store) add(ctx context.Context, id string, baseVersion int, addition Ad
 // Remove excludes a contribution without touching uploads, historical versions,
 // or trained adapters. The base version prevents stale destructive edits.
 func (s *Store) Remove(ctx context.Context, id string, version int, documentID string) (Dataset, error) {
-	return s.RemoveOperation(ctx, id, version, documentID, "remove/"+documentID, "")
+	return s.RemoveOperation(ctx, id, version, documentID, "remove/"+documentID, "", 0)
 }
 
 // RemoveOperation records the exact operation identity for publication recovery.
-func (s *Store) RemoveOperation(ctx context.Context, id string, version int, documentID, operation, digest string) (Dataset, error) {
+func (s *Store) RemoveOperation(ctx context.Context, id string, version int, documentID, operation, digest string, nextVersion int) (Dataset, error) {
 	return s.write(ctx, func(ctx context.Context) (Dataset, error) {
-		return s.remove(ctx, id, version, documentID, operation, digest)
+		return s.remove(ctx, id, version, documentID, operation, digest, nextVersion)
 	})
 }
 
-func (s *Store) remove(ctx context.Context, id string, version int, documentID, operation, digest string) (Dataset, error) {
+func (s *Store) remove(ctx context.Context, id string, version int, documentID, operation, digest string, nextVersion int) (Dataset, error) {
 	snapshot, err := s.read(ctx, id, 0)
 	if err != nil {
 		return Dataset{}, err
@@ -340,6 +412,12 @@ func (s *Store) remove(ctx context.Context, id string, version int, documentID, 
 		return Dataset{}, ErrDatasetNotFound
 	}
 	snapshot.Contributions = slices.Delete(snapshot.Contributions, index, index+1)
+	if nextVersion > 0 {
+		if nextVersion <= snapshot.Dataset.Version {
+			return Dataset{}, ErrDatasetConflict
+		}
+		snapshot.Dataset.Version = nextVersion - 1
+	}
 	snapshot.advance(operation, digest)
 	return snapshot.Dataset, s.publish(ctx, snapshot)
 }

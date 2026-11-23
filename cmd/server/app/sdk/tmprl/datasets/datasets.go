@@ -105,7 +105,11 @@ func (s *Service) Remove(ctx context.Context, id string, version int, documentID
 	operation := "remove/" + rand.Text()
 	digest := inputDigest([]any{id, version, documentID})
 	return s.publish(ctx, moxiedb.Publication{ID: operation, DatasetID: id, Kind: "remove", BaseVersion: version, InputDigest: digest}, func(ctx context.Context) (store.Dataset, error) {
-		return s.files.RemoveOperation(ctx, id, version, documentID, operation, digest)
+		next, err := s.db.NextVersion(ctx, id)
+		if err != nil {
+			return store.Dataset{}, err
+		}
+		return s.files.RemoveOperation(ctx, id, version, documentID, operation, digest, next)
 	})
 }
 
@@ -116,7 +120,11 @@ func (s *Service) Add(ctx context.Context, id string, version int, addition stor
 	}
 	publication := moxiedb.Publication{ID: "add/" + addition.PublicationID, DatasetID: id, Kind: "add", BaseVersion: version, InputDigest: inputDigest(addition)}
 	return s.publish(ctx, publication, func(ctx context.Context) (store.Dataset, error) {
-		return s.files.Add(ctx, id, version, addition)
+		next, err := s.db.NextVersion(ctx, id)
+		if err != nil {
+			return store.Dataset{}, err
+		}
+		return s.files.AddAt(ctx, id, version, addition, next)
 	})
 }
 

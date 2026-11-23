@@ -2,6 +2,8 @@ package store_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -12,6 +14,59 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
+
+func TestDeleteVersionsPreservesOtherSnapshots(t *testing.T) {
+	ctx := t.Context()
+	s, err := datasets.New(datasets.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.Create(ctx, "Shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := documentAddition("first", "a", "When does the first harbor open?")
+	b := documentAddition("second", "b", "When does the second harbor open?", "When is second opening time?")
+	if _, err := s.Add(ctx, d.ID, 1, a); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Add(ctx, d.ID, 2, b); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(s.Path(), d.ID, "3.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := s.DeleteVersions(ctx, d.ID, []int{1, 2}); err != nil {
+			t.Fatal(err)
+		}
+		records, err := s.Records(ctx, d.ID, 3)
+		if err != nil || len(records) != 3 || records[0].SourceDocument != "first" || records[1].SourceDocument != "second" {
+			t.Fatalf("survivors: %+v %v", records, err)
+		}
+		for _, version := range []string{"1.json", "2.json"} {
+			if _, err := os.Stat(filepath.Join(s.Path(), d.ID, version)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("deleted snapshot %s remains: %v", version, err)
+			}
+		}
+		body, err := os.ReadFile(filepath.Join(s.Path(), d.ID, "3.json"))
+		if err != nil || string(body) != string(before) {
+			t.Fatalf("other version rewritten: %s %v", body, err)
+		}
+	}
+	if err := s.DeleteVersions(ctx, d.ID, []int{3}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(ctx, d.ID, 0); !errors.Is(err, datasets.ErrDatasetNotFound) {
+		t.Fatalf("empty dataset remains available: %v", err)
+	}
+	c := documentAddition("third", "c", "When does the third harbor open?")
+	continued, err := s.AddAt(ctx, d.ID, 2, c, 4)
+	if err != nil || continued.Version != 4 || continued.RecordCount != 1 || len(continued.Documents) != 1 || continued.Documents[0].ID != c.PublicationID {
+		t.Fatalf("continuing preparation restored old records or reused a version: %+v %v", continued, err)
+	}
+}
 
 func documentAddition(id, hash string, prompts ...string) datasets.Addition {
 	addition := datasets.Addition{PublicationID: "run-" + id, Source: uploads.File{ID: id, Name: id + ".txt", SHA256: strings.Repeat(hash, 64)}}

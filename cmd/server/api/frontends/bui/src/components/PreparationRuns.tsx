@@ -442,7 +442,7 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
             </table></div>
             <p className="prep-copy">Each document’s records stay in every later version unless you remove the document. Removing a document creates a new version; older versions are kept.</p>
           </>)}
-          {shownTab === 'trainings' && <DatasetTrainings runs={trainings.runs} error={trainings.error} loading={trainings.loading} trainPath={trainPath} trainingReady={!!trainVersion && !!(ready ? versionReady : dataset?.training_ready)} />}
+          {shownTab === 'trainings' && <DatasetTrainings runs={trainings.runs} error={trainings.error} loading={trainings.loading} trainPath={trainPath} trainingReady={!!trainVersion && !!(ready ? versionReady : dataset?.training_ready)} onDeleted={trainings.refresh} />}
           {shownTab === 'steps' && <ol className="run-timeline">{tl.map((item, at) => <li key={item.name} className={`run-step run-step-${item.state} fine-step-${item.state === 'stopped' ? 'failed' : item.state === 'review' || item.state === 'paused' ? 'running' : item.state}`}>
             <span className="fine-step-marker" aria-hidden="true">{item.state === 'pending' ? at + 1 : stepGlyphs[item.state]}</span>
             <div className="run-step-body"><div className="run-step-title"><strong>{item.label}</strong><span className="run-step-state">{stepStateLabels[item.state]}</span></div><span className="prep-sub">{stepDetail(run, item)}</span></div>

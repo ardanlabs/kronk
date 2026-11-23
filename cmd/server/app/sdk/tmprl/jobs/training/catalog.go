@@ -3,18 +3,371 @@ package training
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/moxiedb"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 )
+
+// checkDeletion requires a closed, exact training execution before its files
+// can be removed. Expired histories are allowed only after the catalog owner
+// has independently confirmed a terminal saved observation.
+func (j *Job) checkDeletion(ctx context.Context, e tmprl.Execution) error {
+	if err := e.Validate(); err != nil {
+		return err
+	}
+	description, err := j.client.DescribeWorkflowExecution(ctx, e.WorkflowID, e.RunID)
+	if _, missing := errors.AsType[*serviceerror.NotFound](err); missing {
+		return nil
+	}
+	if err != nil {
+		return executionError(err)
+	}
+	info := description.GetWorkflowExecutionInfo()
+	if info.GetType().GetName() != "moxie.training.Job" {
+		return fmt.Errorf("%w: execution is not a Moxie run", tmprl.ErrInvalidArgument)
+	}
+	if info.GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING || info.GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_UNSPECIFIED {
+		return fmt.Errorf("%w: stop the run before deleting its artifacts", tmprl.ErrControlConflict)
+	}
+	return nil
+}
+
+// deleteExecution removes only this execution's history and confined workspace.
+// The caller durably records its identity before invoking this repeatable step.
+func (j *Job) deleteExecution(ctx context.Context, e tmprl.Execution) error {
+	if err := j.checkDeletion(ctx, e); err != nil {
+		return err
+	}
+	if !tmprl.ValidName(e.RunID) {
+		return fmt.Errorf("%w: invalid workspace identity", tmprl.ErrInvalidArgument)
+	}
+	_, err := j.client.WorkflowService().DeleteWorkflowExecution(ctx, &workflowservice.DeleteWorkflowExecutionRequest{
+		Namespace: j.cfg.Namespace, WorkflowExecution: &common.WorkflowExecution{WorkflowId: e.WorkflowID, RunId: e.RunID},
+	})
+	if _, missing := errors.AsType[*serviceerror.NotFound](err); err != nil && !missing {
+		return executionError(err)
+	}
+	root, err := os.OpenRoot(j.cfg.StorageRoot)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.RemoveAll(filepath.Join(storageDirectory, e.RunID)); err != nil {
+		return err
+	}
+	dir, err := root.Open(storageDirectory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
+}
+
+// DeletionExecution identifies a selected execution, never an artifact path.
+type DeletionExecution struct {
+	Namespace  string `json:"namespace"`
+	WorkflowID string `json:"workflow_id"`
+	RunID      string `json:"run_id"`
+}
+
+// DeletionSnapshot describes record removal without retaining the records.
+type DeletionSnapshot struct {
+	Version        int    `json:"version"`
+	RemovedRecords int    `json:"removed_records"`
+	SHA256         string `json:"sha256"`
+	Delete         bool   `json:"delete"`
+}
+
+// DeletionPreview is the exact, metadata-only scope a user must confirm.
+type DeletionPreview struct {
+	Revision              string              `json:"revision"`
+	DatasetID             string              `json:"dataset_id,omitempty"`
+	DatasetVersion        int                 `json:"dataset_version,omitempty"`
+	DeletesDataset        bool                `json:"deletes_dataset"`
+	Executions            []DeletionExecution `json:"executions"`
+	Snapshots             []DeletionSnapshot  `json:"snapshots"`
+	ContinuingPreparation []DeletionExecution `json:"continuing_preparation"`
+	Blockers              []string            `json:"blockers"`
+}
+
+// PreviewDeletion checks the catalog and snapshots without changing any data.
+// Temporal terminal-state checks are repeated immediately before physical cleanup.
+func (j *Job) PreviewDeletion(ctx context.Context, e tmprl.Execution) (DeletionPreview, error) {
+	var preview DeletionPreview
+	if j.cfg.MoxieDB == nil {
+		return preview, fmt.Errorf("%w: safe run deletion requires the dataset catalog", ErrUnavailable)
+	}
+	err := j.cfg.Datasets.WithLock(ctx, func(ctx context.Context) error {
+		var err error
+		preview, err = j.previewDeletion(ctx, e)
+		return err
+	})
+	return preview, err
+}
+
+func (j *Job) previewDeletion(ctx context.Context, e tmprl.Execution) (DeletionPreview, error) {
+	var result DeletionPreview
+	if err := e.Validate(); err != nil {
+		return result, err
+	}
+	entry, err := j.cfg.MoxieDB.GetCatalogExecution(ctx, j.cfg.Namespace, e.WorkflowID, e.RunID)
+	if errors.Is(err, moxiedb.ErrNotFound) {
+		return result, ErrNotFound
+	}
+	if err != nil {
+		return result, err
+	}
+	result.Executions = []DeletionExecution{{j.cfg.Namespace, e.WorkflowID, e.RunID}}
+	result.Snapshots = []DeletionSnapshot{}
+	result.ContinuingPreparation = []DeletionExecution{}
+	result.Blockers = []string{}
+	if entry.Job.Mode != "training" {
+		result.DatasetID = entry.Attempt.ResultDatasetID.String
+		result.DatasetVersion = int(entry.Attempt.ResultDatasetVersion.Int64)
+		// A snapshot can have committed just before an activity lost its result
+		// receipt. Its stable publication identity still binds it to this run.
+		publication, err := j.cfg.MoxieDB.GetPublication(ctx, "add/"+e.RunID)
+		if err != nil && !errors.Is(err, moxiedb.ErrNotFound) {
+			return result, err
+		}
+		if err == nil && publication.State == "committed" {
+			if result.DatasetID != "" && (result.DatasetID != publication.DatasetID || result.DatasetVersion != publication.TargetVersion) {
+				return result, datasetstore.ErrDatasetConflict
+			}
+			result.DatasetID, result.DatasetVersion = publication.DatasetID, publication.TargetVersion
+		}
+	}
+	if result.DatasetID != "" {
+		versions, err := j.cfg.MoxieDB.ListVersions(ctx, result.DatasetID)
+		if err != nil {
+			return result, err
+		}
+		for _, version := range versions {
+			if version.Version != result.DatasetVersion {
+				continue
+			}
+			info, err := j.cfg.Datasets.Inspect(ctx, result.DatasetID, version.Version)
+			if err != nil {
+				return result, err
+			}
+			if info.SHA256 != version.SnapshotSHA256 || info.Size != version.SnapshotBytes {
+				return result, fmt.Errorf("%w: dataset snapshot changed; inspect it before deleting", datasetstore.ErrDatasetConflict)
+			}
+			result.Snapshots = append(result.Snapshots, DeletionSnapshot{Version: version.Version, RemovedRecords: info.Dataset.RecordCount, SHA256: info.SHA256, Delete: true})
+		}
+	}
+	if !tmprl.Status(entry.Attempt.ExecutionStatus.String).Terminal() || len(entry.Pending) != 0 {
+		result.Blockers = append(result.Blockers, "Stop the selected run and settle its pending actions before deleting it.")
+	}
+	if result.DatasetID != "" {
+		{
+			entries, err := j.cfg.MoxieDB.DatasetExecutions(ctx, result.DatasetID)
+			if err != nil {
+				return result, err
+			}
+			for _, other := range entries {
+				if other.Attempt.AttemptID == entry.Attempt.AttemptID {
+					continue
+				}
+				execution := DeletionExecution{other.Attempt.TemporalNamespace, other.Attempt.WorkflowID, other.Attempt.RunID.String}
+				active := !tmprl.Status(other.Attempt.ExecutionStatus.String).Terminal() || len(other.Pending) != 0
+				if other.Job.Mode != "training" {
+					if active {
+						result.ContinuingPreparation = append(result.ContinuingPreparation, execution)
+					}
+					continue
+				}
+				version := int(other.Job.BaseDatasetVersion.Int64)
+				if version == result.DatasetVersion {
+					result.Executions = append(result.Executions, execution)
+					if execution.Namespace != j.cfg.Namespace || execution.RunID == "" {
+						result.Blockers = append(result.Blockers, "A dependent training attempt cannot be deleted by this server; resolve it before deleting this run.")
+					}
+				}
+				if active && slices.ContainsFunc(result.Snapshots, func(s DeletionSnapshot) bool { return s.Version == version && (s.Delete || s.RemovedRecords > 0) }) {
+					result.Blockers = append(result.Blockers, "Training run "+execution.WorkflowID+" still needs affected records; finish or stop it first.")
+				}
+			}
+		}
+	}
+	// The initial empty snapshot is only a dataset scaffold, not another run's
+	// version. Remove it when the last prepared version goes and no preparation
+	// remains. Every other saved version stays byte-for-byte unchanged.
+	if result.DatasetID != "" && len(result.ContinuingPreparation) == 0 {
+		versions, err := j.cfg.MoxieDB.ListVersions(ctx, result.DatasetID)
+		if err != nil {
+			return result, err
+		}
+		if len(versions) == 2 && versions[1].Version == 1 && versions[1].RecordCount == 0 && versions[0].Version == result.DatasetVersion {
+			result.Snapshots = append(result.Snapshots, DeletionSnapshot{Version: 1, SHA256: versions[1].SnapshotSHA256, Delete: true})
+		}
+		result.DeletesDataset = len(versions) > 0 && len(versions) == len(result.Snapshots)
+	}
+	// Stable ordering gives the confirmation a deterministic revision.
+	slices.SortFunc(result.Executions, func(a, b DeletionExecution) int {
+		return strings.Compare(a.WorkflowID+"/"+a.RunID, b.WorkflowID+"/"+b.RunID)
+	})
+	result.Revision = requestDigest(result)
+	return result, nil
+}
+
+// DeleteRun executes only a scope the caller has explicitly previewed. A failed
+// cleanup remains pending and a retry with the same revision resumes it.
+func (j *Job) DeleteRun(ctx context.Context, e tmprl.Execution, revision string) (DeletionPreview, error) {
+	var result DeletionPreview
+	if j.cfg.MoxieDB == nil {
+		return result, ErrUnavailable
+	}
+	if revision == "" {
+		return result, fmt.Errorf("%w: preview revision is required", tmprl.ErrInvalidArgument)
+	}
+	err := j.cfg.Datasets.WithLock(ctx, func(ctx context.Context) error {
+		operation, err := j.cfg.MoxieDB.GetDeletion(ctx, j.cfg.Namespace, e.WorkflowID, e.RunID)
+		if err == nil {
+			if err := json.Unmarshal(operation.Manifest, &result); err != nil {
+				return err
+			}
+			if result.Revision != revision {
+				return tmprl.ErrControlConflict
+			}
+			if operation.State == "completed" {
+				return nil
+			}
+			return j.resumeDeletion(ctx, operation)
+		}
+		if !errors.Is(err, moxiedb.ErrNotFound) {
+			return err
+		}
+		result, err = j.previewDeletion(ctx, e)
+		if err != nil {
+			return err
+		}
+		if revision != result.Revision {
+			return fmt.Errorf("%w: deletion scope changed; preview again", tmprl.ErrControlConflict)
+		}
+		if len(result.Blockers) != 0 {
+			return fmt.Errorf("%w: %s", tmprl.ErrControlConflict, strings.Join(result.Blockers, " "))
+		}
+		for _, execution := range result.Executions {
+			if err := j.checkDeletion(ctx, tmprl.Execution{WorkflowID: execution.WorkflowID, RunID: execution.RunID}); err != nil {
+				return err
+			}
+		}
+		manifest, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		operation = moxiedb.Deletion{ID: "delete-" + rand.Text(), Namespace: j.cfg.Namespace, WorkflowID: e.WorkflowID, RunID: e.RunID, DatasetID: result.DatasetID, DatasetVersion: result.DatasetVersion, Manifest: manifest}
+		if err := j.cfg.MoxieDB.BeginDeletion(ctx, operation); err != nil {
+			return err
+		}
+		return j.resumeDeletion(ctx, operation)
+	})
+	return result, err
+}
+
+// RecoverDeletions completes durable deletion before normal publication or
+// catalog reconciliation can interpret intentional missing files as corruption.
+func (j *Job) RecoverDeletions(ctx context.Context) error {
+	if j.cfg.MoxieDB == nil {
+		return nil
+	}
+	return j.cfg.Datasets.WithLock(ctx, func(ctx context.Context) error {
+		operations, err := j.cfg.MoxieDB.PendingDeletions(ctx)
+		if err != nil {
+			return err
+		}
+		for _, operation := range operations {
+			if operation.Namespace == j.cfg.Namespace {
+				if err := j.resumeDeletion(ctx, operation); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+func (j *Job) resumeDeletion(ctx context.Context, operation moxiedb.Deletion) (resultErr error) {
+	defer func() {
+		if resultErr != nil && ctx.Err() == nil {
+			_ = j.cfg.MoxieDB.SetDeletionError(ctx, operation.ID, "cleanup_pending")
+		}
+	}()
+	var scope DeletionPreview
+	if err := json.Unmarshal(operation.Manifest, &scope); err != nil {
+		return err
+	}
+	revision := scope.Revision
+	scope.Revision = ""
+	if revision != requestDigest(scope) || scope.DatasetID != operation.DatasetID || scope.DatasetVersion != operation.DatasetVersion {
+		return fmt.Errorf("%w: deletion scope identity changed", tmprl.ErrInvalidArgument)
+	}
+	scope.Revision = revision
+	// Retry attempts reference their predecessors. Remove selected descendants
+	// first, preserving every surviving attempt's lineage.
+	ranks := make(map[string]int)
+	for _, execution := range scope.Executions {
+		entry, err := j.cfg.MoxieDB.GetCatalogExecution(ctx, execution.Namespace, execution.WorkflowID, execution.RunID)
+		if err != nil && !errors.Is(err, moxiedb.ErrNotFound) {
+			return err
+		}
+		ranks[execution.Namespace+"/"+execution.WorkflowID+"/"+execution.RunID] = entry.Attempt.AttemptNumber
+	}
+	slices.SortStableFunc(scope.Executions, func(a, b DeletionExecution) int {
+		return ranks[b.Namespace+"/"+b.WorkflowID+"/"+b.RunID] - ranks[a.Namespace+"/"+a.WorkflowID+"/"+a.RunID]
+	})
+	for _, execution := range scope.Executions {
+		if execution.Namespace != j.cfg.Namespace {
+			return tmprl.ErrInvalidArgument
+		}
+		if err := j.deleteExecution(ctx, tmprl.Execution{WorkflowID: execution.WorkflowID, RunID: execution.RunID}); err != nil {
+			return err
+		}
+	}
+	if scope.DatasetID != "" {
+		var deleted []int
+		for _, snapshot := range scope.Snapshots {
+			if snapshot.Delete {
+				deleted = append(deleted, snapshot.Version)
+			}
+		}
+		if err := j.cfg.Datasets.DeleteVersions(ctx, scope.DatasetID, deleted); err != nil {
+			return err
+		}
+		if err := j.cfg.MoxieDB.ApplyDeletion(ctx, operation.ID, deleted); err != nil {
+			return err
+		}
+	}
+	for _, execution := range scope.Executions {
+		if err := j.cfg.MoxieDB.DeleteExecutionCatalog(ctx, execution.Namespace, execution.WorkflowID, execution.RunID); err != nil {
+			return err
+		}
+	}
+	if err := j.cfg.Datasets.BuildIndex(ctx); err != nil {
+		return err
+	}
+	return j.cfg.MoxieDB.CompleteDeletion(ctx, operation.ID)
+}
 
 // CatalogObservation is a bounded projection, not a checkpoint or an execution
 // input. Preview text, decisions, source contents and private paths stay out of SQL.
@@ -86,6 +439,15 @@ func toDBJob(namespace string, run tmprl.Run[Request, Artifacts]) moxiedb.Job {
 }
 
 func (j *Job) registerAttempt(ctx context.Context, run tmprl.Run[Request, Artifacts]) (moxiedb.Attempt, error) {
+	if run.RunID != "" {
+		deleted, err := j.cfg.MoxieDB.IsDeletedExecution(ctx, j.cfg.Namespace, run.WorkflowID, run.RunID)
+		if err != nil {
+			return moxiedb.Attempt{}, err
+		}
+		if deleted {
+			return moxiedb.Attempt{}, ErrNotFound
+		}
+	}
 	job := toDBJob(j.cfg.Namespace, run)
 	if err := j.cfg.MoxieDB.CreateJob(ctx, job); err != nil {
 		return moxiedb.Attempt{}, err
@@ -406,6 +768,9 @@ func (j *Job) Reconcile(ctx context.Context) error {
 	if j.cfg.MoxieDB == nil {
 		return nil
 	}
+	if err := j.RecoverDeletions(ctx); err != nil {
+		return err
+	}
 	var result error
 	intents, err := j.cfg.MoxieDB.PendingIntents(ctx)
 	if err != nil {
@@ -497,6 +862,9 @@ func (j *Job) RunCatalog(ctx context.Context) {
 			var importErr error
 			for _, run := range runs {
 				a, err := j.registerAttempt(attempt, run)
+				if errors.Is(err, ErrNotFound) {
+					continue
+				}
 				if err == nil {
 					err = j.observe(attempt, a, run)
 				}

@@ -262,7 +262,13 @@ func executionError(err error) error {
 func (j *Job) Get(ctx context.Context, e tmprl.Execution) (State, error) {
 	var attempt moxiedb.Attempt
 	if j.cfg.MoxieDB != nil {
-		var err error
+		deleted, err := j.cfg.MoxieDB.IsDeletedExecution(ctx, j.cfg.Namespace, e.WorkflowID, e.RunID)
+		if err != nil {
+			return State{}, err
+		}
+		if deleted {
+			return State{}, ErrNotFound
+		}
 		attempt, err = j.cfg.MoxieDB.GetAttempt(ctx, jobIdentity(j.cfg.Namespace, e.WorkflowID)+"/1")
 		if err != nil && !errors.Is(err, moxiedb.ErrNotFound) {
 			return State{}, err
@@ -449,6 +455,15 @@ func (j *Job) OpenAdapter(ctx context.Context, e tmprl.Execution) (io.ReadCloser
 // OpenDataset streams a completed preparation dataset, even if it is too small
 // for training. The caller closes it. Artifact paths never select the file.
 func (j *Job) OpenDataset(ctx context.Context, e tmprl.Execution) (io.ReadCloser, error) {
+	if j.cfg.MoxieDB != nil {
+		deleted, err := j.cfg.MoxieDB.IsDeletedExecution(ctx, j.cfg.Namespace, e.WorkflowID, e.RunID)
+		if err != nil {
+			return nil, err
+		}
+		if deleted {
+			return nil, ErrNotFound
+		}
+	}
 	run, err := j.jobs.Get(ctx, e)
 	if err != nil {
 		return nil, executionError(err)
@@ -576,6 +591,15 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 func (j *Job) openArtifact(ctx context.Context, e tmprl.Execution, adapter bool) (*os.File, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
+	}
+	if j.cfg.MoxieDB != nil {
+		deleted, err := j.cfg.MoxieDB.IsDeletedExecution(ctx, j.cfg.Namespace, e.WorkflowID, e.RunID)
+		if err != nil {
+			return nil, err
+		}
+		if deleted {
+			return nil, ErrNotFound
+		}
 	}
 	var state State
 	if !adapter && j.cfg.MoxieDB != nil {
@@ -813,7 +837,21 @@ func (j *Job) prepare(step preparation.StepHandler) tmprl.StepHandler[Request, A
 		}
 		var datasetRecords []optimization.Record
 		if step.Name() == "generate" && request.TargetDatasetID != "" && request.BaseVersion > 0 {
-			if datasetRecords, err = j.cfg.Datasets.Records(ctx, request.TargetDatasetID, request.BaseVersion); err != nil {
+			err = j.cfg.Datasets.WithLock(ctx, func(ctx context.Context) error {
+				if err := j.RecoverDeletions(ctx); err != nil {
+					return err
+				}
+				var readErr error
+				datasetRecords, readErr = j.cfg.Datasets.Records(ctx, request.TargetDatasetID, request.BaseVersion)
+				if errors.Is(readErr, datasetstore.ErrDatasetNotFound) && j.cfg.MoxieDB != nil {
+					_, catalogErr := j.cfg.MoxieDB.GetVersion(ctx, request.TargetDatasetID, request.BaseVersion)
+					if errors.Is(catalogErr, moxiedb.ErrNotFound) {
+						return nil
+					}
+				}
+				return readErr
+			})
+			if err != nil {
 				return tmprl.StepResult[Artifacts]{}, stepError(err)
 			}
 		}
@@ -916,6 +954,9 @@ func (j *Job) saveDataset(ctx context.Context, id string, base int, addition dat
 	operation := "add/" + addition.PublicationID
 	var saved datasetstore.Dataset
 	err = j.cfg.Datasets.WithLock(ctx, func(ctx context.Context) error {
+		if err := j.RecoverDeletions(ctx); err != nil {
+			return err
+		}
 		previous, err := j.cfg.MoxieDB.GetPublication(ctx, operation)
 		switch {
 		case err == nil && (previous.InputDigest != hex.EncodeToString(digest[:]) || previous.DatasetID != id || previous.BaseVersion != base || previous.Kind != "add"):
@@ -927,10 +968,10 @@ func (j *Job) saveDataset(ctx context.Context, id string, base int, addition dat
 			return err
 		}
 		latest, err := j.cfg.Datasets.Inspect(ctx, id, 0)
-		if err != nil {
+		if err != nil && !errors.Is(err, datasetstore.ErrDatasetNotFound) {
 			return err
 		}
-		if latest.Operation != operation {
+		if err == nil && latest.Operation != operation {
 			published, err := j.dataset(ctx, id, 0)
 			if err != nil {
 				return err
@@ -951,7 +992,11 @@ func (j *Job) saveDataset(ctx context.Context, id string, base int, addition dat
 		if err := j.cfg.MoxieDB.BeginPublication(ctx, moxiedb.Publication{ID: operation, DatasetID: id, Kind: "add", BaseVersion: base, InputDigest: hex.EncodeToString(digest[:])}); err != nil {
 			return err
 		}
-		saved, err = j.cfg.Datasets.Add(ctx, id, base, addition)
+		next, err := j.cfg.MoxieDB.NextVersion(ctx, id)
+		if err != nil {
+			return err
+		}
+		saved, err = j.cfg.Datasets.AddAt(ctx, id, base, addition, next)
 		if err != nil {
 			if errors.Is(err, tmprl.ErrInvalidArgument) || errors.Is(err, datasetstore.ErrDatasetConflict) || errors.Is(err, datasetstore.ErrDatasetNotFound) {
 				return errors.Join(err, j.cfg.MoxieDB.MarkPublication(ctx, operation, "conflict", "invalid_or_stale_input"))

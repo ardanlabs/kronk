@@ -34,6 +34,11 @@ func (s *Service) reconcile(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
+	if s.job != nil {
+		if err := s.job.RecoverDeletions(ctx); err != nil {
+			return err
+		}
+	}
 	inventory, err := s.files.Inventory(ctx)
 	if err != nil {
 		return err

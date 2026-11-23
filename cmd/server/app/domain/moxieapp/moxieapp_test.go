@@ -54,6 +54,55 @@ import (
 
 const statePath = "/v1/training/runs/training-example/run-2"
 
+func TestRunDeletionRequiresConfirmedScope(t *testing.T) {
+	db, ctx := httpCatalog(t), t.Context()
+	files, err := uploads.New(uploads.Config{Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := new(mocks.Client)
+	j, err := training.New(c, training.Config{Uploads: files, StorageRoot: t.TempDir(), MoxieDB: db, Trainer: struct{ optimization.Trainer }{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateJob(ctx, moxiedb.Job{JobID: "delete-job", Mode: "training"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateAttempt(ctx, moxiedb.Attempt{AttemptID: "delete-job/1", JobID: "delete-job", AttemptNumber: 1, TemporalNamespace: "default", WorkflowID: "training-example", RunID: sql.NullString{String: "run-2", Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpdateAttemptObservation(ctx, "delete-job/1", 0, moxiedb.AttemptObservation{ExecutionStatus: sql.NullString{String: "completed", Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	log := logger.New(io.Discard, logger.LevelInfo, "moxie-deletion-test", nil)
+	api := web.NewApp(log.Info, mid.Errors(log))
+	moxieapp.Routes(api, moxieapp.Config{Job: j, AuthorizationMode: auth.Open})
+	w := httptest.NewRecorder()
+	api.ServeHTTP(w, httptest.NewRequestWithContext(ctx, http.MethodGet, statePath+"/deletion", nil))
+	var preview moxieapp.RunDeletion
+	if err := json.Unmarshal(w.Body.Bytes(), &preview); err != nil || w.Code != http.StatusOK || preview.Revision == "" || len(preview.Executions) != 1 || len(preview.Snapshots) != 0 || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("preview: %d %s %v", w.Code, w.Body, err)
+	}
+	for _, test := range []struct {
+		query  string
+		code   int
+		reason string
+	}{
+		{"", http.StatusBadRequest, "preview and confirm"},
+		{"?revision=stale", http.StatusConflict, "deletion scope changed"},
+	} {
+		w := httptest.NewRecorder()
+		api.ServeHTTP(w, httptest.NewRequestWithContext(ctx, http.MethodDelete, statePath+test.query, nil))
+		if w.Code != test.code || !strings.Contains(w.Body.String(), test.reason) {
+			t.Fatalf("unconfirmed deletion: %d %s", w.Code, w.Body)
+		}
+	}
+	if _, err := db.GetCatalogExecution(ctx, "default", "training-example", "run-2"); err != nil {
+		t.Fatalf("rejected deletion removed run: %v", err)
+	}
+	c.AssertExpectations(t)
+}
+
 const continueBody = `{"checkpoint_id":"run-2/preparation/preview/preview-review","submission_id":"review-1","records":[{"prompt":"  At what time does the harbor open?  ","target":" At   dawn. ","evidence":"The harbor opens at dawn.","source_document":"upload-source"},{"prompt":"When does the ferry leave?","target":"At noon.","evidence":"The ferry leaves at noon.","source_document":"upload-source"}]}`
 
 const startTrainingBody = `{"checkpoint_id":"run-2/preparation//start-training","submission_id":"training-1"}`
@@ -202,6 +251,16 @@ func httpCatalog(t *testing.T) *moxiedb.DB {
 		t.Fatal(err)
 	}
 	if _, err := setup.ExecContext(t.Context(), "INSERT INTO schema_migrations(version,checksum) VALUES (1,$1)", fmt.Sprintf("%x", sha256.Sum256(migration))); err != nil {
+		t.Fatal(err)
+	}
+	migration, err = os.ReadFile(filepath.Join("..", "..", "sdk", "tmprl", "moxiedb", "migrations", "002_deletions.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(t.Context(), string(migration)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(t.Context(), "INSERT INTO schema_migrations(version,checksum) VALUES (2,$1)", fmt.Sprintf("%x", sha256.Sum256(migration))); err != nil {
 		t.Fatal(err)
 	}
 	db, err := moxiedb.Open(t.Context(), u.String())

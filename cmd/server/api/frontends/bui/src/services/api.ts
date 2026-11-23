@@ -60,6 +60,7 @@ import type {
   TrainingRun,
   TrainingEvaluation,
   TrainingRunsResponse,
+  RunDeletionPreview,
   ContinueTrainingPreview,
   TrainingDecisionReceipt,
   PreparationControl,
@@ -1357,6 +1358,21 @@ class ApiService {
     return this.request<TrainingRun>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}`, {
       signal,
       cache: 'no-store',
+    });
+  }
+
+  async previewRunDeletion(workflowID: string, runID: string, signal?: AbortSignal): Promise<RunDeletionPreview> {
+    return this.request<RunDeletionPreview>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}/deletion`, {
+      signal,
+      cache: 'no-store',
+    });
+  }
+
+  async deleteTrainingRun(workflowID: string, runID: string, revision: string): Promise<RunDeletionPreview> {
+    const query = new URLSearchParams({ revision });
+    return this.request<RunDeletionPreview>(`/training/runs/${encodeURIComponent(workflowID)}/${encodeURIComponent(runID)}?${query}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(30_000),
     });
   }
 

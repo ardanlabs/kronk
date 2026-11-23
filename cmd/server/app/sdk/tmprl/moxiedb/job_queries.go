@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 )
@@ -217,15 +218,52 @@ func (db *DB) catalogPending(ctx context.Context, entries []CatalogEntry) error 
 
 // CreateJob inserts or verifies immutable inputs. CreatedAt is assigned by SQL.
 func (db *DB) CreateJob(ctx context.Context, j Job) error {
-	r, err := db.sql.ExecContext(ctx, `INSERT INTO jobs(job_id,mode,source_upload_id,target_dataset_id,base_dataset_version) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(job_id) DO UPDATE SET job_id=jobs.job_id WHERE jobs.mode=EXCLUDED.mode AND jobs.source_upload_id IS NOT DISTINCT FROM EXCLUDED.source_upload_id AND jobs.target_dataset_id IS NOT DISTINCT FROM EXCLUDED.target_dataset_id AND jobs.base_dataset_version IS NOT DISTINCT FROM EXCLUDED.base_dataset_version`, j.JobID, j.Mode, j.SourceUploadID, j.TargetDatasetID, j.BaseDatasetVersion)
-	return changed(r, err)
+	tx, err := db.catalogTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT FROM jobs WHERE job_id=$1)`, j.JobID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		if err := guardDataset(ctx, tx, j.TargetDatasetID.String, int(j.BaseDatasetVersion.Int64)); err != nil {
+			return err
+		}
+	}
+	r, err := tx.ExecContext(ctx, `INSERT INTO jobs(job_id,mode,source_upload_id,target_dataset_id,base_dataset_version) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(job_id) DO UPDATE SET job_id=jobs.job_id WHERE jobs.mode=EXCLUDED.mode AND jobs.source_upload_id IS NOT DISTINCT FROM EXCLUDED.source_upload_id AND jobs.target_dataset_id IS NOT DISTINCT FROM EXCLUDED.target_dataset_id AND jobs.base_dataset_version IS NOT DISTINCT FROM EXCLUDED.base_dataset_version`, j.JobID, j.Mode, j.SourceUploadID, j.TargetDatasetID, j.BaseDatasetVersion)
+	if err := changed(r, err); err != nil {
+		return err
+	}
+	return dbError(tx.Commit())
 }
 
 // CreateAttempt binds identity/lineage, optionally with an already known run ID.
 // Observation inputs are ignored. Replaying a pre-run request after linkage is safe.
 func (db *DB) CreateAttempt(ctx context.Context, a Attempt) error {
-	r, err := db.sql.ExecContext(ctx, `INSERT INTO job_attempts(attempt_id,job_id,attempt_number,previous_attempt_id,temporal_namespace,workflow_id,run_id) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(attempt_id) DO UPDATE SET attempt_id=job_attempts.attempt_id WHERE job_attempts.job_id=EXCLUDED.job_id AND job_attempts.attempt_number=EXCLUDED.attempt_number AND job_attempts.previous_attempt_id IS NOT DISTINCT FROM EXCLUDED.previous_attempt_id AND job_attempts.temporal_namespace=EXCLUDED.temporal_namespace AND job_attempts.workflow_id=EXCLUDED.workflow_id AND (EXCLUDED.run_id IS NULL OR job_attempts.run_id=EXCLUDED.run_id)`, a.AttemptID, a.JobID, a.AttemptNumber, a.PreviousAttemptID, a.TemporalNamespace, a.WorkflowID, a.RunID)
-	return changed(r, err)
+	tx, err := db.catalogTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := guardExecution(ctx, tx, a.TemporalNamespace, a.WorkflowID, a.RunID.String); err != nil {
+		return err
+	}
+	stored, err := scanAttempt(tx.QueryRowContext(ctx, `SELECT `+attemptColumns+` FROM job_attempts WHERE attempt_id=$1`, a.AttemptID))
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if err == nil {
+		if err := guardExecution(ctx, tx, stored.TemporalNamespace, stored.WorkflowID, stored.RunID.String); err != nil {
+			return err
+		}
+	}
+	r, err := tx.ExecContext(ctx, `INSERT INTO job_attempts(attempt_id,job_id,attempt_number,previous_attempt_id,temporal_namespace,workflow_id,run_id) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(attempt_id) DO UPDATE SET attempt_id=job_attempts.attempt_id WHERE job_attempts.job_id=EXCLUDED.job_id AND job_attempts.attempt_number=EXCLUDED.attempt_number AND job_attempts.previous_attempt_id IS NOT DISTINCT FROM EXCLUDED.previous_attempt_id AND job_attempts.temporal_namespace=EXCLUDED.temporal_namespace AND job_attempts.workflow_id=EXCLUDED.workflow_id AND (EXCLUDED.run_id IS NULL OR job_attempts.run_id=EXCLUDED.run_id)`, a.AttemptID, a.JobID, a.AttemptNumber, a.PreviousAttemptID, a.TemporalNamespace, a.WorkflowID, a.RunID)
+	if err := changed(r, err); err != nil {
+		return err
+	}
+	return dbError(tx.Commit())
 }
 
 func (db *DB) GetAttempt(ctx context.Context, id string) (Attempt, error) {
@@ -237,8 +275,26 @@ func (db *DB) LinkAttemptRun(ctx context.Context, id, runID string) error {
 	if runID == "" {
 		return ErrConflict
 	}
-	r, err := db.sql.ExecContext(ctx, `UPDATE job_attempts SET run_id=$2 WHERE attempt_id=$1 AND (run_id IS NULL OR run_id=$2)`, id, runID)
-	return changed(r, err)
+	tx, err := db.catalogTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	a, err := scanAttempt(tx.QueryRowContext(ctx, `SELECT `+attemptColumns+` FROM job_attempts WHERE attempt_id=$1`, id))
+	if errors.Is(err, ErrNotFound) {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	if err := guardExecution(ctx, tx, a.TemporalNamespace, a.WorkflowID, runID); err != nil {
+		return err
+	}
+	r, err := tx.ExecContext(ctx, `UPDATE job_attempts SET run_id=$2 WHERE attempt_id=$1 AND (run_id IS NULL OR run_id=$2)`, id, runID)
+	if err := changed(r, err); err != nil {
+		return err
+	}
+	return dbError(tx.Commit())
 }
 
 // UpdateAttemptObservation uses SQL CAS, independent of runner source timestamps.
@@ -257,8 +313,34 @@ func (db *DB) BeginIntent(ctx context.Context, i Intent) error {
 	if !validJSON(i.Payload) {
 		return ErrConflict
 	}
-	r, err := db.sql.ExecContext(ctx, `INSERT INTO job_intents(intent_id,job_id,attempt_id,kind,checkpoint_id,payload,payload_sha256) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(intent_id) DO UPDATE SET intent_id=job_intents.intent_id WHERE job_intents.job_id=EXCLUDED.job_id AND job_intents.attempt_id=EXCLUDED.attempt_id AND job_intents.kind=EXCLUDED.kind AND job_intents.checkpoint_id IS NOT DISTINCT FROM EXCLUDED.checkpoint_id AND job_intents.payload=EXCLUDED.payload AND job_intents.payload_sha256=EXCLUDED.payload_sha256`, i.IntentID, i.JobID, i.AttemptID, i.Kind, i.CheckpointID, []byte(i.Payload), i.PayloadSHA256)
-	return changed(r, err)
+	tx, err := db.catalogTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	e, err := scanCatalog(tx.QueryRowContext(ctx, `SELECT `+catalogColumns+` FROM jobs j JOIN job_attempts a ON a.job_id=j.job_id WHERE a.attempt_id=$1 AND j.job_id=$2`, i.AttemptID, i.JobID))
+	if errors.Is(err, ErrNotFound) {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	if i.Kind == "submit" || i.Kind == "authorize_training" {
+		if err := guardDataset(ctx, tx, e.Job.TargetDatasetID.String, int(e.Job.BaseDatasetVersion.Int64)); err != nil {
+			return err
+		}
+		if err := guardDataset(ctx, tx, e.Attempt.ResultDatasetID.String, int(e.Attempt.ResultDatasetVersion.Int64)); err != nil {
+			return err
+		}
+	}
+	if err := guardExecution(ctx, tx, e.Attempt.TemporalNamespace, e.Attempt.WorkflowID, e.Attempt.RunID.String); err != nil {
+		return err
+	}
+	r, err := tx.ExecContext(ctx, `INSERT INTO job_intents(intent_id,job_id,attempt_id,kind,checkpoint_id,payload,payload_sha256) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(intent_id) DO UPDATE SET intent_id=job_intents.intent_id WHERE job_intents.job_id=EXCLUDED.job_id AND job_intents.attempt_id=EXCLUDED.attempt_id AND job_intents.kind=EXCLUDED.kind AND job_intents.checkpoint_id IS NOT DISTINCT FROM EXCLUDED.checkpoint_id AND job_intents.payload=EXCLUDED.payload AND job_intents.payload_sha256=EXCLUDED.payload_sha256`, i.IntentID, i.JobID, i.AttemptID, i.Kind, i.CheckpointID, []byte(i.Payload), i.PayloadSHA256)
+	if err := changed(r, err); err != nil {
+		return err
+	}
+	return dbError(tx.Commit())
 }
 
 func (db *DB) GetIntent(ctx context.Context, id string) (Intent, error) {
@@ -302,4 +384,119 @@ func changed(r sql.Result, err error) error {
 		return ErrConflict
 	}
 	return err
+}
+
+// catalogTx serializes execution identity changes with deletion registration.
+// Dataset locks are always acquired after this lock; CommitVersion needs only
+// the dataset lock and never acquires the catalog lock.
+func (db *DB) catalogTx(ctx context.Context) (*sql.Tx, error) {
+	tx, err := db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(705990122)`); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	return tx, nil
+}
+
+func guardDataset(ctx context.Context, tx *sql.Tx, id string, version int) error {
+	if id == "" {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, id); err != nil {
+		return err
+	}
+	var live bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT FROM dataset_versions v JOIN datasets d USING(dataset_id) WHERE v.dataset_id=$1 AND v.version=$2 AND v.deleted_at IS NULL AND d.deleted_at IS NULL) AND NOT EXISTS(SELECT FROM deletion_operations WHERE dataset_id=$1 AND state='pending')`, id, version).Scan(&live)
+	if err != nil {
+		return err
+	}
+	if !live {
+		return ErrConflict
+	}
+	return nil
+}
+
+func guardExecution(ctx context.Context, tx *sql.Tx, namespace, workflowID, runID string) error {
+	var deleted bool
+	err := tx.QueryRowContext(ctx, deletedExecutionSQL, namespace, workflowID, runID).Scan(&deleted)
+	if err != nil {
+		return err
+	}
+	if deleted {
+		return ErrConflict
+	}
+	return nil
+}
+
+// DeleteExecutionCatalog removes only the exact run. Lineage pointing at the
+// selected attempt fails closed (the FK rolls back), never removes siblings.
+// Registration of the deletion must precede removal to prevent resurrection.
+func (db *DB) DeleteExecutionCatalog(ctx context.Context, namespace, workflowID, runID string) error {
+	if namespace == "" || workflowID == "" || runID == "" {
+		return ErrConflict
+	}
+	tx, err := db.catalogTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var registered bool
+	if err := tx.QueryRowContext(ctx, deletedExecutionSQL, namespace, workflowID, runID).Scan(&registered); err != nil {
+		return err
+	}
+	if !registered {
+		return ErrConflict
+	}
+	var attemptID, jobID string
+	err = tx.QueryRowContext(ctx, `SELECT attempt_id,job_id FROM job_attempts WHERE temporal_namespace=$1 AND workflow_id=$2 AND run_id=$3 FOR UPDATE`, namespace, workflowID, runID).Scan(&attemptID, &jobID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_intents WHERE attempt_id=$1`, attemptID); err != nil {
+		return dbError(err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_attempts WHERE attempt_id=$1`, attemptID); err != nil {
+		return dbError(err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE job_id=$1 AND NOT EXISTS(SELECT FROM job_attempts WHERE job_id=$1)`, jobID); err != nil {
+		return dbError(err)
+	}
+	return dbError(tx.Commit())
+}
+
+// DatasetExecutions includes every attempt using or producing the dataset,
+// including historical attempts, unlinked runs and other namespaces.
+func (db *DB) DatasetExecutions(ctx context.Context, datasetID string) ([]CatalogEntry, error) {
+	if datasetID == "" {
+		return nil, ErrConflict
+	}
+	rows, err := db.sql.QueryContext(ctx, `SELECT `+catalogColumns+` FROM jobs j JOIN job_attempts a ON a.job_id=j.job_id WHERE j.target_dataset_id=$1 OR a.result_dataset_id=$1 ORDER BY j.created_at,j.job_id,a.attempt_number`, datasetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entries := []CatalogEntry{}
+	for rows.Next() {
+		e, err := scanCatalog(rows)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := db.catalogPending(ctx, entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }

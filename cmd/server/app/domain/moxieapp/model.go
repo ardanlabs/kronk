@@ -19,6 +19,15 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
 
+// RunDeletion describes the confirmed scope without exposing server paths or records.
+type RunDeletion struct{ training.DeletionPreview }
+
+// Encode implements web.Encoder.
+func (r RunDeletion) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(r)
+	return data, "application/json", err
+}
+
 // Upload identifies a stored input without exposing its server filesystem path.
 // An upload is not necessarily a validated training dataset.
 type Upload struct {

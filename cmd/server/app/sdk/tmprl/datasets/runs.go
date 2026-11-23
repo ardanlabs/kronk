@@ -352,6 +352,14 @@ func (s *Service) fromCatalog(ctx context.Context, entry moxiedb.CatalogEntry) (
 		state.PendingActions = append(state.PendingActions, PendingAction{ID: intent.IntentID, Kind: intent.Kind, State: intent.State})
 	}
 	if a.ResultDatasetID.Valid {
+		_, catalogErr := s.db.GetVersion(ctx, a.ResultDatasetID.String, int(a.ResultDatasetVersion.Int64))
+		if errors.Is(catalogErr, moxiedb.ErrNotFound) {
+			state.DatasetAvailable, state.TrainingReady, state.DatasetRecordCount = false, false, 0
+			return state, nil
+		}
+		if catalogErr != nil {
+			return State{}, catalogErr
+		}
 		dataset, err := s.Get(ctx, a.ResultDatasetID.String, int(a.ResultDatasetVersion.Int64))
 		if err != nil {
 			return State{}, err

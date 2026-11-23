@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets"
+	datasetstore "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/datasets/store"
 	job "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	optimization "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
@@ -23,8 +24,238 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
+
+type deletionService struct {
+	workflowservice.WorkflowServiceClient
+	fail bool
+}
+
+func (s *deletionService) DeleteWorkflowExecution(context.Context, *workflowservice.DeleteWorkflowExecutionRequest, ...grpc.CallOption) (*workflowservice.DeleteWorkflowExecutionResponse, error) {
+	if s.fail {
+		return nil, serviceerror.NewUnavailable("temporary deletion outage")
+	}
+	return &workflowservice.DeleteWorkflowExecutionResponse{}, nil
+}
+
+type deletionClient struct {
+	expiredCatalogClient
+	service *deletionService
+}
+
+func (c deletionClient) WorkflowService() workflowservice.WorkflowServiceClient { return c.service }
+
+func TestRunDeletionSharedVersionsAndRecovery(t *testing.T) {
+	db, _ := newCatalogDatabase(t)
+	ctx := t.Context()
+	root := t.TempDir()
+	uploadsStore, err := uploads.New(uploads.Config{Root: filepath.Join(root, "uploads")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := datasetstore.New(datasetstore.Config{Root: filepath.Join(root, "preparation-datasets")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &deletionService{}
+	j, err := job.New(deletionClient{service: service}, job.Config{Uploads: uploadsStore, Datasets: files, MoxieDB: db, StorageRoot: root, Trainer: &trainer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	datasetsService := datasets.New(datasets.Config{Files: files, Job: j, DB: db})
+	d, err := datasetsService.Create(ctx, "Shared harbor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(id, hash, prompt string, base int) {
+		t.Helper()
+		_, err := datasetsService.Add(ctx, d.ID, base, datasetstore.Addition{PublicationID: id, Source: uploads.File{ID: "source-" + id, Name: id + ".txt", SHA256: strings.Repeat(hash, 64)}, Records: []optimization.Record{{Prompt: prompt, Target: "Dawn.", Evidence: "The harbor opens at dawn.", SourceDocument: "source-" + id}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("prep-a", "a", "When does harbor A open?", 1)
+	add("prep-b", "b", "When does harbor B open?", 2)
+	seed := func(id, mode, status string, version int) tmprl.Execution {
+		t.Helper()
+		e := tmprl.Execution{WorkflowID: "workflow-" + id, RunID: id}
+		if err := db.CreateJob(ctx, moxiedb.Job{JobID: id, Mode: mode, TargetDatasetID: sql.NullString{String: d.ID, Valid: true}, BaseDatasetVersion: sql.NullInt64{Int64: int64(version), Valid: true}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.CreateAttempt(ctx, moxiedb.Attempt{AttemptID: id + "/1", JobID: id, AttemptNumber: 1, TemporalNamespace: "default", WorkflowID: e.WorkflowID, RunID: sql.NullString{String: id, Valid: true}}); err != nil {
+			t.Fatal(err)
+		}
+		o := moxiedb.AttemptObservation{ExecutionStatus: sql.NullString{String: status, Valid: true}}
+		if mode == "preparation" && status == "completed" {
+			o.ResultDatasetID = sql.NullString{String: d.ID, Valid: true}
+			o.ResultDatasetVersion = sql.NullInt64{Int64: int64(version), Valid: true}
+		}
+		if err := db.UpdateAttemptObservation(ctx, id+"/1", 0, o); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(root, "training-jobs", id)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "adapter.bin"), []byte(id), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	// The publication survived, but its preparation-result receipt did not.
+	a := seed("prep-a", "preparation", "failed", 2)
+	seed("prep-b", "preparation", "completed", 3)
+	selectedTraining := seed("training-a", "training", "completed", 2)
+	preservedTraining := seed("training-b", "training", "running", 3)
+	seed("prep-current", "preparation", "running", 3)
+	before, err := os.ReadFile(filepath.Join(files.Path(), d.ID, "3.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := j.PreviewDeletion(ctx, a)
+	if err != nil || preview.DeletesDataset || len(preview.Blockers) != 0 || len(preview.Executions) != 2 || len(preview.ContinuingPreparation) != 1 {
+		t.Fatalf("scope: %+v %v", preview, err)
+	}
+	if _, err := j.DeleteRun(ctx, a, "stale-revision"); !errors.Is(err, tmprl.ErrControlConflict) {
+		t.Fatalf("stale confirmation: %v", err)
+	}
+	service.fail = true
+	if _, err := j.DeleteRun(ctx, a, preview.Revision); err == nil {
+		t.Fatal("outage reported as deletion success")
+	}
+	if pending, err := db.PendingDeletions(ctx); err != nil || len(pending) != 1 {
+		t.Fatalf("missing recovery marker: %+v %v", pending, err)
+	}
+	service.fail = false
+	// Fail after the files and SQL rows are removed, before the index receipt.
+	index := filepath.Join(files.Path(), ".index.yaml")
+	if err := os.Remove(index); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(index, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.RecoverDeletions(ctx); err == nil {
+		t.Fatal("partial cleanup reported as success")
+	}
+	if err := os.Remove(index); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.RecoverDeletions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []tmprl.Execution{a, selectedTraining} {
+		if _, err := db.GetCatalogExecution(ctx, "default", e.WorkflowID, e.RunID); !errors.Is(err, moxiedb.ErrNotFound) {
+			t.Fatalf("deleted run remains: %+v %v", e, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "training-jobs", e.RunID)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("deleted workspace remains: %+v %v", e, err)
+		}
+		if _, err := j.Get(ctx, e); !errors.Is(err, job.ErrNotFound) {
+			t.Fatalf("deleted execution readable: %v", err)
+		}
+		if _, err := j.OpenDataset(ctx, e); !errors.Is(err, job.ErrNotFound) {
+			t.Fatalf("deleted dataset downloadable: %v", err)
+		}
+		if _, err := j.OpenAdapter(ctx, e); !errors.Is(err, job.ErrNotFound) {
+			t.Fatalf("deleted adapter downloadable: %v", err)
+		}
+		if _, err := j.Evaluation(ctx, e); !errors.Is(err, job.ErrNotFound) {
+			t.Fatalf("deleted evaluation downloadable: %v", err)
+		}
+	}
+	if _, err := db.GetCatalogExecution(ctx, "default", preservedTraining.WorkflowID, preservedTraining.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "training-jobs", preservedTraining.RunID, "adapter.bin")); err != nil || string(data) != preservedTraining.RunID {
+		t.Fatalf("other version's adapter changed: %s %v", data, err)
+	}
+	records, err := datasetsService.Records(ctx, d.ID, 3)
+	if err != nil || len(records) != 2 || records[0].SourceDocument != "source-prep-a" || records[1].SourceDocument != "source-prep-b" {
+		t.Fatalf("shared snapshot: %+v %v", records, err)
+	}
+	if after, err := os.ReadFile(filepath.Join(files.Path(), d.ID, "3.json")); err != nil || string(after) != string(before) {
+		t.Fatalf("other version changed: %v", err)
+	}
+	if _, err := datasetsService.Get(ctx, d.ID, 2); !errors.Is(err, datasetstore.ErrDatasetNotFound) {
+		t.Fatalf("deleted version available: %v", err)
+	}
+	if _, err := j.DeleteRun(ctx, a, preview.Revision); err != nil {
+		t.Fatalf("confirmed retry: %v", err)
+	}
+	add("prep-current", "c", "When does harbor C open?", 3)
+	latest, err := datasetsService.Get(ctx, d.ID, 0)
+	if err != nil || latest.Version != 4 || latest.RecordCount != 3 {
+		t.Fatalf("continued publication: %+v %v", latest, err)
+	}
+	// A training-only deletion must never delete its dataset version.
+	trainingOnly := seed("training-only", "training", "completed", 4)
+	p, err := j.PreviewDeletion(ctx, trainingOnly)
+	if err != nil || p.DatasetID != "" || len(p.Snapshots) != 0 {
+		t.Fatalf("training-only scope: %+v %v", p, err)
+	}
+	if _, err := j.DeleteRun(ctx, trainingOnly, p.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if records, err := datasetsService.Records(ctx, d.ID, 4); err != nil || len(records) != 3 {
+		t.Fatalf("training-only deletion changed dataset: %+v %v", records, err)
+	}
+	// Active training on the selected version blocks deletion, never stops it.
+	b := tmprl.Execution{WorkflowID: "workflow-prep-b", RunID: "prep-b"}
+	p, err = j.PreviewDeletion(ctx, b)
+	if err != nil || len(p.Blockers) == 0 {
+		t.Fatalf("active dependency omitted: %+v %v", p, err)
+	}
+	if _, err := j.DeleteRun(ctx, b, p.Revision); !errors.Is(err, tmprl.ErrControlConflict) {
+		t.Fatalf("active dependency was not blocked: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "training-jobs", b.RunID)); err != nil {
+		t.Fatal("blocked deletion removed artifacts", err)
+	}
+	if err := db.UpdateAttemptObservation(ctx, preservedTraining.RunID+"/1", 1, moxiedb.AttemptObservation{ExecutionStatus: sql.NullString{String: "completed", Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err = j.PreviewDeletion(ctx, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A newly attached training run invalidates an already displayed confirmation.
+	seed("training-late", "training", "completed", 3)
+	if _, err := j.DeleteRun(ctx, b, p.Revision); !errors.Is(err, tmprl.ErrControlConflict) {
+		t.Fatalf("changed scope accepted: %v", err)
+	}
+	p, err = j.PreviewDeletion(ctx, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.DeleteRun(ctx, b, p.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if records, err := datasetsService.Records(ctx, d.ID, 4); err != nil || len(records) != 3 {
+		t.Fatalf("older deletion changed newer records: %+v %v", records, err)
+	}
+	// Once the remaining preparation finishes, deleting its last saved version
+	// removes the dataset and its empty creation scaffold from normal use.
+	current := tmprl.Execution{WorkflowID: "workflow-prep-current", RunID: "prep-current"}
+	if err := db.UpdateAttemptObservation(ctx, "prep-current/1", 1, moxiedb.AttemptObservation{ExecutionStatus: sql.NullString{String: "completed", Valid: true}, ResultDatasetID: sql.NullString{String: d.ID, Valid: true}, ResultDatasetVersion: sql.NullInt64{Int64: 4, Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err = j.PreviewDeletion(ctx, current)
+	if err != nil || !p.DeletesDataset || len(p.Snapshots) != 2 {
+		t.Fatalf("last version scope: %+v %v", p, err)
+	}
+	if _, err := j.DeleteRun(ctx, current, p.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := datasetsService.List(ctx); err != nil || len(list) != 0 {
+		t.Fatalf("last-version dataset still visible: %+v %v", list, err)
+	}
+	if _, err := files.Get(ctx, d.ID, 0); !errors.Is(err, datasetstore.ErrDatasetNotFound) {
+		t.Fatalf("last-version files remain available: %v", err)
+	}
+}
 
 type pausedTrainer struct {
 	trainer

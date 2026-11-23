@@ -5,6 +5,7 @@ import { api, ApiError } from '../services/api';
 import type { TrainingRun } from '../types';
 import { active, Badge, datasetName, date, failedStep, PreparationRunView, Progress, records, remaining, reviewable, runKey, version } from './PreparationRuns';
 import { trainingLabel, TrainingRunScreen, TrainingSetup } from './TrainingRun';
+import DeleteRunButton from './DeleteRunButton';
 import './PreparationRuns.css';
 import './DatasetDashboard.css';
 
@@ -81,6 +82,7 @@ function RunList({ visible }: { visible: boolean }) {
   const [page, setPage] = useState(0);
   const [list, setList] = useState<{ runs: TrainingRun[]; next: string } | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [loading, setLoading] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -133,6 +135,7 @@ function RunList({ visible }: { visible: boolean }) {
         {filters.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
     </div>
+    {notice && <p className="prep-copy" role="status">{notice}</p>}
     {error && <div className="prep-load-error" role="alert"><span>Could not load preparation runs: {error} Select Refresh to try again.</span></div>}
     {!list && !error && <p className="prep-copy" role="status">Loading preparation runs…</p>}
     {list && <div className="catalog-table-wrap prep-table-wrap"><table className="catalog-table prep-table dash-table">
@@ -146,7 +149,7 @@ function RunList({ visible }: { visible: boolean }) {
             <td data-label="Status"><Badge run={run} />{run.state_stale && active(run) && <span className="prep-sub prep-stale-tag">Last known status</span>}</td>
             <td data-label="Step"><StepCell run={run} training={trainings.get(`${run.prepared_dataset_id}@${run.prepared_dataset_version}`)} /></td>
             <td data-label="Date created">{date(run.started_at)}</td>
-            <td className="prep-row-action"><Link className={`btn ${reviewable(run) ? 'btn-primary' : 'btn-secondary'}`} aria-label={`Open ${datasetName(run)}, created ${date(run.started_at)}`} to={path}>Open</Link></td>
+            <td className="prep-row-action"><div className="run-row-actions"><Link className={`btn ${reviewable(run) ? 'btn-primary' : 'btn-secondary'}`} aria-label={`Open ${datasetName(run)}, created ${date(run.started_at)}`} to={path}>Open</Link><DeleteRunButton run={run} onDeleted={() => { setNotice('Run and its selected artifacts deleted.'); restart(); setAttempt((value) => value + 1); heading.current?.focus(); }} /></div></td>
           </tr>;
         })}
         {!rows.length && <tr><td colSpan={5}><div className="empty-state">{filter === 'all' ? <><h3>No preparation runs yet</h3><p>Choose + New dataset to start one.</p></> : <><h3>No runs with this status</h3><p>Choose All to see every preparation run.</p></>}</div></td></tr>}

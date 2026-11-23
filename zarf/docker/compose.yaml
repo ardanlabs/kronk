@@ -195,24 +195,27 @@ services:
         : "$${PGPASSWORD:?Export MOXIE_POSTGRES_PASSWORD first}"
         checksum=$$(sha256sum /schema/001_init.sql)
         export MOXIE_SCHEMA_CHECKSUM=$${checksum%% *}
+        checksum=$$(sha256sum /schema/002_deletions.sql)
+        export MOXIE_DELETION_CHECKSUM=$${checksum%% *}
         psql -d moxiedb -v ON_ERROR_STOP=1 <<'SQL'
         \getenv schema_checksum MOXIE_SCHEMA_CHECKSUM
+        \getenv deletion_checksum MOXIE_DELETION_CHECKSUM
         SELECT pg_advisory_lock(705990121);
+        BEGIN;
         SELECT NOT EXISTS (
           SELECT FROM pg_tables WHERE schemaname = 'public'
         ) AS empty \gset
         \if :empty
-          BEGIN;
           \i /schema/001_init.sql
           INSERT INTO schema_migrations (version, checksum)
           VALUES (1, :'schema_checksum');
-          COMMIT;
-          \echo 'Moxie schema initialized.'
         \else
           SELECT to_regclass('public.schema_migrations') IS NOT NULL AS recognized \gset
           \if :recognized
-            SELECT count(*) = 1
-              AND bool_and(version = 1 AND checksum = :'schema_checksum')
+            SELECT count(*) BETWEEN 1 AND 2
+              AND count(*) FILTER (WHERE version=1 AND checksum=:'schema_checksum') = 1
+              AND bool_and((version = 1 AND checksum = :'schema_checksum')
+                OR (version = 2 AND checksum = :'deletion_checksum'))
               AND NOT EXISTS (
                 SELECT FROM (VALUES
                   ('catalog_initialization'), ('datasets'), ('dataset_versions'),
@@ -223,7 +226,7 @@ services:
               ) AS compatible
             FROM schema_migrations \gset
             \if :compatible
-              \echo 'Moxie schema already exists; skipping initialization and upgrades.'
+              \echo 'Moxie migration checksums verified.'
             \else
               DO $$$$ BEGIN
                 RAISE EXCEPTION 'Moxie schema is incompatible; no upgrades applied.';
@@ -235,9 +238,26 @@ services:
             END $$$$;
           \endif
         \endif
+        SELECT NOT EXISTS (SELECT FROM schema_migrations WHERE version=2) AS needs_deletions \gset
+        \if :needs_deletions
+          \i /schema/002_deletions.sql
+          INSERT INTO schema_migrations(version,checksum) VALUES (2,:'deletion_checksum');
+        \endif
+        SELECT to_regclass('public.deletion_operations') IS NOT NULL
+          AND EXISTS (SELECT FROM information_schema.columns WHERE table_schema='public' AND table_name='datasets' AND column_name='deleted_at')
+          AND EXISTS (SELECT FROM information_schema.columns WHERE table_schema='public' AND table_name='dataset_versions' AND column_name='deleted_at') AS complete \gset
+        \if :complete
+          COMMIT;
+          \echo 'Moxie schema is current.'
+        \else
+          DO $$$$ BEGIN
+            RAISE EXCEPTION 'Moxie deletion schema is incomplete; no migrations applied.';
+          END $$$$;
+        \endif
         SQL
     volumes:
       - ../../cmd/server/app/sdk/tmprl/moxiedb/migrations/001_init.sql:/schema/001_init.sql:ro
+      - ../../cmd/server/app/sdk/tmprl/moxiedb/migrations/002_deletions.sql:/schema/002_deletions.sql:ro
     depends_on:
       postgres-init:
         condition: service_completed_successfully

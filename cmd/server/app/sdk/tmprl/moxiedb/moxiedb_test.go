@@ -23,6 +23,9 @@ import (
 //go:embed migrations/001_init.sql
 var migration []byte
 
+//go:embed migrations/002_deletions.sql
+var deletionMigration []byte
+
 func TestIsUnavailable(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -134,11 +137,13 @@ func testDB(t *testing.T) (*moxiedb.DB, *sql.DB) {
 		t.Fatal(err)
 	}
 	defer install.Rollback()
-	if _, err := install.ExecContext(ctx, string(migration)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := install.ExecContext(ctx, "INSERT INTO schema_migrations(version,checksum) VALUES ($1,$2)", moxiedb.SchemaVersion, fmt.Sprintf("%x", sha256.Sum256(migration))); err != nil {
-		t.Fatal(err)
+	for i, sql := range [][]byte{migration, deletionMigration} {
+		if _, err := install.ExecContext(ctx, string(sql)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := install.ExecContext(ctx, "INSERT INTO schema_migrations(version,checksum) VALUES ($1,$2)", i+1, fmt.Sprintf("%x", sha256.Sum256(sql))); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := install.Commit(); err != nil {
 		t.Fatal(err)
@@ -174,8 +179,13 @@ func TestSchema(t *testing.T) {
 	if err := db.CheckSchema(t.Context()); !errors.Is(err, moxiedb.ErrConflict) {
 		t.Fatalf("future migration: %v", err)
 	}
-	if _, err := setup.ExecContext(t.Context(), "UPDATE schema_migrations SET version=$1,checksum=$2", moxiedb.SchemaVersion, fmt.Sprintf("%x", sha256.Sum256(migration))); err != nil {
+	if _, err := setup.ExecContext(t.Context(), "DELETE FROM schema_migrations"); err != nil {
 		t.Fatal(err)
+	}
+	for i, sql := range [][]byte{migration, deletionMigration} {
+		if _, err := setup.ExecContext(t.Context(), "INSERT INTO schema_migrations(version,checksum) VALUES ($1,$2)", i+1, fmt.Sprintf("%x", sha256.Sum256(sql))); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := setup.ExecContext(t.Context(), "DROP TABLE catalog_initialization"); err != nil {
 		t.Fatal(err)
@@ -898,5 +908,357 @@ func TestAddFromOlderRequestedBase(t *testing.T) {
 	head, err := db.GetVersion(ctx, d.ID, 0)
 	if err != nil || head.Version != 3 {
 		t.Fatalf("head: %+v %v", head, err)
+	}
+}
+
+func TestDeletionIdentity(t *testing.T) {
+	db, _ := testDB(t)
+	ctx := t.Context()
+	d := moxiedb.Deletion{ID: "delete", Namespace: "ns", WorkflowID: "prep", RunID: "r1", DatasetID: "data", DatasetVersion: 1, Manifest: []byte(`{"executions":[{"namespace":"ns","workflow_id":"train","run_id":"r2"}],"snapshots":[]}`)}
+	if err := db.BeginDeletion(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	replay := d
+	replay.Manifest = []byte(`{ "snapshots": [], "executions": [{"run_id":"r2","workflow_id":"train","namespace":"ns"}] }`)
+	if err := db.BeginDeletion(ctx, replay); err != nil {
+		t.Fatalf("JSONB replay: %v", err)
+	}
+	for _, change := range []func(*moxiedb.Deletion){
+		func(d *moxiedb.Deletion) { d.ID = "another" },
+		func(d *moxiedb.Deletion) { d.Namespace = "other" },
+		func(d *moxiedb.Deletion) { d.WorkflowID = "other" },
+		func(d *moxiedb.Deletion) { d.RunID = "other" },
+		func(d *moxiedb.Deletion) { d.DatasetID = "other" },
+		func(d *moxiedb.Deletion) { d.DatasetVersion = 2 },
+		func(d *moxiedb.Deletion) { d.Manifest = []byte(`{}`) },
+		func(d *moxiedb.Deletion) { d.State = "completed" },
+		func(d *moxiedb.Deletion) { d.Manifest = []byte(`[]`) },
+		func(d *moxiedb.Deletion) {
+			d.Manifest = []byte(`{"executions":[{"namespace":"ns","workflow_id":"train"}]}`)
+		},
+	} {
+		bad := d
+		change(&bad)
+		if err := db.BeginDeletion(ctx, bad); !errors.Is(err, moxiedb.ErrConflict) {
+			t.Fatalf("identity/state accepted %+v: %v", bad, err)
+		}
+	}
+	competing := d
+	competing.ID = "competing"
+	competing.RunID = "different"
+	if err := db.BeginDeletion(ctx, competing); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("two pending dataset deletions: %v", err)
+	}
+	for _, key := range [][3]string{{"ns", "prep", "r1"}, {"ns", "train", "r2"}, {"other", "train", "r2"}, {"ns", "train", "other"}} {
+		deleted, err := db.IsDeletedExecution(ctx, key[0], key[1], key[2])
+		want := key[0] == "ns" && key[2] != "other"
+		if err != nil || deleted != want {
+			t.Fatalf("execution %v: %t %v", key, deleted, err)
+		}
+	}
+	if err := db.SetDeletionError(ctx, d.ID, "files_unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetDeletionError(ctx, d.ID, "secret detail /path"); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("non-code error: %v", err)
+	}
+	stored, err := db.GetDeletion(ctx, "ns", "prep", "r1")
+	if err != nil || stored.ErrorCode != "files_unavailable" || stored.State != "pending" || stored.CompletedAt.Valid {
+		t.Fatalf("stored: %+v %v", stored, err)
+	}
+	if err := db.CompleteDeletion(ctx, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CompleteDeletion(ctx, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetDeletionError(ctx, d.ID, "late_error"); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("completed mutation: %v", err)
+	}
+	if err := db.BeginDeletion(ctx, d); err != nil {
+		t.Fatalf("completed identity replay: %v", err)
+	}
+	pending, err := db.PendingDeletions(ctx)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("pending: %+v %v", pending, err)
+	}
+	stored, err = db.GetDeletion(ctx, "ns", "prep", "r1")
+	if err != nil || stored.State != "completed" || stored.ErrorCode != "" || !stored.CompletedAt.Valid {
+		t.Fatalf("completion: %+v %v", stored, err)
+	}
+	if deleted, err := db.IsDeletedExecution(ctx, "ns", "train", "r2"); err != nil || !deleted {
+		t.Fatalf("completed execution fence: %t %v", deleted, err)
+	}
+}
+
+func TestApplyDeletion(t *testing.T) {
+	db, setup := testDB(t)
+	ctx := t.Context()
+	d, v1, docs := fixture(t, db, 1, 0)
+	if err := db.CommitVersion(ctx, d, v1, docs); err != nil {
+		t.Fatal(err)
+	}
+	d, v2, docs := fixture(t, db, 2, 1)
+	if err := db.CommitVersion(ctx, d, v2, docs); err != nil {
+		t.Fatal(err)
+	}
+	// An existing job's foreign key must survive removal of its input snapshot.
+	j := moxiedb.Job{JobID: "existing", Mode: "training", TargetDatasetID: sql.NullString{String: d.ID, Valid: true}, BaseDatasetVersion: sql.NullInt64{Int64: 2, Valid: true}}
+	if err := db.CreateJob(ctx, j); err != nil {
+		t.Fatal(err)
+	}
+	a := moxiedb.Attempt{AttemptID: "existing/1", JobID: j.JobID, AttemptNumber: 1, TemporalNamespace: "ns", WorkflowID: "unselected", RunID: sql.NullString{String: "r", Valid: true}}
+	if err := db.CreateAttempt(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	i := moxiedb.Intent{IntentID: "authorize", JobID: j.JobID, AttemptID: a.AttemptID, Kind: "submit", Payload: []byte(`{}`), PayloadSHA256: strings.Repeat("a", 64)}
+	operation := moxiedb.Deletion{ID: "delete", Namespace: "ns", WorkflowID: "prep", RunID: "r", DatasetID: d.ID, Manifest: []byte(`{}`)}
+	if err := db.BeginDeletion(ctx, operation); err != nil {
+		t.Fatal(err)
+	}
+	j.JobID = "new"
+	if err := db.CreateJob(ctx, j); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("new job during deletion: %v", err)
+	}
+	if err := db.BeginIntent(ctx, i); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("new intent during deletion: %v", err)
+	}
+	if err := db.ApplyDeletion(ctx, operation.ID, []int{2, 999}); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("missing version must rollback: %v", err)
+	}
+	got, err := db.GetVersion(ctx, d.ID, 1)
+	if err != nil || got.SnapshotSHA256 != v1.SnapshotSHA256 {
+		t.Fatalf("partial rewrite escaped rollback: %+v %v", got, err)
+	}
+	if err := db.ApplyDeletion(ctx, operation.ID, []int{2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ApplyDeletion(ctx, operation.ID, []int{2}); err != nil {
+		t.Fatalf("apply replay: %v", err)
+	}
+	got, err = db.GetVersion(ctx, d.ID, 0)
+	if err != nil || got.Version != 1 || got.SnapshotSHA256 != v1.SnapshotSHA256 || got.RecordCount != v1.RecordCount {
+		t.Fatalf("newest live: %+v %v", got, err)
+	}
+	pub, err := db.GetPublication(ctx, v1.PublicationID)
+	if err != nil || pub.SnapshotSHA256 != v1.SnapshotSHA256 || pub.State != "committed" {
+		t.Fatalf("publication checksum: %+v %v", pub, err)
+	}
+	if _, err := db.GetVersion(ctx, d.ID, 2); !errors.Is(err, moxiedb.ErrNotFound) {
+		t.Fatalf("tombstone visible: %v", err)
+	}
+	list, err := db.ListDatasets(ctx)
+	if err != nil || len(list) != 1 || list[0].CurrentVersion != 1 {
+		t.Fatalf("list newest live: %+v %v", list, err)
+	}
+	versions, err := db.ListVersions(ctx, d.ID)
+	if err != nil || len(versions) != 1 {
+		t.Fatalf("versions: %+v %v", versions, err)
+	}
+	if err := db.ApplyDeletion(ctx, operation.ID, []int{1}); err != nil {
+		t.Fatal(err)
+	}
+	list, err = db.ListDatasets(ctx)
+	if err != nil || len(list) != 0 {
+		t.Fatalf("deleted dataset listed: %+v %v", list, err)
+	}
+	meta, err := db.GetDataset(ctx, d.ID)
+	if err != nil || meta.CurrentVersion != 2 {
+		t.Fatalf("high water metadata: %+v %v", meta, err)
+	}
+	if next, err := db.NextVersion(ctx, d.ID); err != nil || next != 3 {
+		t.Fatalf("next version: %d %v", next, err)
+	}
+	var count int
+	if err := setup.QueryRowContext(ctx, `SELECT count(*) FROM dataset_version_documents`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("documents remain: %d %v", count, err)
+	}
+	if err := db.CompleteDeletion(ctx, operation.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ApplyDeletion(ctx, operation.ID, nil); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("completed mutation: %v", err)
+	}
+	if err := db.CreateJob(ctx, j); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("deleted input accepted: %v", err)
+	}
+	if err := db.BeginIntent(ctx, i); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("deleted version intent: %v", err)
+	}
+	d.CurrentVersion = 2
+	if err := db.CommitVersion(ctx, d, v2, docs); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("tombstone publication replay: %v", err)
+	}
+	// Existing preparation may allocate above all tombstones and revive metadata.
+	d, v3, docs := fixture(t, db, 3, 2)
+	if err := db.CommitVersion(ctx, d, v3, docs); err != nil {
+		t.Fatalf("pending preparation revival: %v", err)
+	}
+	list, err = db.ListDatasets(ctx)
+	if err != nil || len(list) != 1 || list[0].CurrentVersion != 3 {
+		t.Fatalf("revived: %+v %v", list, err)
+	}
+	if _, err := db.GetCatalogExecution(ctx, "ns", "unselected", "r"); err != nil {
+		t.Fatalf("live FK job lost: %v", err)
+	}
+}
+
+func TestDeleteExecutionCatalog(t *testing.T) {
+	db, _ := testDB(t)
+	ctx := t.Context()
+	d, v, docs := fixture(t, db, 1, 0)
+	if err := db.CommitVersion(ctx, d, v, docs); err != nil {
+		t.Fatal(err)
+	}
+	j := moxiedb.Job{JobID: "job", Mode: "training", TargetDatasetID: sql.NullString{String: d.ID, Valid: true}, BaseDatasetVersion: sql.NullInt64{Int64: 1, Valid: true}}
+	if err := db.CreateJob(ctx, j); err != nil {
+		t.Fatal(err)
+	}
+	a := moxiedb.Attempt{AttemptID: "a1", JobID: j.JobID, AttemptNumber: 1, TemporalNamespace: "ns", WorkflowID: "workflow", RunID: sql.NullString{String: "old", Valid: true}}
+	if err := db.CreateAttempt(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	b := a
+	b.AttemptID = "a2"
+	b.AttemptNumber = 2
+	b.PreviousAttemptID = sql.NullString{String: a.AttemptID, Valid: true}
+	b.RunID.String = "new"
+	if err := db.CreateAttempt(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	other := a
+	other.AttemptID = "a3"
+	other.AttemptNumber = 3
+	other.TemporalNamespace = "elsewhere"
+	other.RunID.String = "other"
+	if err := db.CreateAttempt(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	all, err := db.DatasetExecutions(ctx, d.ID)
+	if err != nil || len(all) != 3 || all[0].Attempt.RunID.String != "old" || all[2].Attempt.TemporalNamespace != "elsewhere" {
+		t.Fatalf("all dataset attempts: %+v %v", all, err)
+	}
+	i := moxiedb.Intent{IntentID: "intent", JobID: j.JobID, AttemptID: a.AttemptID, Kind: "submit", Payload: []byte(`{}`), PayloadSHA256: strings.Repeat("a", 64)}
+	if err := db.BeginIntent(ctx, i); err != nil {
+		t.Fatal(err)
+	}
+	op := moxiedb.Deletion{ID: "delete-old", Namespace: "ns", WorkflowID: "workflow", RunID: "old", Manifest: []byte(`{"executions":[{"namespace":"ns","workflow_id":"workflow","run_id":"new"}]}`)}
+	if err := db.DeleteExecutionCatalog(ctx, "ns", "workflow", "old"); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("unregistered deletion: %v", err)
+	}
+	if err := db.BeginDeletion(ctx, op); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("active attempts accepted for deletion: %v", err)
+	}
+	for _, id := range []string{a.AttemptID, b.AttemptID} {
+		if err := db.UpdateAttemptObservation(ctx, id, 0, moxiedb.AttemptObservation{ExecutionStatus: sql.NullString{String: "completed", Valid: true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.SettleIntent(ctx, i.IntentID, "accepted", sql.NullString{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.BeginDeletion(ctx, op); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteExecutionCatalog(ctx, "ns", "workflow", "old"); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("lineage should fail closed: %v", err)
+	}
+	if _, err := db.GetIntent(ctx, i.IntentID); err != nil {
+		t.Fatalf("failed deletion lost intent: %v", err)
+	}
+	if err := db.BeginIntent(ctx, i); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("deleted execution intent replay: %v", err)
+	}
+	if err := db.CreateAttempt(ctx, a); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("deleted execution attempt replay: %v", err)
+	}
+	preRun := a
+	preRun.RunID = sql.NullString{}
+	if err := db.CreateAttempt(ctx, preRun); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("pre-run replay bypassed deleted execution: %v", err)
+	}
+	if err := db.LinkAttemptRun(ctx, b.AttemptID, "new"); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("selected training resurrection: %v", err)
+	}
+	if err := db.DeleteExecutionCatalog(ctx, "ns", "workflow", "new"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteExecutionCatalog(ctx, "ns", "workflow", "old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteExecutionCatalog(ctx, "ns", "workflow", "old"); err != nil {
+		t.Fatalf("delete replay: %v", err)
+	}
+	if _, err := db.GetAttempt(ctx, other.AttemptID); err != nil {
+		t.Fatalf("sibling removed: %v", err)
+	}
+	if _, err := db.GetIntent(ctx, i.IntentID); !errors.Is(err, moxiedb.ErrNotFound) {
+		t.Fatalf("selected intent retained: %v", err)
+	}
+	if err := db.CreateAttempt(ctx, a); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("deleted execution recreated: %v", err)
+	}
+}
+
+func TestConcurrentDeletions(t *testing.T) {
+	db, _ := testDB(t)
+	ctx := t.Context()
+	start := make(chan struct{})
+	results := make(chan error, 8)
+	for n := range 8 {
+		go func() {
+			<-start
+			results <- db.BeginDeletion(ctx, moxiedb.Deletion{ID: fmt.Sprintf("delete%d", n), Namespace: "ns", WorkflowID: "workflow", RunID: fmt.Sprintf("run%d", n), DatasetID: "data", Manifest: []byte(`{}`)})
+		}()
+	}
+	close(start)
+	successes := 0
+	for range 8 {
+		err := <-results
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, moxiedb.ErrConflict):
+		default:
+			t.Fatal(err)
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("pending winners: %d", successes)
+	}
+	pending, err := db.PendingDeletions(ctx)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending: %+v %v", pending, err)
+	}
+}
+
+func TestSchemaMigrationSequence(t *testing.T) {
+	db, setup := testDB(t)
+	ctx := t.Context()
+	// Runtime checks never install a missing migration.
+	if _, err := setup.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version=2`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CheckSchema(ctx); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("001-only accepted: %v", err)
+	}
+	var count int
+	if err := setup.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("runtime mutated migrations: %d %v", count, err)
+	}
+	if _, err := setup.ExecContext(ctx, `INSERT INTO schema_migrations(version,checksum) VALUES (2,$1)`, fmt.Sprintf("%x", sha256.Sum256(deletionMigration))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setup.ExecContext(ctx, `INSERT INTO schema_migrations(version,checksum) VALUES (3,repeat('a',64))`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CheckSchema(ctx); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("future accepted: %v", err)
+	}
+	if _, err := setup.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version=3; ALTER TABLE datasets DROP COLUMN deleted_at`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CheckSchema(ctx); !errors.Is(err, moxiedb.ErrConflict) {
+		t.Fatalf("missing deletion marker accepted: %v", err)
 	}
 }

@@ -7,6 +7,7 @@ import type { PreparationDataset, TrainingOptions, TrainingRun as Run } from '..
 import { FieldLabel } from './ParamTooltips';
 import { active, Badge, date, DetailTabs, failedStep, records, RunActivity, runKey, stepGlyphs, stepStateLabels, timeLeft, useNow, type StepState } from './PreparationRuns';
 import { EvaluationChecks, failureText, notAccepted, runIssues, RunIssues, useEvaluation } from './RunIssues';
+import DeleteRunButton from './DeleteRunButton';
 
 // Training runs start from a saved dataset version and belong to that dataset: the
 // dataset's page lists them, the setup page starts one, and each run has its own page.
@@ -98,6 +99,7 @@ export function useDatasetTrainings(datasetID: string | undefined, version: numb
   const [runs, setRuns] = useState<Run[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (!visible || !datasetID) return;
     const controller = new AbortController();
@@ -128,14 +130,15 @@ export function useDatasetTrainings(datasetID: string | undefined, version: numb
       }
     })();
     return () => controller.abort();
-  }, [visible, datasetID, version]);
-  return { runs, error, loading };
+  }, [visible, datasetID, version, revision]);
+  return { runs, error, loading, refresh: () => setRevision((value) => value + 1) };
 }
 
 // DatasetTrainings is the Training runs tab of a dataset's page: every training of
 // the dataset, newest first, 10 per page like the dashboard.
-export function DatasetTrainings({ runs, error, loading, trainPath, trainingReady }: { runs: Run[]; error: string; loading: boolean; trainPath: string; trainingReady: boolean }) {
+export function DatasetTrainings({ runs, error, loading, trainPath, trainingReady, onDeleted }: { runs: Run[]; error: string; loading: boolean; trainPath: string; trainingReady: boolean; onDeleted: () => void }) {
   const [page, setPage] = useState(0);
+  const [notice, setNotice] = useState('');
   const pages = Math.max(1, Math.ceil(runs.length / 10));
   const shown = Math.min(page, pages - 1);
   const rows = runs.slice(shown * 10, shown * 10 + 10);
@@ -145,6 +148,7 @@ export function DatasetTrainings({ runs, error, loading, trainPath, trainingRead
   const action = blocked ? <button className="btn btn-primary" type="button" disabled>{actionLabel}</button>
     : <Link className="btn btn-primary" to={trainPath}>{actionLabel}</Link>;
   return <>
+    {notice && <p className="prep-copy" role="status">{notice}</p>}
     {error && <p className="prep-warning" role="status">Could not refresh trainings: {error} Retrying automatically.</p>}
     {loading && <p className="prep-copy" role="status">Loading training runs…</p>}
     {!loading && runs.length > 0 && <div className="ds-training-heading">
@@ -161,7 +165,7 @@ export function DatasetTrainings({ runs, error, loading, trainPath, trainingRead
           <td data-label="Step"><TrainingStepCell run={run} /></td>
           <td data-label="Result"><ResultCell run={run} /></td>
           <td data-label="Date created">{date(run.started_at)}</td>
-          <td className="prep-row-action"><Link className="btn btn-secondary" aria-label={`Details of training on version ${run.training_dataset_version ?? ''}, created ${date(run.started_at)}`} to={trainingPath(run)}>Details</Link></td>
+          <td className="prep-row-action"><div className="run-row-actions"><Link className="btn btn-secondary" aria-label={`Details of training on version ${run.training_dataset_version ?? ''}, created ${date(run.started_at)}`} to={trainingPath(run)}>Details</Link><DeleteRunButton run={run} onDeleted={() => { setPage(0); setNotice('Training run and its artifacts deleted. The dataset is unchanged.'); onDeleted(); document.getElementById('run-tab-trainings')?.focus(); }} /></div></td>
         </tr>)}
       </tbody>
     </table></div>}
