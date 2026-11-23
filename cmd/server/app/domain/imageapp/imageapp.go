@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
@@ -21,6 +22,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/malina/model"
 	"github.com/ardanlabs/kronk/sdk/pool"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"golang.org/x/image/draw"
 )
 
@@ -99,9 +101,18 @@ func (a *app) events(ctx context.Context, _ *http.Request) web.Encoder {
 }
 
 func writeProgressEvent(w http.ResponseWriter, event progressEvent) error {
+	return writeImageEvent(w, "", event)
+}
+
+func writeImageEvent(w http.ResponseWriter, name string, event any) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal malina progress event: %w", err)
+	}
+	if name != "" {
+		if _, err := fmt.Fprintf(w, "event: %s\n", name); err != nil {
+			return err
+		}
 	}
 	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
 		return fmt.Errorf("write malina progress event: %w", err)
@@ -125,8 +136,11 @@ func (a *app) generations(ctx context.Context, r *http.Request) web.Encoder {
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
+	if req.Model == malinamodels.BundleMOSSImageEditHQ.String() {
+		return errs.Errorf(errs.InvalidArgument, "MOSS editing requires an image; use /v1/images/edits")
+	}
 
-	return a.generate(ctx, req.Model, params, "text-to-image")
+	return a.generate(ctx, req.Model, params, "text-to-image", req.Stream)
 }
 
 func (a *app) edits(ctx context.Context, r *http.Request) web.Encoder {
@@ -159,10 +173,10 @@ func (a *app) edits(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 
-	return a.generate(ctx, req.Model, params, "image-to-image")
+	return a.generate(ctx, req.Model, params, "image-to-image", req.Stream)
 }
 
-func (a *app) generate(ctx context.Context, modelID string, params model.GenerateParams, operation string) web.Encoder {
+func (a *app) generate(ctx context.Context, modelID string, params model.GenerateParams, operation string, stream bool) web.Encoder {
 	handle, err := a.pool.Malina.AcquireModel(ctx, modelID)
 	if err != nil {
 		return errs.FromSDK(err)
@@ -170,12 +184,51 @@ func (a *app) generate(ctx context.Context, modelID string, params model.Generat
 
 	a.log.Info(ctx, "image-generation", "operation", operation, "model", modelID, "width", params.Width, "height", params.Height, "steps", params.Steps)
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	w := web.GetWriter(ctx)
+	var progressMu sync.Mutex
+	var progressErr error
+	if stream {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		params.Progress = func(event model.GenerationProgress) {
+			progressMu.Lock()
+			defer progressMu.Unlock()
+			if progressErr != nil {
+				return
+			}
+			percent := 0.0
+			if event.Total > 0 {
+				percent = min(100, max(0, float64(event.Completed)/float64(event.Total)*100))
+			}
+			progressErr = writeImageEvent(w, "progress", progressEvent{
+				Scope: "request", Status: "progress", Stage: event.Stage, Detail: event.Detail,
+				Unit: event.Unit, SamplePass: event.SamplePass,
+				Step: int(event.Completed), Steps: int(event.Total), Percent: percent,
+			})
+			if progressErr != nil {
+				cancel()
+			}
+		}
+	}
 	image, err := handle.Generate(ctx, params)
+	progressMu.Lock()
+	defer progressMu.Unlock()
+	if progressErr != nil {
+		return web.NewNoResponseError(errs.New(errs.Internal, progressErr))
+	}
 	if err != nil {
+		if stream {
+			if writeErr := writeImageEvent(w, "error", errs.FromSDK(err)); writeErr != nil {
+				return web.NewNoResponseError(errs.New(errs.Internal, writeErr))
+			}
+			return web.NewNoResponse()
+		}
 		return errs.FromSDK(fmt.Errorf("generate image: %w", err))
 	}
 
-	return generationResponse{
+	response := generationResponse{
 		Created: time.Now().Unix(),
 		Data: []generationImageData{{
 			B64JSON: base64.StdEncoding.EncodeToString(image.PNG),
@@ -184,6 +237,13 @@ func (a *app) generate(ctx context.Context, modelID string, params model.Generat
 			Height:  image.Height,
 		}},
 	}
+	if stream {
+		if err := writeImageEvent(w, "result", response); err != nil {
+			return web.NewNoResponseError(errs.New(errs.Internal, err))
+		}
+		return web.NewNoResponse()
+	}
+	return response
 }
 
 func parseEditRequest(r *http.Request) (generationRequest, float32, error) {
@@ -195,6 +255,12 @@ func parseEditRequest(r *http.Request) (generationRequest, float32, error) {
 		ResponseFormat: firstFormValue(form, "response_format"),
 		User:           firstFormValue(form, "user"),
 		NegativePrompt: firstFormValue(form, "negative_prompt"),
+	}
+	if value, exists := form["stream"]; exists {
+		if len(value) != 1 || (value[0] != "true" && value[0] != "false") {
+			return generationRequest{}, 0, errors.New("field[stream] must be true or false")
+		}
+		req.Stream = value[0] == "true"
 	}
 
 	n, exists, err := optionalFormInt(form, "n", 32)
@@ -308,8 +374,35 @@ func editParams(req generationRequest, source image.Image, strength float32) (mo
 			return model.GenerateParams{}, err
 		}
 	}
-	params.InitImage = resizeImage(source, params.Width, params.Height)
+	multiple := 8
+	switch req.Model {
+	case malinamodels.BundleMOSSImageEditHQ.String():
+		multiple = 16
+	case malinamodels.BundleQwenImage21.String():
+		multiple = 32
+	}
+	if multiple != 8 {
+		if req.Size == "" {
+			params.Width = params.Width / multiple * multiple
+			params.Height = params.Height / multiple * multiple
+		}
+		if params.Width%multiple != 0 || params.Height%multiple != 0 {
+			return model.GenerateParams{}, fmt.Errorf("%s output dimensions must be multiples of %d", req.Model, multiple)
+		}
+	}
 	params.Strength = strength
+	if req.Model == malinamodels.BundleQwenImage21.String() || req.Model == malinamodels.BundleFlux2KleinBase4B.String() {
+		if source.Bounds().Dx() > 1024 || source.Bounds().Dy() > 1024 {
+			width, height, err := generationSize(source.Bounds())
+			if err != nil {
+				return model.GenerateParams{}, err
+			}
+			source = resizeImage(source, width, height)
+		}
+		params.RefImages = []image.Image{source}
+	} else {
+		params.InitImage = resizeImage(source, params.Width, params.Height)
+	}
 	if err := params.Validate(); err != nil {
 		return model.GenerateParams{}, err
 	}
@@ -360,6 +453,12 @@ func (r generationRequest) params() (model.GenerateParams, error) {
 	}
 
 	params := model.NewGenerateParams()
+	switch r.Model {
+	case malinamodels.BundleFlux2KleinBase4B.String():
+		params.CFGScale = 4
+	case malinamodels.BundleQwenImage21.String():
+		params.CFGScale = 6
+	}
 	params.Prompt = r.Prompt
 	params.NegativePrompt = r.NegativePrompt
 	if r.Size != "" {
@@ -378,6 +477,9 @@ func (r generationRequest) params() (model.GenerateParams, error) {
 	}
 	if r.Seed != nil {
 		params.Seed = *r.Seed
+	}
+	if r.Model == malinamodels.BundleQwenImage21.String() && (params.Width%32 != 0 || params.Height%32 != 0) {
+		return model.GenerateParams{}, errors.New("qwen image 2.1 output dimensions must be multiples of 32")
 	}
 	if err := params.Validate(); err != nil {
 		return model.GenerateParams{}, err

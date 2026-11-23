@@ -8,7 +8,7 @@ import (
 )
 
 func TestFileRoleSerialization(t *testing.T) {
-	for _, role := range []FileRole{RoleModel, RoleDiffusion, RoleVAE, RoleClipL, RoleClipG, RoleT5XXL, RoleLLM, RoleLLMVision, RoleTokenizer, RoleControlNet, RoleTAESD, RolePhotoMaker, RoleClipVision, RoleHighNoise, RoleEmbeddingsConn, RoleMotionModule, RoleUpscaler, RoleADetailer, RoleAudioEncoder, {}} {
+	for _, role := range []FileRole{RoleModel, RoleDiffusion, RoleVAE, RoleClipL, RoleClipG, RoleT5XXL, RoleLLM, RoleLLMVision, RoleTokenizer, RoleControlNet, RoleTAESD, RolePhotoMaker, RoleClipVision, RoleHighNoise, RoleEmbeddingsConn, RoleMotionModule, RoleUpscaler, RoleADetailer, RoleAudioEncoder, RoleLora, {}} {
 		t.Run(role.String(), func(t *testing.T) {
 			if parsed := MustParseFileRole(role.String()); !parsed.Equal(role) {
 				t.Errorf("Parse: got %v, want %v", parsed, role)

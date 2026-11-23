@@ -576,17 +576,14 @@ func (m *Model) loadCapabilities(ctx context.Context) error {
 		m.log(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
 	}
 
-	capabilities, err := helperGetCapabilities(m.model, m.mtmdMetaCtx)
-	m.mtmdCapsKnown = err == nil
+	capabilities, err := mtmd.HelperGetCapabilities(m.model, m.mtmdMetaCtx)
 	if err != nil {
-		// Older bundles lack the helper; preserve their existing input checks.
-		capabilities = mtmd.HelperCap{Chat: true, TextGen: true}
-		if m.mtmdMetaCtx != 0 {
-			capabilities.Vision = mtmd.SupportVision(m.mtmdMetaCtx)
-			capabilities.Audio = mtmd.SupportAudio(m.mtmdMetaCtx)
-		}
+		return fmt.Errorf("discover native capabilities: %w", err)
 	}
 
+	// Do not expose duplex support: Kronk does not implement a duplex runtime.
+	capabilities.AudioDuplex = false
+	m.mtmdCapsKnown = true
 	m.mtmdCapabilities = capabilities
 	return nil
 }

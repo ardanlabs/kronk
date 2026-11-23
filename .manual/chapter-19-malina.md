@@ -26,7 +26,7 @@ GGUF does not supply an image-generation pipeline.
 
 | Surface | Supported workflows |
 | ------- | ------------------- |
-| Model server and BUI | Text-to-image and image-to-image; PNG results and server-wide progress |
+| Model server and BUI | Text-to-image and image editing; PNG results, request progress, and cancellation |
 | Local CLI | Library and curated model-bundle installation, listing, and removal |
 | SDK | Image generation/editing plus ControlNet, ADetailer, video generation, upscaling, and Motion-JPEG encoding |
 
@@ -92,12 +92,11 @@ arbitrary newer build is not accepted by default either. User-managed library
 paths are never upgraded automatically. Rebuild or replace those libraries
 from the pinned revision, especially when an upgrade changes the native ABI.
 
-Malina v1.2.3 requires native release `master-1106-532d2c1`, authenticated by
-manifest SHA-256 `fdd518cfc0ace6f35853f767ef1aed7bb48ef7c543d61b100ff506ed33ec6a47`.
-This release replaces the struct-based native API used by v1.2.2 and earlier
-with opaque options, tensors, and results. Neither old bindings with new
-libraries nor new bindings with old libraries are compatible. Upgrade the
-bindings and native libraries together, then restart before generating.
+Malina v1.2.5 requires native release `master-1122-3b12781`, authenticated by
+manifest SHA-256 `87e0e9129ee82472c8f415db6bcf58c6198d7d282113db9731554ffedafc846b`.
+This release uses DGL-backed opaque options, tensors, and results. Libraries
+installed for earlier bindings are not interchangeable. Upgrade the bindings
+and native libraries together, then restart before generating.
 
 With default verification enabled, installation or verification failures stop
 server startup. Repair the managed bundle locally, then restart. A later native
@@ -125,6 +124,9 @@ Complete installations are reused on subsequent runs.
 | `sd-1.5`, `sdxl-base-1.0` | Single-checkpoint image generation |
 | `z-image-turbo`, `llada-image-turbo`, `moss-image-sft` | Component-based image generation |
 | `flux2-klein-4b`, `flux2-klein-9b` | Component-based, license-gated image generation |
+| `flux2-klein-base-4b` | Undistilled component-based image generation |
+| `qwen-image-2.1` | Component-based image generation; research/evaluation license |
+| `moss-image-edit-hq` | Image editing with an explicit LoRA; SDK, API, and BUI |
 | `controlnet-canny-sd1.5`, `controlnet-union-sdxl`, `z-image-turbo-controlnet-union` | SDK ControlNet workflows |
 | `adetailer-face-yolov8n` | SDK face refinement |
 | `animatediff-sd1.5`, `wan2.2-s2v-14b` | SDK video workflows |
@@ -134,14 +136,19 @@ For gated FLUX.2 bundles, accept the provider's license and supply a read token
 through `KRONK_HF_TOKEN` or `HF_TOKEN`. Review each model's license for your use;
 availability in the catalog is not a grant of commercial rights.
 
-Catalog selection does not change generation defaults. Apply model-specific
-recommendations explicitly in HTTP fields or the BUI:
+Image requests default to 20 steps and CFG 7, except Klein Base defaults to
+CFG 4 and Qwen Image 2.1 to CFG 6. The BUI resets these settings on model
+selection. Apply other model-specific recommendations explicitly:
 
 - **Z-Image-Turbo:** 8 steps and CFG scale 1.
 - **LLaDA-Image-Turbo:** 4 steps and CFG scale 1. Its distinct native
   reference-image instruction-editing path is not exposed by Kronk.
 - **MOSS-Image-SFT:** dimensions divisible by 16 and CFG scale 3. The curated
   bundle has not been locally inference-validated.
+- **FLUX.2 Klein Base 4B:** 20 steps and CFG scale 4; do not use the distilled
+  Klein sampling defaults for this undistilled model.
+- **Qwen Image 2.1:** 20 steps and CFG 6, with output dimensions divisible by 32.
+  Editing uses reference conditioning and the included vision projector.
 
 The server maps the required component roles for supported generation bundles;
 operators do not need to configure individual component paths.
@@ -199,11 +206,20 @@ See [Chapter 8](https://www.kronkai.com/manual#84-model-pool-and-resource-budget
 Use the library and model-management pages to prepare a compatible installation.
 In **Image Generator**, select an installed generation model, enter a prompt,
 and set dimensions, steps, CFG scale, and seed. Upload a PNG/JPEG to select
-image-to-image and choose strength. The result shows dimensions and can be
+image-to-image; choose strength for workflows that use it. The result shows dimensions and can be
 downloaded as PNG.
 
-The activity panel reports server-wide loading and generation progress, not
-only the current browser's request. See Chapter 13 for browser authentication.
+The progress panel reports only the current request, including workflow stage,
+units, and sampling pass when available. Unknown totals display indeterminate
+progress. **Cancel generation** aborts the HTTP request and requests cooperative
+native cancellation; resource release may take time.
+
+MOSS Image Edit HQ is available only in image mode and requires a source image.
+Its dimensions align to multiples of 16. Qwen Image 2.1 and Klein Base use the
+upload as a reference for instruction-based editing, not an img2img starting
+latent. These three workflows do not use the generic strength control. Qwen's
+research/evaluation license requires separate commercial permission.
+See Chapter 13 for browser authentication.
 
 ### 19.6 Image Generation and Editing API
 
@@ -274,6 +290,15 @@ immediate resource release.
 
 ### 19.7 Progress and Administration
 
+Set `stream: true` in a generation JSON body, or `stream=true` in edit multipart
+fields, to receive `text/event-stream` on the POST response. Named `progress`
+events contain `scope: "request"`, `stage`, `detail`, `unit`, `sample_pass`,
+`step`, `steps`, and `percent`. A zero `steps` means an unknown total; do not
+interpret its percentage as measurable completion. The final `result` event
+contains the normal image response. An `error` event contains an error code
+and message. Without streaming, the JSON response is unchanged. Closing the
+request requests cancellation. Errors before streaming starts use HTTP errors.
+
 `GET /v1/images/events` is an SSE stream reporting `scope: "global"`, `step`,
 `steps`, `percent`, and `seconds_per_step`. Progress is process-global and not
 request-correlated; it must not be treated as the completion signal for an
@@ -307,6 +332,13 @@ including after cancellation or failure. Legacy `malina.WithProgress` remains
 available for process-global model-loading and generation progress. Context-local
 SDK events do not change the global HTTP/BUI stream.
 
+Canceling the request context requests cooperative native cancellation for
+image generation, ADetailer, AnimateDiff, and MOSS editing. Calls retain their
+admission slot until native execution and cancellation have stopped, then clear
+progress handlers before context reuse. Cancellation is not an immediate
+interruption of every native operation. ESRGAN upscaling cannot currently be
+interrupted after entering native code; a canceled result is discarded.
+
 Management APIs require administrator access in every authorization mode except
 `open`:
 
@@ -335,13 +367,48 @@ or a curated, licensed model bundle. The catalog is intentionally bounded.
 SDK video results retain the effective frame rate, generated audio, and
 generation metadata; AVI encoding remains video-only.
 
-Kronk's image defaults remain 512×512, 20 steps, CFG scale 7, a random seed,
-image-to-image strength 0.75, and ControlNet strength 1. ADetailer inpainting
-retains strength 0.75 rather than adopting the new native default of 0.4;
-`DetailParams.ExtraArgs` controls detector, mask, and region inpaint settings.
+The SDK's `NewGenerateParams()` defaults to 512×512, 20 steps, CFG scale 7,
+a random seed, image-to-image strength 0.75, and ControlNet strength 1.
+The HTTP API and BUI use the bundle-specific CFG defaults described above. Set
+`params.Canny = model.NewCannyParams()` to enable Canny preprocessing on a
+control image; a zero `CannyParams` disables it. Preprocessing does not mutate
+the caller's image.
+
+ADetailer accepts an SD 1.5 checkpoint and detector. `NewDetailParams()` defaults
+to 64×64 inpainting, 20 steps, CFG 7, strength 0.75, a random seed, confidence
+0.3, detector input size 640, four regions, padding 32, and mask blur 4. Override
+these through the typed `DetailParams` fields, not an `ExtraArgs` string.
+Inpaint dimensions must be multiples of 64. AnimateDiff likewise requires an
+SD 1.5 checkpoint and output dimensions divisible by 64; its bundled workflow
+does not support image or audio conditioning.
+These workflows create reusable execution contexts before loading weights;
+model-file errors can surface on the first generation rather than construction.
+Their `ModelInfo.ModelVersion` is empty.
+
+MOSS editing uses `Generate` with an `InitImage` and output dimensions divisible
+by 16. Configure diffusion weights, LLM, vision projector, tokenizer, VAE, and
+`MOSSImageEditLoraPath` from the `moss-image-edit-hq` bundle. Its LoRA weight is
+1; generic img2img `Strength` does not control this workflow. ControlNet is not
+supported for MOSS editing.
+
+For Qwen Image 2.1 and FLUX.2 Klein Base instruction editing, pass source images
+in `GenerateParams.RefImages`, not `InitImage`. Reference images condition the
+output without setting its starting latent. Qwen output dimensions must be
+divisible by 32. The HTTP edit endpoint maps its single upload to this reference
+collection for these bundles.
+
 Upscaling uses the loaded model's actual scale and retains native generation
 metadata through `UpscaleWithInfo`. Image pixels, video frames, audio samples,
 and generation metadata returned by the SDK remain valid after model unloading.
+`GeneratedVideo.Audio` is a value: empty `Audio.Data` means no generated audio.
+Copying result structs does not deep-copy their pixel or sample slices.
+
+`GenerationInfo` on image, video, and upscale results contains the executed DGL
+source, not JSON. `Seed` retains the requested seed, including -1 for random.
+Call Malina's `sd.GenerationMetadata(result.GenerationInfo)` for best-effort
+inferred image-parameter JSON; video and upscale workflows may return `{}`.
+GenerationInfo is separate from PNG/AVI output. Treat DGL as executable code:
+do not run untrusted source; it has the process's file permissions.
 
 RelayVSR and SeedVR2 video upscaling are not bound by Malina and are not exposed
 by Kronk. The existing upscaler supports ESRGAN-style image upscaling, not those

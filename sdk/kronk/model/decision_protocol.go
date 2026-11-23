@@ -12,7 +12,7 @@ func initDecisionProtocol(m *Model) error {
 		Model: m.model, Vocab: m.vocab,
 		ModelID: m.responseModelID(), Protocol: m.modelInfo.decisionProtocol.String(),
 		AddBOSToken: m.addBOSToken, ContextWindow: m.decision.contextWindow,
-		DecisionGroups: m.decision.mem == 0 && batchExtSetDecisionGroupFunc.Cif != nil,
+		DecisionGroups: m.decision.mem == 0,
 		Calibration:    m.modelInfo.profile.Decision,
 		Run:            m.runDecisionWork,
 		RenderChat: func(ctx context.Context, prompt string) (string, error) {

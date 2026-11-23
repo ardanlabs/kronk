@@ -3,7 +3,7 @@
 ## Index
 
 - [v1.33.3](#v1333)
-  - [Custom llama.cpp Bundle Metadata](#v1333-custom-llamacpp-bundle-metadata)
+  - [Malina Data and Workflow APIs](#v1333-malina-data-and-workflow-apis)
   - [Custom Grammar Token Rules](#v1333-custom-grammar-token-rules)
   - [SWA Cache Default and MTP Physical Batches](#v1333-swa-cache-default-and-mtp-physical-batches)
   - [Multi-GPU AutoTune Batch Default](#v1333-multi-gpu-autotune-batch-default)
@@ -65,21 +65,6 @@
 
 ## v1.33.3
 
-### v1.33.3: Custom llama.cpp Bundle Metadata
-
-Custom llama.cpp library directories exposing native capability discovery now
-require a readable `version.json` alongside the shared libraries. Its `version`
-must identify the actual llama.cpp build as `b<number>` (an optional `@digest`
-suffix is accepted). Kronk uses this to distinguish the capability ABI before
-and after b12619; missing or unrecognized metadata now fails initialization
-instead of guessing the native layout.
-
-Bundles installed by `kronk libs` already include this file. For custom bundles,
-retain their installation metadata or create `version.json` with the actual
-build tag, for example `{"version":"b12633"}` for libraries built from b12633.
-Do not relabel older libraries as a newer build. Libraries predating native
-capability discovery retain their existing fallback without this requirement.
-
 ### v1.33.3: Custom Grammar Token Rules
 
 Custom GBNF grammars now treat tokens explicitly named in token rules as opaque
@@ -91,6 +76,37 @@ If a grammar mixes token terminals with character rules, add explicit token
 alternatives wherever named tokens must remain accepted instead of relying on
 wildcards or character classes to consume them. Character-only grammars,
 including Kronk's generated JSON-schema grammars, do not need this migration.
+
+### v1.33.3: Malina Data and Workflow APIs
+
+Malina data records now use value semantics. In Kronk's SDK, assign
+`GenerateParams.Canny` a `model.CannyParams` value, not a pointer. The zero value
+disables Canny; `model.NewCannyParams()` enables it for a control image.
+`GeneratedVideo.Audio` is `model.Audio`, not `*model.Audio`; replace nil checks
+with `len(result.Audio.Data) != 0`. Copying a result struct shares its slice
+storage rather than deep-copying its pixels or samples.
+
+`GenerationInfo` now contains executed DGL source instead of
+`sdcpp.generation/v1` JSON. Stop JSON-decoding it directly. If needed, call
+Malina's `sd.GenerationMetadata(source)` for best-effort inferred image metadata;
+video and upscale programs may return `{}`. `Seed` still records the requested
+seed, not the resolved random seed. Do not execute untrusted DGL.
+
+`DetailParams.ExtraArgs` is removed. Start with `model.NewDetailParams()` and
+set typed fields: `InpaintWidth`, `InpaintHeight`, `Strength`, `Confidence`,
+`InputSize`, `TopK`, `Padding`, and `MaskBlur`. ADetailer requires an SD 1.5
+checkpoint and detector; inpaint dimensions must be divisible by 64.
+AnimateDiff uses an explicit SD 1.5 workflow, requires dimensions divisible by
+64, and rejects image/audio conditioning. Request progress and context
+cancellation remain supported.
+Bundled DGL workflows defer weight loading and model validation until execution;
+construction no longer guarantees that their model files are loadable.
+`ModelInfo.ModelVersion` is empty for these workflows.
+
+`GenerateParams.ImagePreprocessRules`, `VideoParams.ImagePreprocessRules`, and
+`Config.PhotoMakerPath` are removed. Preprocess inputs explicitly before
+submitting them; PhotoMaker requires a custom workflow and is not exposed by
+Kronk's SDK. See Chapter 19 for defaults and supported workflows.
 
 ### v1.33.3: SWA Cache Default and MTP Physical Batches
 

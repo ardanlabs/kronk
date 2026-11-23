@@ -121,11 +121,14 @@ func TestGenerateParamsValidate(t *testing.T) {
 	}{
 		{name: "missing prompt", mutate: func(p *GenerateParams) { p.Prompt = "" }},
 		{name: "NUL prompt", mutate: func(p *GenerateParams) { p.Prompt = "cat\x00dog" }},
-		{name: "NUL image preprocessing rules", mutate: func(p *GenerateParams) { p.ImagePreprocessRules = "target=init\x00" }},
+		{name: "NUL negative prompt", mutate: func(p *GenerateParams) { p.NegativePrompt = "dog\x00" }},
+		{name: "Canny without image", mutate: func(p *GenerateParams) { p.Canny = NewCannyParams() }},
 		{name: "control type without image", mutate: func(p *GenerateParams) { p.ControlType = ControlTypeCanny }},
 		{name: "invalid width", mutate: func(p *GenerateParams) { p.Width = 63 }},
 		{name: "invalid steps", mutate: func(p *GenerateParams) { p.Steps = 0 }},
 		{name: "invalid CFG", mutate: func(p *GenerateParams) { p.CFGScale = float32(math.NaN()) }},
+		{name: "nil reference", mutate: func(p *GenerateParams) { p.RefImages = []image.Image{nil} }},
+		{name: "empty reference", mutate: func(p *GenerateParams) { p.RefImages = []image.Image{image.NewRGBA(image.Rect(0, 0, 0, 12))} }},
 	}
 
 	for _, tt := range tests {
@@ -238,7 +241,7 @@ func TestCannyParams(t *testing.T) {
 	valid := NewGenerateParams()
 	valid.Prompt = "cat"
 	valid.ControlImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
-	valid.Canny = &got
+	valid.Canny = got
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
@@ -265,7 +268,7 @@ func TestCannyParams(t *testing.T) {
 			params.Prompt = "cat"
 			params.ControlImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
 			canny := NewCannyParams()
-			params.Canny = &canny
+			params.Canny = canny
 			tt.mutate(&params)
 
 			if err := params.Validate(); !errors.Is(err, ErrInvalidRequest) {
@@ -277,7 +280,7 @@ func TestCannyParams(t *testing.T) {
 
 func TestDetailParams(t *testing.T) {
 	got := NewDetailParams()
-	if got.ExtraArgs != "input_size=640,confidence=0.3,inpaint_width=64,inpaint_height=64" || got.Steps != 20 || got.CFGScale != 7 || got.Seed != -1 {
+	if got.InpaintWidth != 64 || got.InpaintHeight != 64 || got.InputSize != 640 || got.Confidence != 0.3 || got.Strength != 0.75 || got.Steps != 20 || got.CFGScale != 7 || got.Seed != -1 || got.TopK != 4 || got.Padding != 32 || got.MaskBlur != 4 {
 		t.Errorf("NewDetailParams(): got %+v, want default detail parameters", got)
 	}
 
@@ -296,6 +299,14 @@ func TestDetailParams(t *testing.T) {
 		{name: "invalid width", mutate: func(p *DetailParams) { p.Image = image.NewRGBA(image.Rect(0, 0, 65, 64)) }},
 		{name: "invalid height", mutate: func(p *DetailParams) { p.Image = image.NewRGBA(image.Rect(0, 0, 64, 65)) }},
 		{name: "missing prompt", mutate: func(p *DetailParams) { p.Prompt = "" }},
+		{name: "inpaint alignment", mutate: func(p *DetailParams) { p.InpaintWidth = 72 }},
+		{name: "inpaint size", mutate: func(p *DetailParams) { p.InpaintHeight = 0 }},
+		{name: "strength", mutate: func(p *DetailParams) { p.Strength = 0 }},
+		{name: "confidence", mutate: func(p *DetailParams) { p.Confidence = float32(math.NaN()) }},
+		{name: "detector input", mutate: func(p *DetailParams) { p.InputSize = 0 }},
+		{name: "region count", mutate: func(p *DetailParams) { p.TopK = 0 }},
+		{name: "padding", mutate: func(p *DetailParams) { p.Padding = -1 }},
+		{name: "mask blur", mutate: func(p *DetailParams) { p.MaskBlur = float32(math.Inf(1)) }},
 	}
 
 	for _, tt := range tests {
@@ -341,7 +352,7 @@ func TestVideoParams(t *testing.T) {
 		{name: "zero FPS", mutate: func(p *VideoParams) { p.FPS = 0 }},
 		{name: "too much FPS", mutate: func(p *VideoParams) { p.FPS = 1_001 }},
 		{name: "missing prompt", mutate: func(p *VideoParams) { p.Prompt = "" }},
-		{name: "NUL image preprocessing rules", mutate: func(p *VideoParams) { p.ImagePreprocessRules = "target=init\x00" }},
+		{name: "NUL negative prompt", mutate: func(p *VideoParams) { p.NegativePrompt = "dog\x00" }},
 		{name: "audio without image", mutate: func(p *VideoParams) { p.RefAudios = []Audio{{SampleRate: 16_000, Channels: 1, Data: []float32{0}}} }},
 		{name: "multiple audio tracks", mutate: func(p *VideoParams) {
 			p.InitImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
@@ -429,7 +440,7 @@ func TestEncodeImage(t *testing.T) {
 		Data:    []byte{255, 0, 0, 0, 255, 0},
 	}
 
-	got, err := encodeImage(&raw, 42)
+	got, err := encodeImage(raw, 42)
 	if err != nil {
 		t.Fatalf("encodeImage() error = %v", err)
 	}

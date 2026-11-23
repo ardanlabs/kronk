@@ -3,12 +3,17 @@
 package chatapi_test
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"image/png"
 	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,6 +107,98 @@ func TestImageGenerationModel(t *testing.T) {
 		StatusCode: http.StatusOK, ResponseCmpFunc: jsonContentType,
 		GotResp: &imageGenerationResponse{}, ExpResp: int64(43), CmpFunc: compareImageGenerationResponse,
 	}}, "image")
+
+	t.Run("request progress and result", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"sd-1.5","prompt":"a green square","size":"128x128","steps":2,"seed":44,"stream":true}`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		api.ServeHTTP(w, req)
+		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "text/event-stream" {
+			t.Fatalf("stream: got %d, %v, %s", w.Code, w.Header(), w.Body.String())
+		}
+		var completed, result bool
+		for frame := range strings.SplitSeq(w.Body.String(), "\n\n") {
+			name, data, ok := strings.Cut(frame, "\ndata: ")
+			if !ok {
+				continue
+			}
+			switch name {
+			case "event: progress":
+				var event struct {
+					Scope, Stage string
+					Step, Steps  int
+				}
+				if err := json.Unmarshal([]byte(data), &event); err != nil {
+					t.Fatal(err)
+				}
+				completed = completed || (event.Scope == "request" && event.Stage == "sampling" && event.Step == 2 && event.Steps == 2)
+			case "event: result":
+				var image imageGenerationResponse
+				if err := json.Unmarshal([]byte(data), &image); err != nil {
+					t.Fatal(err)
+				}
+				if diff := compareImageGenerationResponse(&image, int64(44)); diff != "" {
+					t.Fatal(diff)
+				}
+				result = true
+			case "event: error":
+				t.Fatalf("stream error: %s", data)
+			}
+		}
+		if !completed || !result {
+			t.Fatalf("stream: got completed=%t result=%t, want both", completed, result)
+		}
+	})
+
+	t.Run("disconnect cancels generation", func(t *testing.T) {
+		done := make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer close(done)
+			api.ServeHTTP(w, r)
+		}))
+		defer server.Close()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/v1/images/generations", strings.NewReader(`{"model":"sd-1.5","prompt":"a green square","size":"512x512","steps":100,"stream":true}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		response, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "text/event-stream" {
+			t.Fatalf("stream: got status %d, headers %v", response.StatusCode, response.Header)
+		}
+		scanner := bufio.NewScanner(response.Body)
+		var progress bool
+		for scanner.Scan() {
+			if scanner.Text() == "event: progress" {
+				progress = true
+				break
+			}
+		}
+		if !progress {
+			t.Fatalf("missing progress before disconnect: %v", scanner.Err())
+		}
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("generation did not stop after disconnect")
+		}
+		handle, err := api.Pool.Malina.AcquireModel(t.Context(), "sd-1.5")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if active := handle.ActiveGenerations(); active != 0 {
+			t.Fatalf("active after disconnect: got %d, want 0", active)
+		}
+	})
 }
 
 type imageGenerationResponse struct {

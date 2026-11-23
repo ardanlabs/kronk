@@ -71,7 +71,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func NewModel(ctx context.Context, cfg Config) (*Model, error)</code>
               </pre>
-              <p className="doc-description">NewModel loads one reusable native model context.</p>
+              <p className="doc-description">NewModel creates one reusable native model context. Generic model support is checked during construction. Bundled DGL workflows defer weight loading and model validation until execution.</p>
             </div>
 
             <div className="doc-section" id="func-newupscaler">
@@ -134,7 +134,7 @@ export default function DocsSDKMalinaModel() {
 	ControlNetPath              string
 	MotionModulePath            string
 	ADetailerPath               string
-	PhotoMakerPath              string
+	MOSSImageEditLoraPath       string
 	TensorTypeRules             string
 	Concurrency                 int
 	QueueDepth                  int
@@ -171,10 +171,17 @@ export default function DocsSDKMalinaModel() {
 	Image          image.Image
 	Prompt         string
 	NegativePrompt string
-	ExtraArgs      string
+	InpaintWidth   int
+	InpaintHeight  int
 	Steps          int
+	Strength       float32
 	CFGScale       float32
 	Seed           int64
+	Confidence     float32
+	InputSize      int
+	TopK           int
+	Padding        int
+	MaskBlur       float32
 	Progress       func(GenerationProgress)
 }`}</code>
               </pre>
@@ -185,24 +192,24 @@ export default function DocsSDKMalinaModel() {
               <h4>GenerateParams</h4>
               <pre className="code-block">
                 <code>{`type GenerateParams struct {
-	Prompt               string
-	NegativePrompt       string
-	ImagePreprocessRules string
-	Width                int
-	Height               int
-	Steps                int
-	CFGScale             float32
-	Seed                 int64
-	InitImage            image.Image
-	Strength             float32
-	ControlImage         image.Image
-	ControlStrength      float32
-	ControlType          ControlType
-	Canny                *CannyParams
-	Progress             func(GenerationProgress)
+	Prompt          string
+	NegativePrompt  string
+	Width           int
+	Height          int
+	Steps           int
+	CFGScale        float32
+	Seed            int64
+	InitImage       image.Image
+	RefImages       []image.Image
+	Strength        float32
+	ControlImage    image.Image
+	ControlStrength float32
+	ControlType     ControlType
+	Canny           CannyParams
+	Progress        func(GenerationProgress)
 }`}</code>
               </pre>
-              <p className="doc-description">GenerateParams controls one text-to-image generation. ImagePreprocessRules contains semicolon-separated native target=...,key=value rules applied to temporary input-image pixels; it does not mutate the caller's images.</p>
+              <p className="doc-description">GenerateParams controls one image generation. A zero Canny value disables edge preprocessing; use NewCannyParams to enable it for a control image. RefImages supplies reference conditioning for instruction-based editing, distinct from InitImage's img2img starting latent and Strength.</p>
             </div>
 
             <div className="doc-section" id="type-generatedimage">
@@ -216,7 +223,7 @@ export default function DocsSDKMalinaModel() {
 	GenerationInfo string
 }`}</code>
               </pre>
-              <p className="doc-description">GeneratedImage contains an owned PNG and generation metadata. GenerationInfo contains the native sdcpp.generation/v1 JSON record, separate from the PNG. Seed retains the requested seed; GenerationInfo includes the resolved seed.</p>
+              <p className="doc-description">GeneratedImage contains an owned PNG and executed DGL source in GenerationInfo, separate from the PNG. Seed retains the requested seed. Copying the struct shares the PNG slice; it does not copy its storage.</p>
             </div>
 
             <div className="doc-section" id="type-generatedvideo">
@@ -224,13 +231,13 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>{`type GeneratedVideo struct {
 	Frames         []image.Image
-	Audio          *Audio
+	Audio          Audio
 	FPS            int
 	Seed           int64
 	GenerationInfo string
 }`}</code>
               </pre>
-              <p className="doc-description">GeneratedVideo contains owned frames, optional generated audio, and the effective frame rate reported by stable-diffusion.cpp. GenerationInfo contains the native sdcpp.generation/v1 JSON record. Seed retains the requested seed; the resolved seed is available in GenerationInfo.</p>
+              <p className="doc-description">GeneratedVideo contains owned frames, optional generated audio, and the effective frame rate reported by stable-diffusion.cpp. GenerationInfo contains executed DGL source, not JSON. Seed retains the requested seed. A zero Audio value (empty Data) means no generated audio.</p>
             </div>
 
             <div className="doc-section" id="type-generationprogress">
@@ -270,7 +277,7 @@ export default function DocsSDKMalinaModel() {
 	CPUThreads         int32
 }`}</code>
               </pre>
-              <p className="doc-description">ModelInfo describes a loaded model.</p>
+              <p className="doc-description">ModelInfo describes a model context. ModelVersion is empty for bundled DGL workflows, whose weights are selected and loaded during execution.</p>
             </div>
 
             <div className="doc-section" id="type-option">
@@ -289,7 +296,7 @@ export default function DocsSDKMalinaModel() {
 	GenerationInfo string
 }`}</code>
               </pre>
-              <p className="doc-description">UpscaledImage contains owned pixels and the native sdcpp.generation/v1 JSON record, including upscale.upscale_factor. Both remain valid after Unload. GenerationInfo is separate from the pixels and is not embedded when encoding the image as PNG or JPEG.</p>
+              <p className="doc-description">UpscaledImage contains owned pixels and executed DGL source in GenerationInfo. Both remain valid after Unload. GenerationInfo is separate from the pixels and is not embedded when encoding the image as PNG or JPEG.</p>
             </div>
 
             <div className="doc-section" id="type-upscaler">
@@ -321,21 +328,20 @@ export default function DocsSDKMalinaModel() {
               <h4>VideoParams</h4>
               <pre className="code-block">
                 <code>{`type VideoParams struct {
-	Prompt               string
-	NegativePrompt       string
-	ImagePreprocessRules string
-	Width                int
-	Height               int
-	Steps                int
-	Seed                 int64
-	Frames               int
-	FPS                  int
-	InitImage            image.Image
-	RefAudios            []Audio
-	Progress             func(GenerationProgress)
+	Prompt         string
+	NegativePrompt string
+	Width          int
+	Height         int
+	Steps          int
+	Seed           int64
+	Frames         int
+	FPS            int
+	InitImage      image.Image
+	RefAudios      []Audio
+	Progress       func(GenerationProgress)
 }`}</code>
               </pre>
-              <p className="doc-description">VideoParams controls one video generation. ImagePreprocessRules contains semicolon-separated native target=...,key=value rules applied to temporary input-image pixels; it does not mutate the caller's images.</p>
+              <p className="doc-description">VideoParams controls one video generation. AnimateDiff requires dimensions divisible by 64 and does not support InitImage or RefAudios.</p>
             </div>
           </div>
 
@@ -411,7 +417,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage, error)</code>
               </pre>
-              <p className="doc-description">Detail detects faces and returns the final refined image. Inpainting uses strength 0.75; ExtraArgs can override region settings such as inpaint dimensions.</p>
+              <p className="doc-description">Detail detects faces and returns the final refined image. Canceling ctx requests cooperative native cancellation and waits for execution to stop.</p>
             </div>
 
             <div className="doc-section" id="method-model-generate">
@@ -419,7 +425,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedImage, error)</code>
               </pre>
-              <p className="doc-description">Generate runs synchronous text-to-image generation. Calls on this Model are serialized, while independent Model contexts may generate concurrently. Canceling ctx interrupts native generation and resets the context for reuse.</p>
+              <p className="doc-description">Generate runs synchronous text-to-image generation. Calls on this Model are serialized, while independent Model contexts may generate concurrently. Canceling ctx requests cooperative native cancellation and waits for execution to stop before returning the context for reuse.</p>
             </div>
 
             <div className="doc-section" id="method-model-generatevideo">

@@ -156,7 +156,7 @@ export default function MalinaModels() {
                     <tr className={selected ? 'active' : ''} onClick={() => setSelectedID(selected ? null : entry.id)}>
                       <td style={{ fontFamily: 'var(--font-mono, monospace)' }}>{entry.id}{entry.gated ? ' 🔒' : ''}</td>
                       <td>{formatCatalogSize(entry.files)}</td>
-                      <td>{entry.basic_text_to_image ? 'Text / image generation' : 'Support bundle'}</td>
+                      <td>{entry.basic_text_to_image ? 'Text / image generation' : entry.image_to_image ? 'Image editing' : 'Support bundle'}</td>
                       <td>{installedEntry ? '✓' : '—'}</td>
                       <td style={{ fontSize: 13 }}>
                         {state ? (

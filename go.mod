@@ -10,7 +10,7 @@ require (
 	github.com/ardanlabs/bucky v1.1.6
 	github.com/ardanlabs/conf/v3 v3.13.0
 	github.com/ardanlabs/jinja v1.14.0
-	github.com/ardanlabs/malina v1.2.3
+	github.com/ardanlabs/malina v1.2.5
 	github.com/arl/statsviz v0.8.2
 	github.com/charmbracelet/x/ansi v0.11.10
 	github.com/dgraph-io/badger/v4 v4.9.6
@@ -18,7 +18,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-getter v1.8.10
 	github.com/hashicorp/go-version v1.9.0
-	github.com/hybridgroup/yzma v1.33.1-0.20261119115438-ba9c7e926b5d
+	github.com/hybridgroup/yzma v1.33.1-0.20261123193522-ba6e127cb960
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
 	github.com/jupiterrider/ffi v0.8.0
 	github.com/maypok86/otter/v2 v2.4.0
@@ -109,7 +109,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.25 // indirect
 	github.com/googleapis/gax-go/v2 v2.27.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.34.0 // indirect
 	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
 	github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.76 // indirect
@@ -163,7 +163,7 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/tools v0.53.0 // indirect
 	google.golang.org/api v0.316.0 // indirect
-	google.golang.org/genproto v0.0.0-20261118221215-c8830f628b3f // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261118221215-c8830f628b3f // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261118221215-c8830f628b3f // indirect
+	google.golang.org/genproto v0.0.0-20261123191846-1e707ab9fbc2 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261123191846-1e707ab9fbc2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261123191846-1e707ab9fbc2 // indirect
 )

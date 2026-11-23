@@ -10,6 +10,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
 
 // Supply an embedding GGUF with different hidden/output widths to exercise
@@ -19,8 +20,12 @@ func TestEmbeddingsOutputWidth(t *testing.T) {
 		t.Skip("model inference skipped in short mode")
 	}
 	modelPath := installedTestModel(t, "KRONK_TEST_EMBED_MODEL", "nomic-embed-text-v1.5.Q8_0.gguf")
-	if err := llama.Load(libs.Path(os.Getenv("KRONK_TEST_LIB_PATH"))); err != nil {
+	libPath := libs.Path(os.Getenv("KRONK_TEST_LIB_PATH"))
+	if err := llama.Load(libPath); err != nil {
 		t.Fatalf("load llama.cpp: %v", err)
+	}
+	if err := mtmd.Load(libPath); err != nil {
+		t.Fatalf("load mtmd: %v", err)
 	}
 	if err := llama.Init(); err != nil {
 		t.Fatalf("initialize llama.cpp: %v", err)
