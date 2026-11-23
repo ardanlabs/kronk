@@ -77,6 +77,14 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 		}
 	}
 	report := func(progress tmprl.Progress) {
+		if limit > 0 && p.Input.Kind == preparation.PreparationFull {
+			// Count this run's retained records, not its source-passage cursor.
+			// Accepted preview records count immediately; pending candidates do not.
+			progress.Completed, progress.Total = len(state.Records), limit
+			if s.Verify != nil {
+				progress.Completed = min(len(state.Records), max(state.Verified, state.ReviewedCount))
+			}
+		}
 		if input.Publish != nil {
 			input.Publish(progress)
 		}
@@ -507,6 +515,9 @@ func (s Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl
 		if err := tmprl.WriteJSON(input.Workspace, checkpoint.File, state); err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
+	}
+	if limit > 0 && p.Input.Kind == preparation.PreparationFull {
+		report(tmprl.Progress{Message: "Generated batch saved; verification still required"})
 	}
 	if err := checkpoint.SafePoint(ctx, input); err != nil {
 		return tmprl.StepResult[preparation.Artifacts]{}, err

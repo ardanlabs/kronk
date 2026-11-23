@@ -66,8 +66,8 @@ export function Progress({ run }: { run: TrainingRun }) {
   if (read) return <span className="prep-sub">{read} pages read</span>;
   if (!progress?.total) return null;
   const percent = Math.min(100, Math.floor(progress.completed / progress.total * 100));
-  const cap = progress.step === 'generate' ? run.settings?.max_questions : 0;
-  return <><span className="prep-sub">{progress.completed} of {progress.total}{progress.step === 'extract' ? ' pages read' : ''}{cap ? ` · stops as soon as ${records(cap)} are saved, which can be before this count finishes` : ''}</span><div className="prep-track" role="progressbar" aria-label={`${stepLabel(progress.step)} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div></>;
+  const cap = progress.step === 'generate' && progress.total !== run.settings?.max_questions ? run.settings?.max_questions : 0;
+  return <><span className="prep-sub">{progress.completed} of {progress.total} {progressUnit(run)}{cap ? ` · stops as soon as ${records(cap)} are saved, which can be before this count finishes` : ''}</span><div className="prep-track" role="progressbar" aria-label={`${stepLabel(progress.step)} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div></>;
 }
 export type StepState = 'completed' | 'running' | 'review' | 'pausing' | 'paused' | 'failed' | 'stopped' | 'pending';
 export const stepStateLabels: Record<StepState, string> = { completed: 'Done', running: 'Running', review: 'Waiting for you', pausing: 'Stopping…', paused: 'Stopped', failed: 'Failed', stopped: 'Cancelled', pending: 'Not started' };
@@ -118,7 +118,14 @@ const stepCopy: Record<string, string> = {
   generate: 'The model is writing records from your document. Leaving this screen never stops it.',
   verify: 'Each record is being checked against its source. Records that fail are dropped.',
 };
-const progressUnits: Record<string, string> = { extract: 'pages read', generate: 'sections', verify: 'records checked' };
+function progressUnit(run: TrainingRun) {
+  const progress = run.progress;
+  if (progress?.step === 'generate') {
+    if ((run.settings?.max_questions && progress.total === run.settings.max_questions) || progress.message === 'Generating additional records to reach the requested count') return 'records';
+    if (progress.message === 'Generating evaluation questions') return 'evaluation questions';
+  }
+  return ({ extract: 'pages read', generate: 'sections', verify: 'records checked' } as Record<string, string>)[progress?.step ?? ''] ?? '';
+}
 
 // RunActivity records only updates observed on this screen, not a durable log.
 export function RunActivity({ run, now }: { run: TrainingRun; now: number }) {
@@ -126,7 +133,7 @@ export function RunActivity({ run, now }: { run: TrainingRun; now: number }) {
   const label = run.stage === 'training' ? trainingStepLabels[run.step ?? ''] ?? 'Training' : stepLabel(run.step);
   const text = run.status === 'running' && !runStopState(run) ? progress?.message || (run.step === 'extract' ? 'Waiting for document extraction results. Page counts update after a conversion batch finishes.' : 'In progress.')
     : statuses[display(run)].label;
-  const units = progress?.message === 'Generating additional records to reach the requested count' ? 'records' : progress?.message === 'Generating evaluation questions' ? 'evaluation questions' : progressUnits[progress?.step ?? ''] ?? 'work units completed';
+  const units = progressUnit(run) || 'work units completed';
   const counts = progress && progress.completed > 0 && progress.message !== 'Source extraction complete' ? `${progress.completed}${progress.total > 0 ? ` of ${progress.total}` : ''} ${units}` : '';
   const activity = `${run.state_stale ? 'Last known: ' : ''}${label}: ${text}${counts ? ` · ${counts}` : ''}`;
   const stamp = progress?.updated_at || run.updated_at || run.started_at;
@@ -306,7 +313,7 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
   const index = Math.max(0, steps.findIndex(([name]) => name === (stoppedAt ?? run.step))) + 1;
   const stepProgress = state === 'running' && run.progress?.total && run.progress.step === run.step ? run.progress : undefined;
   const percent = stepProgress ? Math.min(100, Math.floor(stepProgress.completed / stepProgress.total * 100)) : null;
-  const cap = stepProgress?.step === 'generate' ? settings?.max_questions : 0;
+  const cap = stepProgress?.step === 'generate' && stepProgress.total !== settings?.max_questions ? settings?.max_questions : 0;
   const finishedRun = state === 'failed' || state === 'stopped';
   const left = estimate ? estimate * 1000 - Math.max(0, now - estimateAt) : 0;
   const read = state === 'running' ? pagesRead(run) : 0;
@@ -389,7 +396,7 @@ export function PreparationRunView({ run, visible, onRefresh }: { run: TrainingR
           <p className="prep-copy">{copy}</p>
           {state !== 'failed' && issues.length > 0 && <button className="prep-inline-link run-issues-link" type="button" onClick={openIssues}>View issues</button>}
           {trainable && <p className="prep-copy"><strong>{dataset.name} version {dataset.version} has {records(dataset.record_count)} and can still be used for training.</strong></p>}
-          {stepProgress && <p className="live-count"><strong>{stepProgress.completed} of {stepProgress.total}</strong> {progressUnits[stepProgress.step] ?? ''}{cap ? ` · stops once ${records(cap)} are saved` : ''}</p>}
+          {stepProgress && <p className="live-count"><strong>{stepProgress.completed} of {stepProgress.total}</strong> {progressUnit(run)}{cap ? ` · stops once ${records(cap)} are saved` : ''}</p>}
           {reviewable(run) && draft && <p className="prep-copy">You have unsent edits.</p>}
           {(reviewable(run) || (finishedRun && trainable)) && <div className="prep-actions">
             {reviewable(run) ? <>{reviewButton(false)}{!!viewedCheckpoint && viewedCheckpoint === run.checkpoint?.id && <button className="btn btn-primary hero-action" disabled={!validReview || !!busy} onClick={() => void acceptReview()}>{busy === 'review' ? 'Sending…' : 'Accept and continue'}</button>}</>
