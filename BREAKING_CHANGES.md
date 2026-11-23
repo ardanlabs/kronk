@@ -6,6 +6,7 @@
   - [Custom llama.cpp Bundle Metadata](#v1333-custom-llamacpp-bundle-metadata)
   - [Custom Grammar Token Rules](#v1333-custom-grammar-token-rules)
   - [SWA Cache Default and MTP Physical Batches](#v1333-swa-cache-default-and-mtp-physical-batches)
+  - [Multi-GPU AutoTune Batch Default](#v1333-multi-gpu-autotune-batch-default)
   - [Inference Metrics](#v1333-inference-metrics)
   - [Speech Response Numeric Types](#v1333-speech-response-numeric-types)
   - [Internal Parser Packages](#v1333-internal-parser-packages)
@@ -108,6 +109,20 @@ logical batch size. The per-slot generation reserve remains in the logical
 batch; the physical setting is the total compute capacity, subject to image
 floors and logical/native limits. To retain the previous single-physical-batch
 behavior, omit the physical setting or request the full logical capacity.
+
+### v1.33.3: Multi-GPU AutoTune Batch Default
+
+AutoTune now defaults the requested physical batch to 512 for non-speculative
+generation using multiple selected GPUs, including vision models, tensor
+splitting, partial GPU offload, and CPU-resident KV caches. These configurations
+previously started from the architecture preference or runtime default and can
+now have different memory use, cache precision, and prefill throughput.
+
+Set `physical-batch-size` explicitly to retain a previous capacity, for example
+`physical-batch-size: 2048`. Explicit settings remain authoritative; image floors
+and logical/native capacity still determine the effective batch. Evaluation,
+active MTP/separate-draft execution, and CPU-only configurations retain their
+existing starting policies.
 
 ### v1.33.3: Inference Metrics
 

@@ -939,7 +939,10 @@ func TestAutoTunePhysicalBatchFit(t *testing.T) {
 		{"explicit below floor", 1400, 1, ModelConfig{PtrPhysicalBatchSize: new(256)}, 256, 8192, model.GGMLTypeF16},
 		{"explicit precision", 1400, 1, ModelConfig{CacheTypeK: model.GGMLTypeF16, CacheTypeV: model.GGMLTypeF16}, 512, 4096, model.GGMLTypeF16},
 		{"explicit context and concurrency", 1450, 1, ModelConfig{PtrContextWindow: new(8192), PtrNSeqMax: new(1)}, 512, 8192, model.GGMLTypeF16},
-		{"multi GPU tensor unchanged", 1500, 2, ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 0, 4096, model.GGMLTypeQ8_0},
+		{"multi GPU starts at 512", 1700, 2, ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 512, 8192, model.GGMLTypeF16},
+		{"multi GPU 512 floor", 1450, 2, ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 512, 8192, model.GGMLTypeF16},
+		{"multi GPU Q8 before context", 1400, 2, ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 512, 8192, model.GGMLTypeQ8_0},
+		{"multi GPU context last", 1390, 2, ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 512, 4096, model.GGMLTypeQ8_0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			devs := devices.Devices{GPUCount: tt.gpus, SupportsGPUOffload: true, SystemRAMBytes: 16 << 30}
@@ -1042,31 +1045,50 @@ func TestAnalyzeInklingFitsWeightsButNeedsSmallerBatch(t *testing.T) {
 	devs.Devices[0].FreeBytes = 128 << 30
 	devs.Devices[0].TotalBytes = 128 << 30
 	for _, tt := range []struct {
-		name     string
-		slots    int
-		physical *int
-		wantSize int
+		name      string
+		gpus      int
+		slots     int
+		physical  *int
+		image     *int
+		wantSize  int
+		wantRows  int
+		wantCache model.GGMLType
 	}{
-		{"one slot preference", 1, nil, 512},
-		{"two slot preference", 2, nil, 512},
-		{"explicit larger batch", 2, new(1024), 1024},
-		{"explicit smaller batch", 2, new(256), 256},
+		{"one slot preference", 1, 1, nil, nil, 512, 512, model.GGMLTypeF16},
+		{"two slot preference", 1, 2, nil, nil, 512, 512, model.GGMLTypeF16},
+		{"explicit larger batch", 1, 2, new(1024), nil, 1024, 1024, model.GGMLTypeF16},
+		{"explicit smaller batch", 1, 2, new(256), nil, 256, 256, model.GGMLTypeF16},
+		{"multi GPU preference", 2, 1, nil, nil, 512, 512, model.GGMLTypeQ8_0},
+		{"multi GPU two slots", 2, 2, nil, nil, 512, 512, model.GGMLTypeQ8_0},
+		{"multi GPU explicit larger batch", 2, 1, new(1024), nil, 1024, 1024, model.GGMLTypeQ8_0},
+		{"multi GPU explicit smaller batch", 2, 2, new(256), nil, 256, 256, model.GGMLTypeF16},
+		{"multi GPU image floor", 2, 1, nil, new(640), 512, 640, model.GGMLTypeQ8_0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			devs := devs
+			if tt.gpus == 2 {
+				devs.GPUCount = 2
+				devs.Devices = []devices.DeviceInfo{
+					{Name: "ROCm0", Type: "gpu_rocm", FreeBytes: 24 << 30, TotalBytes: 24 << 30},
+					{Name: "ROCm1", Type: "gpu_rocm", FreeBytes: 24 << 30, TotalBytes: 24 << 30},
+				}
+			}
 			constraints := constraints
 			constraints.PtrNSeqMax = new(tt.slots)
 			constraints.PtrPhysicalBatchSize = tt.physical
+			constraints.PtrImageBatchTokenCapacity = tt.image
 			tuned, err := AutoTuneWithConfig(info, devs, constraints)
 			if err != nil {
 				t.Fatal(err)
 			}
 			cfg := tuned.ToKronkConfig()
+			cfg.PtrImageBatchTokenCapacity = constraints.PtrImageBatchTokenCapacity
 			_, physical := cfg.GenerationBatchSizes(1, false)
-			if cfg.PhysicalBatchSize() != tt.wantSize || physical != tt.wantSize {
-				t.Errorf("requested/effective physical batch: got %d/%d, want %d", cfg.PhysicalBatchSize(), physical, tt.wantSize)
+			if cfg.PhysicalBatchSize() != tt.wantSize || physical != tt.wantRows {
+				t.Errorf("requested/effective physical batch: got %d/%d, want %d/%d", cfg.PhysicalBatchSize(), physical, tt.wantSize, tt.wantRows)
 			}
 			if cfg.BatchBaseSize() != 2048 || cfg.NSeqMax() != tt.slots || cfg.ContextWindow() != 131072 ||
-				cfg.CacheTypeK != model.GGMLTypeF16 || cfg.CacheTypeV != model.GGMLTypeF16 {
+				cfg.CacheTypeK != tt.wantCache || cfg.CacheTypeV != tt.wantCache {
 				t.Errorf("preference changed other sizing: got %s", cfg)
 			}
 		})
@@ -1241,10 +1263,13 @@ func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 		{"multi GPU layer", ModelConfig{}, 512},
 		{"explicit request", ModelConfig{PtrPhysicalBatchSize: new(1024)}, 1024},
 		{"explicit one GPU", ModelConfig{Devices: []string{"CUDA0"}, PtrPhysicalBatchSize: new(256)}, 256},
-		{"tensor split", ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 0},
-		{"tensor placement override", ModelConfig{TensorBuftOverrides: []string{"blk.*=CPU"}}, 0},
+		{"tensor split", ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 512},
+		{"tensor placement override", ModelConfig{TensorBuftOverrides: []string{"blk.*=CPU"}}, 512},
 		{"CPU only", ModelConfig{PtrNGpuLayers: new(-1)}, 0},
-		{"host KV", ModelConfig{PtrOffloadKQV: new(false)}, 0},
+		{"partial GPU offload", ModelConfig{PtrNGpuLayers: new(12)}, 512},
+		{"host KV", ModelConfig{PtrOffloadKQV: new(false)}, 512},
+		{"active separate draft", ModelConfig{DraftModel: &DraftModelConfig{ModelID: "draft"}}, 0},
+		{"disabled separate draft", ModelConfig{Speculation: model.SpeculationDisabled, DraftModel: &DraftModelConfig{ModelID: "draft"}}, 512},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, err := AutoTuneWithConfig(info, devs, tt.constraints)
@@ -1256,6 +1281,36 @@ func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 			}
 			if cfg.PtrPrefillBatchSize != nil {
 				t.Fatal("physical tuning materialized a prompt contribution override")
+			}
+		})
+	}
+	for _, tt := range []struct {
+		name        string
+		projection  bool
+		mtp         bool
+		embed       bool
+		rerank      bool
+		speculation model.SpeculationMode
+		want        int
+	}{
+		{name: "vision default", projection: true, want: 512},
+		{name: "active MTP", mtp: true},
+		{name: "disabled MTP", mtp: true, speculation: model.SpeculationDisabled, want: 512},
+		{name: "embedding", embed: true},
+		{name: "reranking", rerank: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			info := info
+			info.HasProjection = tt.projection
+			info.HasMTP = tt.mtp
+			info.IsEmbedModel = tt.embed
+			info.IsRerankModel = tt.rerank
+			cfg, err := AutoTuneWithConfig(info, devs, ModelConfig{Speculation: tt.speculation})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.ToKronkConfig().PhysicalBatchSize(); got != tt.want {
+				t.Errorf("PhysicalBatchSize: got %d, want %d", got, tt.want)
 			}
 		})
 	}

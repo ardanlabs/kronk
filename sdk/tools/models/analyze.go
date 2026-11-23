@@ -197,18 +197,6 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		cfg.PtrPhysicalBatchSize = nil
 	}
 
-	// Only ordinary text layer splitting receives the initial pipeline-oriented
-	// recommendation. Explicit requests remain constraints, even on one GPU.
-	if cfg.PtrPhysicalBatchSize == nil && devs.SupportsGPUOffload && devs.GPUCount > 1 &&
-		!info.HasProjection && !info.HasMTP && !info.IsEmbedModel && !info.IsRerankModel &&
-		profile.Decision.Type == "" && cfg.DraftModel == nil && profile.Attention.NextNPredictLayers == 0 &&
-		(cfg.PtrNGpuLayers == nil || *cfg.PtrNGpuLayers == 0) &&
-		(cfg.PtrOffloadKQV == nil || *cfg.PtrOffloadKQV) && len(cfg.TensorBuftOverrides) == 0 &&
-		(cfg.PtrSplitMode == nil || *cfg.PtrSplitMode == model.SplitModeLayer) &&
-		!autoTensorParallel(profile, devs, cfg) {
-		cfg.PtrPhysicalBatchSize = new(512)
-	}
-
 	rope := ropeFactsFromGGUF(profile.Rope)
 	attn := attentionFactsFromGGUF(profile.Attention)
 	cfg = normalizeAnalysisConfig(cfg, trainingCtx)
@@ -217,6 +205,16 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		modelprofile.MTPEnabled(profile.Speculation.MTPArchitecture))) &&
 		runtimeCfg.SpeculationMode() != model.SpeculationDisabled && runtimeCfg.SpeculationMode() != model.SpeculationClassic &&
 		(cfg.DraftModel == nil || cfg.DraftModel.ModelID == "")
+	// Multi-GPU generation starts at 512 regardless of architecture or split
+	// mode. Explicit requests, evaluation, and active speculation retain their
+	// own policies; image floors are applied by GenerationBatchSizes.
+	if cfg.PtrPhysicalBatchSize == nil && devs.SupportsGPUOffload && devs.GPUCount > 1 &&
+		!info.IsEmbedModel && !info.IsRerankModel && profile.Decision.Type == "" && !singlePhysicalBatch &&
+		(cfg.PtrNGpuLayers == nil || *cfg.PtrNGpuLayers != -1) &&
+		(runtimeCfg.SpeculationMode() == model.SpeculationDisabled || cfg.DraftModel == nil || cfg.DraftModel.ModelID == "") {
+		cfg.PtrPhysicalBatchSize = new(512)
+		runtimeCfg.PtrPhysicalBatchSize = cfg.PtrPhysicalBatchSize
+	}
 	rowsPerSlot := 1
 	if singlePhysicalBatch {
 		rowsPerSlot = 0 // Resolve the MTP reserve through the runtime sizing policy.
@@ -545,10 +543,11 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 
 	// Smaller physical batches trade prefill throughput for workspace without
 	// quantizing KV. GenerationBatchSizes retains configured image-capacity
-	// floors, including for vision-capable language models. Do not tune
-	// multi-GPU execution, evaluation, or speculative rollback graphs.
+	// floors, including for vision-capable language models. Apply the same
+	// search on single- and multi-GPU systems. Do not tune evaluation or
+	// speculative rollback graphs.
 	batches := []int64{p.physicalBatchSize}
-	if p.hasGPU && p.gpuCount == 1 && p.batchConfig.PtrPhysicalBatchSize == nil &&
+	if p.hasGPU && p.batchConfig.PtrPhysicalBatchSize == nil &&
 		p.class != "embedding" && p.class != "rerank" &&
 		p.batchConfig.DecisionProtocol.IsZero() && !p.singlePhysicalBatch &&
 		p.batchConfig.PtrDraftModel == nil {
