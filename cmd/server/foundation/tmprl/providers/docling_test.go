@@ -179,7 +179,13 @@ func TestDoclingPageBatches(t *testing.T) {
 				t.Fatal(err)
 			}
 			var reported []int
-			document, err := extractor.Convert(t.Context(), path, test.options, func(pages int) { reported = append(reported, pages) })
+			saved := make(map[[2]int]Document)
+			document, err := extractor.Convert(t.Context(), path, test.options, func(pages int) { reported = append(reported, pages) }, DocumentCheckpoint{
+				Save: func(start, end int, document Document) error {
+					saved[[2]int{start, end}] = document
+					return nil
+				},
+			})
 			if !slices.Equal(requested, test.ranges) {
 				t.Fatalf("requested pages %v, want %v", requested, test.ranges)
 			}
@@ -212,6 +218,36 @@ func TestDoclingPageBatches(t *testing.T) {
 			}
 			if document.Markdown != strings.Join(markdown, "\n\n") || document.ProcessingTime != float64(len(starts)) {
 				t.Fatalf("joined markdown %q, processing time %v", document.Markdown, document.ProcessingTime)
+			}
+			// A fresh converter must produce exactly the same joined references,
+			// pages and text from saved batches, including the end-of-range probe.
+			extractor, err = NewDoclingExtractor(server.URL, server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			requested = nil
+			restored, err := extractor.Convert(t.Context(), path, test.options, nil, DocumentCheckpoint{
+				Load: func(start, end int) (Document, error) {
+					document, ok := saved[[2]int{start, end}]
+					if !ok {
+						return Document{}, os.ErrNotExist
+					}
+					return document, nil
+				},
+				Save: func(int, int, Document) error {
+					t.Error("reconverted a committed batch")
+					return errors.New("unexpected new batch")
+				},
+			})
+			if err != nil || restored.Markdown != document.Markdown || string(restored.StructuredJSON) != string(document.StructuredJSON) || restored.ProcessingTime != document.ProcessingTime {
+				t.Fatalf("restored document differs: %+v, %v", restored, err)
+			}
+			var probes [][2]int
+			if test.options.PageEnd == 0 {
+				probes = test.ranges[len(test.ranges)-1:]
+			}
+			if !slices.Equal(requested, probes) {
+				t.Fatalf("restore requested %v; want only end probe %v", requested, probes)
 			}
 			var joined struct {
 				Body struct {

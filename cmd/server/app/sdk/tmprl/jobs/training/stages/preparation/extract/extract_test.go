@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"slices"
@@ -27,7 +29,7 @@ type extractor struct {
 }
 
 func (e extractor) ExtractionProfile() string { return e.profile }
-func (e extractor) Convert(ctx context.Context, path string, _ providers.DocumentOptions, _ func(int)) (providers.Document, error) {
+func (e extractor) Convert(ctx context.Context, path string, _ providers.DocumentOptions, _ func(int), _ ...providers.DocumentCheckpoint) (providers.Document, error) {
 	return e.convert(ctx, path)
 }
 
@@ -152,6 +154,97 @@ func TestRunRejectsInvalidSources(t *testing.T) {
 				t.Fatalf("invalid result cached: %v", err)
 			}
 		})
+	}
+}
+
+func TestStopExtractionBetweenBatches(t *testing.T) {
+	source, workspace, info := roots(t, ".pdf", "PDF fixture")
+	var requested []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Error(err)
+				return
+			}
+			defer r.MultipartForm.RemoveAll()
+			start := r.MultipartForm.Value["page_range"][0]
+			requested = append(requested, start)
+			fmt.Fprintf(w, `{"task_id":%q,"task_status":"success"}`, start)
+		default:
+			page := strings.TrimPrefix(r.URL.Path, "/v1/result/")
+			fmt.Fprintf(w, `{"status":"success","document":{"md_content":"Facts on page %s.","json_content":{"texts":[{"text":"Facts on page %s."}],"pages":{"%s":{}}}}}`, page, page, page)
+		}
+	}))
+	defer server.Close()
+	e, err := providers.NewDoclingExtractor(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := preparation.StepContext{Workspace: workspace, Preparation: &preparation.PreparationContext{
+		Input:  preparation.PreparationInput{Kind: preparation.PreparationFull, Request: preparation.PreparationRequest{Goal: preparation.GoalQuestionAnswer, PageStart: 11, PageEnd: 35}},
+		Source: info, Extractor: e, OpenSource: openSource(source, info),
+	}}
+	stopped := errors.New("controlled stop")
+	var savedPath string
+	input.SafePoint = func(_ context.Context, path string) error {
+		savedPath = path
+		if _, err := workspace.ReadFile(path); err != nil {
+			t.Fatalf("stop acknowledged without saved progress: %v", err)
+		}
+		return stopped
+	}
+	if _, err := (extract.Step{}).Execute(t.Context(), input); !errors.Is(err, stopped) {
+		t.Fatalf("stop = %v", err)
+	}
+	if !reflect.DeepEqual(requested, []string{"11"}) {
+		t.Fatalf("Stop submitted batches %v; want only [11]", requested)
+	}
+	saved, err := workspace.ReadFile(savedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A repeated Stop must honor saved work without submitting another batch.
+	if _, err := (extract.Step{}).Execute(t.Context(), input); !errors.Is(err, stopped) || !reflect.DeepEqual(requested, []string{"11"}) {
+		t.Fatalf("repeated Stop advanced extraction: %v, %v", requested, err)
+	}
+	input.SafePoint = nil
+	for _, invalid := range []string{
+		`{"source_hash":`,
+		strings.Replace(string(saved), info.SHA256, "wrong source", 1),
+		strings.Replace(string(saved), `"start":11`, `"start":12`, 1),
+	} {
+		if err := workspace.WriteFile(savedPath, []byte(invalid), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (extract.Step{}).Execute(t.Context(), input); err == nil || !reflect.DeepEqual(requested, []string{"11"}) {
+			t.Fatalf("invalid checkpoint was reused or reconverted: %v, %v", requested, err)
+		}
+	}
+	if err := workspace.WriteFile(savedPath, saved, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Reopen the workspace and recreate the extractor: no retained process RAM.
+	resumed, err := os.OpenRoot(workspace.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resumed.Close()
+	input.Workspace = resumed
+	input.SafePoint = nil
+	input.Preparation.Extractor, err = providers.NewDoclingExtractor(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (extract.Step{}).Execute(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(requested, []string{"11", "21", "31"}) {
+		t.Fatalf("Resume submitted batches %v; repeated saved work or skipped pages", requested)
+	}
+	document, err := extract.Read(t.Context(), input.Preparation.Extractor, info, resumed, providers.DocumentOptions{PageStart: 11, PageEnd: 35})
+	if err != nil || document.Markdown != "Facts on page 11.\n\nFacts on page 21.\n\nFacts on page 31." {
+		t.Fatalf("resumed result = %+v, %v", document, err)
 	}
 }
 

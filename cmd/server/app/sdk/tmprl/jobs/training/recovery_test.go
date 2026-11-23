@@ -128,7 +128,7 @@ type gatedExtractor struct{ gates }
 
 func (e gatedExtractor) ExtractionProfile() string { return "recovery-test-v1" }
 
-func (e gatedExtractor) Convert(ctx context.Context, path string, _ providers.DocumentOptions, _ func(int)) (providers.Document, error) {
+func (e gatedExtractor) Convert(ctx context.Context, path string, _ providers.DocumentOptions, _ func(int), _ ...providers.DocumentCheckpoint) (providers.Document, error) {
 	e.reach(ctx, "extract")
 	data, err := os.ReadFile(path)
 	if err != nil {

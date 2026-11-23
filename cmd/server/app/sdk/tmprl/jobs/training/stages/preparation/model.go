@@ -116,7 +116,7 @@ type PreparationInput struct {
 // DocumentExtractor converts a source and identifies its extraction profile.
 // Convert reports pages read so far to its progress function, which may be nil.
 type DocumentExtractor interface {
-	Convert(ctx context.Context, path string, options providers.DocumentOptions, progress func(pages int)) (providers.Document, error)
+	Convert(ctx context.Context, path string, options providers.DocumentOptions, progress func(pages int), checkpoints ...providers.DocumentCheckpoint) (providers.Document, error)
 	ExtractionProfile() string
 }
 

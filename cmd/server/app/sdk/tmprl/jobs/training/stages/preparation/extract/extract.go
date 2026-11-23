@@ -35,9 +35,13 @@ type extraction struct {
 
 // Run extracts a document and caches it by source identity and extractor settings
 // inside the execution workspace. After successful cache publication, retries do
-// not upload again. Failed or interrupted conversion may be repeated. Progress,
-// when not nil, receives the pages the extractor has read so far.
+// not upload again. Completed Docling batches also survive interrupted conversion.
+// Progress, when not nil, receives the pages the extractor has read so far.
 func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, openSource func(context.Context) (io.ReadCloser, error), workspace *os.Root, progress func(pages int), options ...providers.DocumentOptions) (providers.Document, error) {
+	return run(ctx, extractor, sourceInfo, openSource, workspace, progress, nil, options...)
+}
+
+func run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInfo uploads.File, openSource func(context.Context) (io.ReadCloser, error), workspace *os.Root, progress func(pages int), safePoint func(context.Context, string) error, options ...providers.DocumentOptions) (providers.Document, error) {
 	profile, err := extractionProfile(extractor, sourceInfo, options...)
 	if err != nil {
 		return providers.Document{}, err
@@ -94,7 +98,53 @@ func Run(ctx context.Context, extractor preparation.DocumentExtractor, sourceInf
 		if len(options) > 0 {
 			conversion = options[0]
 		}
-		document, err = extractor.Convert(ctx, path, conversion, progress)
+		// Each file is a complete immutable batch within this source/profile.
+		// Reopening this workspace is sufficient; no service or worker RAM is used.
+		identity := sha256.Sum256([]byte(sourceInfo.SHA256 + ":" + profile))
+		batchPath := func(start, end int) string {
+			return fmt.Sprintf("extraction-%x-%d-%d.json", identity, start, end)
+		}
+		type savedBatch struct {
+			SourceHash string             `json:"source_hash"`
+			Profile    string             `json:"profile"`
+			Start      int                `json:"start"`
+			End        int                `json:"end"`
+			Document   providers.Document `json:"document"`
+		}
+		check := func(path string) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if safePoint != nil {
+				return safePoint(ctx, path)
+			}
+			return nil
+		}
+		batches := providers.DocumentCheckpoint{
+			Load: func(start, end int) (providers.Document, error) {
+				name := batchPath(start, end)
+				data, err := workspace.ReadFile(name)
+				if err != nil {
+					return providers.Document{}, err
+				}
+				var saved savedBatch
+				if err := json.Unmarshal(data, &saved); err != nil {
+					return providers.Document{}, fmt.Errorf("decode extraction batch: %w", err)
+				}
+				if saved.SourceHash != sourceInfo.SHA256 || saved.Profile != profile || saved.Start != start || saved.End != end || !json.Valid(saved.Document.StructuredJSON) || !utf8.ValidString(saved.Document.Markdown) {
+					return providers.Document{}, fmt.Errorf("invalid extraction batch checkpoint")
+				}
+				return saved.Document, check(name)
+			},
+			Save: func(start, end int, document providers.Document) error {
+				name := batchPath(start, end)
+				if err := tmprl.WriteJSON(workspace, name, savedBatch{sourceInfo.SHA256, profile, start, end, document}); err != nil {
+					return err
+				}
+				return check(name)
+			},
+		}
+		document, err = extractor.Convert(ctx, path, conversion, progress, batches)
 		if err != nil {
 			return providers.Document{}, err
 		}

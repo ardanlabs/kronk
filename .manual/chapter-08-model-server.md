@@ -193,6 +193,14 @@ original dataset version and settings. Preparation keeps its saved records;
 new training runs also save optimizer progress and evaluation answers. Stopped
 runs release their worker and do not consume active-work time limits while idle.
 
+During PDF extraction, Stop waits for the current batch of up to 10 pages to
+finish and be saved, then stops before submitting the next batch to Docling.
+Resume reuses saved batches and converts only the remaining pages. Saved batches
+survive a Docling or Kronk restart when the run's storage is preserved. This does
+not interrupt a conversion halfway through a batch, and conversion time is not
+bounded by the page count. Word documents are converted as one operation, so Stop
+waits for the whole Word conversion to finish and be saved.
+
 An explicitly stopped run remains stopped after restarting Kronk. Preserve its
 Moxie storage at the same path, PostgreSQL catalog, Temporal history, base model,
 and computation backend. Missing, corrupt, or incompatible committed training

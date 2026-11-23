@@ -50,12 +50,12 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 				input.Publish(tmprl.Progress{Completed: read, Total: total, Message: "Page batch extracted; continuing document conversion"})
 			}
 		}
-		document, err := Run(ctx, p.Extractor, p.Source, p.OpenSource, input.Workspace, progress, pages)
+		document, err := run(ctx, p.Extractor, p.Source, p.OpenSource, input.Workspace, progress, input.SafePoint, pages)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}
-		// The provider's whole-document result is durable here. This does not
-		// claim that an in-flight Docling conversion can be suspended/recovered.
+		// The assembled document is durable here. PDF conversion also checks
+		// Stop after each saved batch; an in-flight batch must finish first.
 		if input.SafePoint != nil {
 			if err := input.SafePoint(ctx, "extraction.json"); err != nil {
 				return tmprl.StepResult[preparation.Artifacts]{}, err

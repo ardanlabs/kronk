@@ -84,10 +84,22 @@ const doclingPageBatch = 10
 // restarted Docling service before the conversion fails.
 const doclingRecovery = 2 * time.Minute
 
+// DocumentCheckpoint supplies persistent batch storage scoped to one source and
+// extraction profile. Load returns os.ErrNotExist for an unsaved batch. Save
+// must commit the batch before checking Stop; its error prevents further work.
+type DocumentCheckpoint struct {
+	Load func(start, end int) (Document, error)
+	Save func(start, end int, document Document) error
+}
+
 // Convert uploads a PDF or DOCX and waits for its converted content. PDFs are
 // converted in page batches that are joined into one document; after each
 // batch, progress, when not nil, receives the number of pages read so far.
-func (e *DoclingExtractor) Convert(ctx context.Context, path string, options DocumentOptions, progress func(pages int)) (Document, error) {
+// An optional checkpoint reuses completed batches and saves new ones.
+func (e *DoclingExtractor) Convert(ctx context.Context, path string, options DocumentOptions, progress func(pages int), checkpoints ...DocumentCheckpoint) (Document, error) {
+	if len(checkpoints) > 1 {
+		return Document{}, fmt.Errorf("%w: only one document checkpoint is allowed", tmprl.ErrInvalidArgument)
+	}
 	if err := options.Validate(); err != nil {
 		return Document{}, err
 	}
@@ -102,9 +114,38 @@ func (e *DoclingExtractor) Convert(ctx context.Context, path string, options Doc
 	if options != (DocumentOptions{}) && mediaType != "application/pdf" {
 		return Document{}, fmt.Errorf("%w: page ranges require a PDF", tmprl.ErrInvalidArgument)
 	}
+	convert := func(start, end int) (Document, error) {
+		if err := ctx.Err(); err != nil {
+			return Document{}, err
+		}
+		var checkpoint DocumentCheckpoint
+		if len(checkpoints) > 0 {
+			checkpoint = checkpoints[0]
+		}
+		if checkpoint.Load != nil {
+			document, err := checkpoint.Load(start, end)
+			switch {
+			case err == nil:
+				return document, nil
+			case errors.Is(err, os.ErrNotExist):
+			default:
+				return Document{}, err
+			}
+		}
+		document, err := e.convertRecovering(ctx, path, mediaType, start, end)
+		if err != nil {
+			return Document{}, err
+		}
+		if checkpoint.Save != nil {
+			if err := checkpoint.Save(start, end, document); err != nil {
+				return Document{}, err
+			}
+		}
+		return document, nil
+	}
 	var batches []Document
 	if mediaType != "application/pdf" {
-		document, err := e.convertRecovering(ctx, path, mediaType, 0, 0)
+		document, err := convert(0, 0)
 		if err != nil {
 			return Document{}, err
 		}
@@ -116,7 +157,7 @@ func (e *DoclingExtractor) Convert(ctx context.Context, path string, options Doc
 		if options.PageEnd > 0 {
 			end = min(end, options.PageEnd)
 		}
-		document, err := e.convertRecovering(ctx, path, mediaType, start, end)
+		document, err := convert(start, end)
 		if errors.Is(err, ErrPageRangePastEnd) && len(batches) > 0 {
 			break // The previous batch ended on the last page.
 		}
