@@ -59,6 +59,15 @@ Install the default library bundle for the current host:
 kronk bucky libs
 ```
 
+Bucky v1.1.7 defaults to whisper.cpp v1.9.6 with this authenticated pin:
+
+```text
+v1.9.6@sha256:65201f945ec1c04b8a7da162675ce3f89c017f5fc5df12c9f418e70d3fbbd99a
+```
+
+The digest authenticates the release manifest; each downloaded archive is
+verified against that manifest.
+
 The supported bundles are:
 
 | Operating system | Architecture   | Processors              |
@@ -66,6 +75,12 @@ The supported bundles are:
 | macOS            | `amd64`, `arm64` | `cpu`, `metal`        |
 | Linux            | `amd64`, `arm64` | `cpu`, `cuda`, `cuda12`, `cuda13`, `vulkan` |
 | Windows          | `amd64`          | `cpu`, `cuda`, `cuda12` |
+
+The v1.9.6 Linux CPU, Vulkan, and CUDA 13 binaries use Ubuntu 26.04
+(glibc 2.43) as their supported runtime baseline. For older distributions,
+use a matching container or build the pinned native revision for that host;
+do not assume these binaries will load. CUDA 12 bundles retain their older
+build baselines: Ubuntu 24.04 for `amd64` and Ubuntu 22.04 for `arm64`.
 
 Use the CLI as the current source of truth for available combinations:
 
@@ -77,7 +92,7 @@ Other useful operations are:
 
 ```sh
 # Install a particular version for the current host.
-kronk bucky libs --version=v1.7.0
+kronk bucky libs --version=v1.9.6
 
 # Install another bundle alongside the active one.
 kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
@@ -124,6 +139,12 @@ The Linux bundles do not include these NVIDIA user-space libraries. A newer
 driver alone does not supply them. Both CUDA runtime majors can coexist.
 Keep Jetson Orin on CUDA 12 unless its JetPack/runtime supports CUDA 13.
 
+The v1.9.6 CUDA 13 bundle is built with CUDA 13.5. Use CUDA 13.5 user-space
+libraries and a driver supporting the generated PTX. Automatic selection
+checks the driver version, GPU capability, and runtime-major libraries above;
+it does not verify every required runtime symbol or PTX version. Passing that
+probe alone does not establish compatibility with an older CUDA 13 installation.
+
 An explicit `--install --processor=cuda13` downloads the requested bundle
 without probing the current host, allowing installation for another machine.
 CUDA 13 archives use `cuda-13` in their filenames; the Bucky processor option
@@ -165,6 +186,13 @@ and `--upgrade` explicitly opt out of the default pin. Restart after replacing
 libraries. If a future upgrade changes the ABI, rebuild or replace user-managed
 libraries yourself; Kronk never mutates a read-only build. Do not mix ggml
 files from independently built Whisper and llama.cpp bundles.
+
+For v1.9.5 → v1.9.6, the Whisper C API and parameter layouts are unchanged,
+but the bundled ggml library major changes from 0 to 1. Replace the complete
+bundle, including backend libraries and symlinks. When using both SDKs in one
+process, call `kronk.Init` before `bucky.Init`; after Whisper has loaded first,
+Kronk rejects llama initialization and requires a process restart. Equal ggml
+library major versions do not make independently built bundles interchangeable.
 
 The library tools also recognize these platform overrides:
 

@@ -47,8 +47,8 @@ schema = 3
     version = "v1.2.2"
     hash = "sha256-Q/6abljNb1LER7789i1MO7C0X0ep9VVJAzQlpv3tDak="
   [mod."github.com/ardanlabs/bucky"]
-    version = "v1.1.6"
-    hash = "sha256-Ne+NW09Lb09aPDcXY9910GO3q9fTEUTlq3cOVMoblw0="
+    version = "v1.1.7"
+    hash = "sha256-K86uFDOcMkVw1w8R6vhmnFY+lppbl2g/x70n9kwOMX0="
   [mod."github.com/ardanlabs/conf/v3"]
     version = "v3.13.0"
     hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="
@@ -116,8 +116,8 @@ schema = 3
     version = "v1.53.0"
     hash = "sha256-rI5TNZXkiOgd6ApurA+03NPQ1PEouaHeLKEsh/aviUs="
   [mod."github.com/aws/smithy-go"]
-    version = "v1.28.9"
-    hash = "sha256-cFZrGKPhyidUTs7Ufpo4kF+v4JFWPrsa0xt50HpXSCI="
+    version = "v1.28.10"
+    hash = "sha256-LErmtMc/imbs/uAyYAmVZ1MrDrfY0qoP3QFANo7D2Ag="
   [mod."github.com/beorn7/perks"]
     version = "v1.0.1"
     hash = "sha256-h75GUqfwJKngCJQVE5Ao5wnO3cfKD9lSIteoLp/3xJ4="
@@ -251,8 +251,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.33.1-0.20261123193522-ba6e127cb960"
-    hash = "sha256-x8stcqIrvRSA99VdQmcv+Cl3GWagQclDKjc4IE7q6oY="
+    version = "v1.33.1-0.20261124084421-fb277bdddf89"
+    hash = "sha256-DnI8pV8i5q4PMADRO9YwWUd/trKh+tIVb5Q0tEz3I24="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
