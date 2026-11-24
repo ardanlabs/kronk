@@ -47,8 +47,8 @@ schema = 3
     version = "v1.2.2"
     hash = "sha256-Q/6abljNb1LER7789i1MO7C0X0ep9VVJAzQlpv3tDak="
   [mod."github.com/ardanlabs/bucky"]
-    version = "v1.1.6"
-    hash = "sha256-Ne+NW09Lb09aPDcXY9910GO3q9fTEUTlq3cOVMoblw0="
+    version = "v1.1.7"
+    hash = "sha256-K86uFDOcMkVw1w8R6vhmnFY+lppbl2g/x70n9kwOMX0="
   [mod."github.com/ardanlabs/conf/v3"]
     version = "v3.13.0"
     hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="

@@ -25,7 +25,7 @@ var supportedCombinations = []Combination{
 	{Arch: "arm64", OS: "linux", Processor: "cuda13"},
 	{Arch: "arm64", OS: "linux", Processor: "vulkan"},
 
-	// Windows (whisper.cpp upstream releases, AMD64 only in v1).
+	// Windows (assets produced by ardanlabs/bucky-builder, AMD64 only).
 	{Arch: "amd64", OS: "windows", Processor: "cpu"},
 	{Arch: "amd64", OS: "windows", Processor: "cuda"},
 	{Arch: "amd64", OS: "windows", Processor: "cuda12"},

@@ -40,8 +40,8 @@ github.com/apache/arrow-go/v18 v18.9.0 h1:o+CdPvv7G7tXRc3UCq7sAkMOEEzvPFhunnWPMt
 github.com/apache/arrow-go/v18 v18.9.0/go.mod h1:QbEIuSG88lfEwkBfq1OKoZ5/aFXLObsS2awz9F5OKak=
 github.com/apache/thrift v0.25.0 h1:6LLlvoPjy8Cc/0b5TYRcTR3RZa2W0at3WQRcOkDwVGs=
 github.com/apache/thrift v0.25.0/go.mod h1:4lwyToijD9T70w7GlevFk7FnpY60Wv8I8krMkF6FkAo=
-github.com/ardanlabs/bucky v1.1.6 h1:r+XN0EcbY95h/VdjtbO0uvy88ouud0xNeUGc0NTkhGE=
-github.com/ardanlabs/bucky v1.1.6/go.mod h1:ZlikC6Yw4BdMJSpVr7nFKi0yebapzdkPdpn/bsRc8fw=
+github.com/ardanlabs/bucky v1.1.7 h1:E0UhSBrsYmzkOSGJQjA4mBKz+I0JNKXOTQS2kWLOx64=
+github.com/ardanlabs/bucky v1.1.7/go.mod h1:ZlikC6Yw4BdMJSpVr7nFKi0yebapzdkPdpn/bsRc8fw=
 github.com/ardanlabs/jinja v1.14.0 h1:UH2A2ObJxc1q/KBxded7h/sbQmf9jGXx+XR87kZ8254=
 github.com/ardanlabs/jinja v1.14.0/go.mod h1:VMzH0tsq4PgTbN64PqBqqqBKZvKlhkrxHVagcB5Tj8g=
 github.com/ardanlabs/malina v1.2.5 h1:ehgfkfjlREZD3H9Y1dfpejw5pwCD6v98h9o1jksaGpo=

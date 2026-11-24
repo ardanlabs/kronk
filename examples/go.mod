@@ -8,7 +8,7 @@ require (
 	charm.land/bubbles/v2 v2.2.2
 	charm.land/bubbletea/v2 v2.1.2
 	charm.land/lipgloss/v2 v2.1.1
-	github.com/ardanlabs/bucky v1.1.6
+	github.com/ardanlabs/bucky v1.1.7
 	github.com/ardanlabs/kronk v1.33.2
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/x/ansi v0.11.10

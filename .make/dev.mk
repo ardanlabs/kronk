@@ -65,6 +65,17 @@ test-gh-only: install-libraries install-test-gh-models ## Install GitHub fixture
 
 test-gh: test-gh-only lint vuln-check diff ## Run CI tests and static checks
 
+# Keep Whisper verification independent of the larger llama and image fixtures.
+# Use the checkout CLI so library installation follows this module's native pin.
+test-bucky: ## Install Whisper libraries and small fixtures, then run Bucky tests
+	@echo ========== RUN BUCKY TESTS ==========
+	unset KRONK_TEST_HOSTED KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
+	export GITHUB_WORKSPACE="$(shell pwd)" && \
+	go run ./cmd/kronk bucky libs --local && \
+	go run ./cmd/kronk bucky model pull --local "ggml-tiny.bin" && \
+	go run ./cmd/kronk bucky model pull --local "silero-vad" && \
+	go test -v -p=1 -count=1 -timeout 10m ./sdk/bucky/... ./sdk/tools/bucky/...
+
 # Requires make install-speak-models fixtures.
 # Run packages serially after installing libraries, as with the main test suite.
 # Model-specific native smoke tests are gated by the speech_integration tag.

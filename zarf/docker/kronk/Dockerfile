@@ -833,8 +833,9 @@ ENV ROCM_PATH="/opt/rocm/core-${ROCM_VERSION}"
 # `<major>-<minor>` (e.g. cuda-cudart-13-0), so this value must match the
 # bundle's CUDA major. Bump in lockstep if upstream advances the cuda
 # bundle to a new major.
-# Ubuntu 26.04's NVIDIA repository starts at CUDA 13.3, retaining .so.13.
-ARG CUDA_PKG_VERSION="13-3"
+# Whisper v1.9.6's CUDA 13 bundle is built with CUDA 13.5. Match that
+# user-space runtime as well as the .so.13 major used by llama.cpp.
+ARG CUDA_PKG_VERSION="13-5"
 
 # Expected fingerprint of AMD's ROCm apt repo signing key. Verified
 # after fetching packages.gpg over HTTPS; build fails loudly if AMD

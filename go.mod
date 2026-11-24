@@ -7,7 +7,7 @@ require (
 	charm.land/bubbletea/v2 v2.1.2
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.1.1
-	github.com/ardanlabs/bucky v1.1.6
+	github.com/ardanlabs/bucky v1.1.7
 	github.com/ardanlabs/conf/v3 v3.13.0
 	github.com/ardanlabs/jinja v1.14.0
 	github.com/ardanlabs/malina v1.2.5

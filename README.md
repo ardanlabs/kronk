@@ -117,11 +117,20 @@ Here are some of the known compatible versions:
 
 | kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.33.3 | fb277bd | b12675    | v1.1.5 | v1.9.5      | v1.2.5 | master-1122-3b12781  |
+| 1.33.3 | fb277bd | b12675    | v1.1.7 | v1.9.6      | v1.2.5 | master-1122-3b12781  |
 | 1.33.2 | 7600f25 | b12283    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
 | 1.33.1 | 18f0b31 | b11960    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
 | 1.33.0 | 4e61a12 | b11797    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
 | 1.32.9 | 1a800a2 | b11513    | v1.1.4 | v1.9.5      | v1.1.5 | master-929-3f8527a   |
+
+Bucky v1.1.7 pins whisper.cpp v1.9.6 with manifest SHA-256
+`65201f945ec1c04b8a7da162675ce3f89c017f5fc5df12c9f418e70d3fbbd99a`.
+After upgrading, run `kronk bucky libs --local` and restart. Replace the
+complete native bundle, not just `libwhisper`: the bundled ggml library major
+changes from 0 to 1 even though the Whisper C API is unchanged. Rebuild or
+replace user-managed paths yourself. New Linux CPU, Vulkan, and CUDA 13 bundles
+use Ubuntu 26.04 (glibc 2.43) as their supported baseline; CUDA 13 bundles use
+CUDA 13.5. See [Bucky installation requirements](.manual/chapter-18-bucky.md#182-install-whisper-libraries).
 
 Malina v1.2.5 requires the DGL-backed native API in
 `master-1122-3b12781`, authenticated by manifest SHA-256
