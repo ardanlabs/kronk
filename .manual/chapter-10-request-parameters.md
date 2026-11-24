@@ -229,7 +229,7 @@ or grouped into inclusive ranges, for example `<[1000,1005-1010]>`; prefixing
 the expression with `!` negates the set. IDs are specific to the model's
 vocabulary, not portable between models.
 
-With the pinned llama.cpp b12651 runtime, any token explicitly named in a token
+With the pinned llama.cpp b12675 runtime, any token explicitly named in a token
 rule is excluded from character rules throughout that grammar, including `.*`
 and character classes. A token rule also cannot match after a character rule
 has consumed part of that token's text. When upgrading custom grammars that mix
