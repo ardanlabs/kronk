@@ -111,7 +111,7 @@ See [Breaking Changes](BREAKING_CHANGES.md), the
 [release history](https://github.com/ardanlabs/kronk/releases), and the
 [open issues](https://github.com/ardanlabs/kronk/issues) for current status.
 
-Sometimes there are breaking changes to the family of ggml libraries that require an update to yzma, bucky, malina and/or Kronk. Always choose to use the downloader for each system to make sure you have a compatible version of the libraries. A working version of each library is bound to each release.
+Sometimes there are breaking changes to the family of ggml libraries that require an update to yzma, bucky, malina and/or Kronk. Always choose to use the downloader for each system to make sure you have a compatible version of the libraries. A working version of each library is pinned to each release.
 
 Here are some of the known compatible versions:
 
@@ -122,23 +122,6 @@ Here are some of the known compatible versions:
 | 1.33.1 | 18f0b31 | b11960    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
 | 1.33.0 | 4e61a12 | b11797    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
 | 1.32.9 | 1a800a2 | b11513    | v1.1.4 | v1.9.5      | v1.1.5 | master-929-3f8527a   |
-
-Bucky v1.1.7 pins whisper.cpp v1.9.6 with manifest SHA-256
-`65201f945ec1c04b8a7da162675ce3f89c017f5fc5df12c9f418e70d3fbbd99a`.
-After upgrading, run `kronk bucky libs --local` and restart. Replace the
-complete native bundle, not just `libwhisper`: the bundled ggml library major
-changes from 0 to 1 even though the Whisper C API is unchanged. Rebuild or
-replace user-managed paths yourself. New Linux CPU, Vulkan, and CUDA 13 bundles
-use Ubuntu 26.04 (glibc 2.43) as their supported baseline; CUDA 13 bundles use
-CUDA 13.5. See [Bucky installation requirements](.manual/chapter-18-bucky.md#182-install-whisper-libraries).
-
-Malina v1.2.5 requires the DGL-backed native API in
-`master-1122-3b12781`, authenticated by manifest SHA-256
-`87e0e9129ee82472c8f415db6bcf58c6198d7d282113db9731554ffedafc846b`.
-Do not mix it with libraries installed for earlier bindings.
-After upgrading, run `kronk malina libs --local` and restart.
-User-managed library paths must be rebuilt or replaced from the pinned revision;
-Kronk never upgrades those directories automatically.
 
 ## Documentation and Examples
 
@@ -212,7 +195,6 @@ and talks about Kronk.
 | Oct 22nd - 23rd | Meetup Austin              | Austin, TX            | Talk           |
 | Oct 31th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Training, Talk |
 | Nov 6th - 8th   | UM v ND                    | Southbend, IN         | Game Day       |
-| Dec 1st - 2nd   | Meetup Boston              | Boston, MA            | Talk           |
 | DECEMBER        | Winter Vacation            | Miami, FL             | Rest           |
 
 Copyright 2025-2026 Ardan Labs

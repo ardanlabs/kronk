@@ -117,6 +117,8 @@ func TestHistoryLinuxPlaceholder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Exercise the original placeholder, not later measured release entries.
+	data, _, _ = bytes.Cut(data, []byte("\n\nRelease comparison: "))
 	if err := os.WriteFile(history, data, 0600); err != nil {
 		t.Fatal(err)
 	}
