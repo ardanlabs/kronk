@@ -117,7 +117,7 @@ Here are some of the known compatible versions:
 
 | kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.33.4 | f1af439 | b12728    | v1.1.7 | v1.9.6      | v1.2.5 | master-1122-3b12781  |
+| 1.33.4 | 4cd358d | b12728    | v1.1.7 | v1.9.6      | v1.2.5 | master-1122-3b12781  |
 | 1.33.3 | fb277bd | b12675    | v1.1.7 | v1.9.6      | v1.2.5 | master-1122-3b12781  |
 | 1.33.2 | 7600f25 | b12283    | v1.1.5 | v1.9.5      | v1.2.1 | master-1088-32d516c  |
 | 1.33.1 | 18f0b31 | b11960    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
