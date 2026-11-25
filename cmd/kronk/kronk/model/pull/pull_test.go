@@ -3,6 +3,7 @@ package pull
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/spf13/cobra"
 )
 
 func TestProgressPrinterPreventsWrapping(t *testing.T) {
@@ -83,14 +86,22 @@ func TestRunWebReturnsTerminalServerError(t *testing.T) {
 
 	t.Setenv("KRONK_WEB_API_HOST", srv.URL)
 
-	err := runWeb(context.Background(), "owner/model", "", "")
+	err := runWeb(context.Background(), "owner/model", "", models.CatalogDraft{})
 	if err == nil || !strings.Contains(err.Error(), "upstream download failed") {
 		t.Fatalf("runWeb: got %v, want upstream download failure", err)
 	}
 }
 
 func TestRunWebCompletes(t *testing.T) {
+	draft := models.CatalogDraft{Method: models.DraftMethodDSpark, URL: "https://huggingface.co/other/repo/resolve/main/dspark-head.gguf_file"}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req toolapp.PullRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
+		if req.ModelURL != "owner/model" || req.ProjURL != "projection" || req.Draft != draft {
+			t.Errorf("request: got %+v, want model, projection and DSpark override", req)
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintln(w, `data: {"status":"downloaded"}`)
 	}))
@@ -98,7 +109,28 @@ func TestRunWebCompletes(t *testing.T) {
 
 	t.Setenv("KRONK_WEB_API_HOST", srv.URL)
 
-	if err := runWeb(context.Background(), "owner/model", "", ""); err != nil {
+	if err := runWeb(context.Background(), "owner/model", "projection", draft); err != nil {
 		t.Fatalf("runWeb: %v", err)
+	}
+}
+
+func TestDraftFlags(t *testing.T) {
+	for _, tt := range []struct {
+		name, url, method string
+	}{
+		{"missing method", "https://huggingface.co/other/repo/resolve/main/head.gguf", ""},
+		{"missing URL", "", "dspark"},
+		{"unknown method", "https://huggingface.co/other/repo/resolve/main/head.gguf", "unknown"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			cmd.Flags().Bool("local", false, "")
+			cmd.Flags().String("proj", "", "")
+			cmd.Flags().String("draft", tt.url, "")
+			cmd.Flags().String("draft-method", tt.method, "")
+			if err := run(cmd, []string{"owner/model"}); err == nil {
+				t.Fatal("invalid draft flags accepted")
+			}
+		})
 	}
 }

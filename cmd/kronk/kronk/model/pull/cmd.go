@@ -27,12 +27,14 @@ provider and persist the resolution. Multi-file (split) models are downloaded
 in full when the resolver expands them. Successful pulls update the catalog so
 the next request becomes a cache hit.
 
-Use --proj <URL> to pin a specific projection file and --mtp-draft <URL>
-to pin a specific MTP drafter file. Each flag takes a fully qualified
-HuggingFace URL and forces the explicit-URL workflow:
+Use --proj <URL> to pin a projection file. Use --draft <URL> with
+--draft-method <mtp|dspark|conventional> to pin a draft companion.
+Companions are installed as <method>-<target-model-id>.gguf. DSpark download
+support does not enable DSpark inference.
+Companion URLs must be fully qualified HuggingFace URLs:
   - With an id source the resolver is consulted to expand split shards.
     Any companion you pin replaces the resolver's choice; any companion
-    you do not pin is still auto-resolved (the MTP drafter is always
+    you do not pin is still auto-resolved (the draft companion is always
     fetched when the catalog knows about it).
   - With a URL source the model file at that URL is paired directly
     with the supplied companion URLs — no resolver lookup.
@@ -51,17 +53,27 @@ Environment Variables (--local mode):
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 	Cmd.Flags().String("proj", "", "Fully qualified projection (mmproj) URL to pin")
-	Cmd.Flags().String("mtp-draft", "", "Fully qualified MTP drafter URL to pin")
+	Cmd.Flags().String("draft", "", "Fully qualified draft companion URL to pin (requires --draft-method)")
+	Cmd.Flags().String("draft-method", "", "Draft companion method: mtp, dspark, or conventional (requires --draft)")
 }
 
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 	projURL, _ := cmd.Flags().GetString("proj")
-	mtpURL, _ := cmd.Flags().GetString("mtp-draft")
+	draftURL, _ := cmd.Flags().GetString("draft")
+	draftMethod, _ := cmd.Flags().GetString("draft-method")
+	if (draftURL == "") != (draftMethod == "") {
+		return fmt.Errorf("--draft and --draft-method must be supplied together")
+	}
+	method, err := models.ParseDraftMethod(draftMethod)
+	if err != nil {
+		return fmt.Errorf("--draft-method: %w", err)
+	}
+	draft := models.CatalogDraft{Method: method, URL: draftURL}
 	ctx := cmd.Context()
 
 	if !local {
-		return runWeb(ctx, args[0], projURL, mtpURL)
+		return runWeb(ctx, args[0], projURL, draft)
 	}
 
 	basePath := client.GetBasePath(cmd)
@@ -71,5 +83,5 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	return runLocal(ctx, mdls, basePath, args[0], projURL, mtpURL)
+	return runLocal(ctx, mdls, args[0], projURL, draft)
 }

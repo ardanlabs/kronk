@@ -468,7 +468,7 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 		return Resolution{}, fmt.Errorf("resolve: %s/%s: %w", provider, repo, err)
 	}
 
-	files, mmproj, mtp, ok := selectFiles(meta.Siblings, repo, modelID)
+	files, mmproj, draft, ok := selectFiles(meta.Siblings, repo, modelID)
 	if !ok {
 		return Resolution{}, fmt.Errorf("resolve: model %q not found in %s/%s", modelID, provider, repo)
 	}
@@ -481,15 +481,15 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 		Files:        files,
 		MMProj:       localProjName(repo, mmproj, files),
 		MMProjOrig:   mmproj,
-		Draft:        mtpDraft(localMTPName(repo, mtp, files), mtp),
+		Draft:        draft,
 		DraftChecked: true,
 		DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
 	}
 	if mmproj != "" {
 		res.DownloadProj = buildDownloadURL(provider, repo, "main", mmproj)
 	}
-	if mtp != "" {
-		res.DownloadDraft = buildDownloadURL(provider, repo, "main", mtp)
+	if draft.File != "" {
+		res.DownloadDraft = buildDownloadURL(provider, repo, "main", draft.Original)
 	}
 
 	preserveDraft(&res, rm)
@@ -541,7 +541,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 		return Resolution{}, fmt.Errorf("resolve: %s/%s: %w", provider, repo, err)
 	}
 
-	files, mmproj, mtp, ok := selectFilesByTag(meta.Siblings, repo, tag)
+	files, mmproj, draft, ok := selectFilesByTag(meta.Siblings, repo, tag)
 	if !ok {
 		return Resolution{}, fmt.Errorf("resolve: tag %q not found in %s/%s", tag, provider, repo)
 	}
@@ -557,7 +557,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 		Files:        files,
 		MMProj:       localProjName(repo, mmproj, files),
 		MMProjOrig:   mmproj,
-		Draft:        mtpDraft(localMTPName(repo, mtp, files), mtp),
+		Draft:        draft,
 		DraftChecked: true,
 		DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
 	}
@@ -565,8 +565,8 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 	if mmproj != "" {
 		res.DownloadProj = buildDownloadURL(provider, repo, "main", mmproj)
 	}
-	if mtp != "" {
-		res.DownloadDraft = buildDownloadURL(provider, repo, "main", mtp)
+	if draft.File != "" {
+		res.DownloadDraft = buildDownloadURL(provider, repo, "main", draft.Original)
 	}
 
 	preserveDraft(&res, rm)
@@ -947,7 +947,7 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, pre
 			return Resolution{}, false, err
 		}
 
-		files, mmproj, mtp, ok := selectFiles(meta.Siblings, repo, modelID)
+		files, mmproj, draft, ok := selectFiles(meta.Siblings, repo, modelID)
 		if !ok {
 			continue
 		}
@@ -960,7 +960,7 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, pre
 			Files:        files,
 			MMProj:       localProjName(repo, mmproj, files),
 			MMProjOrig:   mmproj,
-			Draft:        mtpDraft(localMTPName(repo, mtp, files), mtp),
+			Draft:        draft,
 			DraftChecked: true,
 			DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
 		}
@@ -968,8 +968,8 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, pre
 		if mmproj != "" {
 			res.DownloadProj = buildDownloadURL(provider, repo, "main", mmproj)
 		}
-		if mtp != "" {
-			res.DownloadDraft = buildDownloadURL(provider, repo, "main", mtp)
+		if draft.File != "" {
+			res.DownloadDraft = buildDownloadURL(provider, repo, "main", draft.Original)
 		}
 
 		return res, true, nil
@@ -979,7 +979,7 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, pre
 }
 
 // discoverCompanions scans the HuggingFace repo backing an existing catalog
-// entry to fill in an unchecked MTP companion or recover missing mmproj
+// entry to fill in an unchecked draft companion or recover missing mmproj
 // metadata with a single ModelMeta round-trip. The mmproj recovery runs when
 // the entry has no mmproj recorded but the renamed projection file is present
 // on disk (the signature of a URL-based download that clobbered the projection
@@ -1015,16 +1015,13 @@ func (r *Resolver) discoverCompanions(ctx context.Context, entry CatalogEntry, l
 		return entry, false
 	}
 
-	// Companion context: an mtp-*.gguf in this repo is a drafter for the
-	// co-resident main model, not a standalone model — unless the repo
-	// itself is a dedicated *-MTP-GGUF sibling.
-	_, proj, mtpc := classifySiblings(meta.Siblings, repoMatchesRenameRule(entry.Family))
+	_, proj, drafts := classifySiblings(meta.Siblings, entry.Family, siblingModelID(entry.Files[0]))
 	target := entry.Files[0]
 
 	if !entry.DraftChecked && entry.Draft.File == "" {
 		entry.DraftChecked = true
-		if mtp := pickMTPCompanion(mtpc, target); mtp != "" {
-			entry.Draft = mtpDraft(localMTPName(entry.Family, mtp, entry.Files), mtp)
+		entry.Draft = pickDraftCompanion(drafts, entry.Family, entry.Files)
+		if entry.Draft.File != "" {
 			entry.Draft.Size = r.companionSize(entry, entry.Draft.File)
 		}
 	}
@@ -1177,6 +1174,19 @@ func isNotFound(err error) bool {
 
 // =============================================================================
 
+// upstreamURL removes the peer transport wrapper so catalog metadata retains
+// the HuggingFace source rather than depending on a particular peer server.
+func upstreamURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || !strings.HasPrefix(u.Path, "/download/") {
+		return raw
+	}
+	u.Scheme, u.Host = "https", "huggingface.co"
+	u.Path = strings.TrimPrefix(u.Path, "/download")
+	u.RawPath = ""
+	return u.String()
+}
+
 // persistDraftResolution records a resolution entry to the resolver file
 // derived from one or more HuggingFace download URLs. Used after URL-based
 // downloads so catalog.yaml stays current regardless of the input
@@ -1186,7 +1196,13 @@ func (m *Models) persistDraftResolution(modelURLs []string, projURL string, draf
 		return nil
 	}
 
-	provider, repo, revision, files, ok := hf.ParseURLs(modelURLs)
+	upstreamURLs := make([]string, len(modelURLs))
+	for i, source := range modelURLs {
+		upstreamURLs[i] = upstreamURL(source)
+	}
+	projURL = upstreamURL(projURL)
+	draft.URL = upstreamURL(draft.URL)
+	provider, repo, revision, files, ok := hf.ParseURLs(upstreamURLs)
 	if !ok {
 		return nil
 	}
@@ -1267,18 +1283,14 @@ func localProjName(family, hfMMProj string, modelFiles []string) string {
 	return fmt.Sprintf("mmproj-%s.gguf", catalogModelID(family, modelFiles[0]))
 }
 
-// localMTPName returns the on-disk MTP drafter filename that downloadModel
-// produces by renaming the HuggingFace source file to a canonical
-// "mtp-<modelID>.gguf" keyed off the main model. The upstream name (e.g.
-// "mtp-gemma-4-26B-A4B-it.gguf") is therefore re-keyed to the requesting
-// model id so the index has a deterministic name with no request context.
-// Returns "" when there is no MTP companion.
-func localMTPName(family, hfMTP string, modelFiles []string) string {
-	if hfMTP == "" || len(modelFiles) == 0 {
+// localDraftName returns the canonical "<method>-<modelID>.gguf" installed
+// companion name, or "" when there is no companion.
+func localDraftName(method DraftMethod, family, original string, modelFiles []string) string {
+	if original == "" || len(modelFiles) == 0 {
 		return ""
 	}
 
-	return fmt.Sprintf("mtp-%s.gguf", catalogModelID(family, modelFiles[0]))
+	return fmt.Sprintf("%s-%s.gguf", method, catalogModelID(family, modelFiles[0]))
 }
 
 // diskName returns the on-disk basename for an upstream HF file name,

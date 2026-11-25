@@ -62,7 +62,7 @@ var hasNetworkFn = hasNetwork
 //
 // To take full control of which files are downloaded — including pinning
 // a specific projection file or downloading no projection at all — use
-// DownloadURLs.
+// DownloadDraftURLsWithProgress.
 //
 // Set KRONK_HF_TOKEN to access gated models.
 func (m *Models) Download(ctx context.Context, log applog.Logger, modelSource string) (Path, error) {
@@ -92,41 +92,10 @@ func (m *Models) DownloadWithProgress(ctx context.Context, log applog.Logger, mo
 	return m.downloadByID(ctx, log, modelSource, progress)
 }
 
-// DownloadURLs performs a complete workflow using explicit URLs for both
-// the model file(s) and the projection file. This is the full-control
-// API: the caller specifies exactly which files to fetch and the
-// resolver is not consulted.
-//
-// modelURLs may contain a single URL or every shard URL of a split
-// model. All model URLs must be fully qualified HuggingFace download
-// URLs. projURL may be an empty string when the model has no projection
-// file or when the caller does not want one downloaded; when supplied,
-// it must also be a fully qualified URL. mtpURL behaves the same way for
-// a companion MTP draft file.
-//
-// For the default workflow, use Download.
-//
-// Set KRONK_HF_TOKEN to access gated models.
-func (m *Models) DownloadURLs(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string) (Path, error) {
-	return m.DownloadURLsWithProgress(ctx, log, modelURLs, projURL, mtpURL, logDownloadProgress(ctx, log))
-}
-
-// DownloadURLsWithProgress performs the explicit URL download workflow and
-// reports structured progress to the supplied function. A nil function
-// suppresses progress reporting.
-func (m *Models) DownloadURLsWithProgress(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string, progress DownloadProgressFunc) (Path, error) {
-	var draft CatalogDraft
-	if mtpURL != "" {
-		draft = CatalogDraft{Method: DraftMethodMTP, URL: mtpURL}
-	}
-	return m.DownloadDraftURLsWithProgress(ctx, log, modelURLs, projURL, draft, progress)
-}
-
 // DownloadDraftURLsWithProgress installs explicit model and projection URLs and
 // a generic draft artifact, preserving its method, installed basename and URL.
-// An empty draft omits draft downloading. URL-only MTP overrides use the
-// historical mtp-<target-model>.gguf installed name. Other methods require an
-// explicit File. Progress may be nil.
+// An empty draft omits draft downloading. When File is empty, method and URL
+// overrides use the <method>-<target-model>.gguf installed name. Progress may be nil.
 func (m *Models) DownloadDraftURLsWithProgress(ctx context.Context, log applog.Logger, modelURLs []string, projURL string, draft CatalogDraft, progress DownloadProgressFunc) (Path, error) {
 	if len(modelURLs) == 0 {
 		return Path{}, fmt.Errorf("download-urls: no model URLs provided")
@@ -141,16 +110,16 @@ func (m *Models) DownloadDraftURLsWithProgress(ctx context.Context, log applog.L
 	if projURL != "" && !isURL(projURL) {
 		return Path{}, fmt.Errorf("download-urls: projection URL must be fully qualified: %q", projURL)
 	}
-	if draft.Method == DraftMethodMTP && draft.File == "" && draft.URL != "" {
-		_, repo, _, files, ok := hf.ParseURLs(modelURLs)
-		if !ok {
-			return Path{}, fmt.Errorf("download-urls: invalid model URLs")
+	if !draft.Method.IsZero() && draft.File == "" && draft.URL != "" {
+		loc, err := newLocator(hf.NormalizeDownloadURL(modelURLs[0]))
+		if err != nil {
+			return Path{}, fmt.Errorf("download-urls: invalid model URL: %w", err)
 		}
-		_, _, _, original, ok := hf.ParseURL(hf.NormalizeDownloadURL(draft.URL))
+		_, _, _, original, ok := hf.ParseURL(hf.NormalizeDownloadURL(upstreamURL(draft.URL)))
 		if !ok {
-			return Path{}, fmt.Errorf("download-urls: invalid mtp URL %q", draft.URL)
+			return Path{}, fmt.Errorf("download-urls: invalid draft URL %q", draft.URL)
 		}
-		draft.File = localMTPName(repo, original, files)
+		draft.File = localDraftName(draft.Method, loc.Repo, original, []string{loc.UpstreamFile})
 		if draft.Original == "" {
 			draft.Original = original
 		}
@@ -455,12 +424,15 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 			logProjURL = pLoc.RawURL
 		}
 
-		logMTPURL := ""
+		var logDraft CatalogDraft
 		if dLoc != nil {
-			logMTPURL = dLoc.RawURL
+			logDraft = CatalogDraft{Method: DraftMethodMTP, URL: dLoc.RawURL}
 		}
 
-		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] mtp-url[%s] model-id[%s] file[%d/%d]", mLoc.RawURL, logProjURL, logMTPURL, modelID, i+1, len(modelURLs)))
+		if i == 0 && len(drafts) > 0 {
+			logDraft = drafts[0]
+		}
+		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] draft-url[%s] draft-method[%s] model-id[%s] file[%d/%d]", mLoc.RawURL, logProjURL, logDraft.URL, logDraft.Method, modelID, i+1, len(modelURLs)))
 
 		mp, errOrg := m.downloadModel(ctx, log, mLoc, pLoc, dLoc, progress)
 		if errOrg != nil {
@@ -487,7 +459,7 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 
 		if len(mp.ModelFiles) >= len(modelURLs) {
 			for j := i + 1; j < len(modelURLs); j++ {
-				log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[] mtp-url[] model-id[%s]", hf.NormalizeDownloadURL(modelURLs[j]), modelID))
+				log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[] draft-url[] draft-method[] model-id[%s] file[%d/%d]", hf.NormalizeDownloadURL(modelURLs[j]), modelID, j+1, len(modelURLs)))
 				logArtifactStatus(ctx, log, artifactModel, mp.ModelFiles[j], false)
 			}
 			result.ModelFiles = mp.ModelFiles[:len(modelURLs)]

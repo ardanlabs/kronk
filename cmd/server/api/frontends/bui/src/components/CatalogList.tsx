@@ -1045,6 +1045,10 @@ export default function CatalogList() {
                   <div>
                     <h3 style={{ marginBottom: '16px' }}>Pull: {selectedId}</h3>
 
+                    {modelInfo?.draft && (
+                      <DraftDetails draft={modelInfo.draft} has_draft={modelInfo.has_draft} url={modelInfo.files?.draft?.url} />
+                    )}
+
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
                       <button
                         className="btn btn-primary"

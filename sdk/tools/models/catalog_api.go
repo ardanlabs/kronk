@@ -218,8 +218,8 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 	for canonical, entry := range cat.Models {
 		var touched bool
 
-		// Companion discovery scans unchecked entries so co-located and nested
-		// mtp-*.gguf drafters are surfaced. Entries whose mmproj metadata was
+		// Companion discovery scans unchecked entries for MTP and same-directory
+		// DSpark drafters. Entries whose mmproj metadata was
 		// clobbered by a URL-based pull also recover their projection. The scan
 		// is a no-op when nothing needs looking up; network failures leave the
 		// work for a later retry.

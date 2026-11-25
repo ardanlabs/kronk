@@ -18,13 +18,12 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
-	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 var (
-	reDownloadMeta = regexp.MustCompile(`download-model: model-url\[([^\]]*)\] proj-url\[([^\]]*)\] mtp-url\[([^\]]*)\] model-id\[([^\]]*)\] file\[(\d+)/(\d+)\]`)
+	reDownloadMeta = regexp.MustCompile(`download-model: model-url\[([^\]]*)\] proj-url\[([^\]]*)\] draft-url\[([^\]]*)\] draft-method\[([^\]]*)\] model-id\[([^\]]*)\] file\[(\d+)/(\d+)\]`)
 
 	// Bucky model downloads still report progress through logger text.
 	reDownloadProgress = regexp.MustCompile(`download-model: Downloading ([^ ]+)\.\.\. (\d+) MB of (\d+) MB \(([\d.]+) MB/s\)`)
@@ -217,15 +216,22 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 
 		if reDownloadMeta.MatchString(clean) {
 			m := reDownloadMeta.FindStringSubmatch(clean)
-			fileIdx, _ := strconv.Atoi(m[5])
-			fileTotal, _ := strconv.Atoi(m[6])
+			fileIdx, _ := strconv.Atoi(m[6])
+			fileTotal, _ := strconv.Atoi(m[7])
 			pr.Meta = &PullMeta{
 				ModelURL:  m[1],
 				ProjURL:   m[2],
-				MTPURL:    m[3],
-				ModelID:   m[4],
+				ModelID:   m[5],
 				FileIndex: fileIdx,
 				FileTotal: fileTotal,
+			}
+			if m[3] != "" {
+				method, err := models.ParseDraftMethod(m[4])
+				if err != nil {
+					a.log.Info(ctx, "pull-model", "draft-method", m[4], "ERROR", err)
+				} else {
+					pr.Meta.Draft = models.CatalogDraft{Method: method, URL: m[3]}
+				}
 			}
 		}
 
@@ -241,46 +247,21 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	// is set, the resolved HuggingFace URLs are rewritten to point at a
 	// peer Kronk server on the local network.
 	//
-	// When ProjURL or MTPURL is set the request must reach DownloadURLs
+	// When ProjURL or Draft is set the request must reach DownloadDraftURLsWithProgress
 	// with fully qualified HuggingFace URLs. If the caller passed an id
 	// (bare or canonical) instead, run ResolveSource first so the BUI can
 	// keep sending a single shape regardless of whether a projection or
-	// MTP companion override is in play.
+	// draft companion override is in play.
 	var mp models.Path
 	var err error
 	switch {
 	case req.DownloadServer != "":
 		mp, err = a.downloadFromPeer(ctx, logger, req, progress)
-	case req.ProjURL != "" || req.MTPURL != "":
-		modelURLs := []string{req.ModelURL}
-		projURL := req.ProjURL
-		var draft models.CatalogDraft
-		if req.MTPURL != "" {
-			draft = models.CatalogDraft{Method: models.DraftMethodMTP, URL: req.MTPURL}
-		}
-		if !strings.HasPrefix(req.ModelURL, "http://") && !strings.HasPrefix(req.ModelURL, "https://") {
-			res, rerr := a.models.ResolveSource(ctx, req.ModelURL)
-			if rerr != nil {
-				err = fmt.Errorf("resolve %q: %w", req.ModelURL, rerr)
-				break
-			}
-			if len(res.DownloadURLs) == 0 {
-				err = fmt.Errorf("resolve %q: no download URLs (input identifies a repository, not a file)", req.ModelURL)
-				break
-			}
-			modelURLs = res.DownloadURLs
-
-			// An override of one companion must not suppress the other.
-			// Auto-resolve any companion the caller did not explicitly
-			// pin so the MTP drafter (and projection) are always fetched
-			// when the catalog knows about them.
-			if projURL == "" {
-				projURL = res.DownloadProj
-			}
-			if req.MTPURL == "" {
-				draft = res.Draft
-				draft.URL = res.DownloadDraft
-			}
+	case req.ProjURL != "" || req.Draft.URL != "":
+		modelURLs, projURL, draft, rerr := a.resolvePullURLs(ctx, req.ModelURL, req.ProjURL, req.Draft)
+		if rerr != nil {
+			err = rerr
+			break
 		}
 		mp, err = a.models.DownloadDraftURLsWithProgress(ctx, logger, modelURLs, projURL, draft, progress)
 	default:
@@ -727,7 +708,7 @@ func fetchVRAMRepoFiles(ctx context.Context, modelURL string) []HFRepoFile {
 // /download/{path...} handler serves both /resolve/main/ and
 // /raw/main/).
 func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRequest, progress models.DownloadProgressFunc) (models.Path, error) {
-	modelURLs, projURL, draft, err := a.resolvePeerURLs(ctx, req.ModelURL, req.ProjURL, req.MTPURL)
+	modelURLs, projURL, draft, err := a.resolvePullURLs(ctx, req.ModelURL, req.ProjURL, req.Draft)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("download-from-peer: resolve %q: %w", req.ModelURL, err)
 	}
@@ -745,26 +726,17 @@ func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRe
 	return a.models.DownloadDraftURLsWithProgress(ctx, log, modelURLs, projURL, draft, progress)
 }
 
-// resolvePeerURLs returns the HuggingFace download URLs for the given
+// resolvePullURLs returns the HuggingFace download URLs for the given
 // model source. A direct URL passes through unchanged. Anything else
 // (bare or canonical catalog id, owner/repo/file.gguf short form) is
 // resolved through the resolver so multi-file (split) models and
 // companion mmproj files come back with all of their URLs.
-func (a *app) resolvePeerURLs(ctx context.Context, modelSource, projSource, mtpSource string) ([]string, string, models.CatalogDraft, error) {
-	var override models.CatalogDraft
-	if mtpSource != "" {
-		override = models.CatalogDraft{Method: models.DraftMethodMTP, URL: mtpSource}
-	}
+func (a *app) resolvePullURLs(ctx context.Context, modelSource, projSource string, override models.CatalogDraft) ([]string, string, models.CatalogDraft, error) {
 	if strings.HasPrefix(modelSource, "https://") || strings.HasPrefix(modelSource, "http://") {
 		return []string{modelSource}, projSource, override, nil
 	}
 
-	rfile, err := defaults.CatalogFile("", a.models.BasePath())
-	if err != nil {
-		return nil, "", models.CatalogDraft{}, fmt.Errorf("resolver-file: %w", err)
-	}
-
-	res, err := models.NewResolver(a.models, rfile).Resolve(ctx, modelSource)
+	res, err := a.models.ResolveSource(ctx, modelSource)
 	if err != nil {
 		return nil, "", models.CatalogDraft{}, fmt.Errorf("resolve: %w", err)
 	}
@@ -780,7 +752,7 @@ func (a *app) resolvePeerURLs(ctx context.Context, modelSource, projSource, mtpS
 
 	draft := res.Draft
 	draft.URL = res.DownloadDraft
-	if mtpSource != "" {
+	if override.URL != "" {
 		draft = override
 	}
 

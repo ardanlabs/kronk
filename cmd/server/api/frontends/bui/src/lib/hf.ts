@@ -36,13 +36,14 @@ export function isMMProjFile(filename: string): boolean {
   return /(^|[-._])mmproj([-._]|$)/.test(base);
 }
 
-// isMTPCompanion reports whether filename is a co-resident MTP drafter
-// rather than a selectable model. Files in dedicated MTP repositories are
+// isDraftCompanion reports whether filename is a co-resident drafter
+// rather than a selectable model. Files in dedicated drafter repositories are
 // standalone models and must remain visible in the picker.
-export function isMTPCompanion(filename: string, repo: string): boolean {
-  if (/(^|[-_])mtp([-_]|$)/i.test(repo)) return false;
+export function isDraftCompanion(filename: string, repo: string): boolean {
   const base = (filename.split('/').pop() ?? filename).toLowerCase();
-  return base.startsWith('mtp-') || base.startsWith('mtp_');
+  const method = /^(mtp|dspark)[-_]/.exec(base)?.[1];
+  if (!method) return false;
+  return !new RegExp(`(^|[-_])${method}([-_]|$)`, 'i').test(repo);
 }
 
 // matchesQuant reports whether filename ends with the given quant tag,

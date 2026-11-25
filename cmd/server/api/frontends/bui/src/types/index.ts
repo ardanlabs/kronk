@@ -468,7 +468,7 @@ export type KeysResponse = KeyResponse[];
 export interface PullMeta {
   model_url?: string;
   proj_url?: string;
-  mtp_url?: string;
+  draft?: DraftMetadata;
   model_id?: string;
   file_index?: number;
   file_total?: number;
@@ -487,7 +487,7 @@ export interface PullResponse {
   model_file?: string;
   model_files?: string[];
   proj_file?: string;
-  mtp_file?: string;
+  draft_file?: string;
   downloaded?: boolean;
   meta?: PullMeta;
   progress?: PullProgress;

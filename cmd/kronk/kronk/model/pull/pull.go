@@ -12,11 +12,10 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/status"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-func runWeb(ctx context.Context, source string, projURL string, mtpURL string) error {
+func runWeb(ctx context.Context, source string, projURL string, draft models.CatalogDraft) error {
 	url, err := client.DefaultURL("/v1/kronk/models/pull")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
@@ -27,7 +26,9 @@ func runWeb(ctx context.Context, source string, projURL string, mtpURL string) e
 	body := client.D{
 		"model_url": source,
 		"proj_url":  projURL,
-		"mtp_url":   mtpURL,
+	}
+	if draft != (models.CatalogDraft{}) {
+		body["draft"] = draft
 	}
 
 	cln := client.NewSSE[toolapp.PullResponse](
@@ -72,7 +73,7 @@ func runWeb(ctx context.Context, source string, projURL string, mtpURL string) e
 	return nil
 }
 
-func runLocal(ctx context.Context, mdls *models.Models, basePath string, source string, projURL string, mtpURL string) error {
+func runLocal(ctx context.Context, mdls *models.Models, source string, projURL string, draft models.CatalogDraft) error {
 	prt := progressPrinter{
 		w:       os.Stdout,
 		rewrite: isTerminal(os.Stdout),
@@ -97,9 +98,9 @@ func runLocal(ctx context.Context, mdls *models.Models, basePath string, source 
 
 	// Default workflow — Download handles every input form (canonical id,
 	// full URL, owner/repo/file.gguf path) and locates
-	// both the projection and MTP drafter companions automatically. This
+	// both the projection and draft companions automatically. This
 	// mirrors the model server's pull endpoint (and the BUI).
-	if projURL == "" && mtpURL == "" {
+	if projURL == "" && draft.URL == "" {
 		if _, err := mdls.DownloadWithProgress(ctx, log, source, progress); err != nil {
 			return fmt.Errorf("download-model: %w", err)
 		}
@@ -110,7 +111,7 @@ func runLocal(ctx context.Context, mdls *models.Models, basePath string, source 
 	// Explicit companion override — full-control workflow. When the
 	// source is a URL, pair it directly with the supplied companion URLs.
 	if isURL(source) {
-		if _, err := mdls.DownloadURLsWithProgress(ctx, log, []string{source}, projURL, mtpURL, progress); err != nil {
+		if _, err := mdls.DownloadDraftURLsWithProgress(ctx, log, []string{source}, projURL, draft, progress); err != nil {
 			return fmt.Errorf("download-model: %w", err)
 		}
 
@@ -119,14 +120,9 @@ func runLocal(ctx context.Context, mdls *models.Models, basePath string, source 
 
 	// Id source: the resolver expands split (multi-file) models. A
 	// companion the caller pinned replaces the resolver's choice; a
-	// companion left empty is auto-resolved so the MTP drafter (and
+	// companion left empty is auto-resolved so the draft companion (and
 	// projection) is always fetched when the catalog knows about it.
-	rfile, err := defaults.CatalogFile("", basePath)
-	if err != nil {
-		return fmt.Errorf("resolver-file: %w", err)
-	}
-
-	res, err := models.NewResolver(mdls, rfile).Resolve(ctx, source)
+	res, err := mdls.ResolveSource(ctx, source)
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
@@ -134,10 +130,9 @@ func runLocal(ctx context.Context, mdls *models.Models, basePath string, source 
 	if projURL == "" {
 		projURL = res.DownloadProj
 	}
-	draft := res.Draft
-	draft.URL = res.DownloadDraft
-	if mtpURL != "" {
-		draft = models.CatalogDraft{Method: models.DraftMethodMTP, URL: mtpURL}
+	if draft.URL == "" {
+		draft = res.Draft
+		draft.URL = res.DownloadDraft
 	}
 
 	fmt.Printf("Resolved %s → %s/%s (%d file(s))\n", source, res.Provider, res.Family, len(res.DownloadURLs))

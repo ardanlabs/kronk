@@ -1765,8 +1765,8 @@ func TestSelectFiles_MTPCompanionCoLocated(t *testing.T) {
 	if mmproj != "mmproj-F16.gguf" {
 		t.Errorf("mmproj = %q, want mmproj-F16.gguf", mmproj)
 	}
-	if mtp != "mtp-gemma-4-26B-A4B-it.gguf" {
-		t.Errorf("mtp = %q, want mtp-gemma-4-26B-A4B-it.gguf", mtp)
+	if mtp.Original != "mtp-gemma-4-26B-A4B-it.gguf" {
+		t.Errorf("draft = %+v, want mtp-gemma-4-26B-A4B-it.gguf", mtp)
 	}
 }
 
@@ -1783,8 +1783,8 @@ func TestSelectFiles_MTPCompanionSubdirectory(t *testing.T) {
 	if !reflect.DeepEqual(files, []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"}) {
 		t.Errorf("files = %v, want Qwen3.8 target only", files)
 	}
-	if mtp != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
-		t.Errorf("mtp = %q, want nested Qwen3.8 companion", mtp)
+	if mtp.Original != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
+		t.Errorf("draft = %+v, want nested Qwen3.8 companion", mtp)
 	}
 }
 
@@ -1801,8 +1801,8 @@ func TestSelectFiles_MTPCompanionSelectsFlashNext(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match")
 	}
-	if mtp != "mtp-Qwen3.8-Flash-Next-Q8_0.gguf" {
-		t.Errorf("mtp = %q, want self-contained Qwen4Exp Q8_0 companion", mtp)
+	if mtp.Original != "mtp-Qwen3.8-Flash-Next-Q8_0.gguf" {
+		t.Errorf("draft = %+v, want self-contained Qwen4Exp Q8_0 companion", mtp)
 	}
 }
 
@@ -1821,8 +1821,8 @@ func TestSelectFiles_MTPDedicatedRepoIsStandalone(t *testing.T) {
 	if !reflect.DeepEqual(files, []string{"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf"}) {
 		t.Errorf("files = %v, want the MTP repo file selected as a model", files)
 	}
-	if mtp != "" {
-		t.Errorf("mtp = %q, want empty (dedicated MTP repo has no companion)", mtp)
+	if mtp != (CatalogDraft{}) {
+		t.Errorf("draft = %+v, want empty (dedicated MTP repo has no companion)", mtp)
 	}
 }
 
@@ -1841,8 +1841,8 @@ func TestSelectFiles_ExplicitMTPRequestIsStandalone(t *testing.T) {
 	if !reflect.DeepEqual(files, []string{"mtp-gemma-4-26B-A4B-it.gguf"}) {
 		t.Errorf("files = %v, want the mtp file selected as a model", files)
 	}
-	if mtp != "" {
-		t.Errorf("mtp = %q, want empty (explicit mtp request is standalone)", mtp)
+	if mtp != (CatalogDraft{}) {
+		t.Errorf("draft = %+v, want empty (explicit mtp request is standalone)", mtp)
 	}
 }
 
@@ -1858,8 +1858,8 @@ func TestSelectFiles_MTPNoCompanionWhenUnrelated(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match")
 	}
-	if mtp != "" {
-		t.Errorf("mtp = %q, want empty (unrelated mtp file must not attach)", mtp)
+	if mtp != (CatalogDraft{}) {
+		t.Errorf("draft = %+v, want empty (unrelated mtp file must not attach)", mtp)
 	}
 }
 
@@ -1885,62 +1885,72 @@ func TestMatchMTPToModel(t *testing.T) {
 	}
 }
 
-// TestResolver_DiscoverMTP verifies that an unchecked catalog entry gets a
+// TestResolver_DiscoverDraft verifies that an unchecked catalog entry gets a
 // companion discovered and recorded by a single HF sibling scan.
-func TestResolver_DiscoverMTP(t *testing.T) {
-	hfc := &fakeHF{
-		metas: map[string][]string{
-			"unsloth/Qwen3.8-27B-GGUF": {
-				"Qwen3.8-27B-UD-Q4_K_XL.gguf",
-				"MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
-			},
-		},
-	}
-	dir := t.TempDir()
-	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
+func TestResolver_DiscoverDraft(t *testing.T) {
+	for _, tt := range []struct {
+		method   DraftMethod
+		original string
+	}{
+		{DraftMethodMTP, "MTP/mtp-Qwen3.8-27B-Q4_0.gguf"},
+		{DraftMethodDSpark, "dspark-Qwen3.8-27B-Q8_0.gguf"},
+	} {
+		t.Run(tt.method.String(), func(t *testing.T) {
+			hfc := &fakeHF{
+				metas: map[string][]string{
+					"unsloth/Qwen3.8-27B-GGUF": {
+						"Qwen3.8-27B-UD-Q4_K_XL.gguf",
+						tt.original,
+					},
+				},
+			}
+			dir := t.TempDir()
+			rfile := filepath.Join(dir, "catalog.yaml")
+			mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
-	r := newTestResolver(nil, rfile, hfc)
+			r := newTestResolver(nil, rfile, hfc)
 
-	entry := CatalogEntry{
-		Provider: "unsloth",
-		Family:   "Qwen3.8-27B-GGUF",
-		Revision: "main",
-		Files:    []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
-	}
+			entry := CatalogEntry{
+				Provider: "unsloth",
+				Family:   "Qwen3.8-27B-GGUF",
+				Revision: "main",
+				Files:    []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
+			}
 
-	got, ok := r.discoverCompanions(context.Background(), entry, testLog)
-	if !ok {
-		t.Fatalf("discoverCompanions ok=false, want true")
-	}
-	if !got.DraftChecked {
-		t.Error("DraftChecked not set after a successful scan")
-	}
-	if got.Draft.Original != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
-		t.Errorf("Draft.Original = %q, want nested Qwen3.8 companion", got.Draft.Original)
-	}
-	if got.Draft.File != "mtp-Qwen3.8-27B-UD-Q4_K_XL.gguf" {
-		t.Errorf("Draft.File = %q, want canonical Qwen3.8 companion name", got.Draft.File)
-	}
+			got, ok := r.discoverCompanions(context.Background(), entry, testLog)
+			if !ok {
+				t.Fatalf("discoverCompanions ok=false, want true")
+			}
+			if !got.DraftChecked {
+				t.Error("DraftChecked not set after a successful scan")
+			}
+			if got.Draft.Original != tt.original || got.Draft.Method != tt.method {
+				t.Errorf("Draft = %+v, want method %s and source %q", got.Draft, tt.method, tt.original)
+			}
+			if got.Draft.File != tt.method.String()+"-Qwen3.8-27B-UD-Q4_K_XL.gguf" {
+				t.Errorf("Draft.File = %q, want canonical Qwen3.8 companion name", got.Draft.File)
+			}
 
-	// A repo with no mtp sibling still stamps mtp_checked so the scan is
-	// not retried on every reconcile.
-	hfc.metas["unsloth/Qwen3-GGUF"] = []string{"Qwen3-Q8_0.gguf", "mmproj-F16.gguf"}
-	none := CatalogEntry{
-		Provider: "unsloth",
-		Family:   "Qwen3-GGUF",
-		Revision: "main",
-		Files:    []string{"Qwen3-Q8_0.gguf"},
-	}
-	got2, ok := r.discoverCompanions(context.Background(), none, testLog)
-	if !ok {
-		t.Fatalf("discoverCompanions (no companion) ok=false, want true")
-	}
-	if !got2.DraftChecked {
-		t.Error("DraftChecked not set when no companion exists")
-	}
-	if got2.Draft != (CatalogDraft{}) {
-		t.Errorf("expected empty draft, got %+v", got2.Draft)
+			// A repo with no companion still stamps draft_checked so the scan is
+			// not retried on every reconcile.
+			hfc.metas["unsloth/Qwen3-GGUF"] = []string{"Qwen3-Q8_0.gguf", "mmproj-F16.gguf"}
+			none := CatalogEntry{
+				Provider: "unsloth",
+				Family:   "Qwen3-GGUF",
+				Revision: "main",
+				Files:    []string{"Qwen3-Q8_0.gguf"},
+			}
+			got2, ok := r.discoverCompanions(context.Background(), none, testLog)
+			if !ok {
+				t.Fatalf("discoverCompanions (no companion) ok=false, want true")
+			}
+			if !got2.DraftChecked {
+				t.Error("DraftChecked not set when no companion exists")
+			}
+			if got2.Draft != (CatalogDraft{}) {
+				t.Errorf("expected empty draft, got %+v", got2.Draft)
+			}
+		})
 	}
 }
 

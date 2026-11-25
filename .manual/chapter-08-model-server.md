@@ -621,6 +621,41 @@ the source is built from the target's provider, family, revision, and
 `draft_checked` records whether automatic companion discovery has completed;
 set it to `true` when configuring a companion explicitly.
 
+For newly resolved models and unchecked catalog entries, Kronk automatically
+discovers a matching `dspark-<family>.gguf` or `dspark-<family>.gguf_file`
+companion in the same repository directory as the target. Quantization suffixes
+may differ; Q8_0 companions are preferred, with remaining ties ordered by
+upstream path. The installed name is `dspark-<target-model-id>.gguf`.
+DSpark files are excluded from automatic target-model selection. Existing MTP
+companion selection takes precedence when both methods are present; explicit
+catalog draft metadata overrides discovery. A companion in another directory
+or repository requires an explicit `draft` block, as in the example above.
+Entries with `draft_checked: true` are not rescanned automatically; set it to
+`false` to request discovery during catalog reconciliation.
+
+Catalog pulls download the declared companion automatically:
+
+```shell
+kronk model pull ggml-org/Inkling-2-Mini-Q8_0
+```
+
+To override the companion for a pull, supply both `--draft` and
+`--draft-method`. The same flags work with `--local`:
+
+```shell
+kronk model pull ggml-org/Inkling-2-Mini-Q8_0 \
+  --draft-method dspark \
+  --draft https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
+```
+
+Methods are `mtp`, `dspark`, and `conventional`. Overrides are installed as
+`<method>-<target-model-id>.gguf`, even when the source uses `.gguf_file`.
+For catalog IDs, overriding the draft preserves the catalog projection;
+`--proj` overrides that projection independently. With a direct model URL and
+explicit overrides, only the supplied companions are downloaded.
+The BUI's HF Pull screen provides the same draft-method and URL override;
+the catalog Pull panel previews the catalog companion without needing an override.
+
 Declaring a draft makes it available to the downloader, not automatically to
 every inference method. DSpark companions can be downloaded and inspected, but
 DSpark inference is not yet supported. A conventional draft companion does not

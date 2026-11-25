@@ -3,6 +3,7 @@
 ## Index
 
 - [v1.33.4](#v1334)
+  - [Generic Draft Pull Options](#v1334-generic-draft-pull-options)
   - [Catalog Draft Schema](#v1334-catalog-draft-schema)
 - [v1.33.3](#v1333)
   - [Malina Data and Workflow APIs](#v1333-malina-data-and-workflow-apis)
@@ -66,6 +67,21 @@
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
 ## v1.33.4
+
+### v1.33.4: Generic Draft Pull Options
+
+`kronk model pull --mtp-draft URL` is replaced by
+`--draft URL --draft-method mtp`. The other supported draft methods are
+`dspark` and `conventional`; DSpark inference is not yet supported.
+The pull HTTP request replaces `mtp_url` with
+`"draft": {"method": "mtp", "url": "..."}`. Download metadata reports
+`draft.method` and `draft.url`, and the completion response uses `draft_file`
+instead of `mtp_file`. Update custom clients accordingly.
+
+SDK callers of `DownloadURLs` or `DownloadURLsWithProgress` must use
+`DownloadDraftURLsWithProgress` with a `CatalogDraft` value. Pass an empty
+`CatalogDraft` when no companion is requested and a nil callback when no
+progress reporting is needed.
 
 ### v1.33.4: Catalog Draft Schema
 

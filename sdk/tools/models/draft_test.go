@@ -23,6 +23,110 @@ func blockDraftTestNetwork(t *testing.T) {
 	t.Cleanup(func() { transport.CloseIdleConnections(); http.DefaultTransport = previous })
 }
 
+func TestDSparkDiscoveryAndDownload(t *testing.T) {
+	blockDraftTestNetwork(t)
+	t.Setenv("KRONK_SKIP_NETWORK_CHECK", "true")
+	for _, tt := range []struct {
+		name       string
+		source     string
+		modelID    string
+		directory  string
+		companions []string
+		method     DraftMethod
+		original   string
+	}{
+		{
+			name: "same directory", companions: []string{"dspark-Inkling-2-Mini-Q8_0.gguf"},
+			method: DraftMethodDSpark, original: "dspark-Inkling-2-Mini-Q8_0.gguf",
+		},
+		{
+			name: "nested mainline format", directory: "Mainline_Support/",
+			companions: []string{"dspark-Inkling-2-Mini-Q8_0.gguf", "Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file"},
+			method:     DraftMethodDSpark, original: "Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file",
+		},
+		{
+			name: "tag excludes drafter and prefers Q8", source: "target/repo:IQ4_NL",
+			companions: []string{"dspark-Inkling-2-Mini-IQ4_NL.gguf", "dspark-Inkling-2-Mini-Q8_0.gguf", "dspark-Inkling-2-Mini-BF16.gguf"},
+			method:     DraftMethodDSpark, original: "dspark-Inkling-2-Mini-Q8_0.gguf",
+		},
+		{
+			name: "different family", companions: []string{"dspark-Other-Model-Q8_0.gguf"},
+		},
+		{
+			name: "different directory", companions: []string{"dspark/dspark-Inkling-2-Mini-Q8_0.gguf"},
+		},
+		{
+			name: "existing MTP preference", companions: []string{"dspark-Inkling-2-Mini-Q8_0.gguf", "mtp-Inkling-2-Mini-Q8_0.gguf"},
+			method: DraftMethodMTP, original: "mtp-Inkling-2-Mini-Q8_0.gguf",
+		},
+		{
+			name: "explicit drafter is standalone", modelID: "dspark-Inkling-2-Mini-Q8_0",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			modelID := "Inkling-2-Mini-IQ4_NL"
+			if tt.modelID != "" {
+				modelID = tt.modelID
+			}
+			source := "target/" + modelID
+			if tt.source != "" {
+				source = tt.source
+			}
+			target := tt.directory + modelID + ".gguf"
+			siblings := append(append([]string{}, tt.companions...), target)
+			modelFile := filepath.Join(t.TempDir(), "model.gguf")
+			writeCatalogTestGGUF(t, modelFile, nil)
+			body, err := os.ReadFile(modelFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			contents := map[string][]byte{"/target/repo/resolve/main/" + target: body}
+			if tt.original != "" {
+				contents["/target/repo/resolve/main/"+tt.original] = []byte("tiny discovered draft")
+			}
+			withFakeGetter(t, &fakeGetter{contents: contents})
+			m := newTestModels(t)
+			r := NewResolverWithClient(m, filepath.Join(m.BasePath(), "catalog", "catalog.yaml"), &fakeHF{
+				search: map[string][]string{"target|Inkling-2-Mini": {"target/repo"}, "target|dspark-Inkling-2-Mini": {"target/repo"}},
+				metas:  map[string][]string{"target/repo": siblings},
+			})
+			res, err := r.Resolve(t.Context(), source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Files) != 1 || res.Files[0] != target || res.Draft.Method != tt.method || res.Draft.Original != tt.original {
+				t.Fatalf("resolution: got %+v, want target %q, method %s, source %q", res, target, tt.method, tt.original)
+			}
+			if tt.original == "" {
+				if res.Draft != (CatalogDraft{}) || res.DownloadDraft != "" {
+					t.Fatalf("unexpected companion: %+v", res)
+				}
+				return
+			}
+			wantName := tt.method.String() + "-" + modelID + ".gguf"
+			if res.Draft.File != wantName || res.DownloadDraft != "https://huggingface.co/target/repo/resolve/main/"+tt.original {
+				t.Fatalf("companion source/naming: %+v", res)
+			}
+			mp, err := m.Download(t.Context(), testLog, res.CanonicalID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantPath := filepath.Join(m.Path(), "target", "repo", wantName)
+			if mp.DraftFile != wantPath || (mp.MTPFile != "") != (tt.method == DraftMethodMTP) {
+				t.Fatalf("installed draft: got %+v, want %q with MTP only for mtp", mp, wantPath)
+			}
+			data, err := os.ReadFile(wantPath)
+			if err != nil || string(data) != "tiny discovered draft" {
+				t.Fatalf("draft content: got %q, %v", data, err)
+			}
+			entry, ok, err := m.CatalogEntry(res.CanonicalID)
+			if err != nil || !ok || entry.Draft.Method != tt.method || entry.Draft.Original != tt.original || !entry.DraftChecked {
+				t.Fatalf("persisted draft: got %+v, %t, %v", entry, ok, err)
+			}
+		})
+	}
+}
+
 func TestGenericDraftDownloadAndRestore(t *testing.T) {
 	blockDraftTestNetwork(t)
 	t.Setenv("KRONK_SKIP_NETWORK_CHECK", "true")
@@ -187,10 +291,10 @@ func TestDraftMTPCompatibilityMetadata(t *testing.T) {
 	}
 }
 
-func TestURLOnlyMTPOverride(t *testing.T) {
+func TestURLOnlyDraftOverride(t *testing.T) {
 	blockDraftTestNetwork(t)
-	for _, legacy := range []bool{false, true} {
-		t.Run(map[bool]string{false: "generic", true: "legacy"}[legacy], func(t *testing.T) {
+	for _, method := range []DraftMethod{DraftMethodMTP, DraftMethodDSpark, DraftMethodConventional} {
+		t.Run(method.String(), func(t *testing.T) {
 			g := &fakeGetter{contents: map[string][]byte{
 				"/target/repo/resolve/main/model-Q4.gguf":       []byte("tiny model"),
 				"/other/drafts/resolve/pinned/nested/head.gguf": []byte("tiny head"),
@@ -199,24 +303,21 @@ func TestURLOnlyMTPOverride(t *testing.T) {
 			m := newTestModels(t)
 			urls := []string{"https://huggingface.co/target/repo/resolve/main/model-Q4.gguf"}
 			const draftURL = "https://huggingface.co/other/drafts/resolve/pinned/nested/head.gguf"
-			var mp Path
-			var err error
-			switch legacy {
-			case true:
-				mp, err = m.DownloadURLsWithProgress(t.Context(), testLog, urls, "", draftURL, nil)
-			default:
-				mp, err = m.DownloadDraftURLsWithProgress(t.Context(), testLog, urls, "", CatalogDraft{Method: DraftMethodMTP, URL: draftURL}, nil)
+			mp, err := m.DownloadDraftURLsWithProgress(t.Context(), testLog, urls, "", CatalogDraft{Method: method, URL: draftURL}, nil)
+			wantFile := method.String() + "-model-Q4.gguf"
+			if err != nil || filepath.Base(mp.DraftFile) != wantFile {
+				t.Fatalf("draft override: got %+v, %v, want %s", mp, err, wantFile)
 			}
-			if err != nil || filepath.Base(mp.MTPFile) != "mtp-model-Q4.gguf" || mp.DraftFile != mp.MTPFile {
-				t.Fatalf("MTP override: got %+v, %v", mp, err)
+			if (method == DraftMethodMTP && mp.MTPFile != mp.DraftFile) || (method != DraftMethodMTP && mp.MTPFile != "") {
+				t.Fatalf("runtime MTP file: got %+v for %s", mp, method)
 			}
 			cat, err := m.Catalog()
 			if err != nil {
 				t.Fatal(err)
 			}
 			draft := cat.Models["target/model-Q4"].Draft
-			if draft.Method != DraftMethodMTP || draft.File != "mtp-model-Q4.gguf" || draft.Original != "nested/head.gguf" || draft.URL != draftURL {
-				t.Fatalf("MTP override persisted: got %+v", draft)
+			if draft.Method != method || draft.File != wantFile || draft.Original != "nested/head.gguf" || draft.URL != draftURL {
+				t.Fatalf("draft override persisted: got %+v", draft)
 			}
 		})
 	}

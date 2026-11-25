@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
 import DownloadProgressBar from './DownloadProgressBar';
+import DownloadInfoTable from './DownloadInfoTable';
 import DraftDetails from './DraftDetails';
 import { FieldLabel } from './ParamTooltips';
-import type { ResolveSourceResponse, HFRepoFile } from '../types';
+import type { ResolveSourceResponse, HFRepoFile, DraftMetadata } from '../types';
 import {
   stripGGUF,
   modelIDFromFilename,
   isQuantOnly,
   isMMProjFile,
-  isMTPCompanion,
+  isDraftCompanion,
   matchesQuant,
   splitPaste,
   groupRepoFiles,
@@ -45,8 +46,9 @@ export default function ModelPull() {
   const [showOverride, setShowOverride] = useState(false);
   const [projOverride, setProjOverride] = useState('');
 
-  const [showMTPOverride, setShowMTPOverride] = useState(false);
-  const [mtpOverride, setMtpOverride] = useState('');
+  const [showDraftOverride, setShowDraftOverride] = useState(false);
+  const [draftOverride, setDraftOverride] = useState('');
+  const [draftMethod, setDraftMethod] = useState<NonNullable<DraftMetadata['method']>>('mtp');
 
   const isComplete = download?.status === 'complete';
   const hasError = download?.status === 'error';
@@ -98,7 +100,7 @@ export default function ModelPull() {
         const matches = (lookup.repo_files ?? []).filter(
           (file) =>
             !isMMProjFile(file.filename) &&
-            !isMTPCompanion(file.filename, f) &&
+            !isDraftCompanion(file.filename, f) &&
             matchesQuant(file.filename, m),
         );
 
@@ -165,26 +167,22 @@ export default function ModelPull() {
     setResolveError(null);
     setProjOverride('');
     setShowOverride(false);
-    setMtpOverride('');
-    setShowMTPOverride(false);
+    setDraftOverride('');
+    setShowDraftOverride(false);
   };
 
   const handlePull = () => {
     if (!resolved || isDownloading || resolved.installed) return;
 
-    // Both companion URLs are sent ONLY as explicit overrides. Left empty,
-    // the server resolves the model id and downloads every companion it
-    // needs (projection and the catalog-declared draft). Auto-sending a resolved companion
-    // URL here would flip the server into explicit-URL mode, where any
-    // companion whose URL was not also supplied (e.g. the projection) is
-    // silently skipped. Keep proj and mtp symmetric: override-only.
+    // Send only explicit overrides. Otherwise the server selects companions
+    // from the catalog, preserving their source and installed filenames.
     const proj = showOverride ? projOverride.trim() : '';
-    const mtp = showMTPOverride ? mtpOverride.trim() : '';
+    const draftURL = showDraftOverride ? draftOverride.trim() : '';
     // The server handles id → URL resolution, so the BUI can always send
     // the canonical id regardless of mode.
     const modelArg = resolved.canonical_id || buildSource(provider, family, model);
 
-    startDownload(modelArg, proj || undefined, mtp || undefined);
+    startDownload(modelArg, proj || undefined, draftURL ? { method: draftMethod, url: draftURL } : undefined);
   };
 
   const sourceLabel = resolved?.from_local
@@ -347,7 +345,7 @@ export default function ModelPull() {
           const modelFiles = repoFiles.filter(
             (file) =>
               !isMMProjFile(file.filename) &&
-              !isMTPCompanion(file.filename, family.trim()),
+              !isDraftCompanion(file.filename, family.trim()),
           );
           const rows = groupRepoFiles(modelFiles);
           return (
@@ -434,8 +432,7 @@ export default function ModelPull() {
             <DraftDetails
               draft={resolved.draft}
               has_draft={Boolean(resolved.download_draft)}
-              mtp_source={!resolved.draft && resolved.download_mtp ? 'companion' : undefined}
-              url={resolved.download_draft || (!resolved.draft ? resolved.download_mtp : undefined)}
+              url={resolved.download_draft}
             />
 
             <details
@@ -465,27 +462,45 @@ export default function ModelPull() {
 
             <details
               style={{ marginTop: '12px' }}
-              open={showMTPOverride}
-              onToggle={(e) => setShowMTPOverride((e.target as HTMLDetailsElement).open)}
+              open={showDraftOverride}
+              onToggle={(e) => {
+                const open = (e.target as HTMLDetailsElement).open;
+                if (open && !showDraftOverride) setDraftMethod(resolved.draft?.method ?? 'mtp');
+                setShowDraftOverride(open);
+              }}
             >
               <summary style={{ cursor: 'pointer', userSelect: 'none' }}>
-                Override MTP drafter URL
+                Override draft companion
               </summary>
               <div className="form-group" style={{ marginTop: '8px' }}>
-                <FieldLabel htmlFor="mtpOverride" tooltipKey="mtpOverrideURL">MTP drafter URL (fully qualified HuggingFace URL)</FieldLabel>
+                <FieldLabel htmlFor="draftMethod" tooltipKey="draftOverrideMethod">Draft method</FieldLabel>
+                <select
+                  id="draftMethod"
+                  value={draftMethod}
+                  onChange={(e) => setDraftMethod(e.target.value as NonNullable<DraftMetadata['method']>)}
+                  disabled={isDownloading}
+                >
+                  <option value="mtp">MTP</option>
+                  <option value="dspark">DSpark</option>
+                  <option value="conventional">Conventional</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <FieldLabel htmlFor="draftOverride" tooltipKey="draftOverrideURL">Draft URL (fully qualified HuggingFace URL)</FieldLabel>
                 <input
                   type="text"
-                  id="mtpOverride"
-                  value={mtpOverride}
-                  onChange={(e) => setMtpOverride(e.target.value)}
-                  placeholder="https://huggingface.co/org/repo/resolve/main/mtp-model.gguf"
+                  id="draftOverride"
+                  value={draftOverride}
+                  onChange={(e) => setDraftOverride(e.target.value)}
+                  placeholder="https://huggingface.co/org/repo/resolve/main/draft-model.gguf"
                   disabled={isDownloading}
                 />
                 <p style={{ fontSize: '12px', opacity: 0.7, margin: '4px 0 0 0' }}>
-                  When set, the explicit MTP drafter URL replaces the resolver's choice.
-                  This is an MTP-only override, not a generic draft or DSpark override.
+                  When set, this companion replaces the resolver's choice and is installed as{' '}
+                  <code>{draftMethod}-{'<target-model>'}.gguf</code>.
                   Leave the field empty (or close this section) to let the catalog select companions.
                 </p>
+                {draftMethod === 'dspark' && <p>DSpark companion download only. DSpark inference is not supported.</p>}
               </div>
             </details>
 
@@ -511,6 +526,10 @@ export default function ModelPull() {
               )}
             </div>
           </div>
+        )}
+
+        {download?.origin === 'model-pull' && download.meta && (
+          <DownloadInfoTable meta={download.meta} />
         )}
 
         {download && download.progress && isDownloading && (

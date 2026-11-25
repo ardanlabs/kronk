@@ -80,6 +80,35 @@ models:
       endpoint: decision
       decision: true
     resolved_at: 2026-10-03T00:00:00Z
+  ggml-org/Inkling-2-Mini-Q8_0:
+    provider: ggml-org
+    family: Inkling-2-Mini-GGUF
+    revision: main
+    files:
+    - Inkling-2-Mini-Q8_0.gguf
+    file_sizes:
+    - 27820099264
+    mmproj: mmproj-Inkling-2-Mini-Q8_0.gguf
+    mmproj_orig: mmproj-Inkling-2-Mini-BF16.gguf
+    mmproj_size: 641805984
+    draft:
+      method: dspark
+      file: dspark-Inkling-2-Mini-Q8_0.gguf
+      original: Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
+      url: https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
+      size: 503889952
+    draft_checked: true
+    model_type: MoE
+    architecture: inkling2_loop
+    sequence_processing: Hybrid
+    capabilities:
+      draft: dspark
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-11-21T18:55:48.543911Z
   ggml-org/Julia-1-Q8_0:
     provider: ggml-org
     family: Julia-1-GGUF

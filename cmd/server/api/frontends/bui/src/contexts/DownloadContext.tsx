@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
 import { api } from '../services/api';
 import { useModelList } from './ModelListContext';
-import type { PullResponse } from '../types';
+import type { PullResponse, DraftMetadata } from '../types';
 
 export interface DownloadMessage {
   text: string;
@@ -16,7 +16,7 @@ export interface DownloadMeta {
   model_id?: string;
   model_urls: string[];
   proj_url?: string;
-  mtp_url?: string;
+  draft?: DraftMetadata;
   fileIndex: number;
   fileTotal: number;
 }
@@ -46,7 +46,7 @@ interface DownloadState {
 interface DownloadContextType {
   download: DownloadState | null;
   isDownloading: boolean;
-  startDownload: (modelUrl: string, projUrl?: string, mtpUrl?: string) => void;
+  startDownload: (modelUrl: string, projUrl?: string, draft?: DraftMetadata) => void;
   startBatchDownload: (modelUrls: string[], projUrl?: string) => void;
   startCatalogDownload: (catalogId: string, downloadServer?: string) => void;
   startBuckyDownload: (modelID: string) => void;
@@ -117,7 +117,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const pullOne = useCallback((modelUrl: string, projUrl: string | undefined, mtpUrl: string | undefined, onComplete: () => void) => {
+  const pullOne = useCallback((modelUrl: string, projUrl: string | undefined, draft: DraftMetadata | undefined, onComplete: () => void) => {
     abortRef.current = api.pullModel(
       modelUrl,
       projUrl,
@@ -139,7 +139,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                 model_id: data.meta!.model_id,
                 model_urls: data.meta!.model_url ? [data.meta!.model_url] : [],
                 proj_url: data.meta!.proj_url || undefined,
-                mtp_url: data.meta!.mtp_url || undefined,
+                draft: data.meta!.draft,
                 fileIndex: data.meta!.file_index ?? 1,
                 fileTotal: data.meta!.file_total ?? 1,
               },
@@ -167,11 +167,11 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       },
       onComplete,
       undefined,
-      mtpUrl
+      draft
     );
   }, [addMessage, updateLastMessage, handleProgress]);
 
-  const startDownload = useCallback((modelUrl: string, projUrl?: string, mtpUrl?: string) => {
+  const startDownload = useCallback((modelUrl: string, projUrl?: string, draft?: DraftMetadata) => {
     if (abortRef.current) {
       return;
     }
@@ -187,7 +187,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     progressStartRef.current = null;
     lastProgressUpdateRef.current = 0;
 
-    pullOne(modelUrl, projUrl, mtpUrl, () => {
+    pullOne(modelUrl, projUrl, draft, () => {
       addMessage('Pull complete!', 'success');
       setDownload((prev) => (prev ? { ...prev, status: 'complete' } : prev));
       abortRef.current = null;
@@ -275,7 +275,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                 model_id: data.meta!.model_id,
                 model_urls: data.meta!.model_url ? [data.meta!.model_url] : [],
                 proj_url: data.meta!.proj_url || undefined,
-                mtp_url: data.meta!.mtp_url || undefined,
+                draft: data.meta!.draft,
                 fileIndex: data.meta!.file_index ?? 1,
                 fileTotal: data.meta!.file_total ?? 1,
               },

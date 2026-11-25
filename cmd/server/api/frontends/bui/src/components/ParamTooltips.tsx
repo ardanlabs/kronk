@@ -173,7 +173,8 @@ export const PARAM_TOOLTIPS = {
   catalogDraftFile: 'Declared filename of the separate draft companion. Embedded MTP has no separate draft file.',
   catalogDraftURL: 'Resolved download URL of the draft companion, including companions hosted in another repository.',
   catalogDraftSize: 'Size of the separate draft companion in bytes. A missing or zero size is treated as unknown.',
-  mtpOverrideURL: 'Explicit MTP drafter URL override. This override is MTP-only, not a generic draft or DSpark override.',
+  draftOverrideURL: 'Explicit draft companion URL. Replaces the catalog companion and installs it using the selected method and target model name.',
+  draftOverrideMethod: 'Method used by this draft companion: MTP, DSpark, or conventional. Downloading a DSpark companion does not enable DSpark inference.',
 
   // ── Pool / resource budget tooltips ──────────────────────────────────────
   budgetPercent: 'Percentage of detected GPU VRAM and system RAM the pool is allowed to commit to loaded models. Reservations beyond this percentage trigger eviction of idle models. Default: 80%.',
