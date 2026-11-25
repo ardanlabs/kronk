@@ -13,33 +13,35 @@ package gguf
 // for full ContextWindow KV — a several-gigabyte over-estimate at long
 // contexts and the cause of unloadable AGENT-style configs.
 type KVCacheInput struct {
-	ContextWindow        int64 // n_ctx - context window size in tokens.
-	BlockCount           int64 // n_layers - number of transformer layers.
-	HeadCountKV          int64 // Number of KV attention heads (averaged for hybrid archs).
-	KeyLength            int64 // K dimension per head (typically 128).
-	ValueLength          int64 // V dimension per head (typically 128).
-	SWAHeadCountKV       int64 // Number of KV heads in SWA layers (0 = HeadCountKV).
-	SWAKeyLength         int64 // K dimension in SWA layers (0 = KeyLength).
-	SWAValueLength       int64 // V dimension in SWA layers (0 = ValueLength).
-	BytesPerElement      int64 // Per-element width of the KV cache type (q8_0=1, f16=2, ...).
-	TypeK                int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	TypeV                int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	HeadCountKVByLayer   []int64
-	Slots                int64 // n_seq_max - number of concurrent sequences.
-	SlidingWindow        int64 // Sliding-window size in tokens (0 = no SWA layers).
-	SlidingWindowLayers  int64 // Layer count that uses SWA (0 = treat all BlockCount as full attention).
-	SharedKVLayers       int64 // Trailing layers that reuse another layer's KV tensors.
-	SWAPattern           []bool
-	RecurrentPattern     []bool // Per-layer recurrent classification; recurrent layers do not allocate K/V.
-	NextNPredictLayers   int64  // Appended MTP layers excluded from the target context memory.
-	MTPContext           bool   // Allocate only appended MTP layers, rather than the target trunk.
-	IndexerKeyLength     int64  // Additional K-only cache width per attention layer.
-	RecurrentStateBytes  int64  // F32 recurrent state bytes per recurrent layer, sequence, and state copy.
-	RecurrentStateCopies int64  // Current state plus rollback snapshots retained per sequence.
-	NUBatch              int64  // Effective physical batch size used by the SWA allocator.
-	KVUnified            bool   // Whether all sequence slots share one KV pool.
-	SWAFull              bool   // Whether SWA layers allocate the full context.
-	VTransposed          bool   // Whether V uses the model-wide transposed layout.
+	ContextWindow               int64 // n_ctx - context window size in tokens.
+	BlockCount                  int64 // n_layers - number of transformer layers.
+	HeadCountKV                 int64 // Number of KV attention heads (averaged for hybrid archs).
+	KeyLength                   int64 // K dimension per head (typically 128).
+	ValueLength                 int64 // V dimension per head (typically 128).
+	SWAHeadCountKV              int64 // Number of KV heads in SWA layers (0 = HeadCountKV).
+	SWAKeyLength                int64 // K dimension in SWA layers (0 = KeyLength).
+	SWAValueLength              int64 // V dimension in SWA layers (0 = ValueLength).
+	BytesPerElement             int64 // Per-element width of the KV cache type (q8_0=1, f16=2, ...).
+	TypeK                       int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV                       int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
+	HeadCountKVByLayer          []int64
+	Slots                       int64 // n_seq_max - number of concurrent sequences.
+	SlidingWindow               int64 // Sliding-window size in tokens (0 = no SWA layers).
+	SlidingWindowLayers         int64 // Layer count that uses SWA (0 = treat all BlockCount as full attention).
+	SharedKVLayers              int64 // Trailing layers that reuse another layer's KV tensors.
+	SWAPattern                  []bool
+	RecurrentPattern            []bool  // Per-layer recurrent classification; recurrent layers do not allocate K/V.
+	NextNPredictLayers          int64   // Appended MTP layers excluded from the target context memory.
+	MTPContext                  bool    // Allocate only appended MTP layers, rather than the target trunk.
+	IndexerKeyLength            int64   // Additional K-only cache width per attention layer.
+	RecurrentStateBytes         int64   // F32 recurrent state bytes per recurrent layer, sequence, and state copy.
+	RecurrentStateCopies        int64   // One plus rollback depth; replay retains this many pending input columns.
+	RecurrentStateBytesByLayer  []int64 // Optional per-layer base state, including PLE history.
+	RecurrentReplayBytesByLayer []int64 // Nonzero selects replay: additional bytes per pending token.
+	NUBatch                     int64   // Effective physical batch size used by the SWA allocator.
+	KVUnified                   bool    // Whether all sequence slots share one KV pool.
+	SWAFull                     bool    // Whether SWA layers allocate the full context.
+	VTransposed                 bool    // Whether V uses the model-wide transposed layout.
 }
 
 // KVCache holds the KV-cache sizing breakdown produced by CalculateKVCache.
@@ -104,8 +106,19 @@ func CalculateKVCache(input KVCacheInput) KVCache {
 		if (!input.MTPContext && layer >= trunkLayers) || (input.MTPContext && layer < trunkLayers) {
 			continue
 		}
+
 		if input.RecurrentStateBytes > 0 && isRecurrentLayer(input.RecurrentPattern, layer, blockCount) {
-			layerMemory[layer] = input.RecurrentStateBytes * recurrentCopies * recurrentStreams
+			state := input.RecurrentStateBytes
+			if layer < int64(len(input.RecurrentStateBytesByLayer)) {
+				state = input.RecurrentStateBytesByLayer[layer]
+			}
+			bytes := state * recurrentCopies
+			if recurrentCopies > 1 && layer < int64(len(input.RecurrentReplayBytesByLayer)) && input.RecurrentReplayBytesByLayer[layer] > 0 {
+				// b12728 retains one committed state and n_rs_seq+1
+				// pending columns, not n_rs_seq rollback snapshots.
+				bytes = state + input.RecurrentReplayBytesByLayer[layer]*recurrentCopies
+			}
+			layerMemory[layer] = bytes * recurrentStreams
 			slotMemory += layerMemory[layer]
 			continue
 		}

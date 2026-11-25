@@ -70,8 +70,8 @@ type Config struct {
 	KVUnified              bool          // Share aggregate KV capacity across sequences.
 	SWAFull                bool          // Size SWA layers against the full context window.
 	VTransposed            bool          // Size V using the model-wide transposed layout.
-	RecurrentStateCopies   int64         // State copies for separate-model or companion-MTP speculation.
-	EmbeddedMTPStateCopies int64         // State copies when the GGUF contains an embedded MTP layer.
+	RecurrentStateCopies   int64         // One plus rollback depth for separate-model or companion-MTP speculation.
+	EmbeddedMTPStateCopies int64         // One plus rollback depth when the GGUF contains an embedded MTP layer.
 	ComputeContexts        int64         // Native contexts that reserve independent compute buffers.
 	OutputRows             int64         // Supported architectures' logits cap; 0 infers slots × current/rollback copies.
 	MTPContext             bool          // Size only the appended layers of an own-KV MTP context.
@@ -79,87 +79,89 @@ type Config struct {
 
 // Input contains all parameters needed to calculate VRAM requirements.
 type Input struct {
-	WeightLoading         WeightLoading            // Native loading policy and verified mmap support.
-	LazyTable             LazyTable                // Optional eligible encoded embedding table.
-	Architecture          string                   // GGUF architecture for uncalibrated architecture-specific policies.
-	NoPersistentCache     bool                     // Graph evaluates a whole batch without retaining attention or recurrent state.
-	ComputeBackend        string                   // Selected backend; empty uses generic workspace rules.
-	ComputeKind           modelprofile.ComputeKind // Normalized workspace allocation family.
-	VocabularySize        int64                    // Vocabulary rows in the output projection.
-	ModelSizeBytes        int64                    // Size of model weights in bytes
-	ContextWindow         int64                    // n_ctx - context window size (e.g., 8192, 131072)
-	BlockCount            int64                    // n_layers - number of transformer layers
-	HeadCount             int64                    // Query heads for non-flash attention workspaces.
-	HeadCountKV           int64                    // Number of KV attention heads
-	KeyLength             int64                    // K dimension per head (typically 128)
-	ValueLength           int64                    // V dimension per head (typically 128)
-	SWAHeadCountKV        int64                    // Number of KV heads in SWA layers (0 = HeadCountKV)
-	SWAKeyLength          int64                    // K dimension in SWA layers (0 = KeyLength)
-	SWAValueLength        int64                    // V dimension in SWA layers (0 = ValueLength)
-	HeadCountKVByLayer    []int64                  // Exact per-layer KV head counts when available.
-	BytesPerElement       int64                    // Depends on cache type: q8_0=1, f16=2
-	TypeK                 int32                    // Kronk GGML cache type ID (0 = use BytesPerElement).
-	TypeV                 int32                    // Kronk GGML cache type ID (0 = use BytesPerElement).
-	Slots                 int64                    // n_seq_max - number of concurrent sequences
-	SlidingWindow         int64                    // Sliding-window size in tokens (0 = no SWA layers).
-	SlidingWindowLayers   int64                    // Layer count using SWA (0 = treat all BlockCount as full attention).
-	SharedKVLayers        int64                    // Trailing layers that reuse another layer's KV tensors.
-	SWAPattern            []bool                   // Per-layer SWA classification when available.
-	RecurrentPattern      []bool                   // Per-layer recurrent classification when available.
-	NextNPredictLayers    int64                    // Appended MTP layers excluded from target context memory.
-	MTPContext            bool                     // Allocate only appended MTP layers.
-	IndexerKeyLength      int64                    // Stored raw + pooled indexer key width.
-	IndexerCompression    int64                    // Tokens per scored pool.
-	IndexerTopK           int64                    // Selected token budget.
-	CompressRatios        []int64                  `json:"-"` // Per-block compressed cache ratios.
-	KVSources             []int64                  `json:"-"` // Resolved compressed KV source per block; -1 is raw-only.
-	IndexerSources        []int64                  `json:"-"` // Resolved top-k source per block.
-	CandidateSourceLayer  int64                    `json:"-"` // Candidate block selector; -1 is absent.
-	CandidateTopKBlocks   int64                    `json:"-"` // Selected candidate block count.
-	CandidateBlockSize    int64                    `json:"-"` // Tokens per candidate block.
-	HyperConnections      int64                    `json:"-"` // Internal hidden-state streams.
-	QueryRank             int64                    `json:"-"` // Low-rank query projection width.
-	OutputRank            int64                    `json:"-"` // Low-rank attention output width per group.
-	OutputGroups          int64                    `json:"-"` // Attention output projection groups.
-	IndexerHeads          int64                    `json:"-"` // Query heads in the attention indexer.
-	LayerEmbeddingLength  int64                    `json:"-"` // Width of gathered per-layer embedding rows.
-	LayerEmbeddingRows    int64                    `json:"-"` // Gathered per-layer embedding rows per token.
-	RecurrentStateBytes   int64                    // State bytes per recurrent layer, sequence, and copy.
-	RecurrentStateCopies  int64                    // Current state plus speculative rollback copies.
-	NBatch                int64                    // Logical batch capacity; 0 falls back to NUBatch.
-	NUBatch               int64                    // Effective physical batch size.
-	Speech                *SpeechConfig            // Limits for the selected speech allocation family; nil uses its defaults.
-	OutputRows            int64                    // Maximum logits rows; 0 conservatively uses the full physical batch.
-	KVUnified             bool                     // Whether all sequence slots share one KV pool.
-	EmbeddingLength       int64                    // needed for compute buffer estimate
-	OutputEmbeddingLength int64                    // Hidden-state width, including hyper connections.
-	ComputeContexts       int64                    // Native contexts that reserve independent compute buffers.
-	MoE                   *gguf.MoEInfo            //
-	Weights               *gguf.WeightBreakdown    //
-	TiedOutputFallback    bool                     // Architecture duplicates token embeddings for missing output weights.
-	GPULayers             int64                    // Native offload count: output first, then blocks (0 = all, -1 = none).
-	ExpertLayersOnGPU     int64                    // 0 = all experts on CPU
-	MoECacheSize          int64                    // GPU expert-cache budget in bytes per context.
-	KVCacheOnCPU          bool                     // Move KV cache off the GPU (offload-kqv: false)
-	SWAFull               bool                     // Size SWA layers against the full context window.
-	VTransposed           bool                     // Size V using the model-wide transposed layout.
-	cacheLayerDevices     []int                    // Internal placement for shared compressed-cache mirrors.
-	speechReferenceTokens int64                    // Largest preset or accepted audio reference, in codec frames.
-	speechReferenceBytes  int64                    // Largest reference copied into each helper and the shared last-reference state.
-	speechReferenceGraph  int64                    // Unmeasured, dimension-based shared encoding graph allowance.
-	speechReferenceHost   int64                    // Serialized reference preprocessing/readback scratch.
-	speechVoiceBytes      int64                    // Materialized preset voice payload.
-	speechEmbeddingBytes  int64                    // Encoded embedding readback during lazy helper initialization.
-	speechCodecStateBytes int64                    // F32 persistent codec state per active helper.
-	speechSamplesPerFrame int64                    // Waveform expansion derived from decoder convolution strides.
-	kokoroFFNLength       int64                    // Encoder intermediate width; weights are shared across layers.
-	kokoroGraphBytes      int64                    // Provisional observed/source-liveness decoder graph allowance.
-	kokoroHostBytes       int64                    // Serialized CPU prosody, LSTM readback, harmonic and ISTFT scratch.
-	kokoroOutputSamples   int64                    // Single-segment waveform bound at Kronk's fixed speed 1.0.
-	tinyVocaFFNLength     int64                    // Noncausal encoder intermediate width.
-	tinyVocaGraphBytes    int64                    // Source-derived duration and frame-stack graph allowance.
-	tinyVocaHostBytes     int64                    // Shared frame states, host tables and source-filter scratch.
-	tinyVocaTableBytes    int64                    // Per-helper token/stress tables and padded segment storage.
+	WeightLoading               WeightLoading            // Native loading policy and verified mmap support.
+	LazyTable                   LazyTable                // Optional eligible encoded embedding table.
+	Architecture                string                   // GGUF architecture for uncalibrated architecture-specific policies.
+	NoPersistentCache           bool                     // Graph evaluates a whole batch without retaining attention or recurrent state.
+	ComputeBackend              string                   // Selected backend; empty uses generic workspace rules.
+	ComputeKind                 modelprofile.ComputeKind // Normalized workspace allocation family.
+	VocabularySize              int64                    // Vocabulary rows in the output projection.
+	ModelSizeBytes              int64                    // Size of model weights in bytes
+	ContextWindow               int64                    // n_ctx - context window size (e.g., 8192, 131072)
+	BlockCount                  int64                    // n_layers - number of transformer layers
+	HeadCount                   int64                    // Query heads for non-flash attention workspaces.
+	HeadCountKV                 int64                    // Number of KV attention heads
+	KeyLength                   int64                    // K dimension per head (typically 128)
+	ValueLength                 int64                    // V dimension per head (typically 128)
+	SWAHeadCountKV              int64                    // Number of KV heads in SWA layers (0 = HeadCountKV)
+	SWAKeyLength                int64                    // K dimension in SWA layers (0 = KeyLength)
+	SWAValueLength              int64                    // V dimension in SWA layers (0 = ValueLength)
+	HeadCountKVByLayer          []int64                  // Exact per-layer KV head counts when available.
+	BytesPerElement             int64                    // Depends on cache type: q8_0=1, f16=2
+	TypeK                       int32                    // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV                       int32                    // Kronk GGML cache type ID (0 = use BytesPerElement).
+	Slots                       int64                    // n_seq_max - number of concurrent sequences
+	SlidingWindow               int64                    // Sliding-window size in tokens (0 = no SWA layers).
+	SlidingWindowLayers         int64                    // Layer count using SWA (0 = treat all BlockCount as full attention).
+	SharedKVLayers              int64                    // Trailing layers that reuse another layer's KV tensors.
+	SWAPattern                  []bool                   // Per-layer SWA classification when available.
+	RecurrentPattern            []bool                   // Per-layer recurrent classification when available.
+	NextNPredictLayers          int64                    // Appended MTP layers excluded from target context memory.
+	MTPContext                  bool                     // Allocate only appended MTP layers.
+	IndexerKeyLength            int64                    // Stored raw + pooled indexer key width.
+	IndexerCompression          int64                    // Tokens per scored pool.
+	IndexerTopK                 int64                    // Selected token budget.
+	CompressRatios              []int64                  `json:"-"` // Per-block compressed cache ratios.
+	KVSources                   []int64                  `json:"-"` // Resolved compressed KV source per block; -1 is raw-only.
+	IndexerSources              []int64                  `json:"-"` // Resolved top-k source per block.
+	CandidateSourceLayer        int64                    `json:"-"` // Candidate block selector; -1 is absent.
+	CandidateTopKBlocks         int64                    `json:"-"` // Selected candidate block count.
+	CandidateBlockSize          int64                    `json:"-"` // Tokens per candidate block.
+	HyperConnections            int64                    `json:"-"` // Internal hidden-state streams.
+	QueryRank                   int64                    `json:"-"` // Low-rank query projection width.
+	OutputRank                  int64                    `json:"-"` // Low-rank attention output width per group.
+	OutputGroups                int64                    `json:"-"` // Attention output projection groups.
+	IndexerHeads                int64                    `json:"-"` // Query heads in the attention indexer.
+	LayerEmbeddingLength        int64                    `json:"-"` // Width of gathered per-layer embedding rows.
+	LayerEmbeddingRows          int64                    `json:"-"` // Gathered per-layer embedding rows per token.
+	RecurrentStateBytes         int64                    // State bytes per recurrent layer, sequence, and copy.
+	RecurrentStateCopies        int64                    // One plus rollback depth; also the pending-column count for replay.
+	RecurrentStateBytesByLayer  []int64                  `json:"-"` // Per-layer base state, including PLE history.
+	RecurrentReplayBytesByLayer []int64                  `json:"-"` // Additional bytes per pending token on replay layers.
+	NBatch                      int64                    // Logical batch capacity; 0 falls back to NUBatch.
+	NUBatch                     int64                    // Effective physical batch size.
+	Speech                      *SpeechConfig            // Limits for the selected speech allocation family; nil uses its defaults.
+	OutputRows                  int64                    // Maximum logits rows; 0 conservatively uses the full physical batch.
+	KVUnified                   bool                     // Whether all sequence slots share one KV pool.
+	EmbeddingLength             int64                    // needed for compute buffer estimate
+	OutputEmbeddingLength       int64                    // Hidden-state width, including hyper connections.
+	ComputeContexts             int64                    // Native contexts that reserve independent compute buffers.
+	MoE                         *gguf.MoEInfo            //
+	Weights                     *gguf.WeightBreakdown    //
+	TiedOutputFallback          bool                     // Architecture duplicates token embeddings for missing output weights.
+	GPULayers                   int64                    // Native offload count: output first, then blocks (0 = all, -1 = none).
+	ExpertLayersOnGPU           int64                    // 0 = all experts on CPU
+	MoECacheSize                int64                    // GPU expert-cache budget in bytes per context.
+	KVCacheOnCPU                bool                     // Move KV cache off the GPU (offload-kqv: false)
+	SWAFull                     bool                     // Size SWA layers against the full context window.
+	VTransposed                 bool                     // Size V using the model-wide transposed layout.
+	cacheLayerDevices           []int                    // Internal placement for shared compressed-cache mirrors.
+	speechReferenceTokens       int64                    // Largest preset or accepted audio reference, in codec frames.
+	speechReferenceBytes        int64                    // Largest reference copied into each helper and the shared last-reference state.
+	speechReferenceGraph        int64                    // Unmeasured, dimension-based shared encoding graph allowance.
+	speechReferenceHost         int64                    // Serialized reference preprocessing/readback scratch.
+	speechVoiceBytes            int64                    // Materialized preset voice payload.
+	speechEmbeddingBytes        int64                    // Encoded embedding readback during lazy helper initialization.
+	speechCodecStateBytes       int64                    // F32 persistent codec state per active helper.
+	speechSamplesPerFrame       int64                    // Waveform expansion derived from decoder convolution strides.
+	kokoroFFNLength             int64                    // Encoder intermediate width; weights are shared across layers.
+	kokoroGraphBytes            int64                    // Provisional observed/source-liveness decoder graph allowance.
+	kokoroHostBytes             int64                    // Serialized CPU prosody, LSTM readback, harmonic and ISTFT scratch.
+	kokoroOutputSamples         int64                    // Single-segment waveform bound at Kronk's fixed speed 1.0.
+	tinyVocaFFNLength           int64                    // Noncausal encoder intermediate width.
+	tinyVocaGraphBytes          int64                    // Source-derived duration and frame-stack graph allowance.
+	tinyVocaHostBytes           int64                    // Shared frame states, host tables and source-filter scratch.
+	tinyVocaTableBytes          int64                    // Per-helper token/stress tables and padded segment storage.
 }
 
 // Result contains the calculated VRAM requirements.

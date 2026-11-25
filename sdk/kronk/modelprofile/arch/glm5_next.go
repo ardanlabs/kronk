@@ -67,5 +67,6 @@ func (GLM5Next) Apply(metadata Metadata, profile *modelprofile.Profile) error {
 	rWidth := 3 * (convKernel - 1) * (headCount * headDim)
 	sWidth := headDim * headDim * headCount
 	a.RecurrentStateBytes = 4 * (rWidth + sWidth)
+	setRecurrentReplay(a, 4*7*headCount*headDim)
 	return nil
 }

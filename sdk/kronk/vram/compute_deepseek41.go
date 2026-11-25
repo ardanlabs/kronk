@@ -88,8 +88,12 @@ func deepseek41Workspace(input Input) (gpu, cpu int64) {
 			// graph output, not another copy of the persistent K-only cache.
 			retained += 4 * (key + max(input.IndexerKeyLength, 0)) * blocks
 		}
-		// Scores plus full-width I32 argsort (top_k is a view of argsort),
-		// selection/scatter masks, and the concatenated raw/compressed keys.
+		// Conservative score/selection envelope plus scatter masks and
+		// concatenated raw/compressed keys. Metal b12728 top-k no longer
+		// reserves full-width argsort: above 128 columns its output plus
+		// scratch is max(4*selected, 2*4*128) bytes per row. Keep this
+		// envelope until graph lifetimes and allocator peaks are calibrated;
+		// shrinking one tensor alone does not establish the arena peak.
 		work := 8*comp*batch + maskWidth*(2*comp+raw+selected)*batch
 		keyRows := (raw + 2*comp) * slots
 		stage := (raw + comp) * slots

@@ -100,6 +100,25 @@ func (QwenHybrid) Apply(metadata Metadata, profile *modelprofile.Profile) error 
 	rWidth := (convKernel - 1) * (innerSize + 2*groupCount*stateSize)
 	sWidth := stateSize * innerSize
 	a.RecurrentStateBytes = 4 * (rWidth + sWidth)
+
+	// One pending column holds conv channels, k, v, and scalar gate/beta
+	// values for every value head (ssm.time_step_rank).
+	valueHeads := parseInt64(metadata, arch+".ssm.time_step_rank")
+	setRecurrentReplay(a, 4*(innerSize+2*groupCount*stateSize+groupCount*stateSize+innerSize+2*valueHeads))
+	if arch == "qwen4exp" {
+		pleLayers, _ := gguf.ParseInt64OrArray(metadata.values, arch+".ple.layers")
+		window := (parseInt64(metadata, arch+".ple.conv_kernel") - 1) * parseInt64(metadata, arch+".ple.ngram_size")
+		channels := profile.Dimensions.OutputEmbeddingLength
+		if window > 0 && channels > 0 && profile.LazyRowsPerToken > 0 {
+			for _, layer := range pleLayers {
+				if layer >= 0 && layer < trunkLayers && pattern[layer] {
+					a.RecurrentStateBytesByLayer[layer] += 4 * window * channels
+					a.RecurrentReplayBytesByLayer[layer] += 4 * channels
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
