@@ -87,7 +87,10 @@ function FineTuningWorkspace({ visible }: { visible: boolean }) {
   const instructionsDirty = preparation.instructions.trim() !== savedInstructions;
   const instructionsTooLong = Array.from(preparation.instructions.trim()).length > 2000;
   const positiveInteger = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
-  const capError = limitExamples && !positiveInteger(maxQuestions) ? 'Enter a positive whole number, or choose Unlimited.' : '';
+  let capError = limitExamples && !positiveInteger(maxQuestions) ? 'Enter a positive whole number, or choose Unlimited.' : '';
+  if (limitExamples && !capError && (preparation.preview_records ?? 3) > Number(maxQuestions)) {
+    capError = `Preview examples count toward your total. Choose no more than ${Number(maxQuestions)} previews, or increase the total.`;
+  }
   const rangeErrors = (key: string) => {
     const range = ranges[key];
     if (!range?.use) return { start: '', end: '' };

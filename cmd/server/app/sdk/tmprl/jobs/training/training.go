@@ -557,6 +557,9 @@ func (j *Job) validate(ctx context.Context, r Request) (Request, error) {
 		if err != nil {
 			return Request{}, err
 		}
+		if prepared.MaxQuestions > 0 && cmp.Or(prepared.PreviewRecords, 3) > prepared.MaxQuestions {
+			return Request{}, fmt.Errorf("%w: preview_records must not exceed max_questions; preview records count toward the total", tmprl.ErrInvalidArgument)
+		}
 		r.Prepare = &prepared
 		if prepared.TargetDatasetID != "" {
 			if !r.PreparationOnly {
