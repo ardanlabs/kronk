@@ -60,6 +60,71 @@ func TestCompareAutomaticSelection(t *testing.T) {
 	}
 }
 
+func TestCompareSavedStandardDeviation(t *testing.T) {
+	base := writeComparisonFixture(t, comparisonFixture([]float64{2, 6}))
+	for _, name := range []string{"roundoff", "changed-deviation", "missing-deviation", "changed-samples", "changed-median"} {
+		t.Run(name, func(t *testing.T) {
+			dir := writeComparisonFixture(t, comparisonFixture([]float64{2, 6}))
+			path := filepath.Join(dir, "summary.json")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var s matrixSummary
+			if err := json.Unmarshal(data, &s); err != nil {
+				t.Fatal(err)
+			}
+			m := s.Cells[0].Measurements["workload"]["elapsed_seconds"]
+			switch name {
+			case "roundoff":
+				m.SampleStdDev = new(math.Nextafter(*m.SampleStdDev, math.Inf(1)))
+			case "changed-deviation":
+				m.SampleStdDev = new(*m.SampleStdDev * 1.01)
+			case "missing-deviation":
+				m.SampleStdDev = nil
+			case "changed-samples":
+				m.Samples++
+			case "changed-median":
+				m.Median = math.Nextafter(m.Median, math.Inf(1))
+			}
+			s.Cells[0].Measurements["workload"]["elapsed_seconds"] = m
+			data, err = json.Marshal(s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			err = compareCommand([]string{"-baseline", base, "-candidate", dir, "-out", t.TempDir(), "-json"}, &out)
+			if name != "roundoff" {
+				if err == nil {
+					t.Fatal("accepted inconsistent measurements")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got matrixComparison
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			row := comparisonMetricsFixture(got.Cells[0])["workload.elapsed_seconds"]
+			if got.Status != "PASS" || row.Candidate == nil || row.Candidate.Median != 4 || row.Candidate.SampleStdDev == nil || math.Abs(*row.Candidate.SampleStdDev-math.Sqrt(8)) > 1e-12 {
+				t.Fatal("incorrect comparison measurements")
+			}
+			saved, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(saved, data) {
+				t.Fatal("comparison modified the saved evidence")
+			}
+		})
+	}
+}
+
 func TestCompareCommand(t *testing.T) {
 	baseline := comparisonFixture([]float64{1, 4, 10})
 	saved := readComparisonCellFixture(t, baseline).summary.Measurements["workload"]["elapsed_seconds"]

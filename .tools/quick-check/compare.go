@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -231,7 +232,7 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 		s.ServerRevision != r.ServerRevision || s.TestStartedAt != r.TestStartedAt || s.BenchmarkIdentity != r.BenchmarkIdentity ||
 		s.RepetitionsRequested != r.RepetitionsRequested || s.RepetitionsExecuted != len(r.Repetitions) ||
 		len(s.Repetitions) != len(r.Repetitions) || !slices.Equal(s.Findings, r.Findings) ||
-		!reflect.DeepEqual(s.Measurements, r.measurements()) {
+		!equalMeasurements(s.Measurements, r.measurements()) {
 		return input, fmt.Errorf("summary.json and diagnostic report disagree")
 	}
 	for i, rep := range r.Repetitions {
@@ -267,6 +268,24 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 		input.native = native[warmup.TraceID]
 	}
 	return input, nil
+}
+
+func equalMeasurements(a, b map[string]map[string]measurement) bool {
+	return maps.EqualFunc(a, b, func(a, b map[string]measurement) bool {
+		return maps.EqualFunc(a, b, func(a, b measurement) bool {
+			if a.Samples != b.Samples || a.Median != b.Median || a.Min != b.Min || a.Max != b.Max {
+				return false
+			}
+			if a.SampleStdDev == nil || b.SampleStdDev == nil {
+				return a.SampleStdDev == nil && b.SampleStdDev == nil
+			}
+			// Recomputing standard deviations on a different architecture can
+			// change the last bits through floating-point operation rounding.
+			// Keep counts/extrema/medians exact and preserve the saved values.
+			x, y := *a.SampleStdDev, *b.SampleStdDev
+			return math.Abs(x-y) <= 1e-12*max(math.Abs(x), math.Abs(y))
+		})
+	})
 }
 
 func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
