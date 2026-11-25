@@ -1,6 +1,10 @@
 package toolapp
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,6 +23,69 @@ func TestSSEPayloadsEndWithBlankLine(t *testing.T) {
 		if !strings.HasSuffix(event, "\n\n") {
 			t.Errorf("event %d: got %q, want blank-line terminator", i, event)
 		}
+	}
+}
+
+func TestCatalogDraftPreview(t *testing.T) {
+	t.Setenv("KRONK_SKIP_NETWORK_CHECK", "true")
+	for _, tt := range []struct {
+		name   string
+		method models.DraftMethod
+	}{
+		{"MTP", models.DraftMethodMTP},
+		{"DSpark", models.DraftMethodDSpark},
+		{"conventional", models.DraftMethodConventional},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			base := t.TempDir()
+			mdls, err := models.NewWithPaths(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const id = "target/model-Q8_0"
+			const draftURL = "https://huggingface.co/other/drafters/resolve/main/nested/draft.gguf_file"
+			entry := models.CatalogEntry{
+				Provider: "target", Family: "model-GGUF", Revision: "main",
+				Files: []string{"model-Q8_0.gguf"}, DraftChecked: true,
+				Draft: models.CatalogDraft{Method: tt.method, File: "draft-model-Q8_0.gguf", URL: draftURL, Size: 73},
+			}
+			resolver := models.NewResolver(mdls, filepath.Join(base, "catalog", "catalog.yaml"))
+			if err := resolver.Save(models.Catalog{Version: "3.1", Models: map[string]models.CatalogEntry{id: entry}}); err != nil {
+				t.Fatal(err)
+			}
+			a := app{models: mdls}
+			request := httptest.NewRequest(http.MethodPost, "/v1/kronk/catalog/resolve", strings.NewReader(`{"source":"`+id+`"}`))
+			request.Header.Set("Content-Type", "application/json")
+			data, _, err := a.resolveCatalog(t.Context(), request).Encode()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var preview ResolveResponse
+			if err := json.Unmarshal(data, &preview); err != nil {
+				t.Fatal(err)
+			}
+			if preview.Draft.Method != tt.method || preview.Draft.File != "draft-model-Q8_0.gguf" || preview.DownloadDraft != draftURL || preview.Installed {
+				t.Fatalf("preview: got %+v, want selected draft and not installed", preview)
+			}
+			wantMTPURL := ""
+			if tt.method == models.DraftMethodMTP {
+				wantMTPURL = draftURL
+			}
+			if preview.DownloadMTP != wantMTPURL {
+				t.Errorf("MTP compatibility URL: got %q, want %q", preview.DownloadMTP, wantMTPURL)
+			}
+			data, _, err = a.listCatalog(t.Context(), httptest.NewRequest(http.MethodGet, "/v1/kronk/catalog", nil)).Encode()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var list []models.CatalogSummary
+			if err := json.Unmarshal(data, &list); err != nil {
+				t.Fatal(err)
+			}
+			if len(list) != 1 || !list[0].HasDraft || list[0].Draft.Method != tt.method || list[0].Capabilities.Draft != tt.method || list[0].HasMTP != (tt.method == models.DraftMethodMTP) {
+				t.Errorf("list: got %+v, want generic draft with MTP only for MTP method", list)
+			}
+		})
 	}
 }
 

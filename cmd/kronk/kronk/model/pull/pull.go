@@ -134,13 +134,15 @@ func runLocal(ctx context.Context, mdls *models.Models, basePath string, source 
 	if projURL == "" {
 		projURL = res.DownloadProj
 	}
-	if mtpURL == "" {
-		mtpURL = res.DownloadMTP
+	draft := res.Draft
+	draft.URL = res.DownloadDraft
+	if mtpURL != "" {
+		draft = models.CatalogDraft{Method: models.DraftMethodMTP, URL: mtpURL}
 	}
 
 	fmt.Printf("Resolved %s → %s/%s (%d file(s))\n", source, res.Provider, res.Family, len(res.DownloadURLs))
 
-	if _, err := mdls.DownloadURLsWithProgress(ctx, log, res.DownloadURLs, projURL, mtpURL, progress); err != nil {
+	if _, err := mdls.DownloadDraftURLsWithProgress(ctx, log, res.DownloadURLs, projURL, draft, progress); err != nil {
 		return fmt.Errorf("download-model: %w", err)
 	}
 

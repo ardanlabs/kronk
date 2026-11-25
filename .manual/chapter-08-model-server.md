@@ -590,13 +590,65 @@ Catalog entries identify the provider, source family, revision, files, sizes,
 and detected capabilities. Chat templates come from downloaded GGUF metadata
 and are not stored as catalog configuration.
 
-Catalog schema version 2 adds the optional `mtp_url` field. Set it to a fully
-qualified Hugging Face download URL when a compatible MTP companion lives in a
-different repository from its target model. When it is absent, Kronk retains
-the version 1 behavior and builds the companion URL from the entry's provider,
-family, revision, and `mtp_orig` fields. Version 1 catalogs remain readable and
-are stamped as version 2 the next time the current Kronk version rewrites them;
-their entries do not require a data migration.
+Catalog schema version 3.2 describes a draft companion independently of its
+decoding method. A model can declare one optional `draft` with a `method` of
+`mtp`, `dspark`, or `conventional`:
+
+```yaml
+version: "3.2"
+models:
+  ggml-org/Inkling-2-Mini-IQ4_NL:
+    provider: ggml-org
+    family: Inkling-2-Mini-GGUF
+    revision: main
+    files:
+      - Inkling-2-Mini-IQ4_NL.gguf
+    draft:
+      method: dspark
+      file: dspark-Inkling-2-Mini-IQ4_NL.gguf
+      original: Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
+      url: https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
+    draft_checked: true
+    capabilities:
+      draft: dspark
+```
+
+`file` is the installed companion filename next to the target model. `original`
+is its upstream repository-relative path. An explicit `url` selects the exact
+download source, including another repository or a nested folder; without it,
+the source is built from the target's provider, family, revision, and
+`draft.original`. The optional `size` is the companion's byte count.
+`draft_checked` records whether automatic companion discovery has completed;
+set it to `true` when configuring a companion explicitly.
+
+Declaring a draft makes it available to the downloader, not automatically to
+every inference method. DSpark companions can be downloaded and inspected, but
+DSpark inference is not yet supported. A conventional draft companion does not
+replace the explicit `draft-model` runtime configuration. Embedded MTP requires
+no companion file and remains reported separately as `mtp_source: embedded`.
+
+`capabilities.draft` replaces the MTP-only capability boolean. Its values are
+`mtp`, `dspark`, and `conventional`; omit it when no drafting capability is
+declared. A companion's `draft.method` supplies this capability; embedded MTP
+supplies `capabilities.draft: mtp` without a top-level `draft` block. If a model
+has embedded MTP and a different companion, `capabilities.draft` reports the
+companion method while `mtp_source: embedded` still describes its MTP head.
+This field describes the model's declared drafting method, not whether the
+current Kronk runtime implements it. The BUI displays the method and provides
+separate MTP, DSpark, and conventional capability filters.
+
+Version 2, 3, and 3.1 catalogs are migrated automatically to version 3.2 on
+first load, without network access or re-downloading models. Existing version 2
+`mtp`, `mtp_orig`, `mtp_url`,
+`mtp_size`, and `mtp_checked` values become generic draft metadata with
+`method: mtp`; installed filenames and other entry metadata are preserved.
+`capabilities.mtp: true` becomes `capabilities.draft: mtp`; false is omitted.
+Version 3 and 3.1 catalogs retain their generic companion metadata while upgrading the
+capability field. The migrated file is saved with `version: "3.2"`. Catalog
+versions are identifiers, not decimal numbers; quote them when writing YAML.
+Unversioned catalogs and versions 1 and earlier are no longer supported. Keep a
+backup before upgrading if you need to return to an older Kronk version; older
+versions cannot read version 3.2.
 
 Source specificity controls catalog resolution:
 

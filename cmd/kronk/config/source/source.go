@@ -133,7 +133,7 @@ func (s *Source) Choices(doc modelconfig.Document) ([]Choice, error) {
 
 	var catalog []Choice
 	for id, entry := range cat.Models {
-		size := entry.MMProjSize + entry.MTPSize
+		size := entry.MMProjSize + entry.Draft.Size
 		for _, n := range entry.FileSizes {
 			size += n
 		}
@@ -263,7 +263,7 @@ func catalogInfo(c Choice, entry models.CatalogEntry, header []byte) (models.Mod
 		}
 	}
 
-	return models.ModelInfoFromMetadata(c.ID, metadata, size, entry.MMProj != "", entry.MTP != ""), nil
+	return models.ModelInfoFromMetadata(c.ID, metadata, size, entry.MMProj != "", entry.Draft.Method == models.DraftMethodMTP && entry.Draft.File != ""), nil
 }
 
 // devicesFor is the hardware the analysis runs on: the machine the user

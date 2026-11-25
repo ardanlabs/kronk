@@ -88,8 +88,9 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	detail.Parameters = models.ParametersLabel(metadata)
 	detail.Template = models.TemplateName(metadata)
 	detail.Capabilities = models.CapabilitiesForModel(metadata, entry.MMProj != "", id)
-	detail.MTPSource = models.MTPSourceFor(metadata, entry.MTP != "")
+	detail.MTPSource = models.MTPSourceFor(metadata, entry.Draft.Method == models.DraftMethodMTP && entry.Draft.File != "")
 	detail.Capabilities.MTP = !detail.MTPSource.IsZero()
+	detail.Capabilities = detail.Capabilities.WithDraft(entry.Capabilities.Draft).WithDraft(entry.Draft.Method)
 
 	var resolvedConfig *models.ModelConfig
 	if detail.Downloaded {
@@ -99,8 +100,11 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 			resolvedConfig = &cfg
 		}
 	}
-	info := models.ModelInfoFromMetadata(id, metadata, 0, entry.MMProj != "", entry.MTP != "")
+	info := models.ModelInfoFromMetadata(id, metadata, 0, entry.MMProj != "", entry.Draft.Method == models.DraftMethodMTP && entry.Draft.File != "")
 	summary := toModelSummary(info, resolvedConfig)
+	if summary.Capabilities != nil {
+		*summary.Capabilities = detail.Capabilities
+	}
 	detail.Summary = &summary
 
 	// Compute the initial VRAM estimate from the same head bytes so
@@ -226,7 +230,7 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	if installed && res.MMProj != "" && res.LocalProj == "" {
 		installed = false
 	}
-	if installed && res.MTP != "" && res.LocalMTP == "" {
+	if installed && res.Draft.File != "" && res.LocalDraft == "" {
 		installed = false
 	}
 	if installed {
@@ -235,17 +239,24 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 		}
 	}
 
+	var mtpURL string
+	if res.Draft.Method == models.DraftMethodMTP {
+		mtpURL = res.DownloadDraft
+	}
+
 	return ResolveResponse{
-		CanonicalID:  res.CanonicalID,
-		Provider:     res.Provider,
-		Family:       res.Family,
-		Revision:     res.Revision,
-		DownloadURLs: res.DownloadURLs,
-		DownloadProj: res.DownloadProj,
-		DownloadMTP:  res.DownloadMTP,
-		FromCache:    res.FromCache,
-		FromLocal:    res.FromLocal,
-		Installed:    installed,
+		CanonicalID:   res.CanonicalID,
+		Provider:      res.Provider,
+		Family:        res.Family,
+		Revision:      res.Revision,
+		DownloadURLs:  res.DownloadURLs,
+		DownloadProj:  res.DownloadProj,
+		Draft:         res.Draft,
+		DownloadDraft: res.DownloadDraft,
+		DownloadMTP:   mtpURL,
+		FromCache:     res.FromCache,
+		FromLocal:     res.FromLocal,
+		Installed:     installed,
 	}
 }
 

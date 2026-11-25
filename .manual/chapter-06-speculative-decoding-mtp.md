@@ -122,9 +122,10 @@ supports multiple execution slots, and does not require a `model-id` in the
 An embedded head requires no companion file. A companion MTP head is an
 additional model-specific file, but Kronk's catalog and download flow can
 discover and associate files at the repository root or under `MTP/` with the
-target automatically. A version 2 catalog entry can instead provide `mtp_url`
-when a compatible companion is hosted in another repository. It is not
-configured as a classic `draft-model`.
+target automatically. A version 3.2 catalog entry uses `draft.method: mtp` and
+can provide `draft.url` when a compatible companion is hosted in another
+repository. Version 2, 3, and 3.1 entries are migrated automatically. A companion MTP head
+is not configured as a classic `draft-model`.
 
 Qwen3.8 Flash Next's `qwen4exp` MTP runtime supports embedded heads and
 self-contained companion GGUFs through the own-KV runtime. Existing

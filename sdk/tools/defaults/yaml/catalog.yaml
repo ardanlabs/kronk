@@ -1,19 +1,18 @@
-version: 2
+version: "3.2"
 models:
   Qwen/Qwen3-Embedding-0.6B-Q8_0:
     provider: Qwen
     family: Qwen3-Embedding-0.6B-GGUF
     revision: main
     files:
-      - Qwen3-Embedding-0.6B-Q8_0.gguf
+    - Qwen3-Embedding-0.6B-Q8_0.gguf
     file_sizes:
-      - 639150592
-    mtp_checked: true
+    - 639150592
+    draft_checked: true
     model_type: Dense
     architecture: qwen3
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: embeddings
       embedding: true
     resolved_at: 2026-07-30T01:18:25.141492Z
@@ -22,35 +21,149 @@ models:
     family: Jev-Style-0.8B-Decision-v3-GGUF
     revision: main
     files:
-      - Jev-Style-0.8B-Decision-v3-Q8_0.gguf
+    - Jev-Style-0.8B-Decision-v3-Q8_0.gguf
     file_sizes:
-      - 811843040
-    mtp_checked: true
+    - 811843040
+    draft_checked: true
     model_type: Dense
     architecture: qwen35
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: decision
       decision: true
     resolved_at: 2026-09-28T18:11:16.921571Z
+  ggml-org/Bespoke-Nimble-9B-v3-Q4_K_M:
+    provider: ggml-org
+    family: Bespoke-Nimble-9B-v3-GGUF
+    revision: main
+    files:
+    - Bespoke-Nimble-9B-v3-Q4_K_M.gguf
+    file_sizes:
+    - 6324185632
+    draft_checked: true
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-03T00:00:00Z
+  ggml-org/Clef-Flash-Q4_K_M:
+    provider: ggml-org
+    family: Clef-Flash-GGUF
+    revision: main
+    files:
+    - Clef-Flash-Q4_K_M.gguf
+    file_sizes:
+    - 6486448192
+    draft_checked: true
+    model_type: Dense
+    architecture: clef
+    sequence_processing: Hybrid
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-03T00:00:00Z
+  ggml-org/Clef-Q4_K_M:
+    provider: ggml-org
+    family: Clef-GGUF
+    revision: main
+    files:
+    - Clef-Q4_K_M.gguf
+    file_sizes:
+    - 19232219104
+    draft_checked: true
+    model_type: Dense
+    architecture: clef
+    sequence_processing: Hybrid
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-03T00:00:00Z
+  ggml-org/Julia-1-Q8_0:
+    provider: ggml-org
+    family: Julia-1-GGUF
+    revision: main
+    files:
+    - Julia-1-Q8_0.gguf
+    file_sizes:
+    - 168166496
+    draft_checked: true
+    model_type: Dense
+    architecture: modern-bert
+    sequence_processing: Attention-only
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
+  ggml-org/Kev-4B-Q4_K_M:
+    provider: ggml-org
+    family: Kev-4B-GGUF
+    revision: main
+    files:
+    - Kev-4B-Q4_K_M.gguf
+    file_sizes:
+    - 3033489824
+    draft_checked: true
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
+  ggml-org/Laya-Q8_0:
+    provider: ggml-org
+    family: Laya-GGUF
+    revision: main
+    files:
+    - Laya-Q8_0.gguf
+    file_sizes:
+    - 449397600
+    draft_checked: true
+    model_type: Dense
+    architecture: modern-bert
+    sequence_processing: Attention-only
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
+  ggml-org/OpenJev-Q4_K_M:
+    provider: ggml-org
+    family: OpenJev-GGUF
+    revision: main
+    files:
+    - OpenJev-Q4_K_M.gguf
+    file_sizes:
+    - 18973872288
+    mmproj: mmproj-OpenJev-Q4_K_M.gguf
+    mmproj_orig: mmproj-OpenJev-BF16.gguf
+    mmproj_size: 931146112
+    draft_checked: true
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
+    capabilities:
+      endpoint: decision
+      images: true
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
   ggml-org/Qwen2.5-Omni-3B-Q4_K_M:
     provider: ggml-org
     family: Qwen2.5-Omni-3B-GGUF
     revision: main
     files:
-      - Qwen2.5-Omni-3B-Q4_K_M.gguf
+    - Qwen2.5-Omni-3B-Q4_K_M.gguf
     file_sizes:
-      - 2104931648
+    - 2104931648
     mmproj: mmproj-Qwen2.5-Omni-3B-Q4_K_M.gguf
     mmproj_orig: mmproj-Qwen2.5-Omni-3B-f16.gguf
     mmproj_size: 2623983328
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen2vl
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       audio: true
@@ -64,18 +177,17 @@ models:
     family: Qwen2.5-Omni-3B-GGUF
     revision: main
     files:
-      - Qwen2.5-Omni-3B-Q8_0.gguf
+    - Qwen2.5-Omni-3B-Q8_0.gguf
     file_sizes:
-      - 3616087360
+    - 3616087360
     mmproj: mmproj-Qwen2.5-Omni-3B-Q8_0.gguf
     mmproj_orig: mmproj-Qwen2.5-Omni-3B-f16.gguf
     mmproj_size: 2623983328
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen2vl
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       audio: true
@@ -84,163 +196,22 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-06-04T04:05:58.603368Z
-  ggml-org/Julia-1-Q8_0:
-    provider: ggml-org
-    family: Julia-1-GGUF
-    revision: main
-    files:
-      - Julia-1-Q8_0.gguf
-    file_sizes:
-      - 168166496
-    mtp_checked: true
-    model_type: Dense
-    architecture: modern-bert
-    sequence_processing: Attention-only
-    capabilities:
-      mtp: false
-      endpoint: decision
-      decision: true
-    resolved_at: 2026-10-02T00:00:00Z
-  ggml-org/Bespoke-Nimble-9B-v3-Q4_K_M:
-    provider: ggml-org
-    family: Bespoke-Nimble-9B-v3-GGUF
-    revision: main
-    files:
-      - Bespoke-Nimble-9B-v3-Q4_K_M.gguf
-    file_sizes:
-      - 6324185632
-    mtp_checked: true
-    model_type: Dense
-    architecture: qwen35
-    sequence_processing: Hybrid
-    capabilities:
-      mtp: false
-      endpoint: decision
-      decision: true
-    resolved_at: 2026-10-03T00:00:00Z
-  ggml-org/Clef-Flash-Q4_K_M:
-    provider: ggml-org
-    family: Clef-Flash-GGUF
-    revision: main
-    files:
-      - Clef-Flash-Q4_K_M.gguf
-    file_sizes:
-      - 6486448192
-    mtp_checked: true
-    model_type: Dense
-    architecture: clef
-    sequence_processing: Hybrid
-    capabilities:
-      mtp: false
-      endpoint: decision
-      decision: true
-    resolved_at: 2026-10-03T00:00:00Z
-  ggml-org/Clef-Q4_K_M:
-    provider: ggml-org
-    family: Clef-GGUF
-    revision: main
-    files:
-      - Clef-Q4_K_M.gguf
-    file_sizes:
-      - 19232219104
-    mtp_checked: true
-    model_type: Dense
-    architecture: clef
-    sequence_processing: Hybrid
-    capabilities:
-      mtp: false
-      endpoint: decision
-      decision: true
-    resolved_at: 2026-10-03T00:00:00Z
-  ggml-org/Kev-4B-Q4_K_M:
-    provider: ggml-org
-    family: Kev-4B-GGUF
-    revision: main
-    files:
-      - Kev-4B-Q4_K_M.gguf
-    file_sizes:
-      - 3033489824
-    mtp_checked: true
-    model_type: Dense
-    architecture: qwen35
-    sequence_processing: Hybrid
-    capabilities:
-      mtp: false
-      endpoint: decision
-      decision: true
-    resolved_at: 2026-10-02T00:00:00Z
-  ggml-org/Laya-Q8_0:
-    provider: ggml-org
-    family: Laya-GGUF
-    revision: main
-    files:
-      - Laya-Q8_0.gguf
-    file_sizes:
-      - 449397600
-    mtp_checked: true
-    model_type: Dense
-    architecture: modern-bert
-    sequence_processing: Attention-only
-    capabilities:
-      mtp: false
-      endpoint: decision
-      decision: true
-    resolved_at: 2026-10-02T00:00:00Z
-  ggml-org/OpenJev-Q4_K_M:
-    provider: ggml-org
-    family: OpenJev-GGUF
-    revision: main
-    files:
-      - OpenJev-Q4_K_M.gguf
-    file_sizes:
-      - 18973872288
-    mmproj: mmproj-OpenJev-Q4_K_M.gguf
-    mmproj_orig: mmproj-OpenJev-BF16.gguf
-    mmproj_size: 931146112
-    mtp_checked: true
-    model_type: Dense
-    architecture: qwen35
-    sequence_processing: Hybrid
-    capabilities:
-      mtp: false
-      endpoint: decision
-      decision: true
-      images: true
-    resolved_at: 2026-10-02T00:00:00Z
-  ggml-org/lev-Q4_K_M:
-    provider: ggml-org
-    family: lev-GGUF
-    revision: main
-    files:
-      - lev-Q4_K_M.gguf
-    file_sizes:
-      - 3011777440
-    mtp_checked: true
-    model_type: Dense
-    architecture: qwen35
-    sequence_processing: Hybrid
-    capabilities:
-      mtp: false
-      endpoint: decision
-      decision: true
-    resolved_at: 2026-10-02T00:00:00Z
   ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0:
     provider: ggml-org
     family: Qwen2.5-VL-3B-Instruct-GGUF
     revision: main
     files:
-      - Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+    - Qwen2.5-VL-3B-Instruct-Q8_0.gguf
     file_sizes:
-      - 3285474304
+    - 3285474304
     mmproj: mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
     mmproj_orig: mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf
     mmproj_size: 1338428128
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen2vl
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -252,18 +223,17 @@ models:
     family: Qwen3-Omni-30B-A3B-Instruct-GGUF
     revision: main
     files:
-      - Qwen3-Omni-30B-A3B-Instruct-Q8_0.gguf
+    - Qwen3-Omni-30B-A3B-Instruct-Q8_0.gguf
     file_sizes:
-      - 32484494336
+    - 32484494336
     mmproj: mmproj-Qwen3-Omni-30B-A3B-Instruct-Q8_0.gguf
     mmproj_orig: mmproj-Qwen3-Omni-30B-A3B-Instruct-Q8_0.gguf
     mmproj_size: 1325020128
-    mtp_checked: true
+    draft_checked: true
     model_type: MoE
     architecture: qwen3vlmoe
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       audio: true
@@ -277,32 +247,46 @@ models:
     family: jina-embeddings-v2-base-en-Q8_0-GGUF
     revision: main
     files:
-      - jina-embeddings-v2-base-en-q8_0.gguf
+    - jina-embeddings-v2-base-en-q8_0.gguf
     file_sizes:
-      - 146218816
-    mtp_checked: true
+    - 146218816
+    draft_checked: true
     model_type: Dense
     architecture: jina-bert-v2
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: embeddings
       embedding: true
     resolved_at: 2026-07-30T01:18:36.132801Z
+  ggml-org/lev-Q4_K_M:
+    provider: ggml-org
+    family: lev-GGUF
+    revision: main
+    files:
+    - lev-Q4_K_M.gguf
+    file_sizes:
+    - 3011777440
+    draft_checked: true
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
   gpustack/bge-reranker-v2-m3-Q8_0:
     provider: gpustack
     family: bge-reranker-v2-m3-GGUF
     revision: main
     files:
-      - bge-reranker-v2-m3-Q8_0.gguf
+    - bge-reranker-v2-m3-Q8_0.gguf
     file_sizes:
-      - 635676416
-    mtp_checked: true
+    - 635676416
+    draft_checked: true
     model_type: Dense
     architecture: bert
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: rerank
       rerank: true
     resolved_at: 2026-08-11T04:03:36.425943Z
@@ -311,18 +295,17 @@ models:
     family: Qwen2-Audio-7B-GGUF
     revision: main
     files:
-      - Qwen2-Audio-7B.Q8_0.gguf
+    - Qwen2-Audio-7B.Q8_0.gguf
     file_sizes:
-      - 8247536704
+    - 8247536704
     mmproj: mmproj-Qwen2-Audio-7B.Q8_0.gguf
     mmproj_orig: Qwen2-Audio-7B.mmproj-f16.gguf
     mmproj_size: 1289301504
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen2
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       audio: true
@@ -335,17 +318,16 @@ models:
     family: Qwopus3.5-4B-Coder-GGUF
     revision: main
     files:
-      - Qwopus3.5-4B-Coder.Q4_K_M.gguf
+    - Qwopus3.5-4B-Coder.Q4_K_M.gguf
     file_sizes:
-      - 2783448480
+    - 2783448480
     mmproj: mmproj-Qwopus3.5-4B-Coder.Q4_K_M.gguf
     mmproj_size: 672424544
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen35
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -357,18 +339,17 @@ models:
     family: Qwopus3.5-4B-Coder-GGUF
     revision: main
     files:
-      - Qwopus3.5-4B-Coder.Q8_0.gguf
+    - Qwopus3.5-4B-Coder.Q8_0.gguf
     file_sizes:
-      - 4610581920
+    - 4610581920
     mmproj: mmproj-Qwopus3.5-4B-Coder.Q8_0.gguf
     mmproj_orig: Qwopus3.5-4B-Coder.mmproj-f16.gguf
     mmproj_size: 672424544
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen35
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -380,15 +361,14 @@ models:
     family: gemma-4-E4B-it-Coder-i1-GGUF
     revision: main
     files:
-      - gemma-4-E4B-it-Coder.i1-Q4_K_M.gguf
+    - gemma-4-E4B-it-Coder.i1-Q4_K_M.gguf
     file_sizes:
-      - 5335291296
-    mtp_checked: true
+    - 5335291296
+    draft_checked: true
     model_type: Dense
     architecture: gemma4
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -399,15 +379,14 @@ models:
     family: nomic-embed-text-v1.5-GGUF
     revision: main
     files:
-      - nomic-embed-text-v1.5.Q8_0.gguf
+    - nomic-embed-text-v1.5.Q8_0.gguf
     file_sizes:
-      - 146146432
-    mtp_checked: true
+    - 146146432
+    draft_checked: true
     model_type: Dense
     architecture: nomic-bert
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: embeddings
       embedding: true
     resolved_at: 2026-07-30T01:18:34.52641Z
@@ -416,15 +395,14 @@ models:
     family: openjev-GGUF
     revision: main
     files:
-      - OpenJev-Q4_K_M.gguf
+    - OpenJev-Q4_K_M.gguf
     file_sizes:
-      - 16547400000
-    mtp_checked: true
+    - 16547400000
+    draft_checked: true
     model_type: Dense
     architecture: qwen35
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: decision
       decision: true
     resolved_at: 2026-09-28T17:35:47.75056Z
@@ -433,18 +411,17 @@ models:
     family: Ornith-1.5-9B-GGUF
     revision: main
     files:
-      - Ornith-1.5-9B-Q4_K_M.gguf
+    - Ornith-1.5-9B-Q4_K_M.gguf
     file_sizes:
-      - 5629108992
+    - 5629108992
     mmproj: mmproj-Ornith-1.5-9B-Q4_K_M.gguf
     mmproj_orig: mmproj-Ornith-1.5-9B-BF16.gguf
     mmproj_size: 921704416
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen35
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -456,18 +433,17 @@ models:
     family: Ornith-1.5-35B-A3B-GGUF
     revision: main
     files:
-      - Ornith-1.5-35B-Q8_0.gguf
+    - Ornith-1.5-35B-Q8_0.gguf
     file_sizes:
-      - 37802149120
+    - 37802149120
     mmproj: mmproj-Ornith-1.5-35B-Q8_0.gguf
     mmproj_orig: mmproj-Ornith-1.5-35B-BF16.gguf
     mmproj_size: 902822016
-    mtp_checked: true
+    draft_checked: true
     model_type: MoE
     architecture: qwen35moe
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -479,15 +455,14 @@ models:
     family: All-MiniLM-L6-v2-Embedding-GGUF
     revision: main
     files:
-      - all-MiniLM-L6-v2-Q8_0.gguf
+    - all-MiniLM-L6-v2-Q8_0.gguf
     file_sizes:
-      - 25008064
-    mtp_checked: true
+    - 25008064
+    draft_checked: true
     model_type: Dense
     architecture: bert
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: embeddings
       embedding: true
     resolved_at: 2026-07-30T01:18:32.85876Z
@@ -496,18 +471,17 @@ models:
     family: Swift-Qwen3.8-27B-GGUF
     revision: main
     files:
-      - Swift-Qwen3.8-27B-Q8_0.gguf
+    - Swift-Qwen3.8-27B-Q8_0.gguf
     file_sizes:
-      - 29116389280
+    - 29116389280
     mmproj: mmproj-Swift-Qwen3.8-27B-Q8_0.gguf
     mmproj_orig: mmproj-Swift-Qwen3.8-27B-F16.gguf
     mmproj_size: 927606976
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen35
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -519,18 +493,17 @@ models:
     family: Ministral-3-14B-Instruct-2512-GGUF
     revision: main
     files:
-      - Ministral-3-14B-Instruct-2512-Q4_0.gguf
+    - Ministral-3-14B-Instruct-2512-Q4_0.gguf
     file_sizes:
-      - 7805711040
+    - 7805711040
     mmproj: mmproj-Ministral-3-14B-Instruct-2512-Q4_0.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 878053536
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: mistral3
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -542,18 +515,17 @@ models:
     family: Ornith-1.0-35B-GGUF
     revision: main
     files:
-      - Ornith-1.0-35B-UD-Q8_K_XL.gguf
+    - Ornith-1.0-35B-UD-Q8_K_XL.gguf
     file_sizes:
-      - 38201489824
+    - 38201489824
     mmproj: mmproj-Ornith-1.0-35B-UD-Q8_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283680
-    mtp_checked: true
+    draft_checked: true
     model_type: MoE
     architecture: qwen35moe
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -565,15 +537,14 @@ models:
     family: Qwen3-0.6B-GGUF
     revision: main
     files:
-      - Qwen3-0.6B-Q8_0.gguf
+    - Qwen3-0.6B-Q8_0.gguf
     file_sizes:
-      - 639447744
-    mtp_checked: true
+    - 639447744
+    draft_checked: true
     model_type: Dense
     architecture: qwen3
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -584,15 +555,14 @@ models:
     family: Qwen3-1.7B-GGUF
     revision: main
     files:
-      - Qwen3-1.7B-Q4_K_M.gguf
+    - Qwen3-1.7B-Q4_K_M.gguf
     file_sizes:
-      - 1107409472
-    mtp_checked: true
+    - 1107409472
+    draft_checked: true
     model_type: Dense
     architecture: qwen3
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -603,15 +573,14 @@ models:
     family: Qwen3-1.7B-GGUF
     revision: main
     files:
-      - Qwen3-1.7B-UD-Q8_K_XL.gguf
+    - Qwen3-1.7B-UD-Q8_K_XL.gguf
     file_sizes:
-      - 2332582464
-    mtp_checked: true
+    - 2332582464
+    draft_checked: true
     model_type: Dense
     architecture: qwen3
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -622,18 +591,17 @@ models:
     family: Qwen3.5-0.8B-GGUF
     revision: main
     files:
-      - Qwen3.5-0.8B-Q8_0.gguf
+    - Qwen3.5-0.8B-Q8_0.gguf
     file_sizes:
-      - 811843840
+    - 811843840
     mmproj: mmproj-Qwen3.5-0.8B-Q8_0.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 204987232
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: qwen35
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -645,18 +613,17 @@ models:
     family: Qwen3.6-35B-A3B-GGUF
     revision: main
     files:
-      - Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
+    - Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
     file_sizes:
-      - 22134528992
+    - 22134528992
     mmproj: mmproj-Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283680
-    mtp_checked: true
+    draft_checked: true
     model_type: MoE
     architecture: qwen35moe
     sequence_processing: Hybrid
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -668,15 +635,17 @@ models:
     family: Qwen3.8-27B-GGUF
     revision: main
     files:
-      - Qwen3.8-27B-UD-Q4_K_XL.gguf
+    - Qwen3.8-27B-UD-Q4_K_XL.gguf
     file_sizes:
-      - 17559178144
+    - 17559178144
     mmproj: mmproj-Qwen3.8-27B-UD-Q4_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 927607488
-    mtp: mtp-Qwen3.8-27B-UD-Q4_K_XL.gguf
-    mtp_orig: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
-    mtp_checked: true
+    draft:
+      method: mtp
+      file: mtp-Qwen3.8-27B-UD-Q4_K_XL.gguf
+      original: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
+    draft_checked: true
     mtp_source: companion
     model_type: Dense
     architecture: qwen35
@@ -687,22 +656,24 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-      mtp: true
+      draft: mtp
     resolved_at: 2026-08-14T22:38:54.263499Z
   unsloth/Qwen3.8-27B-UD-Q8_K_XL:
     provider: unsloth
     family: Qwen3.8-27B-GGUF
     revision: main
     files:
-      - Qwen3.8-27B-UD-Q8_K_XL.gguf
+    - Qwen3.8-27B-UD-Q8_K_XL.gguf
     file_sizes:
-      - 31457991680
+    - 31457991680
     mmproj: mmproj-Qwen3.8-27B-UD-Q8_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 927607488
-    mtp: mtp-Qwen3.8-27B-UD-Q8_K_XL.gguf
-    mtp_orig: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
-    mtp_checked: true
+    draft:
+      method: mtp
+      file: mtp-Qwen3.8-27B-UD-Q8_K_XL.gguf
+      original: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
+    draft_checked: true
     mtp_source: companion
     model_type: Dense
     architecture: qwen35
@@ -713,27 +684,29 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-      mtp: true
+      draft: mtp
     resolved_at: 2026-08-14T20:55:18.890296Z
   unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL:
     provider: unsloth
     family: Qwen3.8-Flash-Next-GGUF
     revision: main
     files:
-      - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00003.gguf
-      - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00002-of-00003.gguf
-      - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00003-of-00003.gguf
+    - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00003.gguf
+    - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00002-of-00003.gguf
+    - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00003-of-00003.gguf
     file_sizes:
-      - 10946624
-      - 49979779296
-      - 28878402944
+    - 10946624
+    - 49979779296
+    - 28878402944
     mmproj: mmproj-Qwen3.8-Flash-Next-UD-Q2_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 904004000
-    mtp: mtp-Qwen3.8-Flash-Next-UD-Q2_K_XL.gguf
-    mtp_orig: MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf
-    mtp_size: 4137429120
-    mtp_checked: true
+    draft:
+      method: mtp
+      file: mtp-Qwen3.8-Flash-Next-UD-Q2_K_XL.gguf
+      original: MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf
+      size: 4137429120
+    draft_checked: true
     mtp_source: companion
     model_type: MoE
     architecture: qwen4exp
@@ -744,23 +717,25 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-      mtp: true
+      draft: mtp
     resolved_at: 2026-10-03T23:55:00Z
   unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
     provider: unsloth
     family: gemma-4-26B-A4B-it-GGUF
     revision: main
     files:
-      - gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+    - gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
     file_sizes:
-      - 16947539744
+    - 16947539744
     mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 1193058784
-    mtp: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
-    mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
-    mtp_size: 461766816
-    mtp_checked: true
+    draft:
+      method: mtp
+      file: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+      original: mtp-gemma-4-26B-A4B-it.gguf
+      size: 461766816
+    draft_checked: true
     mtp_source: companion
     model_type: MoE
     architecture: gemma4
@@ -771,23 +746,25 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-      mtp: true
+      draft: mtp
     resolved_at: 2026-06-16T14:22:40.598626Z
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL:
     provider: unsloth
     family: gemma-4-26B-A4B-it-GGUF
     revision: main
     files:
-      - gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf
+    - gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf
     file_sizes:
-      - 27636232928
+    - 27636232928
     mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 1193058784
-    mtp: mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf
-    mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
-    mtp_size: 461766816
-    mtp_checked: true
+    draft:
+      method: mtp
+      file: mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf
+      original: mtp-gemma-4-26B-A4B-it.gguf
+      size: 461766816
+    draft_checked: true
     mtp_source: companion
     model_type: MoE
     architecture: gemma4
@@ -798,23 +775,25 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-      mtp: true
+      draft: mtp
     resolved_at: 2026-07-19T12:40:25.472673Z
   unsloth/gemma-4-E4B-it-Q4_K_M:
     provider: unsloth
     family: gemma-4-E4B-it-GGUF
     revision: main
     files:
-      - gemma-4-E4B-it-Q4_K_M.gguf
+    - gemma-4-E4B-it-Q4_K_M.gguf
     file_sizes:
-      - 4977171584
+    - 4977171584
     mmproj: mmproj-gemma-4-E4B-it-Q4_K_M.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 990372672
-    mtp: mtp-gemma-4-E4B-it-Q4_K_M.gguf
-    mtp_orig: mtp-gemma-4-E4B-it.gguf
-    mtp_size: 98653248
-    mtp_checked: true
+    draft:
+      method: mtp
+      file: mtp-gemma-4-E4B-it-Q4_K_M.gguf
+      original: mtp-gemma-4-E4B-it.gguf
+      size: 98653248
+    draft_checked: true
     mtp_source: companion
     model_type: Dense
     architecture: gemma4
@@ -827,25 +806,24 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-      mtp: true
+      draft: mtp
     resolved_at: 2026-08-18T17:54:47.04641Z
   unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL:
     provider: unsloth
     family: gemma-4-E4B-it-qat-GGUF
     revision: main
     files:
-      - gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
+    - gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
     file_sizes:
-      - 4215693760
+    - 4215693760
     mmproj: mmproj-gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 990372672
-    mtp_checked: true
+    draft_checked: true
     model_type: Dense
     architecture: gemma4
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -857,15 +835,14 @@ models:
     family: gpt-oss-20b-GGUF
     revision: main
     files:
-      - gpt-oss-20b-Q8_0.gguf
+    - gpt-oss-20b-Q8_0.gguf
     file_sizes:
-      - 12109567168
-    mtp_checked: true
+    - 12109567168
+    draft_checked: true
     model_type: MoE
     architecture: gpt-oss
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -876,13 +853,13 @@ models:
     family: Qwen3.6-35B-A3B-MTP-GGUF
     revision: main
     files:
-      - Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf
+    - Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf
     file_sizes:
-      - 12574128416
+    - 12574128416
     mmproj: mmproj-mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283584
-    mtp_checked: true
+    draft_checked: true
     mtp_source: embedded
     model_type: MoE
     architecture: qwen35moe
@@ -893,20 +870,20 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-      mtp: true
+      draft: mtp
     resolved_at: 2026-08-01T13:56:38.224419Z
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL:
     provider: unsloth
     family: Qwen3.6-35B-A3B-MTP-GGUF
     revision: main
     files:
-      - Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
+    - Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
     file_sizes:
-      - 39099447584
+    - 39099447584
     mmproj: mmproj-mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283584
-    mtp_checked: true
+    draft_checked: true
     mtp_source: embedded
     model_type: MoE
     architecture: qwen35moe
@@ -917,22 +894,21 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-      mtp: true
+      draft: mtp
     resolved_at: 2026-05-19T10:51:03.18711Z
   unsloth/rnj-1-instruct-Q6_K:
     provider: unsloth
     family: rnj-1-instruct-GGUF
     revision: main
     files:
-      - rnj-1-instruct-Q6_K.gguf
+    - rnj-1-instruct-Q6_K.gguf
     file_sizes:
-      - 6826763968
-    mtp_checked: true
+    - 6826763968
+    draft_checked: true
     model_type: Dense
     architecture: gemma3
     sequence_processing: Attention-only
     capabilities:
-      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true

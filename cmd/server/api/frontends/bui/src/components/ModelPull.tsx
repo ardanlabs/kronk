@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
 import DownloadProgressBar from './DownloadProgressBar';
+import DraftDetails from './DraftDetails';
+import { FieldLabel } from './ParamTooltips';
 import type { ResolveSourceResponse, HFRepoFile } from '../types';
 import {
   stripGGUF,
@@ -172,7 +174,7 @@ export default function ModelPull() {
 
     // Both companion URLs are sent ONLY as explicit overrides. Left empty,
     // the server resolves the model id and downloads every companion it
-    // needs (projection AND mtp drafter). Auto-sending a resolved companion
+    // needs (projection and the catalog-declared draft). Auto-sending a resolved companion
     // URL here would flip the server into explicit-URL mode, where any
     // companion whose URL was not also supplied (e.g. the projection) is
     // silently skipped. Keep proj and mtp symmetric: override-only.
@@ -426,16 +428,15 @@ export default function ModelPull() {
                       : <span style={{ opacity: 0.6 }}>none</span>}
                   </td>
                 </tr>
-                <tr>
-                  <td>MTP drafter</td>
-                  <td>
-                    {resolved.download_mtp
-                      ? <code style={{ wordBreak: 'break-all' }}>{resolved.download_mtp}</code>
-                      : <span style={{ opacity: 0.6 }}>none</span>}
-                  </td>
-                </tr>
               </tbody>
             </table>
+
+            <DraftDetails
+              draft={resolved.draft}
+              has_draft={Boolean(resolved.download_draft)}
+              mtp_source={!resolved.draft && resolved.download_mtp ? 'companion' : undefined}
+              url={resolved.download_draft || (!resolved.draft ? resolved.download_mtp : undefined)}
+            />
 
             <details
               style={{ marginTop: '12px' }}
@@ -471,7 +472,7 @@ export default function ModelPull() {
                 Override MTP drafter URL
               </summary>
               <div className="form-group" style={{ marginTop: '8px' }}>
-                <label htmlFor="mtpOverride">MTP drafter URL (fully qualified HuggingFace URL)</label>
+                <FieldLabel htmlFor="mtpOverride" tooltipKey="mtpOverrideURL">MTP drafter URL (fully qualified HuggingFace URL)</FieldLabel>
                 <input
                   type="text"
                   id="mtpOverride"
@@ -482,7 +483,8 @@ export default function ModelPull() {
                 />
                 <p style={{ fontSize: '12px', opacity: 0.7, margin: '4px 0 0 0' }}>
                   When set, the explicit MTP drafter URL replaces the resolver's choice.
-                  Leave the field empty (or close this section) to use the MTP drafter above.
+                  This is an MTP-only override, not a generic draft or DSpark override.
+                  Leave the field empty (or close this section) to let the catalog select companions.
                 </p>
               </div>
             </details>

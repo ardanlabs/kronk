@@ -17,6 +17,11 @@ func TestRegisteredArtifactTypes(t *testing.T) {
 	}{
 		{"embedded", MTPSourceEmbedded, new(MTPSource), "embedded"},
 		{"companion", MTPSourceCompanion, new(MTPSource), "companion"},
+		{"draft mtp", DraftMethodMTP, new(DraftMethod), "mtp"},
+		{"draft dspark", DraftMethodDSpark, new(DraftMethod), "dspark"},
+		{"draft conventional", DraftMethodConventional, new(DraftMethod), "conventional"},
+		{"draft zero", DraftMethod{}, new(DraftMethod), ""},
+		{"draft role", IntegrityRoleDraft, new(IntegrityRole), "draft"},
 		{"verified", IntegrityVerified, new(IntegrityStatus), "verified"},
 		{"unverified", IntegrityUnverified, new(IntegrityStatus), "unverified"},
 		{"stale", IntegrityStale, new(IntegrityStatus), "stale"},

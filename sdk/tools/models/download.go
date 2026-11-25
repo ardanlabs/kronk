@@ -115,6 +115,19 @@ func (m *Models) DownloadURLs(ctx context.Context, log applog.Logger, modelURLs 
 // reports structured progress to the supplied function. A nil function
 // suppresses progress reporting.
 func (m *Models) DownloadURLsWithProgress(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string, progress DownloadProgressFunc) (Path, error) {
+	var draft CatalogDraft
+	if mtpURL != "" {
+		draft = CatalogDraft{Method: DraftMethodMTP, URL: mtpURL}
+	}
+	return m.DownloadDraftURLsWithProgress(ctx, log, modelURLs, projURL, draft, progress)
+}
+
+// DownloadDraftURLsWithProgress installs explicit model and projection URLs and
+// a generic draft artifact, preserving its method, installed basename and URL.
+// An empty draft omits draft downloading. URL-only MTP overrides use the
+// historical mtp-<target-model>.gguf installed name. Other methods require an
+// explicit File. Progress may be nil.
+func (m *Models) DownloadDraftURLsWithProgress(ctx context.Context, log applog.Logger, modelURLs []string, projURL string, draft CatalogDraft, progress DownloadProgressFunc) (Path, error) {
 	if len(modelURLs) == 0 {
 		return Path{}, fmt.Errorf("download-urls: no model URLs provided")
 	}
@@ -128,18 +141,39 @@ func (m *Models) DownloadURLsWithProgress(ctx context.Context, log applog.Logger
 	if projURL != "" && !isURL(projURL) {
 		return Path{}, fmt.Errorf("download-urls: projection URL must be fully qualified: %q", projURL)
 	}
-
-	if mtpURL != "" && !isURL(mtpURL) {
-		return Path{}, fmt.Errorf("download-urls: mtp URL must be fully qualified: %q", mtpURL)
+	if draft.Method == DraftMethodMTP && draft.File == "" && draft.URL != "" {
+		_, repo, _, files, ok := hf.ParseURLs(modelURLs)
+		if !ok {
+			return Path{}, fmt.Errorf("download-urls: invalid model URLs")
+		}
+		_, _, _, original, ok := hf.ParseURL(hf.NormalizeDownloadURL(draft.URL))
+		if !ok {
+			return Path{}, fmt.Errorf("download-urls: invalid mtp URL %q", draft.URL)
+		}
+		draft.File = localMTPName(repo, original, files)
+		if draft.Original == "" {
+			draft.Original = original
+		}
 	}
 
-	mp, err := m.downloadSplits(ctx, log, modelURLs, projURL, mtpURL, progress)
+	if draft.File != "" && !isURL(draft.URL) {
+		return Path{}, fmt.Errorf("download-urls: draft URL must be fully qualified: %q", draft.URL)
+	}
+	if err := validateDrafts(Catalog{Models: map[string]CatalogEntry{"download": {Draft: draft}}}); err != nil {
+		return Path{}, err
+	}
+	if err := m.persistDraftResolution(modelURLs, projURL, draft); err != nil {
+		return Path{}, err
+	}
+	mp, err := m.downloadSplits(ctx, log, modelURLs, projURL, "", progress, draft)
 	if err != nil {
 		return mp, err
 	}
-
-	if perr := m.persistURLResolution(modelURLs, projURL, mtpURL); perr != nil {
-		log(ctx, "download: unable to persist resolver entry", "ERROR", perr)
+	if owner, repo, _, files, ok := hf.ParseURLs(modelURLs); ok {
+		r := NewResolver(m, filepath.Join(m.basePath, "catalog", "catalog.yaml"))
+		if err := r.refreshSizes(canonicalID(owner, catalogModelID(repo, files[0]))); err != nil {
+			log(ctx, "download: unable to refresh catalog sizes", "ERROR", err)
+		}
 	}
 
 	m.cacheGGUFHeadBestEffort(ctx, log, modelURLs[0], mp)
@@ -155,20 +189,8 @@ func (m *Models) DownloadURLsWithProgress(ctx context.Context, log applog.Logger
 // from the URL. When the projection lookup fails the model is still
 // downloaded; only the projection is skipped.
 func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL string, progress DownloadProgressFunc) (Path, error) {
-	projURL, mtpURL := m.lookupCompanionsForURL(ctx, modelURL)
-
-	mp, err := m.downloadSplits(ctx, log, []string{modelURL}, projURL, mtpURL, progress)
-	if err != nil {
-		return mp, err
-	}
-
-	if perr := m.persistURLResolution([]string{modelURL}, projURL, mtpURL); perr != nil {
-		log(ctx, "download: unable to persist resolver entry", "ERROR", perr)
-	}
-
-	m.cacheGGUFHeadBestEffort(ctx, log, modelURL, mp)
-
-	return mp, nil
+	projURL, draft := m.lookupCompanionsForURL(ctx, modelURL)
+	return m.DownloadDraftURLsWithProgress(ctx, log, []string{modelURL}, projURL, draft, progress)
 }
 
 // downloadByID resolves a canonical id or pinned repository/file shorthand and
@@ -200,23 +222,26 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 		mp := Path{
 			ModelFiles: append([]string(nil), res.LocalPaths...),
 			ProjFile:   res.LocalProj,
-			MTPFile:    res.LocalMTP,
+			DraftFile:  res.LocalDraft,
 			Downloaded: true,
 		}
+		if res.Draft.isMTP() {
+			mp.MTPFile = res.LocalDraft
+		}
 
-		// A companion the catalog tracks (MMProj/MTP non-empty) but whose
-		// file is absent on disk leaves LocalProj/LocalMTP empty after
+		// A companion the catalog tracks but whose file is absent on disk
+		// leaves LocalProj/LocalDraft empty after
 		// attachLocal. That happens when the user deletes a companion or an
 		// older buggy pull skipped it. verifyAllSizes cannot catch this —
 		// it only checks the companion paths that are populated — so detect
 		// the gap here and fall through to the download path to re-fetch it.
 		missingProj := res.MMProj != "" && res.LocalProj == ""
-		missingMTP := res.MTP != "" && res.LocalMTP == ""
+		missingDraft := res.Draft.File != "" && res.LocalDraft == ""
 		sizeErr := verifyAllSizes(mp)
 
 		switch {
-		case missingProj || missingMTP:
-			log(ctx, "download-model: companion file missing, re-downloading", "provider", res.Provider, "family", res.Family, "missing-projection", missingProj, "missing-mtp", missingMTP)
+		case missingProj || missingDraft:
+			log(ctx, "download-model: companion file missing, re-downloading", "provider", res.Provider, "family", res.Family, "missing-projection", missingProj, "missing-draft", missingDraft)
 
 		case sizeErr != nil:
 			log(ctx, "download-model: on-disk copy is incomplete, re-downloading", "provider", res.Provider, "family", res.Family, "ERROR", sizeErr)
@@ -224,7 +249,7 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 		default:
 			logArtifactStatus(ctx, log, artifactModel, mp.ModelFiles[0], false)
 			logArtifactStatus(ctx, log, artifactProj, res.LocalProj, false)
-			logArtifactStatus(ctx, log, artifactMTP, res.LocalMTP, false)
+			logArtifactStatus(ctx, log, "draft", res.LocalDraft, false)
 
 			return mp, nil
 		}
@@ -234,7 +259,12 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 		return Path{}, fmt.Errorf("download: resolve %q: resolver returned no download URLs", modelSource)
 	}
 
-	mp, err := m.downloadSplits(ctx, log, res.DownloadURLs, res.DownloadProj, res.DownloadMTP, progress)
+	draft := res.Draft
+	if draft.File != "" && res.DownloadDraft == "" {
+		return Path{}, fmt.Errorf("download: draft %q has no download URL", draft.File)
+	}
+	draft.URL = res.DownloadDraft
+	mp, err := m.downloadSplits(ctx, log, res.DownloadURLs, res.DownloadProj, "", progress, draft)
 	if err != nil {
 		return Path{}, fmt.Errorf("download: download %q: %w", modelSource, err)
 	}
@@ -265,28 +295,30 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 }
 
 // lookupCompanionsForURL parses a HuggingFace URL into provider/<modelID>
-// and asks the resolver for the matching projection and MTP companion
-// files. Returns empty strings when the URL cannot be parsed or no
+// and asks the resolver for the matching projection and draft companion
+// files. Returns zero values when the URL cannot be parsed or no
 // companion is found.
-func (m *Models) lookupCompanionsForURL(ctx context.Context, modelURL string) (projURL, mtpURL string) {
+func (m *Models) lookupCompanionsForURL(ctx context.Context, modelURL string) (string, CatalogDraft) {
 	provider, _, _, file, ok := hf.ParseURL(hf.NormalizeDownloadURL(modelURL))
 	if !ok || provider == "" || file == "" {
-		return "", ""
+		return "", CatalogDraft{}
 	}
 
 	rfile, err := defaults.CatalogFile("", m.basePath)
 	if err != nil {
-		return "", ""
+		return "", CatalogDraft{}
 	}
 
 	canonical := fmt.Sprintf("%s/%s", provider, extractModelID(file))
 
 	res, err := NewResolver(m, rfile).Resolve(ctx, canonical)
 	if err != nil {
-		return "", ""
+		return "", CatalogDraft{}
 	}
 
-	return res.DownloadProj, res.DownloadMTP
+	draft := res.Draft
+	draft.URL = res.DownloadDraft
+	return res.DownloadProj, draft
 }
 
 // cacheGGUFHeadBestEffort populates the GGUF head cache from the first
@@ -331,7 +363,7 @@ func logDownloadProgress(ctx context.Context, log applog.Logger) DownloadProgres
 // downloadSplits performs a complete workflow for downloading and installing
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
-func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string, report DownloadProgressFunc) (result Path, retErr error) {
+func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string, report DownloadProgressFunc, drafts ...CatalogDraft) (result Path, retErr error) {
 	if len(modelURLs) == 0 {
 		return Path{}, fmt.Errorf("download-splits: no model URLs provided")
 	}
@@ -345,6 +377,16 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 	if !hasNetworkFn() {
 		mp, err := m.FullPath(modelID)
 		if err != nil {
+			return Path{}, fmt.Errorf("download-splits: no network available: %w", err)
+		}
+		if len(drafts) > 0 && drafts[0].File != "" {
+			mp.DraftFile = filepath.Join(mLoc0.ModelDir(m), drafts[0].File)
+			mp.MTPFile = ""
+			if drafts[0].isMTP() {
+				mp.MTPFile = mp.DraftFile
+			}
+		}
+		if err := verifyAllSizes(mp); err != nil {
 			return Path{}, fmt.Errorf("download-splits: no network available: %w", err)
 		}
 
@@ -461,6 +503,26 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 		}
 	}
 
+	if len(drafts) > 0 && drafts[0].File != "" {
+		draft := drafts[0]
+		loc, err := newLocator(hf.NormalizeDownloadURL(draft.URL))
+		if err != nil {
+			return Path{}, fmt.Errorf("download-draft: %w", err)
+		}
+		// Keep the source URL verbatim while installing beside the target,
+		// never in the source repository and never under its .gguf_file name.
+		loc.Owner, loc.Repo, loc.DiskFile = mLoc0.Owner, mLoc0.Repo, draft.File
+		file, fetched, err := m.downloadModelFile(ctx, log, loc, progress)
+		if err != nil {
+			return Path{}, fmt.Errorf("download-draft: %w", err)
+		}
+		logArtifactStatus(ctx, log, "draft", file, fetched)
+		result.DraftFile = file
+		result.MTPFile = ""
+		if draft.isMTP() {
+			result.MTPFile = file
+		}
+	}
 	result.Downloaded = true
 
 	return result, nil
@@ -1046,6 +1108,14 @@ func verifyAllSizes(mp Path) error {
 	if mp.MTPFile != "" {
 		if err := checkModel(mp.MTPFile, false); err != nil {
 			return fmt.Errorf("verify-sizes: mtp-file[%s]: %w", filepath.Base(mp.MTPFile), err)
+		}
+	}
+	if mp.DraftFile != "" {
+		if _, err := os.Stat(mp.DraftFile); err != nil {
+			return fmt.Errorf("verify-sizes: draft-file: %w", err)
+		}
+		if err := checkModel(mp.DraftFile, false); err != nil {
+			return fmt.Errorf("verify-sizes: draft-file: %w", err)
 		}
 	}
 

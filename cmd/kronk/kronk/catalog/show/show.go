@@ -74,8 +74,9 @@ func runLocal(mdls *models.Models, args []string) error {
 			detail.Parameters = models.FormatParameterCount(detail.ParameterCount)
 			detail.Template = models.TemplateName(metadata)
 			detail.Capabilities = models.CapabilitiesForModel(metadata, entry.MMProj != "", id)
-			detail.MTPSource = models.MTPSourceFor(metadata, entry.MTP != "")
+			detail.MTPSource = models.MTPSourceFor(metadata, entry.Draft.Method == models.DraftMethodMTP && entry.Draft.File != "")
 			detail.Capabilities.MTP = !detail.MTPSource.IsZero()
+			detail.Capabilities = detail.Capabilities.WithDraft(entry.Capabilities.Draft).WithDraft(entry.Draft.Method)
 		}
 	}
 
@@ -102,7 +103,10 @@ func print(d models.CatalogDetail) {
 	fmt.Printf("Web Page:       %s\n", d.WebPage)
 	fmt.Printf("Total Size:     %s\n", d.TotalSize)
 	fmt.Printf("Has Projection: %t\n", d.HasProjection)
-	fmt.Printf("Has MTP File:   %t\n", d.HasMTP)
+	fmt.Printf("Has Draft File: %t\n", d.HasDraft)
+	if !d.Draft.Method.IsZero() {
+		fmt.Printf("Draft Method:   %s\n", d.Draft.Method)
+	}
 	fmt.Printf("MTP Source:     %s\n", mtpSource)
 	fmt.Printf("Downloaded:     %t\n", d.Downloaded)
 	fmt.Printf("Validated:      %t\n", d.Validated)
@@ -131,8 +135,8 @@ func print(d models.CatalogDetail) {
 	if d.Files.Proj.URL != "" {
 		fmt.Printf("proj:   %s (%s)\n", d.Files.Proj.URL, models.FormatBytes(d.Files.Proj.Size))
 	}
-	if d.Files.MTP.URL != "" {
-		fmt.Printf("mtp:    %s (%s)\n", d.Files.MTP.URL, models.FormatBytes(d.Files.MTP.Size))
+	if d.Files.Draft.URL != "" {
+		fmt.Printf("draft:  %s (%s)\n", d.Files.Draft.URL, models.FormatBytes(d.Files.Draft.Size))
 	}
 
 	if d.Capabilities.Endpoint != "" {
@@ -146,7 +150,11 @@ func print(d models.CatalogDetail) {
 		fmt.Printf("Embedding:  %t\n", d.Capabilities.Embedding)
 		fmt.Printf("Rerank:     %t\n", d.Capabilities.Rerank)
 		fmt.Printf("Decision:   %t\n", d.Capabilities.Decision)
-		fmt.Printf("MTP:        %t\n", d.Capabilities.MTP)
+		draft := d.Capabilities.Draft.String()
+		if draft == "" {
+			draft = "none"
+		}
+		fmt.Printf("Draft:      %s\n", draft)
 		fmt.Printf("Images:     %t\n", d.Capabilities.Images)
 		fmt.Printf("Audio:      %t\n", d.Capabilities.Audio)
 		fmt.Printf("Video:      %t\n", d.Capabilities.Video)

@@ -185,9 +185,7 @@ func (m *Models) CatalogEntry(canonicalID string) (CatalogEntry, bool, error) {
 // ReconcileCatalog populates model dimensions, Capabilities, and MTPSource by reading
 // the GGUF head bytes (via GGUFHead's cache → local-file → HF Range lookup) so
 // the list page can filter by parameter activation and capabilities without
-// paying GGUF I/O on every list call. Legacy unversioned catalogs force this
-// enrichment before being stamped with version 1. Later schema migrations
-// preserve entry data and can advance without repeating GGUF enrichment.
+// paying GGUF I/O on every list call.
 // On-disk models missing from the catalog are intentionally ignored so
 // removing a curated entry remains durable while retaining its downloaded
 // files.
@@ -215,9 +213,6 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		cat.Models = map[string]CatalogEntry{}
 	}
 
-	migrating := cat.Version < catalogVersion
-	needsEnrichmentMigration := cat.Version < 1
-	migrationComplete := true
 	var changed int
 
 	for canonical, entry := range cat.Models {
@@ -236,14 +231,11 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		// Enrichment normally touches entries missing these fields. Decision
 		// model names are also revisited so catalogs created before Decision
 		// was a capability are corrected from chat_completion.
-		if needsEnrichmentMigration || touched || entry.ModelType == "" || entry.Capabilities.Endpoint == "" ||
+		if touched || entry.ModelType == "" || entry.Capabilities.Endpoint == "" ||
 			(isDecisionCatalogEntry(entry) && !entry.Capabilities.Decision) {
 			updated, ok, err := m.enrichEntry(ctx, entry)
 			if err != nil {
 				log(ctx, "reconcile-catalog: enrich-entry", "id", canonical, "ERROR", err)
-				if needsEnrichmentMigration {
-					migrationComplete = false
-				}
 			} else if ok {
 				entry = updated
 				touched = true
@@ -254,11 +246,6 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 			cat.Models[canonical] = entry
 			changed++
 		}
-	}
-
-	if migrating && migrationComplete {
-		cat.Version = catalogVersion
-		changed++
 	}
 
 	if changed == 0 {
@@ -275,8 +262,7 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 // enrichEntry populates a catalog entry's ModelType and Capabilities by
 // reading the GGUF head bytes through GGUFHead's cache → local-file → HF
 // Range lookup. Returns the possibly modified entry, whether it changed, and
-// any inspection error so catalog migrations only complete after every entry
-// has been checked.
+// any inspection error.
 func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEntry, bool, error) {
 	data, err := m.GGUFHead(ctx, entry)
 	if err != nil {
@@ -291,8 +277,9 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEn
 	profile := arch.Resolve(metadata)
 	modelType := profile.ParameterActivation()
 	capabilities := CapabilitiesForModel(metadata, entry.MMProj != "", catalogEntryModelName(entry))
-	mtpSource := MTPSourceFor(metadata, entry.MTP != "")
+	mtpSource := MTPSourceFor(metadata, entry.Draft.isMTP())
 	capabilities.MTP = !mtpSource.IsZero()
+	capabilities = capabilities.WithDraft(entry.Capabilities.Draft).WithDraft(entry.Draft.Method)
 
 	if entry.ModelType == modelType && entry.Architecture == profile.Architecture &&
 		entry.SequenceProcessing == profile.SequenceProcessing && entry.Capabilities == capabilities && entry.MTPSource == mtpSource {
@@ -370,8 +357,8 @@ func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log
 		}
 		removeCompanions(p)
 	}
-	if entry.MTP != "" {
-		p := filepath.Join(dir, filepath.Base(entry.MTP))
+	if entry.Draft.File != "" {
+		p := filepath.Join(dir, filepath.Base(entry.Draft.File))
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			log(ctx, "remove-catalog-entry: mtp", "path", p, "ERROR", err)
 		}

@@ -254,7 +254,10 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	case req.ProjURL != "" || req.MTPURL != "":
 		modelURLs := []string{req.ModelURL}
 		projURL := req.ProjURL
-		mtpURL := req.MTPURL
+		var draft models.CatalogDraft
+		if req.MTPURL != "" {
+			draft = models.CatalogDraft{Method: models.DraftMethodMTP, URL: req.MTPURL}
+		}
 		if !strings.HasPrefix(req.ModelURL, "http://") && !strings.HasPrefix(req.ModelURL, "https://") {
 			res, rerr := a.models.ResolveSource(ctx, req.ModelURL)
 			if rerr != nil {
@@ -274,11 +277,12 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 			if projURL == "" {
 				projURL = res.DownloadProj
 			}
-			if mtpURL == "" {
-				mtpURL = res.DownloadMTP
+			if req.MTPURL == "" {
+				draft = res.Draft
+				draft.URL = res.DownloadDraft
 			}
 		}
-		mp, err = a.models.DownloadURLsWithProgress(ctx, logger, modelURLs, projURL, mtpURL, progress)
+		mp, err = a.models.DownloadDraftURLsWithProgress(ctx, logger, modelURLs, projURL, draft, progress)
 	default:
 		mp, err = a.models.DownloadWithProgress(ctx, logger, req.ModelURL, progress)
 	}
@@ -473,7 +477,7 @@ func (a *app) autoTuneModel(ctx context.Context, r *http.Request) web.Encoder {
 		}
 	}
 
-	info := models.ModelInfoFromMetadata(req.CatalogID, metadata, totalSize, entry.MMProj != "", entry.MTP != "")
+	info := models.ModelInfoFromMetadata(req.CatalogID, metadata, totalSize, entry.MMProj != "", entry.Draft.Method == models.DraftMethodMTP && entry.Draft.File != "")
 	analysis, err := models.Analyze(info, devices.List())
 	if err != nil {
 		return errs.Errorf(errs.Internal, "auto-tune catalog model %q: %s", req.CatalogID, err)
@@ -723,7 +727,7 @@ func fetchVRAMRepoFiles(ctx context.Context, modelURL string) []HFRepoFile {
 // /download/{path...} handler serves both /resolve/main/ and
 // /raw/main/).
 func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRequest, progress models.DownloadProgressFunc) (models.Path, error) {
-	modelURLs, projURL, mtpURL, err := a.resolvePeerURLs(ctx, req.ModelURL, req.ProjURL, req.MTPURL)
+	modelURLs, projURL, draft, err := a.resolvePeerURLs(ctx, req.ModelURL, req.ProjURL, req.MTPURL)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("download-from-peer: resolve %q: %w", req.ModelURL, err)
 	}
@@ -734,11 +738,11 @@ func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRe
 	if projURL != "" {
 		projURL = toDownloadServerURL(req.DownloadServer, projURL)
 	}
-	if mtpURL != "" {
-		mtpURL = toDownloadServerURL(req.DownloadServer, mtpURL)
+	if draft.URL != "" {
+		draft.URL = toDownloadServerURL(req.DownloadServer, draft.URL)
 	}
 
-	return a.models.DownloadURLsWithProgress(ctx, log, modelURLs, projURL, mtpURL, progress)
+	return a.models.DownloadDraftURLsWithProgress(ctx, log, modelURLs, projURL, draft, progress)
 }
 
 // resolvePeerURLs returns the HuggingFace download URLs for the given
@@ -746,23 +750,27 @@ func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRe
 // (bare or canonical catalog id, owner/repo/file.gguf short form) is
 // resolved through the resolver so multi-file (split) models and
 // companion mmproj files come back with all of their URLs.
-func (a *app) resolvePeerURLs(ctx context.Context, modelSource, projSource, mtpSource string) ([]string, string, string, error) {
+func (a *app) resolvePeerURLs(ctx context.Context, modelSource, projSource, mtpSource string) ([]string, string, models.CatalogDraft, error) {
+	var override models.CatalogDraft
+	if mtpSource != "" {
+		override = models.CatalogDraft{Method: models.DraftMethodMTP, URL: mtpSource}
+	}
 	if strings.HasPrefix(modelSource, "https://") || strings.HasPrefix(modelSource, "http://") {
-		return []string{modelSource}, projSource, mtpSource, nil
+		return []string{modelSource}, projSource, override, nil
 	}
 
 	rfile, err := defaults.CatalogFile("", a.models.BasePath())
 	if err != nil {
-		return nil, "", "", fmt.Errorf("resolver-file: %w", err)
+		return nil, "", models.CatalogDraft{}, fmt.Errorf("resolver-file: %w", err)
 	}
 
 	res, err := models.NewResolver(a.models, rfile).Resolve(ctx, modelSource)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("resolve: %w", err)
+		return nil, "", models.CatalogDraft{}, fmt.Errorf("resolve: %w", err)
 	}
 
 	if len(res.DownloadURLs) == 0 {
-		return nil, "", "", fmt.Errorf("resolver returned no download URLs for %q", modelSource)
+		return nil, "", models.CatalogDraft{}, fmt.Errorf("resolver returned no download URLs for %q", modelSource)
 	}
 
 	proj := res.DownloadProj
@@ -770,12 +778,13 @@ func (a *app) resolvePeerURLs(ctx context.Context, modelSource, projSource, mtpS
 		proj = projSource
 	}
 
-	mtp := res.DownloadMTP
+	draft := res.Draft
+	draft.URL = res.DownloadDraft
 	if mtpSource != "" {
-		mtp = mtpSource
+		draft = override
 	}
 
-	return res.DownloadURLs, proj, mtp, nil
+	return res.DownloadURLs, proj, draft, nil
 }
 
 // toDownloadServerURL rewrites a HuggingFace download URL (or short-form

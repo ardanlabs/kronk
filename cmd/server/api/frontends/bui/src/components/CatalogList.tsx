@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import { api } from '../services/api';
 import { useDownload } from '../contexts/DownloadContext';
-import type { AutoTuneRecommendation, CatalogModelResponse, CatalogModelsResponse, CatalogCapabilities, VRAMCalculatorResponse } from '../types';
-import { labelWithTip } from './ParamTooltips';
+import type { AutoTuneRecommendation, CatalogModelResponse, CatalogModelsResponse, VRAMCalculatorResponse } from '../types';
+import { FieldLabel, labelWithTip } from './ParamTooltips';
+import { BOOLEAN_CAPABILITY_KEYS, BOOLEAN_CAPABILITY_LABELS, DRAFT_CAPABILITY_KEYS, DRAFT_CAPABILITY_LABELS, draftCapability, matchesCapability, type CapabilityFilter } from '../lib/catalogCapabilities';
 import { extractContextInfo } from '../lib/context';
 import { formatBytes } from '../lib/format';
 import ResizablePanel from './ResizablePanel';
 import KeyValueTable from './KeyValueTable';
 import ModelCard from './ModelCard';
 import ModelSummary from './ModelSummary';
+import DraftDetails, { draftLabel } from './DraftDetails';
 import CodeBlock from './CodeBlock';
 import DownloadInfoTable from './DownloadInfoTable';
 import DownloadProgressBar from './DownloadProgressBar';
@@ -74,23 +76,6 @@ function toggleSet<T>(set: Set<T>, value: T): Set<T> {
   return next;
 }
 
-const CAPABILITY_KEYS: (keyof CatalogCapabilities)[] = [
-  'images', 'audio', 'video', 'streaming', 'reasoning', 'tooling', 'embedding', 'rerank', 'decision', 'mtp',
-];
-
-const CAPABILITY_LABELS: Record<string, string> = {
-  images: 'Images',
-  audio: 'Audio',
-  video: 'Video',
-  streaming: 'Streaming',
-  reasoning: 'Reasoning',
-  tooling: 'Tooling',
-  embedding: 'Embedding',
-  rerank: 'Rerank',
-  decision: 'Decision',
-  mtp: 'MTP',
-};
-
 // ---------------------------------------------------------------------------
 // FilterSection component
 // ---------------------------------------------------------------------------
@@ -131,7 +116,7 @@ export default function CatalogList() {
   const [activeSection, setActiveSection] = useState<DetailSection>('summary');
 
   // Sort state for catalog table
-  type SortField = 'id' | 'owned_by' | 'model_family' | 'model_type' | 'has_projection' | 'mtp_source' | 'total_size_bytes' | 'validated';
+  type SortField = 'id' | 'owned_by' | 'model_family' | 'model_type' | 'has_projection' | 'draft' | 'total_size_bytes' | 'validated';
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -172,7 +157,7 @@ export default function CatalogList() {
   const [selectedOwners, setSelectedOwners] = useState<Set<string>>(new Set());
   const [selectedFamilies, setSelectedFamilies] = useState<Set<string>>(new Set());
   const [selectedModelTypes, setSelectedModelTypes] = useState<Set<string>>(new Set());
-  const [selectedCapabilities, setSelectedCapabilities] = useState<Set<string>>(new Set());
+  const [selectedCapabilities, setSelectedCapabilities] = useState<Set<CapabilityFilter>>(new Set());
 
   const [sizeMinVal, setSizeMinVal] = useState('0');
   const [sizeMinUnit, setSizeMinUnit] = useState<SizeUnit>('MiB');
@@ -242,8 +227,7 @@ export default function CatalogList() {
       if (validatedFilter === 'yes' && !model.validated) return false;
       if (validatedFilter === 'no' && model.validated) return false;
       for (const cap of selectedCapabilities) {
-        const caps = model.capabilities as unknown as Record<string, boolean | string> | undefined;
-        if (!caps || !caps[cap]) return false;
+        if (!matchesCapability(model.capabilities, model.mtp_source, cap)) return false;
       }
       return true;
     });
@@ -259,7 +243,7 @@ export default function CatalogList() {
         case 'model_family': cmp = (a.model_family || '').localeCompare(b.model_family || ''); break;
         case 'model_type': cmp = (a.model_type || '').localeCompare(b.model_type || ''); break;
         case 'has_projection': cmp = (a.has_projection ? 1 : 0) - (b.has_projection ? 1 : 0); break;
-        case 'mtp_source': cmp = (a.mtp_source || '').localeCompare(b.mtp_source || ''); break;
+        case 'draft': cmp = draftLabel(a).localeCompare(draftLabel(b)); break;
         case 'total_size_bytes': cmp = (a.total_size_bytes || 0) - (b.total_size_bytes || 0); break;
         case 'validated': cmp = (a.validated ? 1 : 0) - (b.validated ? 1 : 0); break;
       }
@@ -645,15 +629,25 @@ export default function CatalogList() {
           {/* Capabilities */}
           <FilterSection title="Capabilities" expanded={expandedSections.has('capabilities')} onToggle={() => toggleSection('capabilities')}>
             <div className="catalog-filter-options">
-              {CAPABILITY_KEYS.map(cap => (
+              {BOOLEAN_CAPABILITY_KEYS.map(cap => (
                 <label key={cap}>
                   <input
                     type="checkbox"
                     checked={selectedCapabilities.has(cap)}
                     onChange={() => setSelectedCapabilities(prev => toggleSet(prev, cap))}
                   />
-                  {CAPABILITY_LABELS[cap]}
+                  {BOOLEAN_CAPABILITY_LABELS[cap]}
                 </label>
+              ))}
+              {DRAFT_CAPABILITY_KEYS.map(method => (
+                <FieldLabel key={method} tooltipKey="draftCapability">
+                  <input
+                    type="checkbox"
+                    checked={selectedCapabilities.has(method)}
+                    onChange={() => setSelectedCapabilities(prev => toggleSet(prev, method))}
+                  />
+                  {DRAFT_CAPABILITY_LABELS[method]} drafting
+                </FieldLabel>
               ))}
             </div>
           </FilterSection>
@@ -802,10 +796,10 @@ export default function CatalogList() {
                           {sortField === 'has_projection' ? (sortAsc ? ' ▲' : ' ▼') : ''}
                         </span>
                       </th>
-                      <th onClick={() => handleSort('mtp_source')} className="catalog-table-sortable" title="MTP implementation supplied by the model GGUF or a companion drafter file">
-                        MTP
+                      <th onClick={() => handleSort('draft')} className="catalog-table-sortable">
+                        {labelWithTip('Draft', 'catalogDraft')}
                         <span className="catalog-table-sort-indicator">
-                          {sortField === 'mtp_source' ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                          {sortField === 'draft' ? (sortAsc ? ' ▲' : ' ▼') : ''}
                         </span>
                       </th>
                       <th onClick={() => handleSort('total_size_bytes')} className="catalog-table-sortable">
@@ -829,7 +823,7 @@ export default function CatalogList() {
                         <td>{model.model_family || '-'}</td>
                         <td>{model.model_type || '-'}</td>
                         <td style={{ textAlign: 'center' }}>{model.has_projection ? '✓' : ''}</td>
-                        <td>{model.mtp_source || '-'}</td>
+                        <td>{draftLabel(model)}</td>
                         <td>{model.total_size || '-'}</td>
                       </tr>
                     ))}
@@ -878,6 +872,7 @@ export default function CatalogList() {
                     size={modelInfo.total_size || 'Unknown'}
                     metadata={modelInfo.model_metadata ?? {}}
                     summary={modelInfo.summary}
+                    draft={modelInfo.draft}
                   />
                 )}
 
@@ -908,8 +903,19 @@ export default function CatalogList() {
                       <KeyValueTable rows={[
                         { key: 'model-url', label: 'Model URL', value: (modelInfo.files?.model?.length ?? 0) > 0 ? modelInfo.files!.model.map((file, idx) => <div key={idx}>{file.url} {file.size ? `(${formatBytes(file.size)})` : ''}</div>) : '-' },
                         { key: 'proj-url', label: 'Projection URL', value: modelInfo.files?.proj?.url ? <div>{modelInfo.files.proj.url} {modelInfo.files.proj.size ? `(${formatBytes(modelInfo.files.proj.size)})` : ''}</div> : '-' },
-                        { key: 'mtp-url', label: 'MTP Drafter URL', value: modelInfo.files?.mtp?.url ? <div>{modelInfo.files.mtp.url} {modelInfo.files.mtp.size ? `(${formatBytes(modelInfo.files.mtp.size)})` : ''}</div> : '-' },
                       ]} />
+                    </div>
+
+                    <div style={{ marginBottom: '16px' }}>
+                      <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Draft</h4>
+                      <DraftDetails
+                        draft={modelInfo.draft}
+                        has_draft={modelInfo.has_draft}
+                        has_mtp={modelInfo.has_mtp}
+                        mtp_source={modelInfo.mtp_source}
+                        url={modelInfo.files?.draft?.url || (!modelInfo.draft ? modelInfo.files?.mtp?.url : undefined)}
+                        size={modelInfo.files?.draft?.size ?? (!modelInfo.draft ? modelInfo.files?.mtp?.size : undefined)}
+                      />
                     </div>
 
                     <KeyValueTable rows={[
@@ -928,14 +934,21 @@ export default function CatalogList() {
 
                     <div style={{ marginTop: '24px' }}>
                       <h4 className="meta-section-title" style={{ marginBottom: '8px' }}>Capabilities</h4>
-                      <KeyValueTable rows={CAPABILITY_KEYS.map(cap => {
-                        const on = Boolean((modelInfo.capabilities as unknown as Record<string, boolean> | undefined)?.[cap]);
+                      <KeyValueTable rows={BOOLEAN_CAPABILITY_KEYS.map(cap => {
+                        const on = modelInfo.capabilities?.[cap] === true;
                         return {
                           key: cap,
-                          label: CAPABILITY_LABELS[cap],
+                          label: BOOLEAN_CAPABILITY_LABELS[cap],
                           value: <span className={`badge ${on ? 'badge-yes' : 'badge-no'}`}>{on ? 'Yes' : 'No'}</span>,
                         };
                       })} />
+                      <KeyValueTable rows={[
+                        { label: labelWithTip('Draft capability', 'draftCapability'), value: (() => {
+                          const method = draftCapability(modelInfo.capabilities, modelInfo.mtp_source);
+                          return method ? DRAFT_CAPABILITY_LABELS[method] : modelInfo.capabilities ? 'None' : 'Unknown';
+                        })() },
+                      ]} />
+                      {draftCapability(modelInfo.capabilities, modelInfo.mtp_source) === 'dspark' && <p>DSpark inference is not supported.</p>}
                     </div>
 
                   </div>
