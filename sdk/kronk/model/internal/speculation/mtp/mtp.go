@@ -2,6 +2,7 @@
 package mtp
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
@@ -18,6 +19,8 @@ type Controller struct {
 type Host interface {
 	SlotCount() int
 	SlotActive(slot int) bool
+	MTPDisableReason(slot int) string
+	MTPPrefillInput(slot int, prefill speculation.Prefill) (SyncInput, error)
 	CanSpeculate(slot int) bool
 	MTPDraftInput(slot int) (DraftInput, error)
 	CommitMTPDraft(slot int, result DraftResult)
@@ -46,6 +49,31 @@ func New(host Host) *Controller {
 
 func (*Controller) Mode() speculation.Mode { return speculation.ModeMTP }
 func (*Controller) Enabled() bool          { return true }
+
+// StartRequest retains MTP's cached native prefix; the host resets slot state.
+func (*Controller) StartRequest(int) error { return nil }
+
+// DisableReason reports the selected slot's request-local fallback status.
+func (c *Controller) DisableReason(slot int) string { return c.host.MTPDisableReason(slot) }
+
+// AfterPrefill synchronizes a direct target contribution without emitting tokens.
+// A failed draft handoff disables this request; target or cleanup failures remain
+// fatal to the caller.
+func (c *Controller) AfterPrefill(slot int, prefill speculation.Prefill) error {
+	input, err := c.host.MTPPrefillInput(slot, prefill)
+	if err == nil {
+		var result SyncResult
+		result, err = Synchronize(input)
+		if err == nil {
+			c.host.CommitMTPSync(slot, result)
+			return nil
+		}
+	}
+	if disableErr := c.host.DisableMTP(slot, "sync-error", 0); disableErr != nil {
+		return fmt.Errorf("disabling MTP after prefill sync failure: %w", errors.Join(err, disableErr))
+	}
+	return nil
+}
 
 func (c *Controller) BeginBatch() {
 	for slot := range c.host.SlotCount() {

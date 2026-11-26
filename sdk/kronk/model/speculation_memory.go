@@ -1,6 +1,29 @@
 package model
 
-import yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
+import (
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
+)
+
+// CompanionMemory estimates independently shaped companion allocations in
+// addition to target-context accounting. Currently this covers DSpark's own
+// context and feature storage; target-shaped MTP contexts are accounted through
+// SpeculativeContextCount. Disabled or unselected companions contribute nothing.
+func CompanionMemory(cfg Config, target vram.Config) (vram.Result, error) {
+	if cfg.SpeculationMode() != SpeculationAuto || cfg.DrafterFile == "" ||
+		cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
+		return vram.Result{}, nil
+	}
+	if _, err := dsparkProposalLimit(cfg); err != nil {
+		return vram.Result{}, nil
+	}
+	target.ComputeContexts = 1
+	target.RecurrentStateCopies = 1
+	target.EmbeddedMTPStateCopies = 1
+	target.MoECacheSize = 0
+	target.MTPContext = false
+	return vram.FromFiles([]string{cfg.DrafterFile}, target)
+}
 
 // RecurrentStateCopies returns one plus the configured recurrent rollback depth.
 // Snapshot architectures allocate that many state planes; replay architectures

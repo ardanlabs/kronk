@@ -8,10 +8,10 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
-// DetectArchitecture identifies the declared MTP contract, including recognized
-// but disabled architectures. Qwen35 requires its first MTP projection tensor;
-// hasTensor searches the model's shards without loading native weights.
-func DetectArchitecture(metadata map[string]string, hasTensor func(string) (bool, error)) (modelprofile.MTPArchitecture, error) {
+// ResolveArtifactArchitecture validates the profile's declared MTP contract,
+// including recognized but disabled architectures. Qwen35 requires its first
+// MTP projection tensor; hasTensor searches shards without loading weights.
+func ResolveArtifactArchitecture(metadata map[string]string, hasTensor func(string) (bool, error)) (modelprofile.MTPArchitecture, error) {
 	architecture := MetadataArchitecture(metadata)
 	if architecture != modelprofile.MTPArchitectureQwen35OwnKV {
 		return architecture, nil

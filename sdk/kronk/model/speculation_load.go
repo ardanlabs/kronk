@@ -18,9 +18,7 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 		return nil, nil
 
 	case internalspec.SourceDSpark:
-		if !plan.Active() {
-			return nil, nil
-		}
+		return loadDSpark(ctx, log, cfg, targetCtx, targetModel, targetCtxParams, plan)
 
 	case speculationSourceClassic:
 		d, err := loadDraftModel(ctx, log, cfg, targetModel, targetCtxParams)

@@ -45,6 +45,15 @@ func (*Controller) Mode() speculation.Mode { return speculation.ModeClassic }
 func (*Controller) Enabled() bool          { return true }
 func (*Controller) BeginBatch()            {}
 
+// StartRequest retains classic prompt-cache state between requests.
+func (*Controller) StartRequest(int) error { return nil }
+
+// AfterPrefill leaves classic prompt replay to Prepare's own draft prefill.
+func (*Controller) AfterPrefill(int, speculation.Prefill) error { return nil }
+
+// DisableReason reports no request-local fallback for classic speculation.
+func (*Controller) DisableReason(int) string { return "" }
+
 func (c *Controller) Prepare() {
 	for slot := range c.host.SlotCount() {
 		if !c.host.SlotActive(slot) || !c.host.SlotNeedsDraftPrefill(slot) {

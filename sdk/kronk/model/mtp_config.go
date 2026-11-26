@@ -85,7 +85,7 @@ func modelFilesMTPArchitecture(modelFiles []string) (modelprofile.MTPArchitectur
 		return modelprofile.MTPArchitectureNone, err
 	}
 
-	return mtpengine.DetectArchitecture(metadata, func(head string) (bool, error) {
+	return mtpengine.ResolveArtifactArchitecture(metadata, func(head string) (bool, error) {
 		for i, file := range modelFiles {
 			if i > 0 {
 				data, err = gguf.ReadHeaderBytes(file)

@@ -13,8 +13,10 @@ import (
 // and caps a positive override at the trained proposal limit. Native tensor and
 // vocabulary validation remains with the resource loader.
 func ProposalLimit(target, draft map[string]string, requested int) (int, error) {
-	if target["general.architecture"] != "inkling2_loop" || draft["general.architecture"] != "dflash" {
-		return 0, fmt.Errorf("unsupported target/DSpark architectures %q/%q; only Inkling2 loop with a Markov DFlash companion is qualified", target["general.architecture"], draft["general.architecture"])
+	profile := arch.Resolve(target)
+	draftProfile := arch.Resolve(draft)
+	if profile.Architecture != "inkling2_loop" || draftProfile.Architecture != "dflash" {
+		return 0, fmt.Errorf("unsupported target/DSpark architectures %q/%q; only Inkling2 loop with a Markov DFlash companion is qualified", profile.Architecture, draftProfile.Architecture)
 	}
 	for key, want := range map[string]string{
 		"dflash.sample_from_anchor":  "false",
@@ -28,7 +30,6 @@ func ProposalLimit(target, draft map[string]string, requested int) (int, error) 
 	if causal := draft["dflash.attention.causal"]; causal != "" && causal != "false" {
 		return 0, fmt.Errorf("DSpark requires noncausal attention, got %q", causal)
 	}
-	profile := arch.Resolve(target)
 	if err := profile.ValidateForAnalysis(); err != nil {
 		return 0, fmt.Errorf("DSpark target profile: %w", err)
 	}

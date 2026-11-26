@@ -100,6 +100,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		e.finishSlot(s, err)
 		return
 	}
+	if err := e.speculation.StartRequest(s.id); err != nil {
+		e.finishSlot(s, fmt.Errorf("start-slot: reset draft sequence: %w", err))
+		return
+	}
 
 	// Token-v2 planning already computed the complete prompt size. Reject an
 	// oversized prompt before restoring or extending its cached KV state.
@@ -492,7 +496,7 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 				}
 				// MTP: the prior imc-restore (or a previous decode in
 				// this slot) populated the draft seq KV at positions
-				// [0..N). The forthcoming decodeTokensIntoCacheMTP
+				// [0..N). The forthcoming prefill handoff
 				// rewrites draft positions starting at 0; without
 				// clearing the draft seq first, the mirror decode
 				// collides with the surviving positions and fails
@@ -1020,7 +1024,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 				"draft_n_past", s.draftNPast)
 		}
 	}
-	if e.model.draft != nil && !e.model.draft.mtp() && !draftSlotHasMedia {
+	if _, classic := e.model.draft.(*classicDrafter); classic && !draftSlotHasMedia {
 		draft := e.model.draft.core()
 		var needed int
 		var cachedLen int

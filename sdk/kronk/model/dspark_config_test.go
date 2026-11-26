@@ -3,12 +3,33 @@ package model
 import (
 	"maps"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
+	dsparkengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/dspark"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+func TestDSparkFeatureSequenceMapping(t *testing.T) {
+	entries := []extendedBatchEntry{
+		{hasToken: true, sequenceID: 1, positionCount: 1, positions: [4]llama.Pos{12}},
+		{hasToken: true, sequenceID: 0, positionCount: 1, positions: [4]llama.Pos{3}},
+		{hasToken: true, sequenceID: 1, positionCount: 1, positions: [4]llama.Pos{13}},
+		{hasToken: true, sequenceID: 2, extraSequenceIDs: []llama.SeqId{0}, positionCount: 1, positions: [4]llama.Pos{4}},
+	}
+	rows, err := dsparkFeatureRows(entries, 0)
+	want := []dsparkengine.FeatureRow{{Row: 1, Sequence: 0, Position: 3}, {Row: 3, Sequence: 0, Position: 4}}
+	if err != nil || !reflect.DeepEqual(rows, want) {
+		t.Fatalf("mapped rows: got %v, %v, want %v", rows, err, want)
+	}
+	entries[1].hasToken = false
+	if _, err := dsparkFeatureRows(entries, 0); err == nil {
+		t.Fatal("accepted a non-text row for DSpark")
+	}
+}
 
 func TestDSparkSelectionCompatibility(t *testing.T) {
 	targetMetadata := map[string]any{
@@ -25,7 +46,10 @@ func TestDSparkSelectionCompatibility(t *testing.T) {
 	}
 	draftMetadata := map[string]any{
 		"general.architecture": "dflash", "dflash.embedding_length": uint32(2304),
-		"dflash.block_size": uint32(8), "dflash.target_layers": "[5 23 41 48]",
+		"dflash.block_count": uint32(3), "dflash.attention.head_count": uint32(24),
+		"dflash.attention.head_count_kv": uint32(8), "dflash.attention.key_length": uint32(128),
+		"dflash.attention.value_length": uint32(128),
+		"dflash.block_size":             uint32(8), "dflash.target_layers": "[5 23 41 48]",
 		"dflash.sample_from_anchor": "false", "dflash.has_markov_context": "true",
 		"dflash.has_confidence_head": "false",
 		"tokenizer.ggml.model":       "bpe", "tokenizer.ggml.tokens": "[alpha beta gamma]",
@@ -84,9 +108,21 @@ func TestDSparkSelectionCompatibility(t *testing.T) {
 				t.Errorf("NDraft = %d, want %d", plan.NDraft, tt.wantNDraft)
 			}
 			if plan.Source == internalspec.SourceDSpark {
-				draft, err := selectAndLoadDraft(t.Context(), nil, cfg, 0, 0, llama.ContextParams{}, plan)
-				if err != nil || draft != nil {
-					t.Fatalf("inactive DSpark loaded a drafter: %v, %v", draft, err)
+				// Selection is valid but resource loading needs real target
+				// handles. Proposal execution remains unavailable.
+				if plan.Available {
+					t.Fatal("unfinished DSpark execution was enabled")
+				}
+			}
+			for _, mode := range []SpeculationMode{SpeculationAuto, SpeculationDisabled, SpeculationMTP, SpeculationDSpark, SpeculationClassic} {
+				cfg.Speculation = mode
+				memory, err := CompanionMemory(cfg, vram.Config{ContextWindow: 128, Slots: 2, NBatch: 17, NUBatch: 7, BytesPerElement: 2})
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantMemory := mode == SpeculationAuto && tt.wantErr == ""
+				if (memory.UnifiedFootprint() > 0) != wantMemory {
+					t.Errorf("%s DSpark budget: got %d, want allocated=%t", mode, memory.UnifiedFootprint(), wantMemory)
 				}
 			}
 			cfg.Speculation = SpeculationDSpark

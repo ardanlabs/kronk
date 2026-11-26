@@ -71,7 +71,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		draftAcceptedTokens := s.specAcceptedTotal
 		draftCoveredTokens := s.specCoveredTotal
 		targetRollbacks := s.specTargetRollbacks
-		disableReason := s.mtp.DisableReason
+		disableReason := e.speculation.DisableReason(s.id)
 
 		s.span.End()
 		e.freeSlotResources(s)
@@ -260,7 +260,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
 		DraftTokens:         s.specDraftedTotal,
 		DraftAcceptedTokens: s.specAcceptedTotal,
-		DraftDisableReason:  s.mtp.DisableReason,
+		DraftDisableReason:  e.speculation.DisableReason(s.id),
 	}
 	if usage.DraftTokens > 0 {
 		usage.DraftAcceptanceRate = float64(usage.DraftAcceptedTokens) / float64(usage.DraftTokens)

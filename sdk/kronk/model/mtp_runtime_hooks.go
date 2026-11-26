@@ -4,11 +4,36 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+// MTPDisableReason exposes the selected request's MTP fallback status.
+func (e *batchEngine) MTPDisableReason(slotID int) string {
+	return e.slots[slotID].mtp.DisableReason
+}
+
+// MTPPrefillInput borrows the completed target rows under the decode lock.
+// MTP owns synchronization policy; the engine preserves media positions and
+// supplies either copied hidden values or a device row view.
+func (e *batchEngine) MTPPrefillInput(slotID int, prefill speculation.Prefill) (mtpengine.SyncInput, error) {
+	s := e.slots[slotID]
+	if s.mtp.Disabled || prefill.Count == 0 {
+		return mtpengine.SyncInput{}, nil
+	}
+	batch := e.decodedPrefill
+	resources := mtpResources(e.model.draft)
+	hidden := resources.TargetHidden(batch.len())
+	start, end := int(prefill.Start), int(prefill.Start+prefill.Count)
+	if hidden != nil {
+		hidden = hidden[start*resources.EmbeddingSize() : end*resources.EmbeddingSize()]
+	} else if !resources.DeviceRows() {
+		return mtpengine.SyncInput{}, fmt.Errorf("target pre-norm rows unavailable for prefill [%d..%d)", start, end)
+	}
+	return e.mtpSyncInput(s, batch.entries[start:end], hidden, prefill.NextPosition, start)
+}
 
 // mtpSyncInput is the common live-prefill/verification and cache-replay handoff.
 // It borrows existing batch entries rather than rebuilding token-only rows.
@@ -101,41 +126,6 @@ func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRow
 	return input, nil
 }
 
-func (e *batchEngine) syncMTPRows(s *slot, rows []extendedBatchEntry, hiddenRows []float32, nextPosition llama.Pos, deviceRowStart int) error {
-	input, err := e.mtpSyncInput(s, rows, hiddenRows, nextPosition, deviceRowStart)
-	if err != nil {
-		return err
-	}
-	result, err := mtpengine.Synchronize(input)
-	if err != nil {
-		return err
-	}
-	s.mtp.PendingHidden = result.PendingHidden
-	s.draftNPast = result.Position
-	return nil
-}
-
-// syncMTPDecodedRows captures and consumes target state before another target
-// decode can replace it. The caller holds decodeMu. A failed draft handoff
-// falls back to target-only execution for this request, not other slots.
-func (e *batchEngine) syncMTPDecodedRows(s *slot, batch *extendedBatch, start int, nextPosition llama.Pos) error {
-	if e.model.draft == nil || !e.model.draft.mtp() || s.mtp.Disabled || batch.len() == start {
-		return nil
-	}
-	resources := mtpResources(e.model.draft)
-	nEmbd := resources.EmbeddingSize()
-	hidden := resources.TargetHidden(batch.len())
-	if hidden != nil {
-		hidden = hidden[start*nEmbd:]
-	}
-	err := e.syncMTPRows(s, batch.entries[start:], hidden, nextPosition, start)
-	if err == nil {
-		return nil
-	}
-	e.model.log(s.job.ctx, "speculative", "status", "mtp-sync-error", "slot", s.id, "err", err)
-	return e.disableMTPForRequestSpec(s.job.ctx, s, "sync-error", 0)
-}
-
 // resetMTPMediaPrefix pairs a full target media rebuild with an empty draft
 // prefix. The caller holds decodeMu; shared-KV memory is cleared only through
 // the target, never through its draft alias.
@@ -196,112 +186,6 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 			return nextToken, nextHidden, true, nil
 		},
 	}, nil
-}
-
-func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tokens []llama.Token, startPos int) error {
-	start := time.Now()
-
-	nBatch := int(e.model.ctxParams.NBatch)
-	if nBatch <= 0 {
-		nBatch = e.model.cfg.EffectiveNBatch()
-	}
-
-	nTokens := len(tokens)
-	if nTokens == 0 {
-		return nil
-	}
-
-	e.model.log(ctx, "cache", "status", "decoding tokens into cache (mtp-mirror)",
-		"seq", s.seqID, "tokens", nTokens, "start_pos", startPos, "nbatch", nBatch)
-
-	batch, err := newExtendedBatchCapacity(e.model.lctx, min(nBatch, nTokens))
-	if err != nil {
-		return fmt.Errorf("imc-mtp: create target replay batch: %w", err)
-	}
-	defer batch.free()
-
-	seqIDs := []llama.SeqId{s.seqID}
-
-	decodeWaitStart := time.Now()
-	e.model.decodeMu.Lock()
-	defer e.model.decodeMu.Unlock()
-	decodeWaitElapsed := time.Since(decodeWaitStart)
-
-	var targetDecodeElapsed time.Duration
-	var mtpSyncElapsed time.Duration
-	var chunks int
-
-	err = decodeMTPMirrorChunks(nTokens, nBatch, func(i, end int) error {
-		batch.clear()
-		for j := i; j < end; j++ {
-			pos := llama.Pos(startPos + j)
-			if _, err := batch.addToken(tokens[j], pos, seqIDs, extendedBatchOutputNone); err != nil {
-				return fmt.Errorf("imc-mtp: add target token at pos %d: %w", pos, err)
-			}
-		}
-
-		targetDecodeStart := time.Now()
-		ret, err := batch.process(llama.ProcessTypeDecode)
-		if err != nil || ret != 0 {
-			return fmt.Errorf("imc-mtp: target decode at pos %d: %w", startPos+i, decodeError(ret, err))
-		}
-		llama.Synchronize(e.model.lctx)
-		targetDecodeElapsed += time.Since(targetDecodeStart)
-		return nil
-	}, func(i, end int) error {
-
-		mtpSyncStart := time.Now()
-		resources := mtpResources(e.model.draft)
-		hiddenRows := resources.TargetHidden(end - i)
-		if !resources.DeviceRows() && hiddenRows == nil {
-			return fmt.Errorf("imc-mtp: target pre-norm rows unavailable at pos %d", startPos+i)
-		}
-		if err := e.syncMTPRows(s, batch.entries, hiddenRows, llama.Pos(startPos+end), 0); err != nil {
-			return fmt.Errorf("imc-mtp: sync at pos %d: %w", startPos+i, err)
-		}
-		mtpSyncElapsed += time.Since(mtpSyncStart)
-		chunks++
-		return nil
-	}, func(syncErr error) error {
-		e.model.log(ctx, "cache", "status", "mtp-mirror-disabled", "slot", s.id, "seq", s.seqID, "err", syncErr)
-		if err := e.disableMTPForRequestSpec(ctx, s, "sync-error", 0); err != nil {
-			return fmt.Errorf("disabling MTP after cache sync failure: %w", errors.Join(syncErr, err))
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	elapsed := time.Since(start)
-	e.model.log(ctx, "cache", "status", "finished (decoding tokens into cache (mtp-mirror))",
-		"seq", s.seqID, "tokens", nTokens, "chunks", chunks, "nbatch", nBatch,
-		"target_decode_elapsed", fmtDur(targetDecodeElapsed),
-		"mtp_sync_elapsed", fmtDur(mtpSyncElapsed),
-		"decode_wait_elapsed", fmtDur(decodeWaitElapsed),
-		"elapsed", fmtDur(elapsed))
-
-	return nil
-}
-
-func decodeMTPMirrorChunks(tokenCount, chunkSize int, decodeTarget, syncMTP func(start, end int) error, disableMTP func(error) error) error {
-	mtpEnabled := true
-	for start := 0; start < tokenCount; start += chunkSize {
-		end := min(start+chunkSize, tokenCount)
-		if err := decodeTarget(start, end); err != nil {
-			return err
-		}
-		if !mtpEnabled {
-			continue
-		}
-		if err := syncMTP(start, end); err != nil {
-			if disableErr := disableMTP(err); disableErr != nil {
-				return disableErr
-			}
-			mtpEnabled = false
-		}
-	}
-	return nil
 }
 
 func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {

@@ -49,6 +49,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">AddParams adds the values from the Params struct into the provided D map. Only non-zero values are added.</p>
             </div>
 
+            <div className="doc-section" id="func-companionmemory">
+              <h4>CompanionMemory</h4>
+              <pre className="code-block">
+                <code>func CompanionMemory(cfg Config, target vram.Config) (vram.Result, error)</code>
+              </pre>
+              <p className="doc-description">CompanionMemory estimates independently shaped companion allocations in addition to target-context accounting. Currently this covers DSpark's own context and feature storage; target-shaped MTP contexts are accounted through SpeculativeContextCount. Disabled or unselected companions contribute nothing.</p>
+            </div>
+
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
@@ -3326,6 +3334,7 @@ export default function DocsSDKModel() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
+                <li><a href="#func-companionmemory">CompanionMemory</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>

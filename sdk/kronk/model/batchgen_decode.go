@@ -62,7 +62,7 @@ func (e *batchEngine) decodeTextIsolated(s *slot, tokens []llama.Token) error {
 	ret, err := batch.process(llama.ProcessTypeDecode)
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
-		err = e.syncMTPDecodedRows(s, batch, 0, s.nPast+llama.Pos(len(tokens)))
+		err = e.afterDraftPrefill(s, batch, 0, s.nPast+llama.Pos(len(tokens)))
 	}
 	e.model.decodeMu.Unlock()
 
@@ -151,7 +151,7 @@ func (e *batchEngine) decodeMediaEmbeddings(s *slot, embd []float32, nEmbd, nTok
 			nextPosition = s.nPast + llama.Pos(end)
 		}
 		// M-RoPE's logical end is authoritative, as in the IMC decoder.
-		if err := e.syncMTPDecodedRows(s, batch, 0, nextPosition); err != nil {
+		if err := e.afterDraftPrefill(s, batch, 0, nextPosition); err != nil {
 			return err
 		}
 	}

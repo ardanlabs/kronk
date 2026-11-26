@@ -5,6 +5,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
+	dsparkengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/dspark"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -12,17 +13,30 @@ import (
 
 func newSpeculationController(e *batchEngine) speculation.Controller {
 	plan := e.model.cfg.speculationPlan
-	if !plan.Active() {
-		return speculation.NewDisabled(e)
-	}
-
 	switch plan.Source {
 	case speculationSourceClassic:
-		return classicengine.New(e)
+		if plan.Active() {
+			return classicengine.New(e)
+		}
 	case speculationSourceMTP:
-		return mtp.New(e)
+		if plan.Active() {
+			return mtp.New(e)
+		}
+	case speculation.SourceDSpark:
+		if e.model.draft != nil {
+			return dsparkengine.New(e)
+		}
 	}
 	return speculation.NewDisabled(e)
+}
+
+func (e *batchEngine) afterDraftPrefill(s *slot, batch *extendedBatch, start int, nextPosition llama.Pos) error {
+	e.decodedPrefill = batch
+	defer func() { e.decodedPrefill = nil }()
+	count := int32(batch.len() - start)
+	return e.speculation.AfterPrefill(s.id, speculation.Prefill{
+		Start: int32(start), Count: count, NextPosition: nextPosition,
+	})
 }
 
 func (e *batchEngine) SlotCount() int {

@@ -273,5 +273,9 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		}
 	}
 
+	if err := configureDSpark(&input, metadata, tensors); err != nil {
+		return Result{}, fmt.Errorf("build-from-metadata: %w", err)
+	}
+
 	return Calculate(input), nil
 }

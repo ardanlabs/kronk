@@ -104,6 +104,15 @@ type TargetRange struct {
 	BasePos llama.Pos
 }
 
+// Prefill identifies a completed contribution in the borrowed target batch.
+// NextPosition is the logical continuation position, which need not equal the
+// starting position plus Count for media inputs.
+type Prefill struct {
+	Start        int32
+	Count        int32
+	NextPosition llama.Pos
+}
+
 // Generation contains candidates proposed for one target verification round.
 type Generation struct {
 	Candidates []llama.Token
@@ -118,9 +127,14 @@ type Host interface {
 }
 
 // Controller owns the speculative lifecycle around each target decode.
+// AfterPrefill runs under the host's decode lock and must consume borrowed
+// target outputs before returning. It must not process or emit target tokens.
 type Controller interface {
 	Mode() Mode
 	Enabled() bool
+	StartRequest(slot int) error
+	AfterPrefill(slot int, prefill Prefill) error
+	DisableReason(slot int) string
 	BeginBatch()
 	Prepare()
 	PlanGeneration(slot int) (Generation, error)

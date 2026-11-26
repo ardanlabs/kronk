@@ -1756,6 +1756,13 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		return int64(mi.Size), 0, err.Error()
 	}
 
+	companion, err := CompanionMemory(cfg, vramCfg)
+	if err != nil {
+		return int64(mi.Size), 0, err.Error()
+	}
+	result.TotalVRAM += companion.TotalVRAM
+	result.SlotMemory += companion.SlotMemory
+
 	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] n_swa[%d] swa_full[%t] swa_window_metadata[%d] swa_layers[%d] recurrent_layers[%d] recurrent_state_copies[%d] nextn_layers[%d]",
 		mi.profile.Architecture,
 		result.Input.BlockCount, result.Input.HeadCountKV,

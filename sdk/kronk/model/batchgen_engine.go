@@ -46,6 +46,7 @@ type batchEngine struct {
 	mediaNext           int
 	diagnostics         atomic.Pointer[BatchEngineSnapshot]
 	speculation         speculation.Controller
+	decodedPrefill      *extendedBatch    // Borrowed only during AfterPrefill, under decodeMu.
 	specTargetRollbacks map[string]uint64 // Successful target recoveries over this engine's lifetime
 
 	// Diagnostics below are owned by processLoop and copied into diagnostics
@@ -588,7 +589,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		if stagedMedia != nil && stagedMedia.slot.active {
 			// Media is the final contribution in the tray. Consume its dense
 			// target states while the projector output and batch rows are valid.
-			err = e.syncMTPDecodedRows(stagedMedia.slot, e.batch, stagedMedia.rowStart, stagedMedia.nextPast)
+			err = e.afterDraftPrefill(stagedMedia.slot, e.batch, stagedMedia.rowStart, stagedMedia.nextPast)
 		}
 	}
 	for i, released := range e.batchReleased {

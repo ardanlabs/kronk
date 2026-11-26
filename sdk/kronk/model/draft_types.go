@@ -9,6 +9,7 @@ var (
 	draftMTPQwen         = draftKind{value: 1} // Embedded own-KV MTP head.
 	draftMTPQwenSeparate = draftKind{value: 2} // Separate-file own-KV MTP head.
 	draftMTPGemma4       = draftKind{value: 3} // Separate-file shared-KV assistant.
+	draftDSpark          = draftKind{value: 4} // Independent Markov-DFlash sidecar.
 )
 
 func (dk draftKind) String() string {
@@ -21,6 +22,8 @@ func (dk draftKind) String() string {
 		return "mtp-qwen-separate"
 	case draftMTPGemma4:
 		return "mtp-gemma4-shared"
+	case draftDSpark:
+		return "dspark"
 	default:
 		return "unknown"
 	}

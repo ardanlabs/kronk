@@ -8,6 +8,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/dspark"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -140,6 +141,87 @@ func TestMTPControllerDiscardsDraftWhenDecodeDisablesMTP(t *testing.T) {
 	}
 }
 
+func TestControllerPrefillContract(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		newController func(*fakeHost) speculation.Controller
+		wantReason    string
+	}{
+		{"disabled", func(h *fakeHost) speculation.Controller { return speculation.NewDisabled(h) }, ""},
+		{"classic", func(h *fakeHost) speculation.Controller { return classic.New(h) }, ""},
+		{"mtp", func(h *fakeHost) speculation.Controller { return mtp.New(h) }, ""},
+		{"dspark", func(h *fakeHost) speculation.Controller { return dspark.New(h) }, "dspark-runtime-unavailable"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			host := fakeHost{active: []bool{true}}
+			controller := tt.newController(&host)
+			for range 2 {
+				if err := controller.StartRequest(0); err != nil {
+					t.Fatal(err)
+				}
+				if err := controller.AfterPrefill(0, speculation.Prefill{Start: 3, Count: 2, NextPosition: 17}); err != nil {
+					t.Fatal(err)
+				}
+				if got := controller.DisableReason(0); got != tt.wantReason {
+					t.Errorf("DisableReason: got %q, want %q", got, tt.wantReason)
+				}
+			}
+			if len(host.events) != 0 {
+				t.Errorf("prefill emitted target output or started generation: %v", host.events)
+			}
+		})
+	}
+}
+
+func TestMTPPrefillFallback(t *testing.T) {
+	for _, tt := range []struct {
+		name                      string
+		decodeFails, cleanupFails bool
+	}{
+		{"input failure", false, false},
+		{"draft decode failure", true, false},
+		{"input and cleanup failure", false, true},
+		{"draft decode and cleanup failure", true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			syncErr, cleanupErr := errors.New("sync"), errors.New("cleanup")
+			host := fakeHost{active: []bool{true, true}, syncErr: map[int]error{0: syncErr}}
+			if tt.decodeFails {
+				delete(host.syncErr, 0)
+				host.prefillInput = map[int]mtp.SyncInput{0: {
+					RowCount: 1, HiddenRows: []float32{11, 13}, EmbeddingSize: 2, ChunkSize: 1,
+					DecodeOwnChunk: func(int, int, []float32) error { return syncErr },
+				}}
+			}
+			if tt.cleanupFails {
+				host.disableErr = cleanupErr
+			}
+			controller := mtp.New(&host)
+			err := controller.AfterPrefill(0, speculation.Prefill{Count: 2})
+			if tt.cleanupFails && !errors.Is(err, cleanupErr) || !tt.cleanupFails && err != nil {
+				t.Fatalf("AfterPrefill: got %v, cleanup-fails=%t", err, tt.cleanupFails)
+			}
+			if tt.cleanupFails && !errors.Is(err, syncErr) {
+				t.Errorf("cleanup failure lost sync cause: %v", err)
+			}
+			if got := controller.DisableReason(0); got != "sync-error" {
+				t.Errorf("failed request reason: got %q, want sync-error", got)
+			}
+			if err := controller.AfterPrefill(1, speculation.Prefill{Count: 3}); err != nil {
+				t.Fatal(err)
+			}
+			if got := controller.DisableReason(1); got != "" {
+				t.Errorf("unaffected request reason: got %q, want empty", got)
+			}
+			if !tt.cleanupFails {
+				if err := controller.AfterPrefill(0, speculation.Prefill{Count: 1}); err != nil {
+					t.Fatalf("target-only continuation: %v", err)
+				}
+			}
+		})
+	}
+}
+
 type fakeHost struct {
 	active             []bool
 	needsPrefill       []bool
@@ -149,7 +231,10 @@ type fakeHost struct {
 	candidates         map[int][]llama.Token
 	disableDuringDraft map[int]bool
 	prefillErr         map[int]error
+	prefillInput       map[int]mtp.SyncInput
 	syncErr            map[int]error
+	disabled           map[int]string
+	disableErr         error
 	mtpCommits         []int
 	events             []string
 }
@@ -240,6 +325,23 @@ func (fh *fakeHost) MTPSyncInput(slot int, _ int) (mtp.SyncInput, error) {
 
 func (fh *fakeHost) CommitMTPSync(int, mtp.SyncResult) {}
 
+func (*fakeHost) ResetDSparkSequence(int) error { return nil }
+
+func (*fakeHost) WithDSparkTarget(consume func(dspark.SyncInput) []dspark.SyncResult) {
+	consume(dspark.SyncInput{})
+}
+
+func (fh *fakeHost) MTPDisableReason(slot int) string {
+	return fh.disabled[slot]
+}
+
+func (fh *fakeHost) MTPPrefillInput(slot int, _ speculation.Prefill) (mtp.SyncInput, error) {
+	if fh.disabled[slot] != "" {
+		return mtp.SyncInput{}, nil
+	}
+	return fh.prefillInput[slot], fh.syncErr[slot]
+}
+
 func (fh *fakeHost) MTPVerifyInput(slot int, _ []byte) (mtp.VerifyInput, error) {
 	return mtp.VerifyInput{
 		Candidates: fh.candidates[slot],
@@ -258,9 +360,13 @@ func (fh *fakeHost) MTPFinalizePlan(int) (mtp.FinalizePlan, bool) {
 
 func (fh *fakeHost) RollbackMTPTarget(int, mtp.FinalizePlan) (bool, error) { return false, nil }
 func (fh *fakeHost) RollbackMTPDraft(int, mtp.FinalizePlan) error          { return nil }
-func (fh *fakeHost) DisableMTP(slot int, _ string, _ int) error {
+func (fh *fakeHost) DisableMTP(slot int, reason string, _ int) error {
 	fh.event("disable", slot)
-	return nil
+	if fh.disabled == nil {
+		fh.disabled = make(map[int]string)
+	}
+	fh.disabled[slot] = reason
+	return fh.disableErr
 }
 func (fh *fakeHost) CompleteMTPFinalize(slot int, _ []byte, _ mtp.FinalizePlan, _ bool) {
 	fh.event("finalize", slot)

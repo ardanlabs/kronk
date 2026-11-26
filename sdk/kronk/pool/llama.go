@@ -306,6 +306,12 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 		}
 	}
 
+	companion, err := model.CompanionMemory(cfg, targetCfg)
+	if err != nil {
+		return fmt.Errorf("companion memory: %w", err)
+	}
+	l.addResult(plan, companion, cfg.NGpuLayers() != -1, cfg.Devices, cfg.TensorSplit, cfg.MainGPU())
+
 	if cfg.PtrDraftModel == nil || !cfg.PtrDraftModel.IsSeparate() || cfg.SpeculationMode() == model.SpeculationDisabled {
 		return nil
 	}
