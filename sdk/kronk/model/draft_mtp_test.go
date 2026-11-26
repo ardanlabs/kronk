@@ -40,9 +40,12 @@ func TestEmbeddedMTPContextParamsCapsOutputs(t *testing.T) {
 		YarnOrigCtx:        32_768,
 	}
 
-	got := embeddedMTPContextParams(llama.ContextParams{}, target)
+	got := embeddedMTPContextParams(llama.ContextParams{NRsSeq: 7}, target)
 	if got.CtxType != llama.ContextTypeMTP {
 		t.Errorf("CtxType = %d, want %d", got.CtxType, llama.ContextTypeMTP)
+	}
+	if got.NRsSeq != 0 {
+		t.Errorf("NRsSeq = %d, want 0 for the MTP draft context", got.NRsSeq)
 	}
 	if got.NOutputsMax != target.NSeqMax {
 		t.Errorf("NOutputsMax = %d, want %d", got.NOutputsMax, target.NSeqMax)

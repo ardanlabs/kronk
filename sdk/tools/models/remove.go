@@ -56,21 +56,24 @@ func (m *Models) Remove(mp Path, log applog.Logger) (err error) {
 		}
 	}
 
-	if mp.MTPFile != "" {
-		if err := os.Remove(mp.MTPFile); err != nil {
-			return fmt.Errorf("remove: unable to remove mtp: %q", mp.MTPFile)
+	for i, draftFile := range []string{mp.MTPFile, mp.DraftFile} {
+		if draftFile == "" || (i == 1 && draftFile == mp.MTPFile) {
+			continue
+		}
+		if err := os.Remove(draftFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove: unable to remove draft: %q", draftFile)
 		}
 
-		dir := filepath.Dir(mp.MTPFile)
-		base := filepath.Base(mp.MTPFile)
+		dir := filepath.Dir(draftFile)
+		base := filepath.Base(draftFile)
 		shaFile := filepath.Join(dir, "sha", base)
 
 		if err := os.Remove(shaFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove: unable to remove model: %q", shaFile)
 		}
 
-		if err := removeArtifactVerification(mp.MTPFile); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove: unable to remove verified sentinel for %q: %w", mp.MTPFile, err)
+		if err := removeArtifactVerification(draftFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove: unable to remove verified sentinel for %q: %w", draftFile, err)
 		}
 	}
 

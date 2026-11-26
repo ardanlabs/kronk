@@ -124,7 +124,7 @@ func (f *fakeGetter) download(_ context.Context, src string, dest string, progre
 	return true, nil
 }
 
-func TestDownloadURLsWithProgress(t *testing.T) {
+func TestDownloadDraftURLsWithProgress(t *testing.T) {
 	modelURL := "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
 	body := []byte("model-body")
 	g := &fakeGetter{
@@ -141,11 +141,11 @@ func TestDownloadURLsWithProgress(t *testing.T) {
 		messages = append(messages, msg)
 	}
 	var got []DownloadProgress
-	_, err := m.DownloadURLsWithProgress(context.Background(), log, []string{modelURL}, "", "", func(progress DownloadProgress) {
+	_, err := m.DownloadDraftURLsWithProgress(context.Background(), log, []string{modelURL}, "", CatalogDraft{}, func(progress DownloadProgress) {
 		got = append(got, progress)
 	})
 	if err != nil {
-		t.Fatalf("DownloadURLsWithProgress: %v", err)
+		t.Fatalf("DownloadDraftURLsWithProgress: %v", err)
 	}
 
 	logs := strings.Join(messages, "\n")
@@ -200,11 +200,11 @@ func TestDownloadSourceForms(t *testing.T) {
 			withFakeGetter(t, g)
 			m := newTestModels(t)
 			r := NewResolver(m, filepath.Join(m.BasePath(), "catalog", "catalog.yaml"))
-			if err := r.Save(Catalog{Models: map[string]CatalogEntry{
+			if err := r.Save(Catalog{Version: catalogVersion, Models: map[string]CatalogEntry{
 				"test/model-Q8_0": {
 					Provider: "test", Family: "test-repo", Revision: "main",
 					Files:  []string{"weights/model-Q8_0.gguf"},
-					MMProj: "mmproj-model-Q8_0.gguf", MMProjOrig: "mmproj-F16.gguf", MTPChecked: true,
+					MMProj: "mmproj-model-Q8_0.gguf", MMProjOrig: "mmproj-F16.gguf", DraftChecked: true,
 				},
 			}}); err != nil {
 				t.Fatal(err)
@@ -569,7 +569,7 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
 	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
 		t.Fatalf("mkdir catalog: %v", err)
 	}
-	mustWriteFile(t, filepath.Join(catalogDir, "catalog.yaml"), `version: 2
+	mustWriteFile(t, filepath.Join(catalogDir, "catalog.yaml"), `version: 3
 models:
   unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
     provider: unsloth
@@ -579,10 +579,12 @@ models:
       - gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
     mmproj: mmproj-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
     mmproj_orig: mmproj-F16.gguf
-    mtp: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
-    mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
-    mtp_url: https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf
-    mtp_checked: true
+    draft:
+      method: mtp
+      file: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+      original: mtp-gemma-4-26B-A4B-it.gguf
+      url: https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf
+    draft_checked: true
 `)
 
 	canonical := "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"
@@ -636,7 +638,7 @@ models:
 	}
 
 	catalog := loadResolved(t, filepath.Join(catalogDir, "catalog.yaml"))
-	if got := catalog.Models[canonical].MTPURL; got != "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf" {
+	if got := catalog.Models[canonical].Draft.URL; got != "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf" {
 		t.Errorf("MTPURL = %q, want cross-repository companion URL preserved", got)
 	}
 }

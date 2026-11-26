@@ -3,6 +3,7 @@ package arch
 import (
 	"strings"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
@@ -27,6 +28,19 @@ func (KnownRecurrent) Claims(architecture string) bool {
 func (KnownRecurrent) Apply(_ Metadata, profile *modelprofile.Profile) error {
 	profile.MemorySemantics = modelprofile.MemoryRecurrent
 	return nil
+}
+
+// setRecurrentReplay records the native replay layout only for adapters whose
+// architectures enable it. Other recurrent architectures retain snapshot sizing.
+func setRecurrentReplay(a *gguf.AttentionFacts, pendingBytes int64) {
+	a.RecurrentStateBytesByLayer = make([]int64, len(a.RecurrentPattern))
+	a.RecurrentReplayBytesByLayer = make([]int64, len(a.RecurrentPattern))
+	for layer, recurrent := range a.RecurrentPattern {
+		if recurrent {
+			a.RecurrentStateBytesByLayer[layer] = a.RecurrentStateBytes
+			a.RecurrentReplayBytesByLayer[layer] = pendingBytes
+		}
+	}
 }
 
 var recurrentArchitecturePrefixes = []string{

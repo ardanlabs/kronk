@@ -115,6 +115,13 @@ func (m *Models) integrityModel(modelID string, mp Path) (IntegrityModel, error)
 		}
 		modelInfo.Artifacts = append(modelInfo.Artifacts, artifact)
 	}
+	if mp.DraftFile != "" && mp.DraftFile != mp.MTPFile {
+		artifact, err := integrityArtifact(mp.DraftFile, IntegrityRoleDraft)
+		if err != nil {
+			return IntegrityModel{}, fmt.Errorf("integrity: model %q: %w", modelID, err)
+		}
+		modelInfo.Artifacts = append(modelInfo.Artifacts, artifact)
+	}
 
 	for _, artifact := range modelInfo.Artifacts {
 		modelInfo.Status = aggregateIntegrityStatus(modelInfo.Status, artifact.Status)

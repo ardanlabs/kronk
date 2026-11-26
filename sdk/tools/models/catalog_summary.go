@@ -10,34 +10,51 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
-// CatalogFile is one downloadable artifact (model or projection).
+// CatalogFile is one downloadable model, projection, or draft artifact.
 type CatalogFile struct {
 	URL  string `json:"url"`
 	Size int64  `json:"size"`
 }
 
-// CatalogFiles groups the model files, a single projection (if any), and a
-// single MTP drafter companion (if any).
+// CatalogFiles groups model files and optional projection and draft artifacts.
+// MTP is a compatibility view of Draft only for the MTP method.
 type CatalogFiles struct {
 	Model []CatalogFile `json:"model"`
 	Proj  CatalogFile   `json:"proj"`
 	MTP   CatalogFile   `json:"mtp"`
+	Draft CatalogFile   `json:"draft"`
 }
 
 // CatalogCapabilities describes what the model can do, derived from GGUF
 // metadata, its identifier, and companion files.
 type CatalogCapabilities struct {
-	Endpoint  string `json:"endpoint"             yaml:"endpoint,omitempty"`
-	Images    bool   `json:"images"               yaml:"images,omitempty"`
-	Audio     bool   `json:"audio"                yaml:"audio,omitempty"`
-	Video     bool   `json:"video"                yaml:"video,omitempty"`
-	Streaming bool   `json:"streaming"            yaml:"streaming,omitempty"`
-	Reasoning bool   `json:"reasoning"            yaml:"reasoning,omitempty"`
-	Tooling   bool   `json:"tooling"              yaml:"tooling,omitempty"`
-	Embedding bool   `json:"embedding"            yaml:"embedding,omitempty"`
-	Rerank    bool   `json:"rerank"               yaml:"rerank,omitempty"`
-	Decision  bool   `json:"decision"             yaml:"decision,omitempty"`
-	MTP       bool   `json:"mtp"                  yaml:"mtp"`
+	Endpoint  string      `json:"endpoint"             yaml:"endpoint,omitempty"`
+	Images    bool        `json:"images"               yaml:"images,omitempty"`
+	Audio     bool        `json:"audio"                yaml:"audio,omitempty"`
+	Video     bool        `json:"video"                yaml:"video,omitempty"`
+	Streaming bool        `json:"streaming"            yaml:"streaming,omitempty"`
+	Reasoning bool        `json:"reasoning"            yaml:"reasoning,omitempty"`
+	Tooling   bool        `json:"tooling"              yaml:"tooling,omitempty"`
+	Embedding bool        `json:"embedding"            yaml:"embedding,omitempty"`
+	Rerank    bool        `json:"rerank"               yaml:"rerank,omitempty"`
+	Decision  bool        `json:"decision"             yaml:"decision,omitempty"`
+	Draft     DraftMethod `json:"draft,omitzero" yaml:"draft,omitempty"`
+	// MTP is the HTTP compatibility view of embedded or companion MTP.
+	MTP bool `json:"mtp"                  yaml:"-"`
+}
+
+// WithDraft includes a catalog-declared drafting method in the capabilities.
+// A companion method takes precedence over embedded MTP for Draft; MTP still
+// reports embedded MTP independently for existing HTTP clients.
+func (c CatalogCapabilities) WithDraft(method DraftMethod) CatalogCapabilities {
+	if !method.IsZero() {
+		c.Draft = method
+	}
+	if c.Draft.IsZero() && c.MTP {
+		c.Draft = DraftMethodMTP
+	}
+	c.MTP = c.MTP || c.Draft == DraftMethodMTP
+	return c
 }
 
 // CatalogSummary is the cheap per-entry payload. It only consults
@@ -55,6 +72,8 @@ type CatalogSummary struct {
 	TotalSizeBytes     int64               `json:"total_size_bytes"`
 	HasProjection      bool                `json:"has_projection"`
 	HasMTP             bool                `json:"has_mtp"`
+	Draft              CatalogDraft        `json:"draft,omitzero"`
+	HasDraft           bool                `json:"has_draft"`
 	MTPSource          MTPSource           `json:"mtp_source,omitzero"`
 	Downloaded         bool                `json:"downloaded"`
 	Validated          bool                `json:"validated"`
@@ -103,7 +122,13 @@ func (m *Models) IndexState() (downloaded, validated map[string]bool) {
 // NewSummary builds a CatalogSummary from a catalog entry plus the local
 // index state.
 func NewSummary(canonical string, entry CatalogEntry, downloaded, validated map[string]bool) CatalogSummary {
-	totalBytes := entry.MMProjSize + entry.MTPSize
+	// A companion-specific compatibility flag cannot describe another method.
+	if entry.MTPSource == MTPSourceCompanion && !entry.Draft.isMTP() {
+		entry.MTPSource = MTPSource{}
+		entry.Capabilities.MTP = false
+	}
+	entry.Capabilities = entry.Capabilities.WithDraft(entry.Draft.Method)
+	totalBytes := entry.MMProjSize + entry.Draft.Size
 	for _, n := range entry.FileSizes {
 		totalBytes += n
 	}
@@ -117,7 +142,9 @@ func NewSummary(canonical string, entry CatalogEntry, downloaded, validated map[
 		TotalSize:          FormatBytes(totalBytes),
 		TotalSizeBytes:     totalBytes,
 		HasProjection:      entry.MMProj != "",
-		HasMTP:             entry.MTP != "",
+		HasMTP:             entry.Draft.isMTP(),
+		Draft:              entry.Draft,
+		HasDraft:           entry.Draft.File != "",
 		MTPSource:          entry.MTPSource,
 		Downloaded:         downloaded[canonical],
 		Validated:          validated[canonical],
@@ -160,14 +187,17 @@ func NewFiles(entry CatalogEntry) CatalogFiles {
 		}
 	}
 
-	if entry.MTP != "" {
-		mtpURL := entry.MTPURL
-		if mtpURL == "" && entry.MTPOrig != "" {
-			mtpURL = hf.BuildURL(entry.Provider, entry.Family, entry.Revision, entry.MTPOrig)
+	if entry.Draft.File != "" {
+		draftURL := entry.Draft.URL
+		if draftURL == "" && entry.Draft.Original != "" {
+			draftURL = hf.BuildURL(entry.Provider, entry.Family, entry.Revision, entry.Draft.Original)
 		}
-		out.MTP = CatalogFile{
-			URL:  mtpURL,
-			Size: entry.MTPSize,
+		out.Draft = CatalogFile{
+			URL:  draftURL,
+			Size: entry.Draft.Size,
+		}
+		if entry.Draft.isMTP() {
+			out.MTP = out.Draft
 		}
 	}
 
@@ -274,7 +304,7 @@ func CapabilitiesForModel(metadata map[string]string, hasProjection bool, modelI
 
 	caps.MTP = profile.Speculation.NextNPredictLayers > 0
 
-	return caps
+	return caps.WithDraft(DraftMethod{})
 }
 
 // MTPSourceFor reports how a model supplies its MTP drafter. A companion

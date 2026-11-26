@@ -82,6 +82,16 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 	}
 
 	index := make(map[string]Path)
+	cat, err := NewResolver(m, filepath.Join(m.basePath, "catalog", "catalog.yaml")).Load()
+	if err != nil {
+		return fmt.Errorf("build-index: catalog: %w", err)
+	}
+	draftPaths := make(map[string]bool)
+	for _, entry := range cat.Models {
+		if entry.Draft.File != "" {
+			draftPaths[filepath.Join(m.modelsPath, entry.Provider, entry.Family, entry.Draft.File)] = true
+		}
+	}
 
 	for _, orgEntry := range entries {
 		if !orgEntry.IsDir() {
@@ -137,6 +147,9 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 				}
 
 				filePath := filepath.Join(m.modelsPath, org, modelFamily, fileEntry.Name())
+				if draftPaths[filePath] {
+					continue
+				}
 
 				if !dedicatedMTPRepo && modelIDCarriesRenameMarker(extractModelID(name)) {
 					pendingMTP = append(pendingMTP, filePath)
@@ -195,6 +208,20 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 
 				if mtpFile, exists := mtpFiles[modelID]; exists {
 					mp.MTPFile = mtpFile
+					mp.DraftFile = mtpFile
+				}
+				if entry, exists := cat.Models[indexKey]; exists && entry.Draft.File != "" {
+					mp.DraftFile = filepath.Join(m.modelsPath, org, modelFamily, entry.Draft.File)
+					mp.MTPFile = ""
+					if entry.Draft.isMTP() {
+						mp.MTPFile = mp.DraftFile
+					}
+					if _, err := os.Stat(mp.DraftFile); err != nil {
+						isValidated = false
+					}
+					if checkModel(mp.DraftFile, false) != nil {
+						isValidated = false
+					}
 				}
 
 				validated := isValidated
@@ -217,10 +244,13 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 						}
 					}
 
-					if mp.MTPFile != "" {
-						log(ctx, "running check ", "mtp", path.Base(mp.MTPFile))
-						if err := checkModel(mp.MTPFile, true); err != nil {
-							log(ctx, "running check ", "mtp", path.Base(mp.MTPFile), "ERROR", err)
+					if mp.DraftFile != "" {
+						log(ctx, "running check ", "draft", path.Base(mp.DraftFile))
+						if _, err := os.Stat(mp.DraftFile); err != nil {
+							validated = false
+						}
+						if err := checkModel(mp.DraftFile, true); err != nil {
+							log(ctx, "running check ", "draft", path.Base(mp.DraftFile), "ERROR", err)
 							validated = false
 						}
 					}

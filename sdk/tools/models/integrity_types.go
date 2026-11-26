@@ -79,6 +79,8 @@ var (
 	IntegrityRoleProjection = newIntegrityRole("projection")
 	// IntegrityRoleMTP identifies an MTP drafter artifact.
 	IntegrityRoleMTP = newIntegrityRole("mtp")
+	// IntegrityRoleDraft identifies a non-MTP speculative draft artifact.
+	IntegrityRoleDraft = newIntegrityRole("draft")
 )
 
 func newIntegrityRole(value string) IntegrityRole {

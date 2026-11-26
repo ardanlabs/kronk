@@ -3,6 +3,7 @@ package models
 import (
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,16 +77,14 @@ func extractQuantTag(modelID string) string {
 //   - mmproj: pick a sibling matching mmproj*F16*.gguf for the chosen
 //     model; preferred in this order: same directory + matching base id,
 //     same directory, any matching F16 mmproj, any F16 mmproj.
-//   - mtp: pick a co-located "mtp-<family>.gguf" drafter companion for the
-//     chosen model (see pickMTPCompanion). Skipped when the request is for
-//     a standalone MTP model (see mtpStandaloneContext).
+//   - draft: pick a matching MTP companion, or a same-directory DSpark
+//     companion when no MTP companion matches (see pickDraftCompanion).
 //
 // repo is the HuggingFace repo segment; it is used to decide whether a
 // leading "mtp-" sibling is a standalone model (dedicated *-MTP-GGUF repo)
 // or a companion of a co-resident main model.
-func selectFiles(siblings []string, repo, modelID string) (files []string, mmproj string, mtp string, ok bool) {
-	standalone := mtpStandaloneContext(repo, modelID)
-	gguf, proj, mtpc := classifySiblings(siblings, standalone)
+func selectFiles(siblings []string, repo, modelID string) (files []string, mmproj string, draft CatalogDraft, ok bool) {
+	gguf, proj, drafts := classifySiblings(siblings, repo, modelID)
 
 	target, matched := matchModel(gguf, modelID)
 	if !matched {
@@ -98,7 +97,7 @@ func selectFiles(siblings []string, repo, modelID string) (files []string, mmpro
 		}
 	}
 	if !matched {
-		return nil, "", "", false
+		return nil, "", CatalogDraft{}, false
 	}
 
 	files = collectSplitParts(gguf, target)
@@ -108,9 +107,9 @@ func selectFiles(siblings []string, repo, modelID string) (files []string, mmpro
 	sort.Strings(files)
 
 	mmproj = pickF16Mmproj(proj, target)
-	mtp = pickMTPCompanion(mtpc, target)
+	draft = pickDraftCompanion(drafts, repo, files)
 
-	return files, mmproj, mtp, true
+	return files, mmproj, draft, true
 }
 
 // mtpStandaloneContext reports whether an "mtp-" prefixed GGUF in repo
@@ -133,14 +132,14 @@ func mtpStandaloneContext(repo, modelID string) bool {
 // When multiple candidates pass the suffix filter (e.g. "Qwen-Q4_K_XL"
 // and "Qwen-UD-Q4_K_XL" both match tag "Q4_K_XL"), the UD variant wins.
 // Split (multi-file) models are expanded via collectSplitParts.
-func selectFilesByTag(siblings []string, repo, tag string) (files []string, mmproj string, mtp string, ok bool) {
+func selectFilesByTag(siblings []string, repo, tag string) (files []string, mmproj string, draft CatalogDraft, ok bool) {
 	if tag == "" {
-		return nil, "", "", false
+		return nil, "", CatalogDraft{}, false
 	}
 
 	// The "provider/repo:tag" form has no model id to inspect, so a
 	// standalone MTP request is detected from the repo shape alone.
-	gguf, proj, mtpc := classifySiblings(siblings, repoMatchesRenameRule(repo))
+	gguf, proj, drafts := classifySiblings(siblings, repo, "")
 
 	var candidates []string
 	for _, f := range gguf {
@@ -149,7 +148,7 @@ func selectFilesByTag(siblings []string, repo, tag string) (files []string, mmpr
 		}
 	}
 	if len(candidates) == 0 {
-		return nil, "", "", false
+		return nil, "", CatalogDraft{}, false
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -165,9 +164,9 @@ func selectFilesByTag(siblings []string, repo, tag string) (files []string, mmpr
 	sort.Strings(files)
 
 	mmproj = pickF16Mmproj(proj, target)
-	mtp = pickMTPCompanion(mtpc, target)
+	draft = pickDraftCompanion(drafts, repo, files)
 
-	return files, mmproj, mtp, true
+	return files, mmproj, draft, true
 }
 
 // fileMatchesTag reports whether siblingModelID(file) ends with "-<tag>"
@@ -199,13 +198,20 @@ func fileMatchesTag(file, tag string) bool {
 // sides so unrelated names containing "mmproj" inside another word do
 // not get misclassified.
 //
-// When mtpStandalone is false, leading "mtp-" GGUFs are split into the
-// mtp bucket so they are treated as drafter companions of a co-resident
-// main model rather than as model files. When mtpStandalone is true (a
-// dedicated *-MTP-GGUF repo, or an explicit "mtp-..." request) the mtp
-// files stay in the gguf bucket so they can be selected as the model.
-func classifySiblings(siblings []string, mtpStandalone bool) (gguf, proj, mtp []string) {
+// Leading "mtp-" and "dspark-" files are draft companions, not model
+// candidates, unless explicitly requested as standalone models. Dedicated
+// MTP repositories retain their existing standalone behavior. DSpark also
+// accepts the upstream .gguf_file extension, only as a companion artifact.
+func classifySiblings(siblings []string, repo, modelID string) (gguf, proj, drafts []string) {
+	mtpStandalone := mtpStandaloneContext(repo, modelID)
+	dsparkStandalone := strings.HasPrefix(strings.ToLower(modelID), "dspark-")
 	for _, s := range siblings {
+		dspark := strings.HasPrefix(strings.ToLower(path.Base(s)), "dspark-")
+		if dspark && !dsparkStandalone &&
+			(strings.HasSuffix(strings.ToLower(s), ".gguf") || strings.HasSuffix(strings.ToLower(s), ".gguf_file")) {
+			drafts = append(drafts, s)
+			continue
+		}
 		if !strings.HasSuffix(strings.ToLower(s), ".gguf") {
 			continue
 		}
@@ -216,14 +222,51 @@ func classifySiblings(siblings []string, mtpStandalone bool) (gguf, proj, mtp []
 		}
 
 		if !mtpStandalone && modelIDCarriesRenameMarker(siblingModelID(s)) {
-			mtp = append(mtp, s)
+			drafts = append(drafts, s)
 			continue
 		}
 
 		gguf = append(gguf, s)
 	}
 
-	return gguf, proj, mtp
+	return gguf, proj, drafts
+}
+
+// pickDraftCompanion preserves MTP selection, then looks for a DSpark
+// companion in the target's directory with the same family. Directory matching
+// prevents mixing mainline and vendor-specific drafter formats. Q8_0 is
+// preferred among DSpark variants; remaining ties use upstream path order.
+func pickDraftCompanion(drafts []string, repo string, files []string) CatalogDraft {
+	target := files[0]
+	if mtp := pickMTPCompanion(drafts, target); mtp != "" {
+		return mtpDraft(localDraftName(DraftMethodMTP, repo, mtp, files), mtp)
+	}
+
+	family := stripQuantSuffix(siblingModelID(target))
+	var matches []string
+	for _, file := range drafts {
+		id := siblingModelID(file)
+		if !strings.HasPrefix(strings.ToLower(id), "dspark-") || dirSlash(file) != dirSlash(target) {
+			continue
+		}
+		if strings.EqualFold(stripQuantSuffix(id[len("dspark-"):]), family) {
+			matches = append(matches, file)
+		}
+	}
+	if len(matches) == 0 {
+		return CatalogDraft{}
+	}
+	slices.Sort(matches)
+	chosen := matches[0]
+	for _, file := range matches {
+		if strings.EqualFold(extractQuantTag(siblingModelID(file)), "Q8_0") {
+			chosen = file
+			break
+		}
+	}
+	return CatalogDraft{
+		Method: DraftMethodDSpark, File: localDraftName(DraftMethodDSpark, repo, chosen, files), Original: chosen,
+	}
 }
 
 // pickMTPCompanion returns the best co-located MTP drafter sibling for the
@@ -373,10 +416,13 @@ func scoreCandidate(f string) int {
 }
 
 // siblingModelID returns the canonical model id for a sibling path:
-// the basename with its .gguf extension and any split suffix stripped.
+// the basename with its .gguf or .gguf_file extension and split suffix stripped.
 func siblingModelID(s string) string {
 	base := path.Base(s)
-	if strings.HasSuffix(strings.ToLower(base), ".gguf") {
+	switch {
+	case strings.HasSuffix(strings.ToLower(base), ".gguf_file"):
+		base = base[:len(base)-len(".gguf_file")]
+	case strings.HasSuffix(strings.ToLower(base), ".gguf"):
 		base = base[:len(base)-len(".gguf")]
 	}
 

@@ -76,6 +76,8 @@ func (KimiK3) Apply(metadata Metadata, profile *modelprofile.Profile) error {
 			return fmt.Errorf("invalid or missing KDA state dimensions")
 		}
 		a.RecurrentStateBytes = 4 * (3*(conv-1)*n*dim + dim*dim*n)
+		// Three convolution channels plus k, v, and two KDA gate rows.
+		setRecurrentReplay(a, 4*7*n*dim)
 	}
 	profile.MoE.HasSharedExperts = parseInt64(metadata, arch+".expert_shared_count") > 0
 	if arch != "kimi-k31" {

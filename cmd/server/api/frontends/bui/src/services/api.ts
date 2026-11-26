@@ -12,6 +12,7 @@ import type {
   TokenRequest,
   TokenResponse,
   PullResponse,
+  DraftMetadata,
   AsyncPullResponse,
   VersionResponse,
   ChatRequest,
@@ -261,16 +262,16 @@ class ApiService {
     onError: (error: string) => void,
     onComplete: () => void,
     downloadServer?: string,
-    mtpUrl?: string
+    draft?: DraftMetadata
   ): () => void {
     const controller = new AbortController();
 
-    const body: { model_url: string; proj_url?: string; mtp_url?: string; download_server?: string } = { model_url: modelUrl };
+    const body: { model_url: string; proj_url?: string; draft?: DraftMetadata; download_server?: string } = { model_url: modelUrl };
     if (projUrl) {
       body.proj_url = projUrl;
     }
-    if (mtpUrl) {
-      body.mtp_url = mtpUrl;
+    if (draft) {
+      body.draft = draft;
     }
     if (downloadServer) {
       body.download_server = downloadServer;

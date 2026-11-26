@@ -5,41 +5,41 @@ import "strings"
 // AttentionFacts contains attention-specific metadata extracted from
 // GGUF metadata.
 type AttentionFacts struct {
-	SlidingWindow       int64
-	SlidingWindowLayers int64
-	FullAttentionLayers int64
-	RecurrentLayers     int64
-	NextNPredictLayers  int64
-	SharedKVLayers      int64
-	SWAPattern          []bool
-	RecurrentPattern    []bool
-	HeadCountKV         []int64
-	FullHeadCountKV     int64
-	SWAHeadCountKV      int64
-	FullKeyLength       int64
-	FullValueLength     int64
-	SWAKeyLength        int64
-	SWAValueLength      int64
-	RecurrentStateBytes int64
-	IndexerKeyLength    int64 // Stored indexer key width, including raw and pooled keys.
-	IndexerCompression  int64 // Tokens per scored pool.
-	IndexerTopK         int64 // Selected token budget.
-	LogitSoftcapping    float64
-	// Compressed cache and index source arrays contain the resolved source
-	// for each block, or -1 for raw-only blocks. Raw caches remain independent.
-	CompressRatios       []int64
-	KVSources            []int64
-	IndexerSources       []int64
-	CandidateSourceLayer int64
-	CandidateTopKBlocks  int64
-	CandidateBlockSize   int64
-	HyperConnections     int64
-	QueryRank            int64
-	OutputRank           int64
-	OutputGroups         int64
-	IndexerHeads         int64
-	LayerEmbeddingLength int64 // Width of each gathered per-layer embedding row.
-	LayerEmbeddingRows   int64 // Total gathered per-layer embedding rows per token.
+	SlidingWindow               int64
+	SlidingWindowLayers         int64
+	FullAttentionLayers         int64
+	RecurrentLayers             int64
+	NextNPredictLayers          int64
+	SharedKVLayers              int64
+	SWAPattern                  []bool
+	RecurrentPattern            []bool
+	HeadCountKV                 []int64
+	FullHeadCountKV             int64
+	SWAHeadCountKV              int64
+	FullKeyLength               int64
+	FullValueLength             int64
+	SWAKeyLength                int64
+	SWAValueLength              int64
+	RecurrentStateBytes         int64
+	RecurrentStateBytesByLayer  []int64
+	RecurrentReplayBytesByLayer []int64
+	IndexerKeyLength            int64 // Stored indexer key width, including raw and pooled keys.
+	IndexerCompression          int64 // Tokens per scored pool.
+	IndexerTopK                 int64 // Selected token budget.
+	LogitSoftcapping            float64
+	CompressRatios              []int64
+	KVSources                   []int64
+	IndexerSources              []int64
+	CandidateSourceLayer        int64
+	CandidateTopKBlocks         int64
+	CandidateBlockSize          int64
+	HyperConnections            int64
+	QueryRank                   int64
+	OutputRank                  int64
+	OutputGroups                int64
+	IndexerHeads                int64
+	LayerEmbeddingLength        int64 // Width of each gathered per-layer embedding row.
+	LayerEmbeddingRows          int64 // Total gathered per-layer embedding rows per token.
 }
 
 // ParseAttentionFacts extracts attention-specific metadata for the given

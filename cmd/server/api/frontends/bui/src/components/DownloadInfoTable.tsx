@@ -1,4 +1,5 @@
 import type { DownloadMeta } from '../contexts/DownloadContext';
+import { labelWithTip } from './ParamTooltips';
 
 function urlBaseName(url: string): string {
   try {
@@ -57,11 +58,17 @@ export default function DownloadInfoTable({ meta, urls }: Props) {
             <td><a href={meta.proj_url} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(meta.proj_url)}</code></a></td>
           </tr>
         )}
-        {meta.mtp_url && (
-          <tr>
-            <th>MTP Drafter URL</th>
-            <td><a href={meta.mtp_url} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(meta.mtp_url)}</code></a></td>
-          </tr>
+        {meta.draft?.url && (
+          <>
+            <tr>
+              <th>{labelWithTip('Draft method', 'catalogDraftMethod')}</th>
+              <td>{meta.draft.method === 'dspark' ? 'DSpark' : meta.draft.method === 'mtp' ? 'MTP' : meta.draft.method === 'conventional' ? 'Conventional' : 'Not specified'}</td>
+            </tr>
+            <tr>
+              <th>{labelWithTip('Draft URL', 'catalogDraftURL')}</th>
+              <td><a href={meta.draft.url} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(meta.draft.url)}</code></a></td>
+            </tr>
+          </>
         )}
       </tbody>
     </table>

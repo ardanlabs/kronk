@@ -481,10 +481,10 @@ func toOpenAIModel(mf models.File) OpenAIModel {
 // download endpoint enabled. Useful in classroom/workshop settings
 // where Internet access is slow or unreliable.
 type PullRequest struct {
-	ModelURL       string `json:"model_url"`
-	ProjURL        string `json:"proj_url"`
-	MTPURL         string `json:"mtp_url"`
-	DownloadServer string `json:"download_server"`
+	ModelURL       string              `json:"model_url"`
+	ProjURL        string              `json:"proj_url"`
+	Draft          models.CatalogDraft `json:"draft,omitzero"`
+	DownloadServer string              `json:"download_server"`
 }
 
 // Decode implements the decoder interface.
@@ -492,14 +492,24 @@ func (app *PullRequest) Decode(data []byte) error {
 	return json.Unmarshal(data, app)
 }
 
+// Validate checks that a generic draft override has a method and URL.
+func (app *PullRequest) Validate() error {
+	if app.Draft != (models.CatalogDraft{}) {
+		if app.Draft.Method.IsZero() || app.Draft.URL == "" {
+			return fmt.Errorf("draft.method and draft.url are required for a draft override")
+		}
+	}
+	return nil
+}
+
 // PullMeta contains metadata about a model download.
 type PullMeta struct {
-	ModelURL  string `json:"model_url,omitempty"`
-	ProjURL   string `json:"proj_url,omitempty"`
-	MTPURL    string `json:"mtp_url,omitempty"`
-	ModelID   string `json:"model_id,omitempty"`
-	FileIndex int    `json:"file_index,omitempty"`
-	FileTotal int    `json:"file_total,omitempty"`
+	ModelURL  string              `json:"model_url,omitempty"`
+	ProjURL   string              `json:"proj_url,omitempty"`
+	Draft     models.CatalogDraft `json:"draft,omitzero"`
+	ModelID   string              `json:"model_id,omitempty"`
+	FileIndex int                 `json:"file_index,omitempty"`
+	FileTotal int                 `json:"file_total,omitempty"`
 }
 
 // PullProgress contains structured progress data for a file download.
@@ -516,7 +526,7 @@ type PullResponse struct {
 	Status     string        `json:"status"`
 	ModelFiles []string      `json:"model_files,omitempty"`
 	ProjFile   string        `json:"proj_file,omitempty"`
-	MTPFile    string        `json:"mtp_file,omitempty"`
+	DraftFile  string        `json:"draft_file,omitempty"`
 	Downloaded bool          `json:"downloaded,omitempty"`
 	Meta       *PullMeta     `json:"meta,omitempty"`
 	Progress   *PullProgress `json:"progress,omitempty"`
@@ -533,7 +543,7 @@ func toAppPull(status string, mp models.Path) string {
 		Status:     status,
 		ModelFiles: mp.ModelFiles,
 		ProjFile:   mp.ProjFile,
-		MTPFile:    mp.MTPFile,
+		DraftFile:  mp.DraftFile,
 		Downloaded: mp.Downloaded,
 	}
 
@@ -602,6 +612,7 @@ func toModelSummary(mi models.ModelInfo, rmc *models.ModelConfig) ModelSummary {
 		summary.ModelType = profile.ParameterActivation()
 		caps := models.CapabilitiesForModel(mi.Metadata, mi.HasProjection, mi.ID)
 		caps.MTP = !summary.MTPSource.IsZero()
+		caps = caps.WithDraft(models.DraftMethod{})
 		summary.Capabilities = &caps
 	}
 	if rmc == nil {
@@ -1909,17 +1920,19 @@ func (app *ResolveRequest) Decode(data []byte) error {
 // present a picker. In that case CanonicalID, DownloadURLs, etc. are
 // empty and only Provider and Family are set.
 type ResolveResponse struct {
-	CanonicalID  string       `json:"canonical_id"`
-	Provider     string       `json:"provider"`
-	Family       string       `json:"family"`
-	Revision     string       `json:"revision"`
-	DownloadURLs []string     `json:"download_urls"`
-	DownloadProj string       `json:"download_proj,omitempty"`
-	DownloadMTP  string       `json:"download_mtp,omitempty"`
-	FromCache    bool         `json:"from_cache"`
-	FromLocal    bool         `json:"from_local"`
-	Installed    bool         `json:"installed"`
-	RepoFiles    []HFRepoFile `json:"repo_files,omitempty"`
+	CanonicalID   string              `json:"canonical_id"`
+	Provider      string              `json:"provider"`
+	Family        string              `json:"family"`
+	Revision      string              `json:"revision"`
+	DownloadURLs  []string            `json:"download_urls"`
+	DownloadProj  string              `json:"download_proj,omitempty"`
+	Draft         models.CatalogDraft `json:"draft,omitzero"`
+	DownloadDraft string              `json:"download_draft,omitempty"`
+	DownloadMTP   string              `json:"download_mtp,omitempty"`
+	FromCache     bool                `json:"from_cache"`
+	FromLocal     bool                `json:"from_local"`
+	Installed     bool                `json:"installed"`
+	RepoFiles     []HFRepoFile        `json:"repo_files,omitempty"`
 }
 
 // Encode implements web.Encoder.

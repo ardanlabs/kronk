@@ -304,6 +304,7 @@ func TestBuildFromMetadataQwen35Hybrid(t *testing.T) {
 		"qwen35moe.ssm.inner_size":          "8",
 		"qwen35moe.ssm.state_size":          "4",
 		"qwen35moe.ssm.group_count":         "1",
+		"qwen35moe.ssm.time_step_rank":      "2",
 	}
 
 	got, err := buildFromMetadata(metadata, nil, 1000, Config{
@@ -317,9 +318,9 @@ func TestBuildFromMetadataQwen35Hybrid(t *testing.T) {
 	}
 
 	const recurrentStateBytes int64 = 4 * ((8 + 2*1*4) + 4*8)
-	// Target attention plus appended draft attention, and three target
-	// recurrent layers with current state and two rollback planes.
-	want := int64(2*256*(8+8)*2) + 3*recurrentStateBytes*3
+	// Target and draft attention plus three recurrent layers: one committed
+	// state and three pending columns of conv, k, v, gate and beta inputs.
+	want := int64(2*256*(8+8)*2) + 3*(recurrentStateBytes+3*4*(16+4+8+2*2))
 	if got.SlotMemory != want {
 		t.Fatalf("SlotMemory: got %d, want %d", got.SlotMemory, want)
 	}
@@ -331,6 +332,68 @@ func TestBuildFromMetadataQwen35Hybrid(t *testing.T) {
 	}
 	if got.Input.ComputeKind != modelprofile.ComputeQwen35 || got.Input.OutputRows != 3 {
 		t.Fatalf("compute kind/output rows: got %d/%d, want %d/3", got.Input.ComputeKind, got.Input.OutputRows, modelprofile.ComputeQwen35)
+	}
+}
+
+func TestFromBytesRecurrentReplay(t *testing.T) {
+	for _, tt := range []struct {
+		name, architecture string
+		copies, slots      int64
+		ple                bool
+		want               int64
+	}{
+		{"Qwen no rollback", "qwen35", 1, 1, false, 864},
+		{"Qwen replay", "qwen35", 3, 1, false, 1872},
+		{"MoE replay streams", "qwen35moe", 3, 3, false, 5616},
+		{"PLE no rollback", "qwen4exp", 1, 1, true, 1248},
+		{"PLE replay", "qwen4exp", 3, 1, true, 2544},
+		{"PLE deeper replay streams", "qwen4exp", 5, 3, true, 10224},
+		{"GLM no rollback", "glm5-next", 1, 1, false, 1248},
+		{"GLM replay streams", "glm5-next", 3, 3, false, 9792},
+		{"Kimi replay", "kimi-k3", 3, 1, false, 3264},
+		{"LFM snapshot control", "lfm2", 3, 3, false, 1728},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := map[string]string{"general.architecture": tt.architecture}
+			for key, value := range map[string]string{
+				"block_count": "3", "embedding_length": "8",
+				"attention.head_count": "3", "attention.head_count_kv": "[0 0 3]",
+				"attention.key_length": "4", "attention.value_length": "4",
+				"attention.recurrent_layers": "[true true false]", "attention.kv_lora_rank": "4",
+				"ssm.conv_kernel": "4", "ssm.inner_size": "12", "ssm.state_size": "4",
+				"ssm.group_count": "1", "ssm.time_step_rank": "3", "kda.head_dim": "4",
+				"hyper_connection.count": "3", "shortconv.l_cache": "4",
+			} {
+				metadata[tt.architecture+"."+key] = value
+			}
+			if tt.ple {
+				for key, value := range map[string]string{
+					"ple.layers": "[1]", "ple.ngram_size": "2", "ple.heads_per_ngram": "1",
+					"ple.conv_kernel": "3", "embedding_length_per_layer_input": "4",
+				} {
+					metadata[tt.architecture+"."+key] = value
+				}
+			}
+			// Qwen: 432 base + 168 bytes/pending token per layer.
+			// KDA: 624 base + 336 bytes/pending token per layer.
+			// PLE adds 384 base + 96 bytes/pending token on layer 1 only.
+			result, err := FromBytes(deepseek41Header(t, metadata, nil), 1<<20, Config{
+				ContextWindow: 256, Slots: tt.slots, BytesPerElement: 2, RecurrentStateCopies: tt.copies,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The third layer stores 256 F16 K/V rows with three heads.
+			// Kimi stores K only (V aliases K).
+			attention := int64(12288)
+			if tt.architecture == "kimi-k3" {
+				attention = 6144
+			}
+			want := tt.want + attention*tt.slots
+			if result.SlotMemory != want || result.KVPerSlot != want/tt.slots {
+				t.Fatalf("total/per slot: got %d/%d, want %d/%d", result.SlotMemory, result.KVPerSlot, want, want/tt.slots)
+			}
+		})
 	}
 }
 
@@ -361,7 +424,7 @@ func TestBuildFromMetadataGLM5Next(t *testing.T) {
 	}
 
 	const recurrentStateBytes int64 = 4 * (3*(4-1)*(64*128) + 128*128*64)
-	wantRecurrent := int64(34) * recurrentStateBytes * 2 * 3
+	wantRecurrent := int64(34) * (recurrentStateBytes + 3*4*7*64*128) * 2
 	wantAttention := int64(11) * 512 * (512 + 512) * 2
 	want := wantRecurrent + wantAttention
 	if got.SlotMemory != want {
@@ -374,9 +437,9 @@ func TestBuildFromMetadataGLM5Next(t *testing.T) {
 }
 
 func TestFromBytesIndexedHybridMemory(t *testing.T) {
-	// 36 recurrent layers × four state planes. Each F32 plane holds
-	// (4−1)×(6144+2×16×128) convolution values and 128×6144 state values.
-	const recurrentBytes int64 = 36 * 4 * 4 * (3*(6144+2*16*128) + 128*6144)
+	// 36 recurrent layers: one committed state plus four pending columns.
+	// Each pending column holds conv, k, v, and gate/beta inputs.
+	const recurrentBytes int64 = 36 * 4 * (3*(6144+2*16*128) + 128*6144 + 4*(10240+2048+6144+2*48))
 	for _, tt := range []struct {
 		name           string
 		context, slots int64
@@ -406,6 +469,7 @@ func TestFromBytesIndexedHybridMemory(t *testing.T) {
 				"qwen4exp.ssm.inner_size":          "6144",
 				"qwen4exp.ssm.state_size":          "128",
 				"qwen4exp.ssm.group_count":         "16",
+				"qwen4exp.ssm.time_step_rank":      "48",
 				"qwen4exp.hyper_connection.count":  "4",
 			}
 			if tt.indexed {

@@ -135,8 +135,8 @@ func TestMTPMetadata(t *testing.T) {
 	metadata := map[string]string{"qwen35moe.nextn_predict_layers": "1"}
 
 	capabilities := CapabilitiesForModel(metadata, false, "")
-	if !capabilities.MTP {
-		t.Error("CapabilitiesForModel: got MTP false, want true")
+	if !capabilities.MTP || capabilities.Draft != DraftMethodMTP {
+		t.Errorf("CapabilitiesForModel: got %+v, want MTP drafting capability", capabilities)
 	}
 	if got := MTPSourceFor(metadata, false); got != MTPSourceEmbedded {
 		t.Errorf("MTPSourceFor embedded: got %q, want %q", got, MTPSourceEmbedded)
@@ -164,8 +164,8 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		t.Fatalf("Unmarshal: unexpected error: %v", err)
 	}
 	for id, entry := range schema.Models {
-		if _, exists := entry.Capabilities["mtp"]; !exists {
-			t.Errorf("model %q capabilities omit mtp", id)
+		if _, exists := entry.Capabilities["mtp"]; exists {
+			t.Errorf("model %q retains obsolete mtp capability", id)
 		}
 	}
 
@@ -174,7 +174,7 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		t.Fatalf("Load: unexpected error: %v", err)
 	}
 	if catalog.Version != catalogVersion {
-		t.Errorf("catalog version: got %d, want %d", catalog.Version, catalogVersion)
+		t.Errorf("catalog version: got %q, want %q", catalog.Version, catalogVersion)
 	}
 
 	for id, entry := range catalog.Models {
@@ -258,13 +258,13 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 	if !exists {
 		t.Fatalf("required model %q is missing", gemma4Q4)
 	}
-	if entry.MTP != "mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" ||
-		entry.MTPOrig != "mtp-gemma-4-26B-A4B-it.gguf" ||
-		entry.MTPSize != 461766816 ||
-		!entry.MTPChecked {
+	if entry.Draft.File != "mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" ||
+		entry.Draft.Original != "mtp-gemma-4-26B-A4B-it.gguf" ||
+		entry.Draft.Size != 461766816 ||
+		!entry.DraftChecked {
 		t.Errorf("model %q has incomplete MTP companion metadata: %+v", gemma4Q4, entry)
 	}
-	if entry.MTPSource != MTPSourceCompanion || !entry.Capabilities.MTP {
+	if entry.MTPSource != MTPSourceCompanion || entry.Capabilities.Draft != DraftMethodMTP {
 		t.Errorf("model %q MTP metadata: got source %q capability %t", gemma4Q4, entry.MTPSource, entry.Capabilities.MTP)
 	}
 
@@ -274,10 +274,10 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		t.Fatalf("required model %q is missing", flashNextQ2)
 	}
 	const wantMTPURL = "https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/resolve/main/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf"
-	if entry.MTPOrig != "MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf" || entry.MTPURL != "" || entry.MTPSize != 4137429120 {
+	if entry.Draft.Original != "MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf" || entry.Draft.URL != "" || entry.Draft.Size != 4137429120 {
 		t.Errorf("model %q has incomplete MTP companion metadata: %+v", flashNextQ2, entry)
 	}
-	if entry.MTPSource != MTPSourceCompanion || !entry.Capabilities.MTP {
+	if entry.MTPSource != MTPSourceCompanion || entry.Capabilities.Draft != DraftMethodMTP {
 		t.Errorf("model %q MTP metadata: got source %q capability %t", flashNextQ2, entry.MTPSource, entry.Capabilities.MTP)
 	}
 	if got := NewFiles(entry).MTP.URL; got != wantMTPURL {
@@ -289,23 +289,12 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 	if !exists {
 		t.Fatalf("required model %q is missing", embeddedMTP)
 	}
-	if entry.MTPSource != MTPSourceEmbedded || !entry.Capabilities.MTP || entry.MTP != "" {
-		t.Errorf("model %q MTP metadata: got source %q capability %t companion %q", embeddedMTP, entry.MTPSource, entry.Capabilities.MTP, entry.MTP)
+	if entry.MTPSource != MTPSourceEmbedded || entry.Capabilities.Draft != DraftMethodMTP || entry.Draft.File != "" {
+		t.Errorf("model %q MTP metadata: got source %q capability %t companion %q", embeddedMTP, entry.MTPSource, entry.Capabilities.MTP, entry.Draft.File)
 	}
 }
 
-func TestCatalogRejectsUnsupportedVersion(t *testing.T) {
-	filePath := filepath.Join(t.TempDir(), "catalog.yaml")
-	if err := os.WriteFile(filePath, []byte("version: 3\nmodels: {}\n"), 0600); err != nil {
-		t.Fatalf("WriteFile: unexpected error: %v", err)
-	}
-
-	if _, err := NewResolver(nil, filePath).Load(); err == nil || !strings.Contains(err.Error(), "unsupported catalog version 3") {
-		t.Fatalf("Load error: got %v, want unsupported catalog version", err)
-	}
-}
-
-func TestReconcileCatalogMigratesVersionOneWithoutEnrichment(t *testing.T) {
+func TestReconcileCatalogEnrichesEmbeddedMTP(t *testing.T) {
 	basePath := t.TempDir()
 	m, err := NewWithPaths(basePath)
 	if err != nil {
@@ -317,65 +306,18 @@ func TestReconcileCatalogMigratesVersionOneWithoutEnrichment(t *testing.T) {
 		t.Fatalf("CatalogFile: unexpected error: %v", err)
 	}
 	resolver := NewResolver(nil, filePath)
-	old := Catalog{
-		Version: 1,
-		Models: map[string]CatalogEntry{
-			"example/model-Q8_0": {
-				Provider:     "example",
-				Family:       "model-GGUF",
-				Revision:     "main",
-				Files:        []string{"model-Q8_0.gguf"},
-				MTPChecked:   true,
-				ModelType:    "Dense",
-				Capabilities: CatalogCapabilities{Endpoint: "chat_completion", Streaming: true},
-			},
-		},
-	}
-	data, err := yaml.Marshal(old)
-	if err != nil {
-		t.Fatalf("Marshal: unexpected error: %v", err)
-	}
-	if err := os.WriteFile(filePath, data, 0600); err != nil {
-		t.Fatalf("WriteFile: unexpected error: %v", err)
-	}
-
-	if err := m.ReconcileCatalog(context.Background(), testLog); err != nil {
-		t.Fatalf("ReconcileCatalog: unexpected error: %v", err)
-	}
-
-	catalog, err := resolver.Load()
-	if err != nil {
-		t.Fatalf("Load: unexpected error: %v", err)
-	}
-	if catalog.Version != catalogVersion {
-		t.Errorf("catalog version: got %d, want %d", catalog.Version, catalogVersion)
-	}
-	if _, exists := catalog.Models["example/model-Q8_0"]; !exists {
-		t.Error("version 1 entry was removed during migration")
-	}
-}
-
-func TestReconcileCatalogMigratesEmbeddedMTP(t *testing.T) {
-	basePath := t.TempDir()
-	m, err := NewWithPaths(basePath)
-	if err != nil {
-		t.Fatalf("NewWithPaths: unexpected error: %v", err)
-	}
-
-	filePath, err := defaults.CatalogFile("", basePath)
-	if err != nil {
-		t.Fatalf("CatalogFile: unexpected error: %v", err)
-	}
-	resolver := NewResolver(nil, filePath)
-	legacy := Catalog{Models: map[string]CatalogEntry{
+	legacy := Catalog{Version: catalogVersion, Models: map[string]CatalogEntry{
 		"example/model-Q8_0": {
 			Provider:     "example",
 			Family:       "model-GGUF",
 			Revision:     "main",
 			Files:        []string{"model-Q8_0.gguf"},
-			MTPChecked:   true,
-			ModelType:    "Dense",
-			Capabilities: CatalogCapabilities{Endpoint: "chat_completion", Streaming: true},
+			DraftChecked: true,
+		},
+		"example/declared-Q8_0": {
+			Provider: "example", Family: "model-GGUF", Revision: "main",
+			Files: []string{"declared-Q8_0.gguf"}, DraftChecked: true,
+			Capabilities: CatalogCapabilities{Draft: DraftMethodDSpark},
 		},
 	}}
 	if err := resolver.Save(legacy); err != nil {
@@ -387,6 +329,7 @@ func TestReconcileCatalogMigratesEmbeddedMTP(t *testing.T) {
 		t.Fatalf("MkdirAll: unexpected error: %v", err)
 	}
 	writeCatalogTestGGUF(t, modelFile, map[string]uint32{"qwen35moe.nextn_predict_layers": 1})
+	writeCatalogTestGGUF(t, filepath.Join(filepath.Dir(modelFile), "declared-Q8_0.gguf"), nil)
 
 	log := func(context.Context, string, ...any) {}
 	if err := m.ReconcileCatalog(context.Background(), log); err != nil {
@@ -399,47 +342,14 @@ func TestReconcileCatalogMigratesEmbeddedMTP(t *testing.T) {
 	}
 	entry := catalog.Models["example/model-Q8_0"]
 	if catalog.Version != catalogVersion {
-		t.Errorf("catalog version: got %d, want %d", catalog.Version, catalogVersion)
+		t.Errorf("catalog version: got %q, want %q", catalog.Version, catalogVersion)
 	}
 	if entry.MTPSource != MTPSourceEmbedded || !entry.Capabilities.MTP {
-		t.Errorf("migrated MTP metadata: got source %q capability %t", entry.MTPSource, entry.Capabilities.MTP)
+		t.Errorf("enriched MTP metadata: got source %q capability %t", entry.MTPSource, entry.Capabilities.MTP)
 	}
-}
-
-func TestReconcileCatalogRetriesIncompleteMigration(t *testing.T) {
-	basePath := t.TempDir()
-	m, err := NewWithPaths(basePath)
-	if err != nil {
-		t.Fatalf("NewWithPaths: unexpected error: %v", err)
-	}
-	filePath, err := defaults.CatalogFile("", basePath)
-	if err != nil {
-		t.Fatalf("CatalogFile: unexpected error: %v", err)
-	}
-	resolver := NewResolver(nil, filePath)
-	legacy := Catalog{Models: map[string]CatalogEntry{
-		"example/missing": {
-			Provider:     "example",
-			Family:       "missing-GGUF",
-			MTPChecked:   true,
-			ModelType:    "Dense",
-			Capabilities: CatalogCapabilities{Endpoint: "chat_completion", Streaming: true},
-		},
-	}}
-	if err := resolver.Save(legacy); err != nil {
-		t.Fatalf("Save: unexpected error: %v", err)
-	}
-
-	log := func(context.Context, string, ...any) {}
-	if err := m.ReconcileCatalog(context.Background(), log); err != nil {
-		t.Fatalf("ReconcileCatalog: unexpected error: %v", err)
-	}
-	catalog, err := resolver.Load()
-	if err != nil {
-		t.Fatalf("Load: unexpected error: %v", err)
-	}
-	if catalog.Version != 0 {
-		t.Errorf("catalog version: got %d, want 0 after failed enrichment", catalog.Version)
+	declared := catalog.Models["example/declared-Q8_0"]
+	if declared.Capabilities.Draft != DraftMethodDSpark || declared.Capabilities.MTP || declared.Draft.File != "" {
+		t.Errorf("enrichment changed declared DSpark capability: %+v", declared)
 	}
 }
 
@@ -489,13 +399,13 @@ func TestReconcileCatalogDoesNotRestoreRemovedModels(t *testing.T) {
 		t.Fatalf("Load: unexpected error: %v", err)
 	}
 	catalog.Models["example/custom-model-Q4_K_M"] = CatalogEntry{
-		Provider:   "example",
-		Family:     "custom-model-GGUF",
-		Revision:   "private",
-		Files:      []string{"custom-model-Q4_K_M.gguf"},
-		FileSizes:  []int64{1234},
-		MTPChecked: true,
-		ModelType:  "Dense",
+		Provider:     "example",
+		Family:       "custom-model-GGUF",
+		Revision:     "private",
+		Files:        []string{"custom-model-Q4_K_M.gguf"},
+		FileSizes:    []int64{1234},
+		DraftChecked: true,
+		ModelType:    "Dense",
 		Capabilities: CatalogCapabilities{
 			Endpoint:  "chat_completion",
 			Streaming: true,
@@ -809,7 +719,7 @@ func TestResolver_HFHit_PersistsAndReturnsURLs(t *testing.T) {
 
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hf)
 
@@ -858,7 +768,7 @@ func TestResolver_OfflineDoesNotCallHFClient(t *testing.T) {
 		},
 	}
 	rfile := filepath.Join(t.TempDir(), "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 	r := newResolver(nil, rfile, hf, func() bool { return false })
 
 	_, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M")
@@ -873,7 +783,7 @@ func TestResolver_OfflineDoesNotCallHFClient(t *testing.T) {
 func TestResolver_RejectsBareModelID(t *testing.T) {
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, &fakeHF{})
 
@@ -893,7 +803,7 @@ func TestResolver_ExplicitProvider(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hf)
 
@@ -919,15 +829,16 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 
 	cached := Catalog{
+		Version: catalogVersion,
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-Q4_K_M": {
-				Provider:   "unsloth",
-				Family:     "Qwen3-GGUF",
-				Revision:   "main",
-				Files:      []string{"Qwen3-Q4_K_M.gguf"},
-				MMProj:     "mmproj-Qwen3-Q4_K_M.gguf",
-				MMProjOrig: "mmproj-F16.gguf",
-				MTPChecked: true,
+				Provider:     "unsloth",
+				Family:       "Qwen3-GGUF",
+				Revision:     "main",
+				Files:        []string{"Qwen3-Q4_K_M.gguf"},
+				MMProj:       "mmproj-Qwen3-Q4_K_M.gguf",
+				MMProjOrig:   "mmproj-F16.gguf",
+				DraftChecked: true,
 			},
 		},
 	}
@@ -955,7 +866,7 @@ func TestResolver_NotFoundAtProvider(t *testing.T) {
 	hf := &fakeHF{}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hf)
 
@@ -981,7 +892,7 @@ func TestResolver_HFNotFoundIsNotFatal(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hf)
 
@@ -1051,13 +962,14 @@ func TestModelsResolveSource_AcceptedInputForms(t *testing.T) {
 	rfile := filepath.Join(catalogDir, "catalog.yaml")
 
 	cached := Catalog{
+		Version: catalogVersion,
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-0.6B-Q8_0": {
-				Provider:   "unsloth",
-				Family:     "Qwen3-0.6B-GGUF",
-				Revision:   "main",
-				Files:      []string{"Qwen3-0.6B-Q8_0.gguf"},
-				MTPChecked: true,
+				Provider:     "unsloth",
+				Family:       "Qwen3-0.6B-GGUF",
+				Revision:     "main",
+				Files:        []string{"Qwen3-0.6B-Q8_0.gguf"},
+				DraftChecked: true,
 			},
 		},
 	}
@@ -1409,7 +1321,7 @@ func TestResolver_TagForm_HFLookup(t *testing.T) {
 
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hfc)
 
@@ -1464,27 +1376,28 @@ func TestResolver_PinnedFileIgnoresSameTagCacheEntries(t *testing.T) {
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
 	cached := Catalog{
+		Version: catalogVersion,
 		Models: map[string]CatalogEntry{
 			"unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL": {
-				Provider:   "unsloth",
-				Family:     "gemma-4-26B-A4B-it-GGUF",
-				Revision:   "main",
-				Files:      []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
-				MTPChecked: true,
+				Provider:     "unsloth",
+				Family:       "gemma-4-26B-A4B-it-GGUF",
+				Revision:     "main",
+				Files:        []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+				DraftChecked: true,
 			},
 			"unsloth/other-model-UD-Q8_K_XL": {
-				Provider:   "unsloth",
-				Family:     "gemma-4-26B-A4B-it-GGUF",
-				Revision:   "main",
-				Files:      []string{"other-model-UD-Q8_K_XL.gguf"},
-				MTPChecked: true,
+				Provider:     "unsloth",
+				Family:       "gemma-4-26B-A4B-it-GGUF",
+				Revision:     "main",
+				Files:        []string{"other-model-UD-Q8_K_XL.gguf"},
+				DraftChecked: true,
 			},
 			"unsloth/mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL": {
-				Provider:   "unsloth",
-				Family:     "gemma-4-26B-A4B-it-GGUF",
-				Revision:   "main",
-				Files:      []string{"mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
-				MTPChecked: true,
+				Provider:     "unsloth",
+				Family:       "gemma-4-26B-A4B-it-GGUF",
+				Revision:     "main",
+				Files:        []string{"mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+				DraftChecked: true,
 			},
 		},
 	}
@@ -1506,8 +1419,8 @@ func TestResolver_PinnedFileIgnoresSameTagCacheEntries(t *testing.T) {
 		t.Errorf("DownloadProj = %q, want %q", res.DownloadProj, wantProj)
 	}
 	wantMTP := "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf"
-	if res.DownloadMTP != wantMTP {
-		t.Errorf("DownloadMTP = %q, want %q", res.DownloadMTP, wantMTP)
+	if res.DownloadDraft != wantMTP {
+		t.Errorf("DownloadDraft = %q, want %q", res.DownloadDraft, wantMTP)
 	}
 	if res.FromCache {
 		t.Error("expected exact pinned lookup to bypass conflicting cache entries")
@@ -1528,7 +1441,7 @@ func TestResolver_PinnedFileDedicatedMTPRepo(t *testing.T) {
 
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hfc)
 	res, err := r.resolvePinned(context.Background(), "unsloth", "Qwen3.6-35B-A3B-MTP-GGUF", "Qwen3.6-35B-A3B-UD-Q8_K_XL", true)
@@ -1593,7 +1506,7 @@ func TestResolver_TagForm_PinsExplicitRepo(t *testing.T) {
 
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hfc)
 
@@ -1631,15 +1544,16 @@ func TestResolver_TagForm_CacheHit(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 
 	cached := Catalog{
+		Version: catalogVersion,
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
-				Provider:   "unsloth",
-				Family:     "Qwen3.6-35B-A3B-GGUF",
-				Revision:   "main",
-				Files:      []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
-				MMProj:     "mmproj-Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
-				MMProjOrig: "mmproj-F16.gguf",
-				MTPChecked: true,
+				Provider:     "unsloth",
+				Family:       "Qwen3.6-35B-A3B-GGUF",
+				Revision:     "main",
+				Files:        []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+				MMProj:       "mmproj-Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+				MMProjOrig:   "mmproj-F16.gguf",
+				DraftChecked: true,
 			},
 		},
 	}
@@ -1676,7 +1590,7 @@ func TestResolver_TagForm_TagNotFound(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hfc)
 
@@ -1697,7 +1611,7 @@ func TestResolver_TagForm_RepoNotFound(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+	mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
 	r := newTestResolver(nil, rfile, hfc)
 
@@ -1716,13 +1630,14 @@ func TestResolver_AllInputForms_ProduceSameDownloadURL(t *testing.T) {
 	const wantURL = "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
 
 	cached := Catalog{
+		Version: catalogVersion,
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
-				Provider:   "unsloth",
-				Family:     "Qwen3.6-35B-A3B-GGUF",
-				Revision:   "main",
-				Files:      []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
-				MTPChecked: true,
+				Provider:     "unsloth",
+				Family:       "Qwen3.6-35B-A3B-GGUF",
+				Revision:     "main",
+				Files:        []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+				DraftChecked: true,
 			},
 		},
 	}
@@ -1850,8 +1765,8 @@ func TestSelectFiles_MTPCompanionCoLocated(t *testing.T) {
 	if mmproj != "mmproj-F16.gguf" {
 		t.Errorf("mmproj = %q, want mmproj-F16.gguf", mmproj)
 	}
-	if mtp != "mtp-gemma-4-26B-A4B-it.gguf" {
-		t.Errorf("mtp = %q, want mtp-gemma-4-26B-A4B-it.gguf", mtp)
+	if mtp.Original != "mtp-gemma-4-26B-A4B-it.gguf" {
+		t.Errorf("draft = %+v, want mtp-gemma-4-26B-A4B-it.gguf", mtp)
 	}
 }
 
@@ -1868,8 +1783,8 @@ func TestSelectFiles_MTPCompanionSubdirectory(t *testing.T) {
 	if !reflect.DeepEqual(files, []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"}) {
 		t.Errorf("files = %v, want Qwen3.8 target only", files)
 	}
-	if mtp != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
-		t.Errorf("mtp = %q, want nested Qwen3.8 companion", mtp)
+	if mtp.Original != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
+		t.Errorf("draft = %+v, want nested Qwen3.8 companion", mtp)
 	}
 }
 
@@ -1886,8 +1801,8 @@ func TestSelectFiles_MTPCompanionSelectsFlashNext(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match")
 	}
-	if mtp != "mtp-Qwen3.8-Flash-Next-Q8_0.gguf" {
-		t.Errorf("mtp = %q, want self-contained Qwen4Exp Q8_0 companion", mtp)
+	if mtp.Original != "mtp-Qwen3.8-Flash-Next-Q8_0.gguf" {
+		t.Errorf("draft = %+v, want self-contained Qwen4Exp Q8_0 companion", mtp)
 	}
 }
 
@@ -1906,8 +1821,8 @@ func TestSelectFiles_MTPDedicatedRepoIsStandalone(t *testing.T) {
 	if !reflect.DeepEqual(files, []string{"Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf"}) {
 		t.Errorf("files = %v, want the MTP repo file selected as a model", files)
 	}
-	if mtp != "" {
-		t.Errorf("mtp = %q, want empty (dedicated MTP repo has no companion)", mtp)
+	if mtp != (CatalogDraft{}) {
+		t.Errorf("draft = %+v, want empty (dedicated MTP repo has no companion)", mtp)
 	}
 }
 
@@ -1926,8 +1841,8 @@ func TestSelectFiles_ExplicitMTPRequestIsStandalone(t *testing.T) {
 	if !reflect.DeepEqual(files, []string{"mtp-gemma-4-26B-A4B-it.gguf"}) {
 		t.Errorf("files = %v, want the mtp file selected as a model", files)
 	}
-	if mtp != "" {
-		t.Errorf("mtp = %q, want empty (explicit mtp request is standalone)", mtp)
+	if mtp != (CatalogDraft{}) {
+		t.Errorf("draft = %+v, want empty (explicit mtp request is standalone)", mtp)
 	}
 }
 
@@ -1943,8 +1858,8 @@ func TestSelectFiles_MTPNoCompanionWhenUnrelated(t *testing.T) {
 	if !ok {
 		t.Fatal("expected match")
 	}
-	if mtp != "" {
-		t.Errorf("mtp = %q, want empty (unrelated mtp file must not attach)", mtp)
+	if mtp != (CatalogDraft{}) {
+		t.Errorf("draft = %+v, want empty (unrelated mtp file must not attach)", mtp)
 	}
 }
 
@@ -1970,62 +1885,72 @@ func TestMatchMTPToModel(t *testing.T) {
 	}
 }
 
-// TestResolver_DiscoverMTP verifies that an unchecked catalog entry gets a
+// TestResolver_DiscoverDraft verifies that an unchecked catalog entry gets a
 // companion discovered and recorded by a single HF sibling scan.
-func TestResolver_DiscoverMTP(t *testing.T) {
-	hfc := &fakeHF{
-		metas: map[string][]string{
-			"unsloth/Qwen3.8-27B-GGUF": {
-				"Qwen3.8-27B-UD-Q4_K_XL.gguf",
-				"MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
-			},
-		},
-	}
-	dir := t.TempDir()
-	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "models: {}\n")
+func TestResolver_DiscoverDraft(t *testing.T) {
+	for _, tt := range []struct {
+		method   DraftMethod
+		original string
+	}{
+		{DraftMethodMTP, "MTP/mtp-Qwen3.8-27B-Q4_0.gguf"},
+		{DraftMethodDSpark, "dspark-Qwen3.8-27B-Q8_0.gguf"},
+	} {
+		t.Run(tt.method.String(), func(t *testing.T) {
+			hfc := &fakeHF{
+				metas: map[string][]string{
+					"unsloth/Qwen3.8-27B-GGUF": {
+						"Qwen3.8-27B-UD-Q4_K_XL.gguf",
+						tt.original,
+					},
+				},
+			}
+			dir := t.TempDir()
+			rfile := filepath.Join(dir, "catalog.yaml")
+			mustWriteFile(t, rfile, "version: 3\nmodels: {}\n")
 
-	r := newTestResolver(nil, rfile, hfc)
+			r := newTestResolver(nil, rfile, hfc)
 
-	entry := CatalogEntry{
-		Provider: "unsloth",
-		Family:   "Qwen3.8-27B-GGUF",
-		Revision: "main",
-		Files:    []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
-	}
+			entry := CatalogEntry{
+				Provider: "unsloth",
+				Family:   "Qwen3.8-27B-GGUF",
+				Revision: "main",
+				Files:    []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
+			}
 
-	got, ok := r.discoverCompanions(context.Background(), entry, testLog)
-	if !ok {
-		t.Fatalf("discoverCompanions ok=false, want true")
-	}
-	if !got.MTPChecked {
-		t.Error("MTPChecked not set after a successful scan")
-	}
-	if got.MTPOrig != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
-		t.Errorf("MTPOrig = %q, want nested Qwen3.8 companion", got.MTPOrig)
-	}
-	if got.MTP != "mtp-Qwen3.8-27B-UD-Q4_K_XL.gguf" {
-		t.Errorf("MTP = %q, want canonical Qwen3.8 companion name", got.MTP)
-	}
+			got, ok := r.discoverCompanions(context.Background(), entry, testLog)
+			if !ok {
+				t.Fatalf("discoverCompanions ok=false, want true")
+			}
+			if !got.DraftChecked {
+				t.Error("DraftChecked not set after a successful scan")
+			}
+			if got.Draft.Original != tt.original || got.Draft.Method != tt.method {
+				t.Errorf("Draft = %+v, want method %s and source %q", got.Draft, tt.method, tt.original)
+			}
+			if got.Draft.File != tt.method.String()+"-Qwen3.8-27B-UD-Q4_K_XL.gguf" {
+				t.Errorf("Draft.File = %q, want canonical Qwen3.8 companion name", got.Draft.File)
+			}
 
-	// A repo with no mtp sibling still stamps mtp_checked so the scan is
-	// not retried on every reconcile.
-	hfc.metas["unsloth/Qwen3-GGUF"] = []string{"Qwen3-Q8_0.gguf", "mmproj-F16.gguf"}
-	none := CatalogEntry{
-		Provider: "unsloth",
-		Family:   "Qwen3-GGUF",
-		Revision: "main",
-		Files:    []string{"Qwen3-Q8_0.gguf"},
-	}
-	got2, ok := r.discoverCompanions(context.Background(), none, testLog)
-	if !ok {
-		t.Fatalf("discoverCompanions (no companion) ok=false, want true")
-	}
-	if !got2.MTPChecked {
-		t.Error("MTPChecked not set when no companion exists")
-	}
-	if got2.MTP != "" || got2.MTPOrig != "" {
-		t.Errorf("expected empty MTP fields, got MTP=%q MTPOrig=%q", got2.MTP, got2.MTPOrig)
+			// A repo with no companion still stamps draft_checked so the scan is
+			// not retried on every reconcile.
+			hfc.metas["unsloth/Qwen3-GGUF"] = []string{"Qwen3-Q8_0.gguf", "mmproj-F16.gguf"}
+			none := CatalogEntry{
+				Provider: "unsloth",
+				Family:   "Qwen3-GGUF",
+				Revision: "main",
+				Files:    []string{"Qwen3-Q8_0.gguf"},
+			}
+			got2, ok := r.discoverCompanions(context.Background(), none, testLog)
+			if !ok {
+				t.Fatalf("discoverCompanions (no companion) ok=false, want true")
+			}
+			if !got2.DraftChecked {
+				t.Error("DraftChecked not set when no companion exists")
+			}
+			if got2.Draft != (CatalogDraft{}) {
+				t.Errorf("expected empty draft, got %+v", got2.Draft)
+			}
+		})
 	}
 }
 
@@ -2057,11 +1982,11 @@ func TestResolver_DiscoverCompanions_RecoverMMProj(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, projOnDisk), "proj-bytes")
 
 	entry := CatalogEntry{
-		Provider:   "unsloth",
-		Family:     "gemma-4-26B-A4B-it-GGUF",
-		Revision:   "main",
-		Files:      []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
-		MTPChecked: true, // only the mmproj needs recovery
+		Provider:     "unsloth",
+		Family:       "gemma-4-26B-A4B-it-GGUF",
+		Revision:     "main",
+		Files:        []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+		DraftChecked: true, // only the mmproj needs recovery
 	}
 
 	got, ok := r.discoverCompanions(context.Background(), entry, testLog)
@@ -2079,11 +2004,11 @@ func TestResolver_DiscoverCompanions_RecoverMMProj(t *testing.T) {
 	// look up: no HF call, ok=false.
 	hfc.calls = nil
 	done := CatalogEntry{
-		Provider:   "unsloth",
-		Family:     "gemma-4-26B-A4B-it-GGUF",
-		Revision:   "main",
-		Files:      []string{"some-other-model-Q8_0.gguf"},
-		MTPChecked: true,
+		Provider:     "unsloth",
+		Family:       "gemma-4-26B-A4B-it-GGUF",
+		Revision:     "main",
+		Files:        []string{"some-other-model-Q8_0.gguf"},
+		DraftChecked: true,
 	}
 	if _, ok := r.discoverCompanions(context.Background(), done, testLog); ok {
 		t.Error("discoverCompanions ok=true, want false (nothing to discover)")

@@ -285,6 +285,8 @@ export interface CatalogCapabilities {
   embedding: boolean;
   rerank: boolean;
   decision: boolean;
+  draft?: 'mtp' | 'dspark' | 'conventional';
+  // Compatibility output only; use draft for drafting capability.
   mtp: boolean;
 }
 
@@ -293,10 +295,19 @@ export interface CatalogFile {
   size: number;
 }
 
+export interface DraftMetadata {
+  method?: 'mtp' | 'dspark' | 'conventional';
+  file?: string;
+  original?: string;
+  url?: string;
+  size?: number;
+}
+
 export interface CatalogFiles {
   model: CatalogFile[];
   proj: CatalogFile;
   mtp: CatalogFile;
+  draft?: CatalogFile;
 }
 
 export interface VRAMInput {
@@ -400,6 +411,8 @@ export interface CatalogSummary {
   total_size: string;
   total_size_bytes: number;
   has_projection: boolean;
+  has_draft: boolean;
+  draft?: DraftMetadata;
   has_mtp?: boolean;
   mtp_source?: 'embedded' | 'companion';
   downloaded: boolean;
@@ -455,7 +468,7 @@ export type KeysResponse = KeyResponse[];
 export interface PullMeta {
   model_url?: string;
   proj_url?: string;
-  mtp_url?: string;
+  draft?: DraftMetadata;
   model_id?: string;
   file_index?: number;
   file_total?: number;
@@ -474,7 +487,7 @@ export interface PullResponse {
   model_file?: string;
   model_files?: string[];
   proj_file?: string;
-  mtp_file?: string;
+  draft_file?: string;
   downloaded?: boolean;
   meta?: PullMeta;
   progress?: PullProgress;
@@ -720,6 +733,8 @@ export interface ResolveSourceResponse {
   download_urls: string[];
   download_proj?: string;
   download_mtp?: string;
+  download_draft?: string;
+  draft?: DraftMetadata;
   from_cache: boolean;
   from_local: boolean;
   installed: boolean;

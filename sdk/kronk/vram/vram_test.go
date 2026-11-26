@@ -1548,11 +1548,11 @@ func TestFromBytesKimiK31Memory(t *testing.T) {
 		typeK        int32
 		want         int64
 	}{
-		{"partitioned F16", false, false, 1, 921600},
-		{"unified F16", true, false, 1, 790528},
-		{"partitioned Q8", false, false, 8, 552960},
-		{"unified Q8", true, false, 8, 483328},
-		{"CPU cache", false, true, 1, 921600},
+		{"partitioned F16", false, false, 1, 874496},
+		{"unified F16", true, false, 1, 743424},
+		{"partitioned Q8", false, false, 8, 505856},
+		{"unified Q8", true, false, 8, 436224},
+		{"CPU cache", false, true, 1, 874496},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			metadata := map[string]string{
@@ -1566,7 +1566,7 @@ func TestFromBytesKimiK31Memory(t *testing.T) {
 				"kimi-k31.attention.indexer.types": "[true true false false true]",
 			}
 			// Three K-only 64-wide MLA rows, two 32-wide indexer owners,
-			// and two KDA states of 11264 bytes × 2 sequences × 3 copies.
+			// and two KDA states of (11264 + 3×3584) bytes × 2 sequences.
 			// 513 × 2 pads to 1280 shared cells or 768 × 2 separate cells.
 			// Q8_0 rows occupy 34 bytes per 32 values, not one byte/value.
 			result, err := FromBytes(deepseek41Header(t, metadata, nil), 1<<30, Config{
@@ -1586,8 +1586,8 @@ func TestFromBytesKimiK31Memory(t *testing.T) {
 			input := result.Input
 			input.GPULayers = 2 // Output plus the final MLA/indexer owner.
 			partial := Calculate(input)
-			if !tt.cpu && partial.KVVRAMBytes != (tt.want-135168)*3/8 {
-				t.Errorf("partial GPU cache: got %d, want %d", partial.KVVRAMBytes, (tt.want-135168)*3/8)
+			if !tt.cpu && partial.KVVRAMBytes != (tt.want-88064)*3/8 {
+				t.Errorf("partial GPU cache: got %d, want %d", partial.KVVRAMBytes, (tt.want-88064)*3/8)
 			}
 		})
 	}

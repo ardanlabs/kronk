@@ -108,8 +108,10 @@ func mtpNDraft(cfg Config) int {
 	return defMTPNDraft
 }
 
-// RecurrentStateCopies returns the number of current and rollback recurrent
-// state planes allocated for the configured speculative-decoding mode.
+// RecurrentStateCopies returns one plus the configured recurrent rollback depth.
+// Snapshot architectures allocate that many state planes; replay architectures
+// retain one state plus that many pending input columns. The same bound sizes
+// speculative output rows independently of the recurrent allocation strategy.
 // embeddedMTP selects the auto-detected MTP path; false selects an explicit
 // separate drafter or companion MTP file.
 func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
@@ -321,7 +323,7 @@ func embeddedMTPContextParams(params, target llama.ContextParams) llama.ContextP
 	params.NBatch = target.NBatch
 	params.NUbatch = target.NUbatch
 	params.NSeqMax = target.NSeqMax
-	params.NRsSeq = target.NRsSeq
+	params.NRsSeq = 0
 	params.NOutputsMax = target.NSeqMax
 	params.NOutputsMaxPerSeq = 1
 	params.NThreads = target.NThreads

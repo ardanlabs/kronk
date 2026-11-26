@@ -1,4 +1,5 @@
-import type { ModelSummary as Summary, SamplingConfig } from '../types';
+import type { DraftMetadata, ModelSummary as Summary, SamplingConfig } from '../types';
+import { DRAFT_CAPABILITY_LABELS, draftCapability } from '../lib/catalogCapabilities';
 import KeyValueTable from './KeyValueTable';
 import { labelWithTip, type TooltipKey } from './ParamTooltips';
 
@@ -9,6 +10,7 @@ interface ModelSummaryProps {
   size: string;
   metadata: Record<string, string>;
   summary?: Summary;
+  draft?: DraftMetadata;
 }
 
 const SAMPLING_ROWS: [string, keyof SamplingConfig, string, TooltipKey][] = [
@@ -29,12 +31,15 @@ function samplingValue(value: unknown, absent: string): string {
   return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 6 }) : 'Invalid metadata';
 }
 
-export default function ModelSummary({ id, provider, family, size, metadata, summary }: ModelSummaryProps) {
+export default function ModelSummary({ id, provider, family, size, metadata, summary, draft: companion }: ModelSummaryProps) {
   const arch = metadata['general.architecture'];
   const caps = summary?.capabilities;
   const nativeContext = arch ? metadata[`${arch}.context_length`] : undefined;
   const mtpSource = summary?.mtp_source;
-  const mtpAvailable = mtpSource ? `Declared (${mtpSource})` : (caps ? 'Not declared' : 'Unknown');
+  const draft = draftCapability(caps, mtpSource);
+  const draftSource = companion?.file ? 'Companion'
+    : draft === 'mtp' && mtpSource ? (mtpSource === 'embedded' ? 'Embedded' : 'Companion')
+    : caps ? 'Not declared' : 'Unknown';
   const yarn = summary?.rope_scaling === 'yarn';
   const capabilityRows: [string, boolean | undefined, TooltipKey][] = [
     ['Text', caps ? caps.endpoint !== 'speech' : undefined, 'summaryText'],
@@ -71,10 +76,12 @@ export default function ModelSummary({ id, provider, family, size, metadata, sum
             { label: labelWithTip('YaRN extension', 'summaryYarn'), value: yarn
               ? `Configured to ${tokens(summary?.context_window)}${summary?.yarn_orig_ctx ? ` (original: ${tokens(summary.yarn_orig_ctx)})` : ''}`
               : summary?.rope_scaling || 'Not specified' },
-            { label: labelWithTip('MTP source', 'summaryMTPSource'), value: mtpAvailable },
+            { label: labelWithTip('Draft capability', 'draftCapability'), value: draft ? DRAFT_CAPABILITY_LABELS[draft] : caps ? 'None' : 'Unknown' },
+            { label: labelWithTip('Draft source', 'summaryDraftSource'), value: draftSource },
             { label: labelWithTip('Speculation mode', 'summarySpeculation'), value: summary?.speculation || 'Unknown' },
             ...(summary?.classic_draft ? [{ label: 'Classic draft', value: summary.classic_draft }] : []),
           ]} />
+          {draft === 'dspark' && <p>DSpark inference is not supported.</p>}
         </section>
         <section>
           <h4 className="meta-section-title">Model</h4>
