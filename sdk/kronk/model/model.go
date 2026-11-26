@@ -132,12 +132,10 @@ func (s *imcPrefix) logicalPosition() int {
 	return s.totalTokensCached
 }
 
-// draftCore holds the llama resources shared by every speculative-decoding
-// strategy. It is wrapped by the concrete drafter types in draft.go
-// (classicDrafter, mtpDrafter); the engine reaches these resources via
-// drafter.core(). Decode and MemorySeqRm on draftCore are safe for every
-// mode. The strategy TYPE — not a flag on this struct — decides which
-// code paths run; see draft.go for the mode separation.
+// draftCore exposes native handles common to speculative-decoding strategies.
+// Classic drafting owns these resources; MTP borrows them from its internal
+// resource owner. Operations through core() must respect the concrete drafter's
+// KV ownership and externalization capabilities, especially shared-target KV.
 //
 // The strategies using draftCore include:
 //
@@ -151,7 +149,7 @@ func (s *imcPrefix) logicalPosition() int {
 //     file. The MTP head takes (token_id, pre_norm_hidden_state) per
 //     position, so every target llama_decode must be mirrored into the
 //     draft context using NextN host rows or borrowed device-row references.
-//     See loadDraftModelMTP and the MTP speculation package.
+//     Internal MTP owns these resources; core only borrows their handles.
 //
 //   - Separate MTP draft (*separateMTPDrafter): the same own-KV MTP runtime
 //     with the prediction head loaded from a companion GGUF.
@@ -170,8 +168,6 @@ type draftCore struct {
 	nDraft           int
 	promptBuf        []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf         []llama.Token // Reusable buffer for generateDraftTokens output
-	mtp              *mtpengine.Resources
-	mtpStateSource   llama.Context // Borrowed target owning device NextN rows; zero selects host state.
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).
@@ -313,7 +309,7 @@ func NewModel(ctx context.Context, cfg Config) (_ *Model, err error) {
 	if plan.Source == speculationSourceMTP && plan.MTPArtifact == mtpArtifactEmbedded {
 		targetEmbeddingWidth := llama.ModelNEmbd(mdl)
 		mtpOutputWidth := llama.ModelNEmbdOut(mdl)
-		compatiblePlan, err := resolveEmbeddedMTPCompatibility(plan, targetEmbeddingWidth, mtpOutputWidth)
+		compatiblePlan, err := mtpengine.ResolveEmbeddedCompatibility(plan, targetEmbeddingWidth, mtpOutputWidth)
 		if err != nil {
 			return nil, fmt.Errorf("resolve speculation compatibility: %w", err)
 		}

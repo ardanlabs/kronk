@@ -153,13 +153,14 @@ func TestConfigureArtifactIntegrity(t *testing.T) {
 		writeManagedArtifact(t, payload),
 		writeManagedArtifact(t, payload),
 		writeManagedArtifact(t, payload),
+		writeManagedArtifact(t, payload),
 	}
 
 	cfg := model.Config{
-		ModelFiles:     paths[:1],
-		ProjFile:       paths[1],
-		MTPDrafterFile: paths[2],
-		PtrDraftModel:  &model.DraftModelConfig{ModelFiles: paths[3:]},
+		ModelFiles:    paths[:1],
+		ProjFile:      paths[1],
+		DrafterFile:   paths[2],
+		PtrDraftModel: &model.DraftModelConfig{ModelFiles: paths[3:]},
 	}
 	if err := configureArtifactIntegrity(&cfg); err != nil {
 		t.Fatalf("configureArtifactIntegrity: %v", err)

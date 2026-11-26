@@ -35,7 +35,7 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 		return cfg
 	}
 
-	info, err := models.ModelInfoFromPath("", cfg.ModelFiles, cfg.ProjFile, cfg.MTPDrafterFile)
+	info, err := models.ModelInfoFromPath("", cfg.ModelFiles, cfg.ProjFile, cfg.DrafterFile)
 	if err != nil {
 		logAutoTune(ctx, cfg.Log, "status", "skipped", "error", fmt.Sprintf("model-info: %v", err))
 		return cfg

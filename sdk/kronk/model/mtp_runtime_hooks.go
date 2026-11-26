@@ -7,38 +7,8 @@ import (
 	"time"
 
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
-	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
-
-func addMTPBatchEntry(batch llama.BatchExt, token llama.Token, position llama.Pos, seqIDs []llama.SeqId, hidden []float32, nEmbd int, outputLogits bool) error {
-	if len(seqIDs) == 0 {
-		return errors.New("adding MTP batch entry: no sequence ID")
-	}
-
-	idx, err := llama.BatchExtAddToken(batch, seqIDs[0], token)
-	if err != nil {
-		return fmt.Errorf("adding token: %w", err)
-	}
-	for _, seqID := range seqIDs[1:] {
-		if err := llama.BatchExtAddSeq(batch, idx, seqID); err != nil {
-			return fmt.Errorf("adding sequence %d: %w", seqID, err)
-		}
-	}
-	if err := llama.BatchExtSetEmbdState(batch, idx, hidden, nEmbd); err != nil {
-		return fmt.Errorf("setting MTP state embedding: %w", err)
-	}
-	if err := llama.BatchExtSetPos(batch, idx, position); err != nil {
-		return fmt.Errorf("setting position %d: %w", position, err)
-	}
-	if outputLogits {
-		if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
-			return fmt.Errorf("requesting logits: %w", err)
-		}
-	}
-
-	return nil
-}
 
 // mtpSyncInput is the common live-prefill/verification and cache-replay handoff.
 // It borrows existing batch entries rather than rebuilding token-only rows.
@@ -46,15 +16,16 @@ func addMTPBatchEntry(batch llama.BatchExt, token llama.Token, position llama.Po
 // and keep both buffers valid until synchronization completes.
 func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRows []float32, nextPosition llama.Pos, deviceRowStart int) (mtpengine.SyncInput, error) {
 	draft := e.model.draft.core()
-	nEmbd := draft.mtp.EmbeddingSize()
+	resources := mtpResources(e.model.draft)
+	nEmbd := resources.EmbeddingSize()
 	input := mtpengine.SyncInput{
 		RowCount:      len(rows),
 		HiddenRows:    hiddenRows,
 		PendingHidden: s.mtp.PendingHidden,
-		HiddenScratch: draft.mtp.MirrorHidden,
+		HiddenScratch: resources.MirrorHidden,
 		NextPosition:  nextPosition,
 		EmbeddingSize: nEmbd,
-		ChunkSize:     draft.mtp.MirrorCapacity(),
+		ChunkSize:     resources.MirrorCapacity(),
 		SharedKV:      mtpUsesSharedKV(e.model.draft),
 	}
 	if input.SharedKV {
@@ -63,17 +34,13 @@ func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRow
 		return input, nil
 	}
 
-	device := draft.mtpStateSource != 0 && hiddenRows == nil
+	device := resources.DeviceRows() && hiddenRows == nil
 	var pendingRow int32
 	if device {
-		pendingRow = int32(llama.NBatch(e.model.lctx)) + int32(s.seqID)
-		pending := draft.mtp.MirrorHidden[:nEmbd]
-		clear(pending)
-		if len(s.mtp.PendingHidden) == nEmbd {
-			copy(pending, s.mtp.PendingHidden)
-		}
-		if !yzmaspec.SetEmbeddingsNextNRows(e.model.lctx, int64(pendingRow), nEmbd, pending) {
-			return input, errors.New("MTP device replay: writing pending hidden row")
+		var err error
+		pendingRow, err = resources.PreparePendingRow(s.seqID, s.mtp.PendingHidden)
+		if err != nil {
+			return input, err
 		}
 	}
 
@@ -81,7 +48,7 @@ func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRow
 		if len(s.seqIDs) == 0 {
 			return errors.New("MTP replay: no sequence ID")
 		}
-		mirror := extendedBatch{native: draft.mtp.MirrorBatch}
+		mirror := extendedBatch{native: resources.MirrorBatch}
 		if err := llama.BatchExtClear(mirror.native); err != nil {
 			return fmt.Errorf("clearing MTP mirror batch: %w", err)
 		}
@@ -103,23 +70,22 @@ func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRow
 				if start+i == 0 {
 					stateRow = pendingRow
 				}
-				if !yzmaspec.BatchExtSetEmbdStateRow(mirror.native, idx, stateRow) {
-					return fmt.Errorf("setting MTP mirror device row %d", stateRow)
+				if err := resources.SetMirrorState(idx, nil, stateRow); err != nil {
+					return err
 				}
 			} else {
 				hidden := shiftedHidden[i*nEmbd : (i+1)*nEmbd]
-				if err := llama.BatchExtSetEmbdState(mirror.native, idx, hidden, nEmbd); err != nil {
-					return fmt.Errorf("setting MTP mirror state: %w", err)
+				if err := resources.SetMirrorState(idx, hidden, 0); err != nil {
+					return err
 				}
 			}
 		}
-		ret, err := llama.Process(draft.lctx, llama.ProcessTypeDecode, mirror.native)
+		ret, err := resources.DecodeMirror()
 		if err != nil || ret != 0 {
 			e.model.log(s.job.ctx, "speculative", "status", "mtp-mirror-decode-error",
 				"slot", s.id, "seq", s.seqID, "ret", ret, "err", err)
 			return decodeError(ret, err)
 		}
-		llama.Synchronize(draft.lctx)
 		return nil
 	}
 	if device {
@@ -128,10 +94,7 @@ func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRow
 				return input.DecodeOwnChunk(start, end, nil)
 			},
 			ReadLastRow: func(out []float32) error {
-				if !yzmaspec.GetEmbeddingsNextNRows(e.model.lctx, int64(deviceRowStart+len(rows)-1), nEmbd, out) {
-					return errors.New("MTP device replay: reading final hidden row")
-				}
-				return nil
+				return resources.ReadLastRow(deviceRowStart+len(rows)-1, out)
 			},
 		}
 	}
@@ -159,13 +122,11 @@ func (e *batchEngine) syncMTPDecodedRows(s *slot, batch *extendedBatch, start in
 	if e.model.draft == nil || !e.model.draft.mtp() || s.mtp.Disabled || batch.len() == start {
 		return nil
 	}
-	nEmbd := e.model.draft.core().mtp.EmbeddingSize()
-	var hidden []float32
-	if e.model.draft.core().mtpStateSource == 0 {
-		hidden = yzmaspec.GetEmbeddingsNextN(e.model.lctx, batch.len(), nEmbd)
-		if hidden != nil {
-			hidden = hidden[start*nEmbd:]
-		}
+	resources := mtpResources(e.model.draft)
+	nEmbd := resources.EmbeddingSize()
+	hidden := resources.TargetHidden(batch.len())
+	if hidden != nil {
+		hidden = hidden[start*nEmbd:]
 	}
 	err := e.syncMTPRows(s, batch.entries[start:], hidden, nextPosition, start)
 	if err == nil {
@@ -194,7 +155,8 @@ func (e *batchEngine) resetMTPMediaPrefix(s *slot) error {
 
 func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 	draft := e.model.draft.core()
-	nEmbd := draft.mtp.EmbeddingSize()
+	resources := mtpResources(e.model.draft)
+	nEmbd := resources.EmbeddingSize()
 	nDraft := e.maxDraftForSlot(s, draft.nDraft)
 	if nDraft == 0 || len(s.mtp.PendingHidden) != nEmbd {
 		return mtpengine.DraftInput{}, nil
@@ -205,8 +167,6 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 	if shared {
 		mode = "mtp shared"
 	}
-	batch := draft.mtp.DraftBatch
-
 	return mtpengine.DraftInput{
 		Token:         s.sampled,
 		Position:      s.draftNPast,
@@ -219,14 +179,11 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 			return llama.VocabIsEOG(e.model.vocab, token)
 		},
 		DecodeStep: func(token llama.Token, position llama.Pos, hidden []float32) (llama.Token, []float32, bool, error) {
-			if err := llama.BatchExtClear(batch); err != nil {
-				return 0, nil, false, fmt.Errorf("%s draft: clearing batch: %w", mode, err)
-			}
-			if err := addMTPBatchEntry(batch, token, position, s.seqIDs, hidden, nEmbd, true); err != nil {
-				return 0, nil, false, fmt.Errorf("%s draft: add token at pos %d: %w", mode, position, err)
+			if err := resources.PrepareDraft(token, position, s.seqIDs, hidden); err != nil {
+				return 0, nil, false, err
 			}
 
-			ret, err := llama.Process(draft.lctx, llama.ProcessTypeDecode, batch)
+			ret, err := resources.DecodeDraft()
 			if err != nil || ret != 0 {
 				e.model.log(s.job.ctx, "speculative", "status", "mtp-draft-decode-error",
 					"slot", s.id, "seq", s.seqID, "mode", mode, "position", position, "token", token, "ret", ret, "err", err)
@@ -235,10 +192,7 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 				}
 				return 0, nil, false, nil
 			}
-			llama.Synchronize(draft.lctx)
-
-			nextToken := llama.SamplerSample(draft.sampler, draft.lctx, -1)
-			nextHidden := yzmaspec.GetEmbeddingsNextNIth(draft.lctx, 0, nEmbd)
+			nextToken, nextHidden := resources.SampleDraft()
 			return nextToken, nextHidden, true, nil
 		},
 	}, nil
@@ -297,12 +251,10 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 	}, func(i, end int) error {
 
 		mtpSyncStart := time.Now()
-		var hiddenRows []float32
-		if e.model.draft.core().mtpStateSource == 0 {
-			hiddenRows = yzmaspec.GetEmbeddingsNextN(e.model.lctx, end-i, e.model.draft.core().mtp.EmbeddingSize())
-			if hiddenRows == nil {
-				return fmt.Errorf("imc-mtp: target pre-norm rows unavailable at pos %d", startPos+i)
-			}
+		resources := mtpResources(e.model.draft)
+		hiddenRows := resources.TargetHidden(end - i)
+		if !resources.DeviceRows() && hiddenRows == nil {
+			return fmt.Errorf("imc-mtp: target pre-norm rows unavailable at pos %d", startPos+i)
 		}
 		if err := e.syncMTPRows(s, batch.entries, hiddenRows, llama.Pos(startPos+end), 0); err != nil {
 			return fmt.Errorf("imc-mtp: sync at pos %d: %w", startPos+i, err)
@@ -358,8 +310,8 @@ func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {
 		return nil
 	}
 
-	draft := e.model.draft.core()
-	nEmbd := draft.mtp.EmbeddingSize()
+	resources := mtpResources(e.model.draft)
+	nEmbd := resources.EmbeddingSize()
 	totalRows := e.batch.len()
 	start := int(s.mtp.TargetRange.Start)
 	if start < 0 || start+count > totalRows {
@@ -373,18 +325,14 @@ func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {
 	} else {
 		s.mtp.VerifyHidden = s.mtp.VerifyHidden[:need]
 	}
-	if draft.mtpStateSource != 0 {
-		if !yzmaspec.GetEmbeddingsNextNRows(e.model.lctx, int64(start), nEmbd, s.mtp.VerifyHidden) {
-			return errors.New("verify-prenorm-capture: reading target device rows")
-		}
-		return nil
+	copied, err := resources.CopyTargetHidden(totalRows, start, count, s.mtp.VerifyHidden)
+	if err != nil {
+		return err
 	}
-	embd := yzmaspec.GetEmbeddingsNextN(e.model.lctx, totalRows, nEmbd)
-	if embd == nil {
+	if !copied {
 		s.mtp.VerifyHidden = s.mtp.VerifyHidden[:0]
 		return fmt.Errorf("verify-prenorm-capture: target pre-norm buffer is nil (SetEmbeddingsNextN may not be enabled)")
 	}
-	copy(s.mtp.VerifyHidden, embd[start*nEmbd:(start+count)*nEmbd])
 	return nil
 }
 

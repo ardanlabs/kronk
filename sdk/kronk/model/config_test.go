@@ -1126,6 +1126,10 @@ func TestSpeculationMode(t *testing.T) {
 	if got := NewConfig(WithSpeculationMode(SpeculationDisabled)).SpeculationMode(); got != SpeculationDisabled {
 		t.Errorf("SpeculationMode() = %q, want %q", got, SpeculationDisabled)
 	}
+	cfg := NewConfig(WithSpeculationMode(SpeculationDSpark), WithDrafterFile("sidecar.gguf"))
+	if cfg.SpeculationMode() != SpeculationDSpark || cfg.DrafterFile != "sidecar.gguf" {
+		t.Errorf("DSpark options: got %+v", cfg)
+	}
 }
 
 func TestMTPNDraft(t *testing.T) {

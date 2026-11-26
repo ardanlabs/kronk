@@ -24,7 +24,7 @@ func ResolveSpeechConfig(cfg Config) (Config, error) {
 		return cfg, fmt.Errorf("%w: speech requires partitioned KV cache", ErrInvalidRequest)
 	case cfg.IncrementalCache() || cfg.IMCSessionCapacity() > 0:
 		return cfg, fmt.Errorf("%w: speech does not support IMC", ErrInvalidRequest)
-	case cfg.PtrDraftModel != nil || cfg.MTPDrafterFile != "" ||
+	case cfg.PtrDraftModel != nil || cfg.DrafterFile != "" ||
 		(cfg.SpeculationMode() != SpeculationAuto && cfg.SpeculationMode() != SpeculationDisabled):
 		return cfg, fmt.Errorf("%w: speech does not support speculative decoding", ErrInvalidRequest)
 	case len(cfg.Adapters) > 0:

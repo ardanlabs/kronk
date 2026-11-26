@@ -37,6 +37,18 @@ func Resolve(cfg Config) (Plan, error) {
 		}
 		return Plan{Mode: cfg.Mode, Source: SourceClassic, NDraft: cfg.ClassicNDraft, Available: true}, nil
 
+	case ModeDSpark:
+		if cfg.ClassicConfigured {
+			return Plan{}, fmt.Errorf("speculation mode %q cannot use a separate draft model", cfg.Mode)
+		}
+		if !cfg.DSparkConfigured {
+			return Plan{}, fmt.Errorf("speculation mode %q requires a compatible DSpark companion in DrafterFile", cfg.Mode)
+		}
+		if !cfg.DSparkAvailable {
+			return Plan{}, fmt.Errorf("speculation mode %q requested but DSpark execution is not yet available in this Kronk release", cfg.Mode)
+		}
+		return Plan{Mode: cfg.Mode, Source: SourceDSpark, NDraft: cfg.DSparkNDraft, Available: true}, nil
+
 	case ModeMTP:
 		if cfg.ClassicConfigured {
 			return Plan{}, fmt.Errorf("speculation mode %q cannot use a separate draft model", cfg.Mode)
@@ -45,6 +57,9 @@ func Resolve(cfg Config) (Plan, error) {
 	case ModeAuto:
 		if cfg.ClassicConfigured {
 			return Plan{Mode: cfg.Mode, Source: SourceClassic, NDraft: cfg.ClassicNDraft, Available: true}, nil
+		}
+		if cfg.DSparkConfigured {
+			return Plan{Mode: cfg.Mode, Source: SourceDSpark, NDraft: cfg.DSparkNDraft, Available: cfg.DSparkAvailable}, nil
 		}
 
 	default:

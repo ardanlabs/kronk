@@ -80,11 +80,11 @@ func Test_API_MTP(t *testing.T) {
 								t.Fatalf("wrong MTP backend: %+v", record.Attributes)
 							}
 							if fixture.backend == "gemma-shared-kv" {
-								if record.Attributes["source"] != "mtp-drafter-file" || record.Attributes["file"] != cfg.MTPDrafterFile ||
-									filepath.Base(cfg.MTPDrafterFile) != "mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" {
+								if record.Attributes["source"] != "mtp-drafter-file" || record.Attributes["file"] != cfg.DrafterFile ||
+									filepath.Base(cfg.DrafterFile) != "mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" {
 									t.Fatalf("wrong assistant artifact: %+v", record.Attributes)
 								}
-							} else if cfg.MTPDrafterFile != "" || record.Attributes["source"] != "auto-detected-configured" && record.Attributes["source"] != "auto-detected" {
+							} else if cfg.DrafterFile != "" || record.Attributes["source"] != "auto-detected-configured" && record.Attributes["source"] != "auto-detected" {
 								t.Fatalf("expected embedded Qwen head: %+v", record.Attributes)
 							}
 							loaded = true

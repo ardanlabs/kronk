@@ -180,7 +180,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		result = vram.Calculate(input)
 	}
 
-	if result.Input.ComputeKind != modelprofile.ComputeGeneric && cfg.MTPDrafterFile != "" && model.SpeculativeContextCount(cfg) > 1 {
+	if result.Input.ComputeKind != modelprofile.ComputeGeneric && cfg.DrafterFile != "" && model.SpeculativeContextCount(cfg) > 1 {
 		// A supported companion is sized independently, not as another
 		// target-shaped compute arena.
 		input := result.Input
@@ -281,7 +281,7 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 			fileCfg.RecurrentStateCopies = 1
 			fileCfg.EmbeddedMTPStateCopies = 1
 			fileCfg.MoECacheSize = 0
-			fileCfg.MTPContext = path == cfg.MTPDrafterFile && (target.Input.ComputeKind == modelprofile.ComputeIndexed || target.Input.ComputeKind == modelprofile.ComputeQwen35)
+			fileCfg.MTPContext = path == cfg.DrafterFile && (target.Input.ComputeKind == modelprofile.ComputeIndexed || target.Input.ComputeKind == modelprofile.ComputeQwen35)
 
 			result, err = vram.FromFiles([]string{path}, fileCfg)
 			if err != nil {
@@ -299,9 +299,9 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 		return err
 	}
 
-	if cfg.SpeculationMode() != model.SpeculationDisabled {
-		mtpOnCPU := !l.resman.HasGPUs() || cfg.NGpuLayers() == -1
-		if err := addFile(cfg.MTPDrafterFile, mtpOnCPU, cfg.Devices, cfg.TensorSplit, cfg.MainGPU()); err != nil {
+	if model.SpeculativeContextCount(cfg) > 1 {
+		drafterOnCPU := !l.resman.HasGPUs() || cfg.NGpuLayers() == -1
+		if err := addFile(cfg.DrafterFile, drafterOnCPU, cfg.Devices, cfg.TensorSplit, cfg.MainGPU()); err != nil {
 			return err
 		}
 	}
@@ -579,7 +579,7 @@ func configUsesGPU(cfg model.Config) bool {
 	if cfg.ProjFile != "" && (cfg.PtrProjOnCPU == nil || !*cfg.PtrProjOnCPU) {
 		return true
 	}
-	if cfg.MTPDrafterFile != "" {
+	if cfg.DrafterFile != "" {
 		return true
 	}
 	return cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() && cfg.PtrDraftModel.NGpuLayers() != -1
@@ -683,7 +683,7 @@ func (l *Llama) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 		}
 		// Preserve the existing planning/load error path when metadata cannot
 		// be read; only positively classified speech changes configuration here.
-		info, err := models.ModelInfoFromPath(req.ModelID, cfg.ModelFiles, cfg.ProjFile, cfg.MTPDrafterFile)
+		info, err := models.ModelInfoFromPath(req.ModelID, cfg.ModelFiles, cfg.ProjFile, cfg.DrafterFile)
 		if err == nil && info.IsSpeechModel {
 			return model.ResolveSpeechConfig(cfg)
 		}

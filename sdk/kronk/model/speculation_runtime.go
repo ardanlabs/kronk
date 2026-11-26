@@ -7,7 +7,6 @@ import (
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
-	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -93,7 +92,7 @@ func (e *batchEngine) CommitMTPDraft(slotID int, result mtp.DraftResult) {
 	s.draftTokensBuf = result.Candidates
 	s.mtp.DraftHidden = result.Hidden
 	s.draftNPast = result.Position
-	if mtpUsesSharedKV(e.model.draft) && len(result.Hidden) == e.model.draft.core().mtp.EmbeddingSize() {
+	if mtpUsesSharedKV(e.model.draft) && len(result.Hidden) == mtpResources(e.model.draft).EmbeddingSize() {
 		s.mtp.PendingHidden = append(s.mtp.PendingHidden[:0], result.Hidden...)
 	}
 	s.specDraftedTotal += len(result.Candidates)
@@ -141,7 +140,7 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 		return mtp.SyncInput{}, nil
 	}
 
-	draft := e.model.draft.core()
+	resources := mtpResources(e.model.draft)
 	count := int(s.mtp.TargetRange.Count)
 	if effectiveCount > 0 {
 		count = effectiveCount
@@ -152,11 +151,11 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 		return mtp.SyncInput{}, fmt.Errorf("target rows unavailable for range [%d..%d)", start, start+count)
 	}
 	var hiddenRows []float32
-	nEmbd := draft.mtp.EmbeddingSize()
+	nEmbd := resources.EmbeddingSize()
 	if len(s.mtp.VerifyHidden) >= count*nEmbd {
 		hiddenRows = s.mtp.VerifyHidden[:count*nEmbd]
-	} else if draft.mtpStateSource == 0 {
-		hidden := yzmaspec.GetEmbeddingsNextN(e.model.lctx, totalRows, nEmbd)
+	} else if !resources.DeviceRows() {
+		hidden := resources.TargetHidden(totalRows)
 		if hidden == nil {
 			return mtp.SyncInput{}, fmt.Errorf("target pre-norm rows unavailable for range [%d..%d)", start, start+count)
 		}

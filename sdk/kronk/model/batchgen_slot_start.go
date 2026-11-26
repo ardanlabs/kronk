@@ -353,7 +353,7 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 				var draftLength int
 				var savedPendingH []float32
 				e.model.cacheMu.RLock()
-				nEmbd := draft.mtp.EmbeddingSize()
+				nEmbd := mtpResources(e.model.draft).EmbeddingSize()
 				switch {
 				case job.imcSystemCache != nil:
 					draftStore = job.imcSystemCache.draftKVState
@@ -745,7 +745,6 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 				e.model.cacheMu.Unlock()
 			}
 			if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled && snapshotOK && s.draftNPast == cacheIdx && job.imcSession.draftKVState != nil {
-				draft := ext.core()
 				dctx := ext.draftKVCtx()
 
 				draftCapBefore := job.imcSession.draftKVState.Cap()
@@ -765,7 +764,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 
 				draftCapAfter := job.imcSession.draftKVState.Cap()
 
-				nEmbd := draft.mtp.EmbeddingSize()
+				nEmbd := mtpResources(e.model.draft).EmbeddingSize()
 				draftSnapshotOK = draftSnapshotErr == nil && validMTPDraftState(nDraftExtracted, draftKVSize, s.mtp.PendingHidden, nEmbd)
 				if draftSnapshotOK {
 					if err := job.imcSession.draftKVState.Commit(job.ctx, int(nDraftExtracted)); err != nil {
@@ -1244,7 +1243,6 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 	if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled {
 		draftStore = e.model.imcSystemCacheStore(cache, true)
 		draftErr := draftStore.Reset(ctx)
-		draft := ext.core()
 		dctx := ext.draftKVCtx()
 		e.model.decodeMu.Lock()
 		llama.Synchronize(dctx)
@@ -1260,10 +1258,10 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 			draftExtracted = llama.StateSeqGetData(dctx, draftBuf, s.seqID)
 			e.model.decodeMu.Unlock()
 		}
-		if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
+		if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, mtpResources(e.model.draft).EmbeddingSize()) {
 			draftErr = draftStore.Commit(ctx, int(draftExtracted))
 		}
-		if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
+		if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, mtpResources(e.model.draft).EmbeddingSize()) {
 			pendingH = s.mtp.PendingHidden
 		} else {
 			resetErr := draftStore.Reset(ctx)

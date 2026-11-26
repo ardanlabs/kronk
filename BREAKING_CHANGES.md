@@ -3,6 +3,7 @@
 ## Index
 
 - [v1.33.4](#v1334)
+  - [Companion Drafter Configuration](#v1334-companion-drafter-configuration)
   - [Generic Draft Pull Options](#v1334-generic-draft-pull-options)
   - [Catalog Draft Schema](#v1334-catalog-draft-schema)
 - [v1.33.3](#v1333)
@@ -67,6 +68,17 @@
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
 ## v1.33.4
+
+### v1.33.4: Companion Drafter Configuration
+
+`model.Config.MTPDrafterFile` is replaced by `model.Config.DrafterFile`, and
+`model.WithMTPDrafterFile(path)` is replaced by `model.WithDrafterFile(path)`.
+Rename these in SDK callers; there are no compatibility aliases. The single
+field holds the selected companion GGUF, whose metadata identifies its drafting
+algorithm. Use `SpeculationMTP` or `SpeculationDSpark` to require a particular
+algorithm, or `SpeculationDisabled` to disable drafting. DSpark execution is
+not yet supported. Conventional separate-model configuration remains in
+`DraftModelConfig`.
 
 ### v1.33.4: Generic Draft Pull Options
 

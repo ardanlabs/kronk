@@ -100,8 +100,8 @@ func configureArtifactIntegrity(cfg *model.Config) error {
 	if cfg.ProjFile != "" {
 		paths = append(paths, cfg.ProjFile)
 	}
-	if cfg.MTPDrafterFile != "" {
-		paths = append(paths, cfg.MTPDrafterFile)
+	if cfg.DrafterFile != "" {
+		paths = append(paths, cfg.DrafterFile)
 	}
 	if cfg.PtrDraftModel != nil {
 		paths = append(paths, cfg.PtrDraftModel.ModelFiles...)

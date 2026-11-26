@@ -513,14 +513,14 @@ func CfgClassicDraftChat() model.Config {
 // gemma4-assistant separate-file MTP drafter, using the same
 // gemma-4-26B-A4B-it-UD-Q4_K_M target the vision tests use (MPMoEVision).
 // The drafter is the "mtp-*.gguf" companion that ships alongside the main
-// model; we wire it via MTPDrafterFile exactly as the runtime's kronkresolve
-// does (out.MTPDrafterFile = fp.MTPFile). The loader auto-loads it as a
+// model; we wire it via DrafterFile exactly as the runtime's kronkresolve
+// does (out.DrafterFile = fp.MTPFile). The loader auto-loads it as a
 // shared-KV MTP head (ctx_other==target). F16 KV matches the other MTP /
 // SWA configs. NSeqMax=1 for the single-slot path.
 func CfgGemma4MTPChat() model.Config {
 	return model.Config{
 		ModelFiles:          MPMoEVision.ModelFiles,
-		MTPDrafterFile:      MPMoEVision.MTPFile,
+		DrafterFile:         MPMoEVision.MTPFile,
 		PtrContextWindow:    new(8192),
 		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeF16,
@@ -536,7 +536,7 @@ func CfgGemma4MTPChat() model.Config {
 func CfgGemma4MTPChatMultiSlot() model.Config {
 	return model.Config{
 		ModelFiles:          MPMoEVision.ModelFiles,
-		MTPDrafterFile:      MPMoEVision.MTPFile,
+		DrafterFile:         MPMoEVision.MTPFile,
 		PtrContextWindow:    new(8192),
 		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeF16,

@@ -241,7 +241,13 @@ func pickDraftCompanion(drafts []string, repo string, files []string) CatalogDra
 	if mtp := pickMTPCompanion(drafts, target); mtp != "" {
 		return mtpDraft(localDraftName(DraftMethodMTP, repo, mtp, files), mtp)
 	}
+	return pickDSparkCompanion(drafts, repo, files)
+}
 
+// pickDSparkCompanion selects only a same-directory, same-family DSpark
+// artifact. It is also used when indexing both installed companion types.
+func pickDSparkCompanion(drafts []string, repo string, files []string) CatalogDraft {
+	target := files[0]
 	family := stripQuantSuffix(siblingModelID(target))
 	var matches []string
 	for _, file := range drafts {

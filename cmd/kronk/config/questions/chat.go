@@ -421,10 +421,10 @@ func Chat() []Question {
 		{
 			Key: "speculation", Group: gFeatures, Kind: kindChoice, generation: true,
 			Title: "Speculative decoding?",
-			About: "Auto uses a draft when one is available: a draft model, then an MTP head.",
+			About: "Auto prefers a configured classic draft, then a compatible DSpark companion, then MTP. DSpark execution is not yet available; selecting it in auto currently runs target-only.",
 			Tip:   "Speeds up answers when a draft fits in memory. Disable it when memory is tight.",
 			Options: func(f source.Facts) []option {
-				opts := []option{{"auto", "auto"}, {"disabled", "disabled"}}
+				opts := []option{{"auto", "auto"}, {"disabled", "disabled"}, {"dspark (companion; runtime not yet available)", "dspark"}}
 				if len(f.Drafts) > 0 {
 					opts = append(opts, option{"classic (a separate draft model)", "classic"})
 				}
@@ -491,7 +491,7 @@ func Chat() []Question {
 			Def:   text("3"),
 			show: func(f source.Facts, a *Answers) bool {
 				spec := a.Value("speculation")
-				return spec == "classic" || (f.MTP() && spec != "disabled")
+				return spec == "classic" || spec == "dspark" || (f.MTP() && spec != "disabled")
 			},
 		},
 		{

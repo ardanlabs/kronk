@@ -51,7 +51,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 				if msg == loadEvent && fields["status"] == "loaded" {
 					loaded = backend == "classic-own-kv" || fields["backend"] == backend &&
 						((backend == "qwen35-own-kv" && fields["source"] == "auto-detected") ||
-							(backend == "gemma-shared-kv" && fields["source"] == "mtp-drafter-file" && fields["file"] == cfg.MTPDrafterFile))
+							(backend == "gemma-shared-kv" && fields["source"] == "mtp-drafter-file" && fields["file"] == cfg.DrafterFile))
 				}
 			}
 			WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
