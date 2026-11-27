@@ -37,7 +37,10 @@ if [[ ! -r "$APP_KEY" ]]; then
     exit 1
 fi
 
-api() { curl -fsSL -H "Accept: application/vnd.github+json" "$@"; }
+api() {
+    curl -fsSL -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:157.0) Gecko/20100101 Firefox/157.0' \
+        -H "Accept: application/vnd.github+json" "$@"
+}
 
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 

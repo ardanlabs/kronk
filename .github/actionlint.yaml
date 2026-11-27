@@ -1,16 +1,23 @@
 # Custom labels on the self-hosted runners, so `runs-on:` entries using them
 # are validated rather than reported as unknown.
 #
-#   kronk-linux-gpu-N   self-hosted, Linux, X64, gpu, vulkan
-#   kronk-linux-rocm-N  self-hosted, Linux, X64, gpu, rocm
+#   kronk-linux-gpu-N   self-hosted, Linux, X64, gpu, vulkan           (GPU host)
+#   kronk-linux-rocm-N  self-hosted, Linux, X64, gpu, rocm             (GPU host, optional)
+#   kronk-linux-wsl2-N  self-hosted, Linux, X64, wsl2, docker          (CPU only)
 #   kronk-runner-N      self-hosted, macOS, ARM64, sand, metal
 #
-# Linux tests select the Vulkan fleet; macOS tests select Metal runners.
-# Linux fleets: zarf/docker/runner; macOS `metal` is set in Sand.
+# Labels are AND-matched. GPU-free Linux jobs select [self-hosted, Linux, X64]
+# and may land on any Linux fleet; GPU jobs add `gpu` plus a backend, which no
+# wsl2 runner carries. Jobs that need a Docker daemon add `docker`; the GPU
+# fleets run with DOCKER=none and do not carry it. Linux tests select the
+# Vulkan fleet; macOS tests select Metal runners. Linux fleets:
+# zarf/docker/runner; macOS `metal` is set in Sand.
 self-hosted-runner:
   labels:
+    - docker
     - gpu
     - metal
     - rocm
     - vulkan
     - sand
+    - wsl2
