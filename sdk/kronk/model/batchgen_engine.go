@@ -649,6 +649,7 @@ func needsTargetSpecSnapshot(memory modelprofile.MemorySemantics, rollbackDepth 
 
 func (e *batchEngine) maxDraftForSlot(s *slot, configured int) int {
 	maxDraft := min(configured, e.model.cfg.ContextWindow()-int(s.nPast)-2)
+	maxDraft = min(maxDraft, e.model.cfg.EffectiveNBatch()-e.batch.len()-1)
 
 	remainingTokens := s.job.params.MaxTokens - (s.reasonTokens + s.completionTokens)
 	if remainingTokens > 0 {

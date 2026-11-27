@@ -597,15 +597,15 @@ decoding method. A model can declare one optional `draft` with a `method` of
 ```yaml
 version: "3.2"
 models:
-  ggml-org/Inkling-2-Mini-IQ4_NL:
+  ggml-org/Inkling-2-Mini-Q8_0:
     provider: ggml-org
     family: Inkling-2-Mini-GGUF
     revision: main
     files:
-      - Inkling-2-Mini-IQ4_NL.gguf
+      - Inkling-2-Mini-Q8_0.gguf
     draft:
       method: dspark
-      file: dspark-Inkling-2-Mini-IQ4_NL.gguf
+      file: dspark-Inkling-2-Mini-Q8_0.gguf
       original: Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
       url: https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
     draft_checked: true
@@ -657,8 +657,37 @@ The BUI's HF Pull screen provides the same draft-method and URL override;
 the catalog Pull panel previews the catalog companion without needing an override.
 
 Declaring a draft makes it available to the downloader, not automatically to
-every inference method. DSpark companions can be downloaded and inspected, but
-DSpark inference is not yet supported. A conventional draft companion does not
+every inference method. The qualified `ggml-org/Inkling-2-Mini-GGUF` target
+`Inkling-2-Mini-Q8_0.gguf` and matching
+`dspark-Inkling-2-Mini-Q8_0.gguf` companion activate DSpark automatically in
+`auto` mode. Greedy and positive-temperature text requests support
+`temperature`, `top_k`, `top_p`, and `min_p`, plus existing token suppression.
+Positive-temperature verification uses rejection sampling with the companion's
+sparse proposal distribution. Set `speculation: disabled` to turn off all
+drafting or `speculation: dspark` to require a compatible sidecar at model load.
+A file-less `draft-model: {ndraft: 3}` limits proposals without selecting a
+classic draft. The trained limit for this pair is seven proposals (block size
+eight including the anchor); a larger override cannot increase it.
+
+Grammar, adaptive-P, DRY, repeat/frequency/presence penalties, and XTC visibly
+fall back to target-only with `unsupported-sampling`; a repeat penalty of 1.0
+and frequency/presence penalties of 0 leave penalties disabled. Media requests
+visibly fall back with `unsupported-media`. Text IMC session and System cache
+checkpoints pair the target prefix with independent sidecar KV and Markov state,
+so compatible cached requests can continue DSpark drafting across turns and
+execution slots. Missing or incompatible companion state still runs target-only
+with `accepted-prefix-unavailable`. Restoring KV alone is insufficient; inspect
+draft counts and fallback reasons rather than treating every target-cache hit
+as DSpark acceleration.
+
+Execution qualification is limited to this known pair on CPU and Metal; it
+does not establish CUDA or Vulkan support. Acceptance is not a speedup claim.
+A request seed gives request-scoped reproducible draws, not byte-identical
+output to disabled speculation or across batch shapes, context configurations,
+and backends. See [Chapter 6](https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp)
+for YAML, SDK, and request examples and the measurement and fallback contract.
+
+A conventional draft companion does not
 replace the explicit `draft-model` runtime configuration. Embedded MTP requires
 no companion file and remains reported separately as `mtp_source: embedded`.
 

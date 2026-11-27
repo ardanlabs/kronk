@@ -12,18 +12,28 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// dsparkDrafter exposes borrowed handles without granting draft-KV
-// externalization: restoring KV alone cannot restore DSpark's Markov state.
+// dsparkDrafter exposes borrowed handles and checkpoints independent KV together
+// with its accepted-prefix Markov state through the shared IMC contract.
 type dsparkDrafter struct {
 	c   *draftCore
 	r   *dsparkengine.Resources
 	log applog.Logger
 }
 
-func (*dsparkDrafter) sealedDrafter()     {}
-func (*dsparkDrafter) kind() draftKind    { return draftDSpark }
-func (*dsparkDrafter) mtp() bool          { return false }
-func (d *dsparkDrafter) core() *draftCore { return d.c }
+func (*dsparkDrafter) sealedDrafter()              {}
+func (*dsparkDrafter) kind() draftKind             { return draftDSpark }
+func (*dsparkDrafter) mtp() bool                   { return false }
+func (d *dsparkDrafter) core() *draftCore          { return d.c }
+func (d *dsparkDrafter) draftKVCtx() llama.Context { return d.r.Context }
+func (d *dsparkDrafter) draftCheckpointState(s *slot, position llama.Pos) []float32 {
+	return d.r.CheckpointState(s.seqID, position)
+}
+func (d *dsparkDrafter) restoreDraftCheckpoint(s *slot, position llama.Pos, state []float32) bool {
+	return d.r.RestoreCheckpoint(s.seqID, position, state)
+}
+func (d *dsparkDrafter) clearDraftCheckpoint(s *slot) {
+	d.r.ClearCheckpoint(s.seqID)
+}
 func (d *dsparkDrafter) unload() {
 	if err := d.r.Free(); err != nil {
 		d.log(context.Background(), "draft-model-dspark", "status", "cleanup-error", "err", err)
@@ -71,9 +81,9 @@ func loadDSpark(ctx context.Context, log applog.Logger, cfg Config, targetCtx ll
 		c: &draftCore{model: r.Model, vocab: llama.ModelGetVocab(r.Model), lctx: r.Context, mem: r.Memory, nDraft: plan.NDraft},
 		r: r, log: log,
 	}
-	log(ctx, "draft-model-dspark", "status", "loaded-feature-sync-only", "file", cfg.DrafterFile,
-		"nDraft", plan.NDraft, "nCtx", llama.NCtx(r.Context), "execution", "target-only")
+	log(ctx, "draft-model-dspark", "status", "loaded", "file", cfg.DrafterFile,
+		"nDraft", plan.NDraft, "nCtx", llama.NCtx(r.Context), "execution", "text")
 	return &d, nil
 }
 
-var _ drafter = (*dsparkDrafter)(nil)
+var _ draftKVExternalizer = (*dsparkDrafter)(nil)

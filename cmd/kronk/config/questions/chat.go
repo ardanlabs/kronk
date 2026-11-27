@@ -421,10 +421,10 @@ func Chat() []Question {
 		{
 			Key: "speculation", Group: gFeatures, Kind: kindChoice, generation: true,
 			Title: "Speculative decoding?",
-			About: "Auto prefers a configured classic draft, then a compatible DSpark companion, then MTP. DSpark execution is not yet available; selecting it in auto currently runs target-only.",
+			About: "Auto prefers a configured classic draft, then a compatible DSpark companion, then MTP. DSpark supports greedy and sampled text; unsupported controls or media run target-only.",
 			Tip:   "Speeds up answers when a draft fits in memory. Disable it when memory is tight.",
 			Options: func(f source.Facts) []option {
-				opts := []option{{"auto", "auto"}, {"disabled", "disabled"}, {"dspark (companion; runtime not yet available)", "dspark"}}
+				opts := []option{{"auto", "auto"}, {"disabled", "disabled"}, {"dspark (companion)", "dspark"}}
 				if len(f.Drafts) > 0 {
 					opts = append(opts, option{"classic (a separate draft model)", "classic"})
 				}

@@ -1715,13 +1715,13 @@ models:
           <h3 id="61-what-speculative-decoding-does">6.1 What Speculative Decoding Does</h3>
           <p>Speculative decoding uses a faster drafter to propose several continuation tokens. The target model verifies those proposals together. Accepted proposals reduce the number of target-model passes needed to produce the response; rejected proposals are discarded and the target remains authoritative.</p>
           <p>This optimization does not change the chat, Responses, or SDK request shapes. It can improve generation throughput when the drafter is inexpensive and its proposals agree frequently with the target. It can also reduce performance when draft work is expensive or acceptance is poor. Always measure with the model, sampling settings, hardware, and prompts used in production.</p>
-          <p>Kronk supports classic speculative decoding with a separate draft model and Multi-Token Prediction (MTP). MTP uses a prediction head designed for the target rather than a general-purpose smaller language model.</p>
+          <p>Kronk supports classic speculative decoding with a separate draft model, Multi-Token Prediction (MTP), and DSpark. MTP uses a prediction head designed for the target rather than a general-purpose smaller language model. DSpark uses a matching companion to propose a block of tokens from the target's accepted text prefix.</p>
           <p>The target accepts a verified prefix of the proposals and supplies a replacement or bonus token. Rejected proposals do not become authoritative output.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/speculative-decoding.svg" alt="Speculative decoding proposal, target verification, acceptance, and state synchronization" /></p>
-          <p>Classic speculative sampling uses the target and draft distributions to decide acceptance and replacement. Kronk's MTP path uses exact token-match verification against the target sampler. Both paths keep the target authoritative and emit an accepted prefix of zero to <code>ndraft</code> candidates followed by a target-derived replacement or bonus token.</p>
-          <p>When a request supplies <code>seed</code>, Kronk derives request-local random streams for the target sampler, classic draft sampler, and speculative acceptance and replacement decisions. This prevents concurrent requests from consuming one another's random stream. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for the repeatability contract and its environment constraints.</p>
+          <p>Classic speculative sampling uses the target and draft distributions to decide acceptance and replacement. DSpark uses target token-match verification for greedy text and rejection sampling with its sparse proposal distribution at positive temperature. Kronk's MTP path uses exact token-match verification against the target sampler. All three paths keep the target authoritative and emit an accepted prefix of zero to <code>ndraft</code> candidates followed by a target-derived replacement or bonus token.</p>
+          <p>When a request supplies <code>seed</code>, Kronk derives request-local random streams for the target sampler, classic draft sampler, and speculative acceptance and replacement decisions. This prevents concurrent requests from consuming one another's random stream. DSpark also uses request-scoped draws for proposals and verification. A seed does not promise byte-identical output to disabled speculation or across batching configurations and backends. Even independent target-only greedy runs can make different close token decisions with different context configurations or batch shapes. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for the repeatability contract and its environment constraints.</p>
           <h3 id="62-drafter-sources-and-selection">6.2 Drafter Sources and Selection</h3>
-          <p>Kronk can load a drafter from four sources:</p>
+          <p>Kronk can load a drafter from five sources:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1735,6 +1735,11 @@ models:
                 <td><strong>Classic separate draft</strong></td>
                 <td>A <code>draft-model</code> configuration names another compatible GGUF.</td>
                 <td>Requires <code>nseq-max: 1</code></td>
+              </tr>
+              <tr>
+                <td><strong>DSpark companion</strong></td>
+                <td>A qualified, matching DSpark sidecar is downloaded with the target.</td>
+                <td>Supports multiple slots</td>
               </tr>
               <tr>
                 <td><strong>Shared-KV companion MTP assistant</strong></td>
@@ -1753,9 +1758,9 @@ models:
               </tr>
             </tbody>
           </table>
-          <p>Kronk checks these sources in that order. A <code>draft-model</code> block containing a <code>model-id</code> explicitly selects the classic separate draft and takes precedence over the MTP forms. Without one, Kronk uses a compatible companion MTP file when present, then checks the target for an embedded MTP head. If no source is available, the model runs normally without speculation.</p>
-          <p>A <code>draft-model</code> block containing only <code>ndraft</code> is different: it changes the MTP draft ceiling and does not select a classic draft or disable MTP.</p>
-          <p>The model-level <code>speculation</code> setting selects the implementation. <code>auto</code> keeps the normal priority order, <code>disabled</code> runs target-only, <code>classic</code> requires a separate draft model, and <code>mtp</code> requires a compatible companion or embedded head. Explicit selection makes it possible to benchmark the same target with MTP enabled and disabled without changing downloaded model files.</p>
+          <p>Only one drafter can be active. A <code>draft-model</code> block containing a <code>model-id</code> explicitly selects the classic separate draft and takes precedence over companion and embedded forms in <code>auto</code>. Without one, Kronk uses the compatible companion selected for the target (DSpark or MTP), then checks the target for an embedded MTP head. If no source is available, the model runs normally without speculation.</p>
+          <p>A <code>draft-model</code> block containing only <code>ndraft</code> is different: it changes the MTP or DSpark draft ceiling and does not select a classic draft or disable drafting.</p>
+          <p>The model-level <code>speculation</code> setting selects the implementation. <code>auto</code> keeps the normal priority order, <code>disabled</code> runs target-only, <code>classic</code> requires a separate draft model, and <code>mtp</code> requires a compatible companion or embedded head. <code>dspark</code> requires a compatible DSpark sidecar; a missing or incompatible sidecar fails model loading rather than silently selecting another method. <code>disabled</code> turns off all drafting, including classic, MTP, and DSpark, even when companion files remain installed. Explicit selection makes it possible to benchmark the same target with drafting enabled and disabled without changing downloaded model files. Requiring a method does not override its per-request safety fallbacks.</p>
           <p>Embedded MTP requires a supported head in the downloaded GGUF files. Qwen3.5-family files that retain MTP metadata after the head weights were stripped are not treated as MTP-capable. Changing <code>ndraft</code> cannot add missing head weights. Recognized metadata alone does not establish runtime support: GLM5 Next currently runs target-only in <code>auto</code> and fails loading with <code>speculation: mtp</code>.</p>
           <p>MTP also requires support from the loaded llama.cpp library. In <code>auto</code> mode, an unavailable MTP API, unsupported recognized runtime, or incompatible embedded head width leaves the model running target-only. With <code>speculation: mtp</code>, these conditions fail model loading instead. Explicit MTP also fails when no compatible source is found or a classic separate draft is configured. Automatic selection does not suppress errors while loading an otherwise selected drafter.</p>
           <h3 id="63-choosing-a-drafter">6.3 Choosing a Drafter</h3>
@@ -1777,13 +1782,19 @@ models:
           <p>In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
           <p>NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime for the <code>nemotron_h_moe</code> architecture. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are not supported; configure <code>speculation: disabled</code> to benchmark target-only generation with the same embedded model.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
+          <h4 id="633-dspark">6.3.3 DSpark</h4>
+          <p>The currently qualified pair is the <code>ggml-org/Inkling-2-Mini-GGUF</code> target <code>Inkling-2-Mini-Q8_0.gguf</code> and matching <code>dspark-Inkling-2-Mini-Q8_0.gguf</code> companion. Use the shipped catalog entry <code>ggml-org/Inkling-2-Mini-Q8_0</code>; it supplies the companion's explicit upstream URL and installs that filename next to the target. Similar filenames or a <code>capabilities.draft: dspark</code> declaration alone do not establish compatibility.</p>
+          <p>DSpark supports greedy text (<code>temperature: 0</code>) and positive-temperature text with <code>temperature</code>, <code>top_k</code>, <code>top_p</code>, and <code>min_p</code>, together with existing token suppression. At positive temperature, verification uses the target distribution and the companion's sparse proposal distribution for acceptance and rejection replacement; it is not MTP's exact-token-match approximation. Unsupported samplers and media requests run target-only with a visible fallback reason.</p>
+          <p>Current execution qualification covers this known pair on CPU and Metal only. It does not establish support for other targets, companions, quantizations, CUDA, or Vulkan. No speedup is claimed: accepted proposals still have drafting and verification costs. Measure end-to-end results on your workload.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
           <p><code>ndraft</code> is the maximum number of candidates the drafter attempts in one round. Larger values can save more target passes when acceptance remains high, but they also increase wasted draft and verification work when proposals are rejected.</p>
           <p>Defaults are:</p>
           <ul>
             <li><strong>Classic separate draft:</strong> 5</li>
             <li><strong>MTP:</strong> 3</li>
+            <li><strong>Qualified DSpark pair:</strong> 7 (trained block size 8, including one anchor)</li>
           </ul>
+          <p>For DSpark, an omitted or zero <code>ndraft</code> uses the trained proposal limit. A positive value caps proposals at the smaller of that value and the trained limit; asking for 10 does not turn the seven-proposal sidecar into a ten-proposal sidecar. A negative value is rejected. Context, output, and batch capacity can reduce the actual number proposed in a round. <code>ndraft: 0</code> does not disable DSpark; use <code>speculation: disabled</code> for target-only execution.</p>
           <p>For MTP, one <strong>round</strong> is a complete speculative cycle: MTP proposes up to <code>ndraft</code> candidates, the target verifies them together, and Kronk emits the accepted prefix followed by one target-selected replacement or bonus token. A round therefore emits between 1 and <code>ndraft + 1</code> tokens; a round is not the same as a token.</p>
           <p>MTP always uses its configured <code>ndraft</code> as the per-round maximum. Kronk does not evaluate acceptance to try lower values, run calibration rounds, or select a different value at runtime. An omitted or zero value uses the MTP default of 3; an explicit positive value remains the ceiling for the loaded model. A round can propose fewer candidates near context or output limits or when drafting reaches an end condition.</p>
           <p>Prompt type, sampling settings, and output structure can change MTP acceptance and the amount of useful work produced by each round. Coding, summarization, prose, and structured output can therefore perform differently at the same <code>ndraft</code>. If a workload performs better with another value, benchmark that representative workload and configure the value explicitly. Compare end-to-end throughput and latency rather than selecting a value from acceptance rate alone.</p>
@@ -1842,6 +1853,52 @@ models:
       ndraft: 6`}</code></pre>
           <p>This form supports multiple slots. A value of 0 or an omitted value uses the MTP default of 3; a negative value is rejected. If neither a compatible companion nor an embedded MTP head is available, the override has no effect.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for the complete model configuration format.</p>
+          <h4 id="654-dspark-download-require-limit-or-disable">6.5.4 DSpark: download, require, limit, or disable</h4>
+          <p>With the server stopped, download the catalog's exact target and declared companions into Kronk's normal model store:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull ggml-org/Inkling-2-Mini-Q8_0 --local`}</code></pre>
+          <p>Omit <code>--local</code> to pull through a running server. The target is from <code>ggml-org/Inkling-2-Mini-GGUF</code>; the catalog pins the sidecar URL in <code>unsloth/Inkling-2-Mini-GGUF</code> under <code>Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file</code> and installs it as <code>dspark-Inkling-2-Mini-Q8_0.gguf</code>. The catalog also downloads the declared projector; its presence does not make DSpark media generation supported. See <a href="https://www.kronkai.com/manual#86-catalog-operations">Chapter 8 §8.6</a> for explicit companion URL overrides.</p>
+          <p>The qualified companion activates with the default <code>speculation: auto</code>. To require DSpark and reduce its proposal ceiling to three, use:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 1
+models:
+  ggml-org/Inkling-2-Mini-Q8_0:
+    speculation: dspark
+    draft-model:
+      ndraft: 3`}</code></pre>
+          <p>There is deliberately no <code>model-id</code> under <code>draft-model</code>: that would select a classic separate draft, not this sidecar. Change <code>speculation</code> to <code>auto</code> to allow automatic selection, or to <code>disabled</code> to turn off all drafting while keeping the same downloaded files. For a target-only control:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 1
+models:
+  ggml-org/Inkling-2-Mini-Q8_0:
+    speculation: disabled`}</code></pre>
+          <p>Restart the server after changing the model configuration so the comparison uses a newly loaded model.</p>
+          <p>The SDK uses one <code>DrafterFile</code> / <code>WithDrafterFile</code> companion path for either DSpark or MTP, not a separate DSpark-file option. With the default model store, the equivalent configuration is:</p>
+          <pre className="code-block"><code className="language-go">{`// Import os, path/filepath, and github.com/ardanlabs/kronk/sdk/kronk/model.
+// home is the user's home directory (obtained with os.UserHomeDir).
+dir := filepath.Join(home, ".kronk", "models", "ggml-org", "Inkling-2-Mini-GGUF")
+cfg := model.NewConfig(
+    model.WithModelFiles([]string{filepath.Join(dir, "Inkling-2-Mini-Q8_0.gguf")}),
+    model.WithDrafterFile(filepath.Join(dir, "dspark-Inkling-2-Mini-Q8_0.gguf")),
+    model.WithSpeculationMode(model.SpeculationDSpark),
+    model.WithDraftModel(&model.DraftModelConfig{NDraft: 3}),
+)`}</code></pre>
+          <p>Pass <code>model.WithConfig(cfg)</code> to <code>kronk.New</code> using the normal SDK initialization and lifecycle described in <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a>. Use <code>model.SpeculationAuto</code> for automatic selection or <code>model.SpeculationDisabled</code> for the target-only control. Leave <code>DraftModelConfig.ModelFiles</code> empty for a proposal-count override; omit <code>WithDraftModel</code> to use the trained seven-proposal limit. Adjust <code>dir</code> if using a custom base path.</p>
+          <p>With the server running, send a positive-temperature text request:</p>
+          <pre className="code-block"><code className="language-shell">{`curl -sS http://localhost:11435/v1/chat/completions \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "model": "ggml-org/Inkling-2-Mini-Q8_0",
+    "messages": [{"role": "user", "content": "Explain why the sky is blue in two sentences."}],
+    "temperature": 0.7,
+    "top_k": 20,
+    "top_p": 0.95,
+    "min_p": 0.0,
+    "repeat_penalty": 1.0,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0,
+    "seed": 42,
+    "max_tokens": 128,
+    "stream": false
+  }'`}</code></pre>
+          <p>Add <code>-H "Authorization: Bearer $KRONK_TOKEN"</code> if inference authentication is enabled. Change <code>temperature</code> to <code>0</code> for greedy verification. The speculation method and proposal ceiling are model-load settings, not request fields. Inspect response usage and completion logs for actual drafting and fallback reasons rather than assuming the selected mode ran for the entire request.</p>
           <h3 id="66-measuring-the-result">6.6 Measuring the Result</h3>
           <p>Do not use acceptance rate alone to decide whether speculation helps. Review acceptance, coverage, throughput, latency, and resource use together.</p>
           <p>The response <code>usage</code> object can include:</p>
@@ -1871,7 +1928,7 @@ models:
               </tr>
               <tr>
                 <td><code>draft_disable_reason</code></td>
-                <td>Why MTP fell back to target-only execution during the request</td>
+                <td>Why drafting fell back to target-only execution during the request</td>
               </tr>
             </tbody>
           </table>
@@ -1881,17 +1938,20 @@ models:
             <li><code>imc-hit</code> — target cache state was restored without compatible draft state</li>
             <li><code>sync-error</code> — draft state could not be synchronized after target decoding, including media prefill or verification</li>
           </ul>
-          <p>Startup events under <code>draft-model</code>, <code>draft-model-mtp</code>, <code>draft-model-mtp-separate</code>, <code>draft-model-mtp-shared</code>, and <code>speculation</code> show which source loaded or why MTP was skipped. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging and metrics configuration.</p>
+          <p>DSpark fallback reasons include <code>unsupported-sampling</code> for unsupported sampling controls and <code>unsupported-media</code> for media requests. <code>accepted-prefix-unavailable</code> means the complete compatible sidecar prefix state is unavailable, including after target-prefix cache reuse without a complete sidecar/Markov restore. In that case target-only generation is intentional, not cached DSpark acceleration. Zero or omitted draft counts must not be presented as evidence of acceleration. When several fallback conditions apply, the reported reason can reflect the first condition encountered rather than every incompatible feature.</p>
+          <p>Startup events under <code>draft-model</code>, <code>draft-model-mtp</code>, <code>draft-model-mtp-separate</code>, <code>draft-model-mtp-shared</code>, <code>draft-model-dspark</code>, and <code>speculation</code> show which source loaded or why drafting was skipped. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging and metrics configuration.</p>
           <h3 id="67-limitations-and-fallbacks">6.7 Limitations and Fallbacks</h3>
           <ul>
             <li><strong>Classic separate drafts require one slot.</strong> Set <code>nseq-max: 1</code> on the target entry.</li>
-            <li><strong>Some sampling controls bypass classic speculation.</strong> Requests using grammar, adaptive-p, DRY, frequency/presence penalties, a nondefault repeat penalty, or XTC run target-only. This restriction applies to classic separate drafts, not MTP.</li>
+            <li><strong>Some sampling controls bypass classic speculation.</strong> Requests using grammar, adaptive-p, DRY, frequency/presence penalties, a nondefault repeat penalty, or XTC run target-only. This restriction also applies to DSpark, with the visible reason <code>unsupported-sampling</code>; it does not apply to MTP.</li>
             <li><strong>Tokenizer compatibility remains the user's responsibility.</strong> Kronk rejects unequal vocabulary sizes, but that check cannot establish identical token mappings or templates.</li>
             <li><strong>MTP at nonzero temperature is an approximation.</strong> MTP proposals are greedy, while target verification uses the request's sampler and accepts exact token matches. Sampling parameters still shape output, but this does not provide strict speculative-sampling distribution equivalence.</li>
             <li><strong>MTP can fall back per request.</strong> A synchronization or compatible-state problem disables MTP for the affected request while target-only generation continues. It does not make an incorrect draft token authoritative. A target rollback or restore failure is different: Kronk fails the affected request rather than continuing from ambiguous recurrent state.</li>
             <li><strong>IMC may restore target state without draft state.</strong> Target-prefix reuse remains valid. Shared-target-KV MTP resumes from the restored target state. Own-KV MTP resumes only when Kronk can restore compatible draft state; if that state is absent or invalid, the request runs target-only rather than drafting from inconsistent state. Text System cache entries retain this paired state when it is valid. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</li>
+            <li><strong>DSpark resumes from paired IMC checkpoints.</strong> Text session and System cache checkpoints retain the independent sidecar KV and the accepted-prefix Markov state alongside the target prefix. Exact repeats, appended turns, and compatible System-prefix reuse can continue drafting, including when a session moves to another execution slot. Restoring KV alone is not sufficient. Missing or incompatible companion state still runs target-only with <code>accepted-prefix-unavailable</code>; target cache reuse alone is not evidence that DSpark ran. Check <code>draft_tokens</code> and the fallback reason on each response.</li>
+            <li><strong>DSpark is text-only.</strong> Media input, including cached media prefixes, visibly falls back to target-only execution. The target's image capability does not extend DSpark's supported inputs.</li>
             <li><strong>MTP supports media input, including M-RoPE images.</strong> Compatible draft state can also be retained for IMC reuse. Incompatible draft input widths or failed synchronization fall back to target-only execution for that request. Classic separate drafts still cannot reconstruct media prefixes. See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a>.</li>
-            <li><strong>Drafting consumes resources.</strong> A classic draft loads another model and KV cache. MTP heads and companion assistants also require compute and memory. Hybrid recurrent targets retain current state plus rollback copies sized by the MTP draft ceiling. Automatic detection does not guarantee a performance improvement.</li>
+            <li><strong>Drafting consumes resources.</strong> A classic draft loads another model and KV cache. MTP heads and companion assistants also require compute and memory. DSpark also loads a companion and retains its accepted-prefix state. Hybrid recurrent targets retain current state plus rollback copies sized by the MTP draft ceiling. Automatic detection does not guarantee a performance improvement.</li>
           </ul>
           <p>Implementation details for drafting, verification, state synchronization, and hybrid-model rollback belong in <a href="https://www.kronkai.com/manual#2066-speculative-decoding-and-mtp">Chapter 20</a>.</p>
           <h2 id="chapter-7-yarn-extended-context">Chapter 7: YaRN Extended Context</h2>
@@ -2405,15 +2465,15 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
           <p>Catalog schema version 3.2 describes a draft companion independently of its decoding method. A model can declare one optional <code>draft</code> with a <code>method</code> of <code>mtp</code>, <code>dspark</code>, or <code>conventional</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`version: "3.2"
 models:
-  ggml-org/Inkling-2-Mini-IQ4_NL:
+  ggml-org/Inkling-2-Mini-Q8_0:
     provider: ggml-org
     family: Inkling-2-Mini-GGUF
     revision: main
     files:
-      - Inkling-2-Mini-IQ4_NL.gguf
+      - Inkling-2-Mini-Q8_0.gguf
     draft:
       method: dspark
-      file: dspark-Inkling-2-Mini-IQ4_NL.gguf
+      file: dspark-Inkling-2-Mini-Q8_0.gguf
       original: Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
       url: https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
     draft_checked: true
@@ -2428,7 +2488,10 @@ models:
   --draft-method dspark \\
   --draft https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file`}</code></pre>
           <p>Methods are <code>mtp</code>, <code>dspark</code>, and <code>conventional</code>. Overrides are installed as <code>&lt;method&gt;-&lt;target-model-id&gt;.gguf</code>, even when the source uses <code>.gguf_file</code>. For catalog IDs, overriding the draft preserves the catalog projection; <code>--proj</code> overrides that projection independently. With a direct model URL and explicit overrides, only the supplied companions are downloaded. The BUI's HF Pull screen provides the same draft-method and URL override; the catalog Pull panel previews the catalog companion without needing an override.</p>
-          <p>Declaring a draft makes it available to the downloader, not automatically to every inference method. DSpark companions can be downloaded and inspected, but DSpark inference is not yet supported. A conventional draft companion does not replace the explicit <code>draft-model</code> runtime configuration. Embedded MTP requires no companion file and remains reported separately as <code>mtp_source: embedded</code>.</p>
+          <p>Declaring a draft makes it available to the downloader, not automatically to every inference method. The qualified <code>ggml-org/Inkling-2-Mini-GGUF</code> target <code>Inkling-2-Mini-Q8_0.gguf</code> and matching <code>dspark-Inkling-2-Mini-Q8_0.gguf</code> companion activate DSpark automatically in <code>auto</code> mode. Greedy and positive-temperature text requests support <code>temperature</code>, <code>top_k</code>, <code>top_p</code>, and <code>min_p</code>, plus existing token suppression. Positive-temperature verification uses rejection sampling with the companion's sparse proposal distribution. Set <code>speculation: disabled</code> to turn off all drafting or <code>speculation: dspark</code> to require a compatible sidecar at model load. A file-less <code>draft-model: &#123;ndraft: 3&#125;</code> limits proposals without selecting a classic draft. The trained limit for this pair is seven proposals (block size eight including the anchor); a larger override cannot increase it.</p>
+          <p>Grammar, adaptive-P, DRY, repeat/frequency/presence penalties, and XTC visibly fall back to target-only with <code>unsupported-sampling</code>; a repeat penalty of 1.0 and frequency/presence penalties of 0 leave penalties disabled. Media requests visibly fall back with <code>unsupported-media</code>. Text IMC session and System cache checkpoints pair the target prefix with independent sidecar KV and Markov state, so compatible cached requests can continue DSpark drafting across turns and execution slots. Missing or incompatible companion state still runs target-only with <code>accepted-prefix-unavailable</code>. Restoring KV alone is insufficient; inspect draft counts and fallback reasons rather than treating every target-cache hit as DSpark acceleration.</p>
+          <p>Execution qualification is limited to this known pair on CPU and Metal; it does not establish CUDA or Vulkan support. Acceptance is not a speedup claim. A request seed gives request-scoped reproducible draws, not byte-identical output to disabled speculation or across batch shapes, context configurations, and backends. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for YAML, SDK, and request examples and the measurement and fallback contract.</p>
+          <p>A conventional draft companion does not replace the explicit <code>draft-model</code> runtime configuration. Embedded MTP requires no companion file and remains reported separately as <code>mtp_source: embedded</code>.</p>
           <p><code>capabilities.draft</code> replaces the MTP-only capability boolean. Its values are <code>mtp</code>, <code>dspark</code>, and <code>conventional</code>; omit it when no drafting capability is declared. A companion's <code>draft.method</code> supplies this capability; embedded MTP supplies <code>capabilities.draft: mtp</code> without a top-level <code>draft</code> block. If a model has embedded MTP and a different companion, <code>capabilities.draft</code> reports the companion method while <code>mtp_source: embedded</code> still describes its MTP head. This field describes the model's declared drafting method, not whether the current Kronk runtime implements it. The BUI displays the method and provides separate MTP, DSpark, and conventional capability filters.</p>
           <p>Version 2, 3, and 3.1 catalogs are migrated automatically to version 3.2 on first load, without network access or re-downloading models. Existing version 2 <code>mtp</code>, <code>mtp_orig</code>, <code>mtp_url</code>, <code>mtp_size</code>, and <code>mtp_checked</code> values become generic draft metadata with <code>method: mtp</code>; installed filenames and other entry metadata are preserved. <code>capabilities.mtp: true</code> becomes <code>capabilities.draft: mtp</code>; false is omitted. Version 3 and 3.1 catalogs retain their generic companion metadata while upgrading the capability field. The migrated file is saved with <code>version: "3.2"</code>. Catalog versions are identifiers, not decimal numbers; quote them when writing YAML. Unversioned catalogs and versions 1 and earlier are no longer supported. Keep a backup before upgrading if you need to return to an older Kronk version; older versions cannot read version 3.2.</p>
           <p>Source specificity controls catalog resolution:</p>

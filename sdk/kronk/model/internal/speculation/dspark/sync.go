@@ -37,6 +37,11 @@ func SynchronizeTarget(input SyncInput) []SyncResult {
 	}
 	r := input.Resources
 	captureErr := r.Capture(input.RowCount)
+	return synchronizeCaptured(input, captureErr)
+}
+
+func synchronizeCaptured(input SyncInput, captureErr error) []SyncResult {
+	r := input.Resources
 	var results []SyncResult
 	for _, seq := range input.Sequences {
 		if r.sequences[seq.Sequence].disabled || len(seq.Rows) == 0 && seq.RowError == nil {

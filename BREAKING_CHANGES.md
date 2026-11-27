@@ -76,15 +76,14 @@
 Rename these in SDK callers; there are no compatibility aliases. The single
 field holds the selected companion GGUF, whose metadata identifies its drafting
 algorithm. Use `SpeculationMTP` or `SpeculationDSpark` to require a particular
-algorithm, or `SpeculationDisabled` to disable drafting. DSpark execution is
-not yet supported. Conventional separate-model configuration remains in
-`DraftModelConfig`.
+algorithm, or `SpeculationDisabled` to disable drafting. Conventional
+separate-model configuration remains in `DraftModelConfig`.
 
 ### v1.33.4: Generic Draft Pull Options
 
 `kronk model pull --mtp-draft URL` is replaced by
 `--draft URL --draft-method mtp`. The other supported draft methods are
-`dspark` and `conventional`; DSpark inference is not yet supported.
+`dspark` and `conventional`.
 The pull HTTP request replaces `mtp_url` with
 `"draft": {"method": "mtp", "url": "..."}`. Download metadata reports
 `draft.method` and `draft.url`, and the completion response uses `draft_file`
@@ -121,8 +120,7 @@ are identifiers, not decimal numbers.
 
 Go callers of `models.CatalogEntry` and `models.Resolution` must use the new
 generic draft fields instead of the removed MTP artifact fields. Existing
-MTP download APIs and MTP-specific HTTP compatibility fields remain available;
-DSpark draft metadata does not enable DSpark inference.
+MTP download APIs and MTP-specific HTTP compatibility fields remain available.
 
 ## v1.33.3
 

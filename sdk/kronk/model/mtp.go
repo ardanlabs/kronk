@@ -26,6 +26,26 @@ func (d *mtpAdapter) mtpBackend() mtpengine.Backend      { return d.b }
 func (d *mtpAdapter) mtpResources() *mtpengine.Resources { return d.r }
 func (d *mtpAdapter) unload()                            { d.r.Free() }
 
+func (d *mtpAdapter) draftCheckpointState(s *slot, position llama.Pos) []float32 {
+	if s.draftNPast != position {
+		return nil
+	}
+	return s.mtp.CheckpointState(d.r.EmbeddingSize())
+}
+
+func (d *mtpAdapter) restoreDraftCheckpoint(s *slot, position llama.Pos, state []float32) bool {
+	if !s.mtp.RestoreCheckpoint(state, d.r.EmbeddingSize()) {
+		return false
+	}
+	s.draftNPast = position
+	return true
+}
+
+func (*mtpAdapter) clearDraftCheckpoint(s *slot) {
+	s.draftNPast = 0
+	s.mtp.Disable("imc-hit")
+}
+
 // mtpDrafter borrows the target model and owns a separate draft KV cache.
 type mtpDrafter struct{ mtpAdapter }
 

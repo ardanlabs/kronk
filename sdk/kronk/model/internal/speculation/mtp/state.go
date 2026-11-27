@@ -39,6 +39,25 @@ func (s *SlotState) ClearTargetRange() {
 	s.TargetRange.Count = 0
 }
 
+// CheckpointState returns the borrowed hidden vector needed to resume an
+// independently owned MTP prefix, or nil when it is unavailable.
+func (s *SlotState) CheckpointState(width int) []float32 {
+	if s.Disabled || width <= 0 || len(s.PendingHidden) != width {
+		return nil
+	}
+	return s.PendingHidden
+}
+
+// RestoreCheckpoint copies the hidden vector paired with restored draft KV.
+func (s *SlotState) RestoreCheckpoint(state []float32, width int) bool {
+	if width <= 0 || len(state) != width {
+		return false
+	}
+	s.PendingHidden = append(s.PendingHidden[:0], state...)
+	s.ResumeSource = "restored-draft-kv"
+	return true
+}
+
 // Disable stops MTP for the remainder of the current request.
 func (s *SlotState) Disable(reason string) {
 	s.PendingHidden = s.PendingHidden[:0]

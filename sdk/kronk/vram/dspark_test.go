@@ -51,7 +51,7 @@ func TestDSparkFromFiles(t *testing.T) {
 		t.Errorf("independent KV: got %d, want %d", gpu.SlotMemory, genericCache(in).SlotMemory)
 	}
 	base := llamaComputeMemory(in)
-	wantHost := int64(12*97*9216 + 4*97*2304 + 3*9*(4*2304+8) + 4*24*200058)
+	wantHost := int64(12*97*9216 + 4*97*2304 + 4*8*2304 + 28*200058 + 4*2304 + 4*3*7*2304 + 3*9*(4*2304+8) + 4*24*200058)
 	if got := gpu.ComputeMemory.WorkspaceCPU - base.WorkspaceCPU; got != wantHost {
 		t.Errorf("host allocations: got %d, want %d", got, wantHost)
 	}
@@ -70,7 +70,8 @@ func TestDSparkFromFiles(t *testing.T) {
 	if cpu.TotalVRAM != 0 || cpu.KVCPUBytes != cpu.SlotMemory || cpu.ModelWeightsCPU != int64(len(data)) {
 		t.Errorf("CPU placement: got VRAM/KV/weights %d/%d/%d", cpu.TotalVRAM, cpu.KVCPUBytes, cpu.ModelWeightsCPU)
 	}
-	if cpu.UnifiedFootprint() != gpu.UnifiedFootprint() {
+	// One combined CPU margin can round a byte above the split CPU/GPU margins.
+	if delta := cpu.UnifiedFootprint() - gpu.UnifiedFootprint(); delta < 0 || delta > 1 {
 		t.Errorf("placement footprint: got CPU %d, GPU %d", cpu.UnifiedFootprint(), gpu.UnifiedFootprint())
 	}
 	cfg.GPULayers, cfg.KVCacheOnCPU = 0, true
@@ -95,7 +96,7 @@ func TestDSparkAllocationAxes(t *testing.T) {
 	}{
 		{"logical rows", 98, 3, 9216, 12*9216 + 4*2304},
 		{"feature layers", 97, 3, 11520, 12 * 97 * 2304},
-		{"retained slots", 97, 4, 9216, 9 * (4*2304 + 8)},
+		{"retained slots", 97, 4, 9216, 9*(4*2304+8) + 4*7*2304},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			changed := input

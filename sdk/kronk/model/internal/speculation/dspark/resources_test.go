@@ -23,7 +23,19 @@ func TestContextStatePositionAndSequenceIsolation(t *testing.T) {
 	if got := r.ContextState(1, 0); !slices.Equal(got, []float32{71, 73}) {
 		t.Errorf("other sequence: got %v, want [71 73]", got)
 	}
-	r.sequences[0].reset()
+	if got := r.CheckpointState(0, 4); !slices.Equal(got, []float32{3, -3}) {
+		t.Errorf("checkpoint at accepted boundary: got %v, want [3 -3]", got)
+	}
+	for _, position := range []llama.Pos{3, 5} {
+		if got := r.CheckpointState(0, position); got != nil {
+			t.Errorf("checkpoint at mismatched boundary %d: got %v, want nil", position, got)
+		}
+	}
+	r.sequences[0].disabled = true
+	if got := r.CheckpointState(0, 4); got != nil {
+		t.Errorf("disabled checkpoint: got %v, want nil", got)
+	}
+	r.ClearCheckpoint(0)
 	if r.ContextState(0, 3) != nil || r.NextPosition(0) != 0 || r.ContextState(1, 0) == nil {
 		t.Fatal("reset retained stale state or changed another sequence")
 	}

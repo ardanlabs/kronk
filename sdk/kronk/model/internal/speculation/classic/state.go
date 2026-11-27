@@ -9,15 +9,13 @@ type SlotState struct {
 	Rounds             int
 	DraftStartPosition llama.Pos
 	DraftDistributions [][]llama.DraftCandidate
-	AdjustedScratch    []llama.DraftCandidate
 }
 
-// Reset begins a request while retaining reusable buffer capacity.
+// Reset begins a request.
 func (s *SlotState) Reset() {
 	s.AcceptanceEMA = 1
 	s.ProbeTick = 0
 	s.Rounds = 0
 	s.DraftStartPosition = 0
 	s.DraftDistributions = nil
-	s.AdjustedScratch = s.AdjustedScratch[:0]
 }

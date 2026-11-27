@@ -3,6 +3,7 @@ package dspark
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -13,17 +14,20 @@ import (
 // the embedding/output tensors linked through CtxOther are borrowed. Exported
 // native handles are borrowed views; Free is their only cleanup owner.
 type Resources struct {
-	Model     llama.Model
-	Context   llama.Context
-	Memory    llama.Memory
-	target    llama.Context
-	batch     llama.BatchExt
-	layers    []int32
-	width     int
-	chunk     int
-	features  []float32
-	rows      int
-	sequences []sequence
+	Model      llama.Model
+	Context    llama.Context
+	Memory     llama.Memory
+	target     llama.Context
+	batch      llama.BatchExt
+	layers     []int32
+	width      int
+	chunk      int
+	features   []float32
+	rows       int
+	sequences  []sequence
+	blockState []float32
+	mask       llama.Token
+	proposals  int
 }
 
 type sequence struct {
@@ -75,6 +79,44 @@ func (r *Resources) NextPosition(seq llama.SeqId) llama.Pos {
 	return r.sequences[seq].next
 }
 
+// CheckpointState returns the borrowed Markov vector paired with the exact
+// accepted prefix. Earlier ring entries are unnecessary: subsequent proposals
+// start at position and synchronization stores each newly accepted position.
+func (r *Resources) CheckpointState(seq llama.SeqId, position llama.Pos) []float32 {
+	s := &r.sequences[seq]
+	if s.disabled || s.next != position {
+		return nil
+	}
+	return r.ContextState(seq, position-1)
+}
+
+// RestoreCheckpoint restores the Markov vector only when the independent native
+// KV ends at the same accepted boundary. State is copied into this sequence's
+// ring; no ring entry or disabled flag from its previous occupant survives.
+func (r *Resources) RestoreCheckpoint(seq llama.SeqId, position llama.Pos, state []float32) bool {
+	if position <= 0 || len(state) != r.width {
+		return false
+	}
+	for _, value := range state {
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return false
+		}
+	}
+	last, err := llama.MemorySeqPosMax(r.Memory, seq)
+	if err != nil || last != position-1 {
+		return false
+	}
+	r.ClearCheckpoint(seq)
+	r.sequences[seq].store(position-1, state)
+	return true
+}
+
+// ClearCheckpoint invalidates the host state for a sequence whose native memory
+// has already been removed. It does not touch other sequences or target memory.
+func (r *Resources) ClearCheckpoint(seq llama.SeqId) {
+	r.sequences[seq].reset()
+}
+
 // Reset removes only the selected sidecar sequence and invalidates its Markov
 // states. It never clears shared target tensors or target KV.
 func (r *Resources) Reset(seq llama.SeqId) error {
@@ -85,7 +127,7 @@ func (r *Resources) Reset(seq llama.SeqId) error {
 	if !removed {
 		return fmt.Errorf("DSpark reset sequence %d: native memory removal failed", seq)
 	}
-	r.sequences[seq].reset()
+	r.ClearCheckpoint(seq)
 	return nil
 }
 

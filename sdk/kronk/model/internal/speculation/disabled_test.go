@@ -141,6 +141,60 @@ func TestMTPControllerDiscardsDraftWhenDecodeDisablesMTP(t *testing.T) {
 	}
 }
 
+type dsparkHost struct {
+	fakeHost
+	input dspark.GenerationInput
+}
+
+func (h *dsparkHost) DSparkGenerationInput(int) dspark.GenerationInput { return h.input }
+
+func TestDSparkGenerationPolicy(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		temperature       float32
+		media, compatible bool
+		limit             int
+		reason            string
+	}{
+		{"greedy text", 0, false, true, 3, ""},
+		{"sampled", 0.8, false, true, 3, ""},
+		{"unsupported controls", 0, false, false, 3, "unsupported-sampling"},
+		{"media", 0, true, true, 3, "unsupported-media"},
+		{"no room for proposals", 0, false, true, 0, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			host := dsparkHost{active: []bool{true}}
+			host.input = dspark.GenerationInput{Temperature: tt.temperature, HasMedia: tt.media, SamplingCompatible: tt.compatible, MaxDraft: tt.limit,
+				Generate: func(count int) (dspark.Proposal, error) {
+					return dspark.Proposal{Candidates: []llama.Token{11, 23, 47}[:count]}, nil
+				}}
+			controller := dspark.New(&host)
+			got, err := controller.PlanGeneration(0)
+			want := 0
+			if tt.reason == "" {
+				want = tt.limit
+			}
+			if err != nil || len(got.Candidates) != want || controller.DisableReason(0) != tt.reason {
+				t.Fatalf("generation=%+v error=%v reason=%q, want count=%d reason=%q", got, err, controller.DisableReason(0), want, tt.reason)
+			}
+			if err := controller.StartRequest(0); err != nil || controller.DisableReason(0) != "" {
+				t.Fatalf("new request retained fallback: %v %q", err, controller.DisableReason(0))
+			}
+		})
+	}
+}
+
+func TestDSparkGenerationFailure(t *testing.T) {
+	nativeErr := errors.New("native block cleanup failed")
+	host := dsparkHost{active: []bool{true}}
+	host.input = dspark.GenerationInput{SamplingCompatible: true, MaxDraft: 3,
+		Generate: func(int) (dspark.Proposal, error) { return dspark.Proposal{}, nativeErr }}
+	got, err := dspark.New(&host).PlanGeneration(0)
+	if !errors.Is(err, nativeErr) || len(got.Candidates) != 0 {
+		t.Errorf("generation: got %+v/%v, want no proposals and native cause", got, err)
+	}
+}
+
 func TestControllerPrefillContract(t *testing.T) {
 	for _, tt := range []struct {
 		name          string
@@ -150,7 +204,7 @@ func TestControllerPrefillContract(t *testing.T) {
 		{"disabled", func(h *fakeHost) speculation.Controller { return speculation.NewDisabled(h) }, ""},
 		{"classic", func(h *fakeHost) speculation.Controller { return classic.New(h) }, ""},
 		{"mtp", func(h *fakeHost) speculation.Controller { return mtp.New(h) }, ""},
-		{"dspark", func(h *fakeHost) speculation.Controller { return dspark.New(h) }, "dspark-runtime-unavailable"},
+		{"dspark", func(h *fakeHost) speculation.Controller { return dspark.New(h) }, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			host := fakeHost{active: []bool{true}}
@@ -306,14 +360,18 @@ func (fh *fakeHost) ClassicVerifyInput(slot int, _ []byte) (classic.VerifyInput,
 		Accept: func(int, llama.Token, bool) bool { return true }}, nil
 }
 
-func (fh *fakeHost) CommitClassicVerify(slot int, _ []byte, _ classic.VerifyResult) {
+func (fh *fakeHost) CommitDistributionVerify(slot int, _ []byte, _ speculation.DistributionResult) {
 	fh.event("verify", slot)
 }
-func (*fakeHost) ClassicFinalizePlan(int) (classic.FinalizePlan, bool) {
-	return classic.FinalizePlan{}, true
+
+func (fh *fakeHost) DistributionVerifyInput(slot int, _ []byte, q [][]llama.DraftCandidate) speculation.DistributionInput {
+	return speculation.DistributionInput{Candidates: fh.candidates[slot], Distributions: q,
+		Target: func(int) speculation.DistributionTarget {
+			return speculation.DistributionTarget{Probabilities: []float32{0, 1}}
+		},
+		Accept: func(int, llama.Token, bool) bool { return true }}
 }
-func (*fakeHost) RollbackClassicTarget(int, classic.FinalizePlan) (bool, error) { return false, nil }
-func (*fakeHost) RollbackClassicDraft(int, classic.FinalizePlan) error          { return nil }
+func (*fakeHost) RollbackClassicDraft(int, classic.FinalizePlan) error { return nil }
 func (fh *fakeHost) CompleteClassicFinalize(slot int, _ []byte, _ classic.FinalizePlan, _ bool) {
 	fh.event("finalize", slot)
 }
@@ -329,6 +387,15 @@ func (*fakeHost) ResetDSparkSequence(int) error { return nil }
 
 func (*fakeHost) WithDSparkTarget(consume func(dspark.SyncInput) []dspark.SyncResult) {
 	consume(dspark.SyncInput{})
+}
+
+func (*fakeHost) DSparkGenerationInput(int) dspark.GenerationInput {
+	return dspark.GenerationInput{}
+}
+
+func (fh *fakeHost) MatchVerifyInput(slot int, buf []byte) speculation.MatchInput {
+	input, _ := fh.MTPVerifyInput(slot, buf)
+	return input
 }
 
 func (fh *fakeHost) MTPDisableReason(slot int) string {
@@ -350,16 +417,16 @@ func (fh *fakeHost) MTPVerifyInput(slot int, _ []byte) (mtp.VerifyInput, error) 
 	}, nil
 }
 
-func (fh *fakeHost) CommitMTPVerify(slot int, _ []byte, _ mtp.VerifyResult) {
+func (fh *fakeHost) CommitMatchVerify(slot int, _ []byte, _ mtp.VerifyResult) {
 	fh.event("verify", slot)
 }
 
-func (fh *fakeHost) MTPFinalizePlan(int) (mtp.FinalizePlan, bool) {
+func (fh *fakeHost) SpeculativeFinalizePlan(int) (mtp.FinalizePlan, bool) {
 	return mtp.FinalizePlan{}, true
 }
 
-func (fh *fakeHost) RollbackMTPTarget(int, mtp.FinalizePlan) (bool, error) { return false, nil }
-func (fh *fakeHost) RollbackMTPDraft(int, mtp.FinalizePlan) error          { return nil }
+func (fh *fakeHost) RollbackSpeculativeTarget(int, mtp.FinalizePlan) (bool, error) { return false, nil }
+func (fh *fakeHost) RollbackMTPDraft(int, mtp.FinalizePlan) error                  { return nil }
 func (fh *fakeHost) DisableMTP(slot int, reason string, _ int) error {
 	fh.event("disable", slot)
 	if fh.disabled == nil {
@@ -368,7 +435,7 @@ func (fh *fakeHost) DisableMTP(slot int, reason string, _ int) error {
 	fh.disabled[slot] = reason
 	return fh.disableErr
 }
-func (fh *fakeHost) CompleteMTPFinalize(slot int, _ []byte, _ mtp.FinalizePlan, _ bool) {
+func (fh *fakeHost) CompleteSpeculativeFinalize(slot int, _ []byte, _ mtp.FinalizePlan, _ bool) {
 	fh.event("finalize", slot)
 }
 

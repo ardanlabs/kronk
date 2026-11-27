@@ -49,6 +49,18 @@ type draftKVExternalizer interface {
 	// draftKVCtx returns the draft context whose per-seq KV state may be
 	// safely serialized/restored. Only own-draft-KV strategies expose it.
 	draftKVCtx() llama.Context
+
+	// draftCheckpointState returns the borrowed algorithm state paired with
+	// the exact accepted prefix, or nil when it cannot be checkpointed.
+	draftCheckpointState(s *slot, position llama.Pos) []float32
+
+	// restoreDraftCheckpoint validates and restores algorithm state after a
+	// complete native KV transfer. It must not retain the borrowed state slice.
+	restoreDraftCheckpoint(s *slot, position llama.Pos, state []float32) bool
+
+	// clearDraftCheckpoint invalidates algorithm state after failed recovery.
+	// The caller has already removed the independent native sequence.
+	clearDraftCheckpoint(s *slot)
 }
 
 // =============================================================================

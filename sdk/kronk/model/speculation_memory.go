@@ -10,7 +10,7 @@ import (
 // context and feature storage; target-shaped MTP contexts are accounted through
 // SpeculativeContextCount. Disabled or unselected companions contribute nothing.
 func CompanionMemory(cfg Config, target vram.Config) (vram.Result, error) {
-	if cfg.SpeculationMode() != SpeculationAuto || cfg.DrafterFile == "" ||
+	if (cfg.SpeculationMode() != SpeculationAuto && cfg.SpeculationMode() != SpeculationDSpark) || cfg.DrafterFile == "" ||
 		cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
 		return vram.Result{}, nil
 	}
@@ -35,6 +35,12 @@ func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
 	mode := cfg.SpeculationMode()
 	if mode == SpeculationDisabled {
 		return 1
+	}
+	if !embeddedMTP && (mode == SpeculationAuto || mode == SpeculationDSpark) && cfg.DrafterFile != "" &&
+		(cfg.PtrDraftModel == nil || !cfg.PtrDraftModel.IsSeparate()) {
+		if count, err := dsparkProposalLimit(cfg); err == nil {
+			return int64(1 + count)
+		}
 	}
 
 	if embeddedMTP {

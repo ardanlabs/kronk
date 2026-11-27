@@ -27,6 +27,26 @@ func (e *batchEngine) ResetDSparkSequence(slotID int) error {
 	return d.r.Reset(e.slots[slotID].seqID)
 }
 
+// DSparkGenerationInput adapts request parameters and target capacity without
+// interpreting DSpark's block or accepted-prefix policy.
+func (e *batchEngine) DSparkGenerationInput(slotID int) dsparkengine.GenerationInput {
+	s := e.slots[slotID]
+	d := e.model.draft.(*dsparkDrafter)
+	return dsparkengine.GenerationInput{
+		Temperature:        s.job.params.Temperature,
+		SamplingCompatible: independentDraftSamplingSupported(s.job.params),
+		HasMedia:           len(s.job.media) > 0 || s.job.imcSessionMedia,
+		MaxDraft:           e.maxDraftForSlot(s, d.c.nDraft),
+		Generate: func(count int) (dsparkengine.Proposal, error) {
+			proposal, err := d.r.Generate(s.seqID, s.sampled, s.nPast, count, s.job.params.Temperature, s.specRNG.Float32)
+			if err == nil {
+				s.specDraftedTotal += len(proposal.Candidates)
+			}
+			return proposal, err
+		},
+	}
+}
+
 func (d *dsparkDrafter) withTargetRows(e *batchEngine, batch *extendedBatch, consume func(dsparkengine.SyncInput) []dsparkengine.SyncResult) {
 	input := dsparkengine.SyncInput{Resources: d.r, RowCount: batch.len()}
 	for _, s := range e.slots {

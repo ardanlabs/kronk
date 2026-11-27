@@ -70,12 +70,12 @@ type imcSession struct {
 	prefixHash       [32]byte       // Reject-only lookup digest; exact resident verification is mandatory.
 	seqID            llama.SeqId    // KV sequence id the session is currently bound to, or imcSeqIDUnbound when its state is externalized.
 	kvState          *imcCheckpoint // Internal RAM checkpoint of the target sequence.
-	draftKVState     *imcCheckpoint // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
-	pendingH         []float32      // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
+	draftKVState     *imcCheckpoint // Independent draft KV paired with kvState; nil without the checkpoint capability.
+	pendingH         []float32      // Algorithm-owned checkpoint vector (MTP hidden or DSpark Markov state). Legacy name retained in persisted metadata; interpreted only by the drafter.
 	lastUsed         time.Time      // Last access time (for eviction)
 	reserved         bool           // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	allocatedContext int            // Largest physical KV-cell count allocated for this session.
-	snapshotBytes    int            // Reported target, compatible draft, and MTP hidden-row snapshot capacity in bytes.
+	snapshotBytes    int            // Reported target, compatible draft, and algorithm-state snapshot capacity in bytes.
 	highWaterContext int            // Largest current context published for this session across reuse and snapshot ownership changes.
 	peakContext      int            // Largest live slot context observed for this session, including generated output.
 	inputMessages    int            // Message count from the latest request completed by this session.

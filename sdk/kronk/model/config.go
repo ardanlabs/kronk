@@ -320,8 +320,8 @@ type AdapterConfig struct {
 // identifies the drafting algorithm; Speculation can require MTP or DSpark.
 // Only one companion is selected, and disabled ignores it. Conventional
 // separate-model drafting is configured through PtrDraftModel instead.
-// DSpark execution is not yet available: auto runs target-only for a compatible
-// DSpark companion and explicit dspark reports an error.
+// DSpark proposes tokens for greedy or sampled text requests. Unsupported
+// sampling, media, or unavailable cached prefixes use target-only generation.
 //
 // ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When
 // nil or false, the projector runs on whichever device llama.cpp picks by

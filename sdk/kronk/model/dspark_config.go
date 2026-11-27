@@ -30,14 +30,13 @@ func resolveDSparkSpeculationPlan(ctx context.Context, log applog.Logger, cfg Co
 		return internalspec.Plan{}, nil
 	}
 
-	// Keep the selection visible without activating an unfinished runtime.
 	plan, err := internalspec.Resolve(internalspec.Config{
-		Mode: cfg.SpeculationMode(), DSparkConfigured: true, DSparkNDraft: nDraft,
+		Mode: cfg.SpeculationMode(), DSparkConfigured: true, DSparkAvailable: true, DSparkNDraft: nDraft,
 	})
 	if log != nil && err == nil {
-		log(ctx, "speculation", "source", plan.Source, "active", false,
-			"reason", "DSpark execution is not yet available in this Kronk release")
+		log(ctx, "speculation", "source", plan.Source, "active", plan.Active(), "execution", "text")
 	}
+
 	return plan, err
 }
 

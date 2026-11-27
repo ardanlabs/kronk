@@ -33,12 +33,12 @@ type Host interface {
 	CommitMTPSync(slot int, result SyncResult)
 	ProcessOrdinary(slot int, buf []byte)
 	MTPVerifyInput(slot int, buf []byte) (VerifyInput, error)
-	CommitMTPVerify(slot int, buf []byte, result VerifyResult)
-	MTPFinalizePlan(slot int) (FinalizePlan, bool)
-	RollbackMTPTarget(slot int, plan FinalizePlan) (bool, error)
+	CommitMatchVerify(slot int, buf []byte, result VerifyResult)
+	SpeculativeFinalizePlan(slot int) (FinalizePlan, bool)
+	RollbackSpeculativeTarget(slot int, plan FinalizePlan) (bool, error)
 	RollbackMTPDraft(slot int, plan FinalizePlan) error
 	DisableMTP(slot int, reason string, accepted int) error
-	CompleteMTPFinalize(slot int, buf []byte, plan FinalizePlan, hybridRestore bool)
+	CompleteSpeculativeFinalize(slot int, buf []byte, plan FinalizePlan, hybridRestore bool)
 	Fail(slot int, err error)
 }
 
@@ -150,7 +150,7 @@ func (c *Controller) AfterTargetDecode(buf []byte) {
 				c.host.Fail(slot, fmt.Errorf("MTP verify: %w", err))
 				continue
 			}
-			c.host.CommitMTPVerify(slot, buf, Verify(input))
+			c.host.CommitMatchVerify(slot, buf, Verify(input))
 		}
 	}
 	for slot := range c.host.SlotCount() {
@@ -161,11 +161,11 @@ func (c *Controller) AfterTargetDecode(buf []byte) {
 }
 
 func (c *Controller) finalize(slot int, buf []byte) {
-	plan, ok := c.host.MTPFinalizePlan(slot)
+	plan, ok := c.host.SpeculativeFinalizePlan(slot)
 	if !ok {
 		return
 	}
-	hybridRestore, err := c.host.RollbackMTPTarget(slot, plan)
+	hybridRestore, err := c.host.RollbackSpeculativeTarget(slot, plan)
 	if err != nil {
 		c.host.Fail(slot, err)
 		return
@@ -189,5 +189,5 @@ func (c *Controller) finalize(slot int, buf []byte) {
 			return
 		}
 	}
-	c.host.CompleteMTPFinalize(slot, buf, plan, hybridRestore)
+	c.host.CompleteSpeculativeFinalize(slot, buf, plan, hybridRestore)
 }

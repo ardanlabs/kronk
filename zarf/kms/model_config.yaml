@@ -210,6 +210,8 @@ models:
   ggml-org/Inkling-2-Mini-Q8_0/AGENT:
     nseq-max: 1
     context-window: 131072
+    draft-model:
+      ndraft: 3
     sampling-parameters:
       max_tokens: 16384
       reasoning_effort: low

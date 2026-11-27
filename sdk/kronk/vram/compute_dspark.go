@@ -72,6 +72,13 @@ func dsparkComputeMemory(input Input) ComputeMemory {
 	// Dense NextN readback is a separate hidden-width logical-batch slab.
 	// Markov ring entries retain a position tag (conservatively eight bytes).
 	host := 12*batch*features + 4*batch*width
+	// One reusable anchor/prediction state block, independent of sequence count.
+	host += 4 * input.dsparkBlockSize * width
+	// Shared target sampling may retain a float32 law, native-int indices and
+	// a padded index/logit heap. Sparse proposal copies are bounded by their
+	// packed native row width; one residual law is needed during verification.
+	host += 28*input.VocabularySize + 4*width
+	host += 4 * max(input.Slots, 1) * (input.dsparkBlockSize - 1) * width
 	host += max(input.Slots, 1) * (input.dsparkBlockSize + 1) * (4*width + 8)
 	// Native output buffers coexist with graph logits and dense NextN rows.
 	host += 4 * rows * input.VocabularySize

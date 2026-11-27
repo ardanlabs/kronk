@@ -101,18 +101,15 @@ func TestDSparkSelectionCompatibility(t *testing.T) {
 			if tt.wantErr != "" {
 				wantSource = internalspec.SourceNone
 			}
-			if err != nil || plan.Source != wantSource || plan.Active() || plan.LoadMTP || plan.RowsPerSequence() != 1 {
-				t.Fatalf("auto plan = %+v, %v, want inactive %s", plan, err, wantSource)
+			wantRows := 1
+			if tt.wantErr == "" {
+				wantRows += tt.wantNDraft
+			}
+			if err != nil || plan.Source != wantSource || plan.Active() != (tt.wantErr == "") || plan.LoadMTP || plan.RowsPerSequence() != wantRows {
+				t.Fatalf("auto plan = %+v, %v, want %s with %d rows", plan, err, wantSource, wantRows)
 			}
 			if tt.wantErr == "" && plan.NDraft != tt.wantNDraft {
 				t.Errorf("NDraft = %d, want %d", plan.NDraft, tt.wantNDraft)
-			}
-			if plan.Source == internalspec.SourceDSpark {
-				// Selection is valid but resource loading needs real target
-				// handles. Proposal execution remains unavailable.
-				if plan.Available {
-					t.Fatal("unfinished DSpark execution was enabled")
-				}
 			}
 			for _, mode := range []SpeculationMode{SpeculationAuto, SpeculationDisabled, SpeculationMTP, SpeculationDSpark, SpeculationClassic} {
 				cfg.Speculation = mode
@@ -120,19 +117,24 @@ func TestDSparkSelectionCompatibility(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				wantMemory := mode == SpeculationAuto && tt.wantErr == ""
+				wantMemory := (mode == SpeculationAuto || mode == SpeculationDSpark) && tt.wantErr == ""
 				if (memory.UnifiedFootprint() > 0) != wantMemory {
 					t.Errorf("%s DSpark budget: got %d, want allocated=%t", mode, memory.UnifiedFootprint(), wantMemory)
 				}
 			}
 			cfg.Speculation = SpeculationDSpark
-			_, err = NewModel(t.Context(), cfg)
-			wantErr := tt.wantErr
-			if wantErr == "" {
-				wantErr = "DSpark execution is not yet available"
+			explicit, err := resolveSpeculationPlan(t.Context(), nil, cfg)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("explicit DSpark error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
 			}
-			if err == nil || !strings.Contains(err.Error(), wantErr) {
-				t.Errorf("explicit DSpark error = %v, want containing %q", err, wantErr)
+			if err != nil || !explicit.Active() || explicit.NDraft != tt.wantNDraft {
+				t.Errorf("explicit DSpark plan = %+v, %v", explicit, err)
+			}
+			if got := RecurrentStateCopies(cfg, false); got != int64(wantRows) {
+				t.Errorf("target rollback rows: got %d, want %d", got, wantRows)
 			}
 		})
 	}

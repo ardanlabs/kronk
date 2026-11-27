@@ -24,8 +24,8 @@ type LoadRequest struct {
 	LoadCompanion  func() (llama.Model, error)
 }
 
-// Load creates the qualified Markov-DFlash resource owner. It does not enable
-// proposal generation. Native model loading validates remaining tensor shapes;
+// Load creates the qualified Markov-DFlash resource owner for greedy proposals.
+// Native model loading validates remaining tensor shapes;
 // this boundary rejects other DFlash variants before constructing their graph.
 func Load(req LoadRequest) (_ *Resources, err error) {
 	if req.TargetContext == 0 || req.TargetModel == 0 {
@@ -34,13 +34,14 @@ func Load(req LoadRequest) (_ *Resources, err error) {
 	if !yzmaspec.Available() {
 		return nil, fmt.Errorf("DSpark load: NextN APIs unavailable; check the llama library and Yzma versions")
 	}
-	if _, err := ProposalLimit(req.TargetMetadata, req.DraftMetadata, req.NDraft); err != nil {
+	limit, err := ProposalLimit(req.TargetMetadata, req.DraftMetadata, req.NDraft)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateTensors(req.DraftTensors); err != nil {
 		return nil, err
 	}
-	r := Resources{target: req.TargetContext}
+	r := Resources{target: req.TargetContext, proposals: limit}
 	loaded := false
 	defer func() {
 		if !loaded {
@@ -89,6 +90,8 @@ func Load(req LoadRequest) (_ *Resources, err error) {
 		return nil, fmt.Errorf("DSpark injection batch: %w", err)
 	}
 	r.chunk = int(llama.NUBatch(r.Context))
+	r.mask = llama.VocabMASK(llama.ModelGetVocab(r.Model))
+	r.blockState = make([]float32, (limit+1)*r.width)
 	r.features = make([]float32, int(params.NBatch)*r.width*len(layers))
 	r.sequences = make([]sequence, int(params.NSeqMax))
 	for i := range r.sequences {
