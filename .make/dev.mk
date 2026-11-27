@@ -61,7 +61,8 @@ test-gh-only: install-libraries install-test-gh-models ## Install GitHub fixture
 	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/rerank && \
 	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/decision && \
 	go test -v -count=1 -timeout 20m ./sdk/kronk/tests/hybrid && \
-	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/hybrid_vision_imc
+	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/hybrid_vision_imc && \
+	go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$$' ./sdk/kronk/tests/dspark
 
 test-gh: test-gh-only lint vuln-check diff ## Run CI tests and static checks
 

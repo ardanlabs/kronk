@@ -22,7 +22,7 @@ import (
 // configuration permutations are checked without replaying this fixture.
 func TestQuickCheckCommand(t *testing.T) {
 	releaseTestRepo(t)
-	for _, defect := range []string{"", "benchmark-identity", "arbitrary-output", "foreign-session", "empty-output", "incomplete-response", "inactive-mtp", "server-error", "missing-draft-cleanup", "interrupt", "images", "images-no-publication", "images-rebuild"} {
+	for _, defect := range []string{"", "benchmark-identity", "arbitrary-output", "foreign-session", "empty-output", "incomplete-response", "inactive-mtp", "server-error", "missing-draft-cleanup", "interrupt", "images", "images-no-publication", "images-rebuild", "dspark", "dspark-wrong-backend", "dspark-missing-restore", "dspark-inactive"} {
 		t.Run(defect, func(t *testing.T) {
 			identity := ""
 			if defect == "benchmark-identity" {
@@ -30,8 +30,9 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			t.Setenv("QUICK_CHECK_BENCHMARK_ID", identity)
 			images := strings.HasPrefix(defect, "images")
-			wantPass := defect == "" || defect == "images" || defect == "benchmark-identity" || defect == "arbitrary-output" || defect == "foreign-session"
-			responseFailure := defect == "empty-output" || defect == "incomplete-response" || defect == "inactive-mtp"
+			dspark := strings.HasPrefix(defect, "dspark")
+			wantPass := defect == "" || defect == "images" || defect == "benchmark-identity" || defect == "arbitrary-output" || defect == "foreign-session" || defect == "dspark"
+			responseFailure := defect == "empty-output" || defect == "incomplete-response" || defect == "inactive-mtp" || defect == "dspark-inactive"
 			repetitions := 1
 			if defect == "arbitrary-output" {
 				repetitions = 2
@@ -67,6 +68,18 @@ func TestQuickCheckCommand(t *testing.T) {
 					case "/v1/devices":
 						fmt.Fprint(w, `{"system_ram_bytes":34359738368,"gpu_total_bytes":17179869184,"unified_memory":false}`)
 					case "/v1/tokenize":
+						var body struct{ Input string }
+						if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+							t.Error(err)
+							return
+						}
+						last, absent := "Procedure 072", "Procedure 073"
+						if dspark {
+							last, absent = "Procedure 012", "Procedure 013"
+						}
+						if !strings.Contains(body.Input, last) || strings.Contains(body.Input, absent) {
+							t.Errorf("incorrect fixed handbook for dspark=%t", dspark)
+						}
 						fmt.Fprint(w, `{"tokens":10000}`)
 					case "/v1/kronk/models/ps":
 						if loaded {
@@ -75,12 +88,16 @@ func TestQuickCheckCommand(t *testing.T) {
 							fmt.Fprint(w, `[]`)
 						}
 					case "/v1/kronk/models/slots":
-						json.NewEncoder(w).Encode([]map[string]any{{"model_id": model, "mtp": true, "ndraft": 5, "slots": []map[string]any{{"id": 0, "phase": "idle"}}}})
+						json.NewEncoder(w).Encode([]map[string]any{{"model_id": model, "mtp": !dspark, "ndraft": 3, "slots": []map[string]any{{"id": 0, "phase": "idle"}}}})
 					case "/v1/kronk/models/unload":
 						loaded = false
 						json.NewEncoder(w).Encode(map[string]string{"id": model, "status": "unloaded"})
 					default:
-						fmt.Fprint(w, `{"has_projection":true,"metadata":{"general.architecture":"qwen35moe","qwen35moe.expert_count":"256"},"model_config":{"incremental-cache":true}}`)
+						architecture := "qwen35moe"
+						if dspark {
+							architecture = "inkling2_loop"
+						}
+						json.NewEncoder(w).Encode(map[string]any{"has_projection": true, "metadata": map[string]string{"general.architecture": architecture, architecture + ".expert_count": "256"}, "model_config": map[string]bool{"incremental-cache": true}})
 					}
 					return
 				}
@@ -158,7 +175,11 @@ func TestQuickCheckCommand(t *testing.T) {
 				}
 				emit("request-lifecycle", "started", map[string]any{"stage": 4, "slot": 0})
 				if phase == "warmup" {
-					emit("draft-model-mtp", "loaded", map[string]any{"backend": "qwen35-own-kv"})
+					if dspark && defect != "dspark-wrong-backend" {
+						emit("draft-model-dspark", "loaded", map[string]any{"file": "dspark-Inkling-2-Mini-Q8_0.gguf", "execution": "text", "nDraft": 3})
+					} else {
+						emit("draft-model-mtp", "loaded", map[string]any{"backend": "qwen35-own-kv"})
+					}
 				}
 				boundary := 0
 				if phase == "cold" || phase == "warmup" {
@@ -183,7 +204,9 @@ func TestQuickCheckCommand(t *testing.T) {
 				}
 				if reused > 0 {
 					emit("start-slot", "imc-restore-done", nil)
-					emit("start-slot", "imc-draft-restore-done", nil)
+					if defect != "dspark-missing-restore" || phase != "append" {
+						emit("start-slot", "imc-draft-restore-done", nil)
+					}
 				}
 				if phase != "replay" {
 					emit("start-slot", "imc-snapshot-done", nil)
@@ -243,7 +266,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				if defect == "incomplete-response" && phase == "append" {
 					finish = "length"
 				}
-				if defect == "inactive-mtp" && phase == "append" {
+				if (defect == "inactive-mtp" || defect == "dspark-inactive") && phase == "append" {
 					drafts = 0
 				}
 				fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":%q}],\"usage\":{\"prompt_tokens\":%d,\"completion_tokens\":90,\"draft_tokens\":%d,\"draft_coverage\":0.5,\"prompt_tokens_details\":{\"cached_tokens\":%d}}}\n\ndata: [DONE]\n\n", finish, stable+7, drafts, reused)
@@ -254,6 +277,10 @@ func TestQuickCheckCommand(t *testing.T) {
 			if images {
 				cellIndex = 1
 				selection = []string{matrixCells[cellIndex].id}
+			}
+			if dspark {
+				cellIndex = 32
+				selection = []string{"Inkling/1s/IMC+/DSpark+/img-"}
 			}
 			if defect == "interrupt" {
 				selection = append(selection, matrixCells[2].id)
@@ -276,6 +303,14 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			cell := summary.Cells[cellIndex]
+			if dspark && wantPass {
+				if cell.Model != "ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK" || cell.MTPBackend != "dspark" || cell.ReferenceTokens != (normalizationReference{}) || cell.Workload != "operations-inkling-v1" {
+					t.Fatalf("incorrect DSpark fixture identity: %+v", cell)
+				}
+				if _, ok := cell.Measurements["workload"]["reference_seconds"]; ok {
+					t.Fatal("uncalibrated Inkling cell borrowed normalized timings")
+				}
+			}
 			if summary.BenchmarkIdentity != identity || cell.BenchmarkIdentity != identity || summary.Machine["host"] != "actual-container" {
 				t.Fatalf("lost benchmark identity or actual hostname: %s", data)
 			}
@@ -301,7 +336,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				if !wantPass && (cell.Measurements != nil || len(cell.Repetitions[0].FindingsByCategory["INFRASTRUCTURE"]) == 0) {
 					t.Fatalf("invalid engine execution accepted: %s", data)
 				}
-				wantFinding := map[string]string{"server-error": "unexpected server ERROR", "missing-draft-cleanup": "draft cleanup not attested"}[defect]
+				wantFinding := map[string]string{"server-error": "unexpected server ERROR", "missing-draft-cleanup": "draft cleanup not attested", "dspark-wrong-backend": "DSpark backend activation not attested", "dspark-missing-restore": "target restore and any required DSpark continuation not attested"}[defect]
 				if wantFinding != "" && !strings.Contains(strings.Join(cell.Findings, "\n"), wantFinding) {
 					t.Fatalf("missing execution finding %q: %s", wantFinding, data)
 				}
@@ -364,27 +399,38 @@ func TestQuickCheckModelConfig(t *testing.T) {
 			Context     int    `yaml:"context-window"`
 			IMC         bool   `yaml:"incremental-cache"`
 			Speculation string `yaml:"speculation"`
+			Draft       struct {
+				NDraft int `yaml:"ndraft"`
+			} `yaml:"draft-model"`
 		} `yaml:"models"`
 	}
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}
 	selected, err := selectedCells(nil)
-	if err != nil || len(selected) != 32 {
-		t.Fatal("default selection must include all 32 cells", selected, err)
+	if err != nil || len(selected) != 40 {
+		t.Fatal("default selection must include all 40 cells", selected, err)
 	}
 	for _, cell := range matrixCells {
 		model := "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL"
 		if strings.HasPrefix(cell.id, "Dense/") {
 			model = "ornith-ai/Ornith-1.5-9B-Q8_0"
 		}
+		contextWindow, speculation, disabledSuffix := 32768, "mtp", "-NO-MTP"
+		dspark := strings.HasPrefix(cell.id, "Inkling/")
+		if dspark {
+			model = "ggml-org/Inkling-2-Mini-Q8_0"
+			contextWindow, speculation, disabledSuffix = 8192, "dspark", "-NO-DSPARK"
+			if cell.images {
+				t.Fatalf("%s: DSpark image drafting is unsupported", cell.id)
+			}
+		}
 		model += "/QUICK-CHECK"
 		if cell.noCache {
 			model += "-NO-IMC"
 		}
-		speculation := "mtp"
 		if cell.targetOnly {
-			model += "-NO-MTP"
+			model += disabledSuffix
 			speculation = "disabled"
 		}
 		slots := 1
@@ -393,7 +439,7 @@ func TestQuickCheckModelConfig(t *testing.T) {
 			slots = 2
 		}
 		cfg, ok := config.Models[model]
-		if !selected[cell.id] || !ok || cfg.Slots != slots || cfg.Context != 32768 || cfg.IMC == cell.noCache || cfg.Speculation != speculation {
+		if !selected[cell.id] || !ok || cfg.Slots != slots || cfg.Context != contextWindow || cfg.IMC == cell.noCache || cfg.Speculation != speculation || dspark && cfg.Draft.NDraft != 3 {
 			t.Fatalf("%s: incorrect alias %s: %+v", cell.id, model, cfg)
 		}
 	}

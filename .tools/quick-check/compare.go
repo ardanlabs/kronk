@@ -224,7 +224,8 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	if (s.Status != "PASS" && s.Status != "FAIL") || s.Workload == "" || s.Model == "" {
 		return input, fmt.Errorf("summary.json: missing supported run identity/status")
 	}
-	if s.ReferenceTokens.InputTokens <= 0 || s.ReferenceTokens.GenerationTokens <= 0 {
+	uncalibrated := r.isDSpark() && s.ReferenceTokens == (normalizationReference{})
+	if !uncalibrated && (s.ReferenceTokens.InputTokens <= 0 || s.ReferenceTokens.GenerationTokens <= 0) {
 		return input, fmt.Errorf("summary.json: missing or invalid normalization reference; rerun quick-check")
 	}
 	if s.ID != r.ID || s.Status != r.Status || s.Workload != r.Workload || s.Model != r.Model ||

@@ -1,11 +1,23 @@
 # Kronk quick-check
 
-Matrix cells (32): **MoE or Dense / one or two slots / IMC off or on / MTP off or on / images off or on**.
+Matrix cells (40): **32 MTP cells** (MoE or Dense / one or two slots / IMC off or on / MTP off or on / images off or on), plus **8 Inkling DSpark cells** (one or two slots / IMC off or on / DSpark off or on / text only).
 Models: **MoE** `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL` and
 **Dense** `ornith-ai/Ornith-1.5-9B-Q8_0`, using the `QUICK-CHECK` aliases
 from `zarf/kms/tools_model_config.yaml`, with **32,768 tokens per slot**.
 Both require their image projection files and contain embedded MTP;
 no separate Dense MTP file is needed.
+
+**Inkling** uses `ggml-org/Inkling-2-Mini-Q8_0` and its compatible DSpark
+sidecar, with **8,192 tokens per slot**, prefill batch 512 and draft depth 3.
+Both nightly jobs and the local fixture install pass `--draft-method dspark`
+and an explicit `--draft` URL for the Unsloth `Mainline_Support` companion.
+SDK CI supplies the same pair through the optional draft-method and draft-URL
+columns in `.github/test-models.txt`, avoiding reliance on a cached catalog's
+companion entry. Existing two-column entries remain supported.
+Its fixed handbook contains 12 procedures instead of 72, leaving room for the
+conversation in the smaller window. It has separate workload identities; the
+existing MTP prompts and timing references are unchanged. DSpark currently
+supports text drafting only, so image fallbacks are not counted as DSpark cells.
 
 ## Run
 
@@ -23,7 +35,7 @@ start a dedicated test server and run:
 
 ```sh
 make server-for-tools
-make quick-check-this-code # All 32 cells, one combined report.
+make quick-check-this-code # All 40 cells, one combined report.
 ```
 
 To run a subset, repeat `-cell` with each exact cell ID:
@@ -32,6 +44,7 @@ To run a subset, repeat `-cell` with each exact cell ID:
 make quick-check-this-code QUICK_CHECK_ARGS='-cell MoE/1s/IMC+/MTP+/img-'
 make quick-check-this-code QUICK_CHECK_ARGS='-cell MoE/1s/IMC+/MTP+/img- -cell MoE/2s/IMC-/MTP-/img+'
 make quick-check-this-code QUICK_CHECK_ARGS='-cell Dense/1s/IMC+/MTP+/img-'
+make quick-check-this-code QUICK_CHECK_ARGS='-cell Inkling/1s/IMC+/DSpark+/img- -cell Inkling/2s/IMC+/DSpark+/img-'
 ```
 
 One-slot image cells exercise image rebuild, replay, append, a different
@@ -87,10 +100,10 @@ Quick-check validates **engine execution, not answer semantics**. Prompts provid
 repeatable generation workload; required words, stale or foreign words, animal
 identification, paragraph counts, and answer length are not graded. A completed,
 nonempty response with sufficient token usage is required, along with the requested
-MTP activity (or its absence when MTP is off).
+MTP or DSpark activity (or its absence when speculation is off).
 
 Structured server evidence must attest the requested IMC reuse/rebuild behavior,
-MTP activation and cleanup, slot/sequence ownership and cleanup, concurrent
+drafter activation and cleanup, slot/sequence ownership and cleanup, concurrent
 progress, cancellation, and recovery. Unexpected server errors, missing evidence,
 and incomplete execution still fail the job. `PASS` means those execution checks
 passed; it does not certify answer quality or semantic conversation isolation.
@@ -100,7 +113,24 @@ normalized timings, comparison deltas, or local release-history updates. Raw
 responses remain in `events.ndjson` for investigation. Existing saved evidence
 retains its recorded findings; older failed/incomplete attempts are not rewritten
 as successful runs, and no timings are invented for work that did not complete.
-Prompts and token budgets are unchanged to preserve the timing workload.
+Existing MTP prompts and token budgets are unchanged to preserve their timing workload.
+
+Inkling records wall-clock and per-phase timings immediately; its Normalized
+timing remains `n/a` until fixture-specific token volumes are calibrated from a
+native run. It never borrows Qwen or Ornith timing references. Older release
+histories have no Inkling baseline, so initial comparisons report its deltas as
+unavailable. The saved `mtp_backend` JSON field is a legacy name: Inkling records
+`dspark` there, attested by its native sidecar-load event rather than the
+scheduler's MTP flag (which correctly remains false for DSpark).
+
+The SDK regression suite at `sdk/kronk/tests/dspark` reuses the MTP speculation
+workloads in automatic and explicitly disabled modes, with one and two slots:
+IMC restore, session isolation, long continuations, rejected-round rollback,
+cancellation, and recovery. It requires the target and DSpark sidecar and uses
+the same 8,192-token per-slot window and draft depth 3. Both SDK CI jobs pull the
+fixture and run this suite; both nightly Quick-check jobs pull it and select the
+eight additional cells by default. Configured coverage is not native qualification;
+review the SDK results and nightly artifacts for executed-path evidence.
 
 All of `output/` is Git-ignored. Up to two run directories are retained:
 

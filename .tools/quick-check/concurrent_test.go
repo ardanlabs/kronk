@@ -18,15 +18,19 @@ import (
 // evidence. This validates the harness, not model quality or Kronk inference.
 func TestQuickCheckTwoSlots(t *testing.T) {
 	releaseTestRepo(t)
-	for _, defect := range []string{"", "serialized", "wrong-recovery-slot", "no-survivor-progress", "missing-cancel-ack", "foreign-session", "arbitrary-output", "arbitrary-output-bad-evidence"} {
+	for _, defect := range []string{"", "serialized", "wrong-recovery-slot", "no-survivor-progress", "missing-cancel-ack", "foreign-session", "arbitrary-output", "arbitrary-output-bad-evidence", "dspark"} {
 		t.Run(defect, func(t *testing.T) { checkTwoSlotFixture(t, defect) })
 	}
 }
 
 func checkTwoSlotFixture(t *testing.T, defect string) {
 	t.Helper()
-	const selector = "MoE/2s/IMC+/MTP+/img+"
-	passing := defect == "" || defect == "arbitrary-output" || defect == "foreign-session"
+	selector := "MoE/2s/IMC+/MTP+/img+"
+	dspark := defect == "dspark"
+	if dspark {
+		selector = "Inkling/2s/IMC+/DSpark+/img-"
+	}
+	passing := defect == "" || defect == "arbitrary-output" || defect == "foreign-session" || dspark
 	root := t.TempDir()
 	logPath := filepath.Join(root, "server.log")
 	serverLog, err := os.Create(logPath)
@@ -73,9 +77,12 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 					}
 					slots = append(slots, map[string]any{"id": id, "phase": phase})
 				}
-				json.NewEncoder(w).Encode([]map[string]any{{"model_id": model, "mtp": true, "ndraft": 5, "slots": slots}})
+				json.NewEncoder(w).Encode([]map[string]any{{"model_id": model, "mtp": !dspark, "ndraft": 3, "slots": slots}})
 			default:
 				metadata := map[string]string{"general.architecture": "qwen35moe", "qwen35moe.expert_count": "256"}
+				if dspark {
+					metadata = map[string]string{"general.architecture": "inkling2_loop", "inkling2_loop.expert_count": "256"}
+				}
 				json.NewEncoder(w).Encode(map[string]any{"has_projection": true, "model_config": map[string]any{"incremental-cache": true, "nseq-max": 2}, "metadata": metadata})
 			}
 			return
@@ -137,7 +144,7 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 		emit("request-lifecycle", "started", map[string]any{"stage": 4})
 		stable := map[string]int{"cold": 10050, "replay": 10050, "fresh-session": 10070, "append": 10300, "peer-append": 10320, "survivor": 10600, "cancel": 10620, "recovery": 10050}[phase]
 		reused := map[string]int{"replay": 10050, "fresh-session": 10000, "append": 10050, "peer-append": 10070, "survivor": 10300, "cancel": 10320, "recovery": 10000}[phase]
-		media := phase != "warmup" && phase != "cold" && phase != "replay" && phase != "recovery"
+		media := !dspark && phase != "warmup" && phase != "cold" && phase != "replay" && phase != "recovery"
 		kind, reason := "append", "complete-prefix-append"
 		switch phase {
 		case "cold":
@@ -163,7 +170,11 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 			kind, reason, reused = "append", "system-cache-prefix", 10000
 		}
 		if phase == "warmup" {
-			emit("draft-model-mtp", "loaded", map[string]any{"backend": "qwen35-own-kv"})
+			if dspark {
+				emit("draft-model-dspark", "loaded", map[string]any{"file": "dspark-Inkling-2-Mini-Q8_0.gguf", "execution": "text", "nDraft": 3})
+			} else {
+				emit("draft-model-mtp", "loaded", map[string]any{"backend": "qwen35-own-kv"})
+			}
 		}
 		if phase != "warmup" {
 			if phase == "cold" {
@@ -300,8 +311,11 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 		if (cell.Status == "PASS") != passing || (passing && (len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || cell.Measurements["workload"]["elapsed_seconds"].Median <= 0)) {
 			t.Fatalf("unexpected two-slot report: %s", data)
 		}
-		if passing && cell.Measurements["workload"]["reference_seconds"].Median <= 0 {
+		if passing && !dspark && cell.Measurements["workload"]["reference_seconds"].Median <= 0 {
 			t.Fatal("calibrated two-slot cell must publish Normalized", string(data))
+		}
+		if dspark && (cell.Model != "ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-2S" || cell.MTPBackend != "dspark" || cell.ReferenceTokens != (normalizationReference{})) {
+			t.Fatalf("incorrect two-slot DSpark fixture identity: %+v", cell)
 		}
 		if strings.HasPrefix(defect, "arbitrary-output") {
 			if len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || (cell.Measurements != nil) != passing {

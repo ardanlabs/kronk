@@ -33,6 +33,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 			}
 			var mu sync.Mutex
 			var loaded bool
+			var selected bool
 			var disableReason string
 			log := cfg.Log
 			cfg.Log = func(ctx context.Context, msg string, args ...any) {
@@ -48,20 +49,29 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 				if msg == "batch-engine" && fields["status"] == "slot-finished" && fields["draft_disable_reason"] != "" {
 					disableReason = fields["draft_disable_reason"]
 				}
+				// DSpark logs selection separately; its load event has no backend
+				// or source fields. Require both the active source and exact file.
+				if msg == "speculation" && fields["source"] == "dspark" && fields["active"] == "true" && fields["execution"] == "text" {
+					selected = true
+				}
 				if msg == loadEvent && fields["status"] == "loaded" {
 					loaded = backend == "classic-own-kv" || fields["backend"] == backend &&
 						((backend == "qwen35-own-kv" && fields["source"] == "auto-detected") ||
 							(backend == "gemma-shared-kv" && fields["source"] == "mtp-drafter-file" && fields["file"] == cfg.DrafterFile))
+					if backend == "dspark" {
+						loaded = fields["file"] == cfg.DrafterFile && fields["execution"] == "text" && fields["nDraft"] == "3"
+					}
 				}
 			}
 			WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
 				mu.Lock()
 				gotLoad := loaded
+				gotSelection := selected
 				mu.Unlock()
-				if !disabled && !gotLoad {
+				if !disabled && (!gotLoad || backend == "dspark" && !gotSelection) {
 					t.Fatal("missing qualified drafter load provenance")
 				}
-				if disabled && gotLoad {
+				if disabled && (gotLoad || backend == "dspark" && gotSelection) {
 					t.Fatal("disabled control loaded a drafter")
 				}
 				var accepted int
@@ -76,7 +86,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 							t.Errorf("disabled speculation: got %+v, want zero draft/accepted/rate/coverage", u)
 						}
 					} else if backend != "classic-own-kv" && u.DraftDisableReason != "" {
-						t.Errorf("qualified MTP unexpectedly disabled: %s", u.DraftDisableReason)
+						t.Errorf("qualified speculation unexpectedly disabled: backend=%s reason=%s", backend, u.DraftDisableReason)
 					}
 					accepted += u.DraftAcceptedTokens
 				}
@@ -254,7 +264,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 						mu.Lock()
 						defer mu.Unlock()
 						if backend != "classic-own-kv" && disableReason != "" {
-							t.Errorf("MTP disabled during IMC/isolation/workload: %s", disableReason)
+							t.Errorf("speculation disabled during IMC/isolation/workload: backend=%s reason=%s", backend, disableReason)
 						}
 						snapshot, ok := krn.BatchEngineSnapshot()
 						if !ok || snapshot.SpeculativeRollbacks[strategy] == 0 {

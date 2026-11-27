@@ -27,6 +27,7 @@ const targetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO
 const noCacheModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC"
 const noCacheTargetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP"
 const denseModelID = "ornith-ai/Ornith-1.5-9B-Q8_0"
+const inklingModelID = "ggml-org/Inkling-2-Mini-Q8_0"
 
 type options struct {
 	host        string
@@ -60,7 +61,7 @@ type report struct {
 	SystemTokens         int                    `json:"system_tokens"`
 	SystemSHA256         string                 `json:"system_sha256"`
 	Slot                 int                    `json:"slot"`
-	MTPBackend           string                 `json:"mtp_backend"`
+	MTPBackend           string                 `json:"mtp_backend"` // Legacy key; also records DSpark activation.
 	WarmupRequest        *result                `json:"warmup_request,omitempty"`
 	SharedWarmupFrom     string                 `json:"shared_warmup_from,omitempty"`
 	WorkloadSeconds      float64                `json:"workload_seconds"`
@@ -184,7 +185,10 @@ func (r report) cell() string {
 	if r.isDense() {
 		routing = "Dense"
 	}
-	return routing + " / " + slots + " / IMC " + imc + " / MTP " + mtp + " / images " + images
+	if r.isDSpark() {
+		routing = "Inkling"
+	}
+	return routing + " / " + slots + " / IMC " + imc + " / " + r.draftMethod() + " " + mtp + " / images " + images
 }
 
 func (r report) phaseSummary(res result) map[string]any {
@@ -321,7 +325,7 @@ func (r report) logSummary() string {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Cell: %s | Warm-up: %s | Repetitions: %d/%d\n", r.ID, warmup, len(r.Repetitions), r.RepetitionsRequested)
 	fmt.Fprintf(&b, "  Workload s [SD]: %s | Normalized s [SD]: %s\n", workload, reference)
-	fmt.Fprintf(&b, "IMC/MTP: %s | %s: %s | Cancel/recovery: %s", cache, isolationLabel, isolation, recovery)
+	fmt.Fprintf(&b, "IMC/speculation: %s | %s: %s | Cancel/recovery: %s", cache, isolationLabel, isolation, recovery)
 	if r.Images {
 		fmt.Fprintf(&b, " | Images: %s\n", verdict("infrastructure_status", r.phases()...))
 	} else {
@@ -350,7 +354,11 @@ func (r report) logSummary() string {
 			fmt.Fprintln(&b, "Images -> make test-load-media-correctness")
 		}
 		if cache == "FAIL" {
-			fmt.Fprintln(&b, "IMC/MTP -> make test-load-hybrid; make test-load-mtp-embedded")
+			if r.isDSpark() {
+				fmt.Fprintln(&b, "IMC/DSpark -> inspect trace-correlated draft-model-dspark and IMC events")
+			} else {
+				fmt.Fprintln(&b, "IMC/MTP -> make test-load-hybrid; make test-load-mtp-embedded")
+			}
 		}
 		if isolation == "FAIL" || recovery == "FAIL" {
 			fmt.Fprintln(&b, "Isolation/recovery -> make test-load-hybrid")
@@ -597,6 +605,9 @@ func run(o options) (runErr error) {
 		if (report{ID: cell.id}).isDense() {
 			c.model = denseModelID + strings.TrimPrefix(c.model, strings.TrimSuffix(modelID, "/QUICK-CHECK"))
 		}
+		if (report{ID: cell.id}).isDSpark() {
+			c.model = inklingModelID + strings.ReplaceAll(strings.TrimPrefix(c.model, strings.TrimSuffix(modelID, "/QUICK-CHECK")), "NO-MTP", "NO-DSPARK")
+		}
 		if group != nil && group.Model != c.model {
 			if err := finishGroup(); err != nil {
 				return errors.Join(cellErrors, err)
@@ -611,6 +622,15 @@ func run(o options) (runErr error) {
 		}
 		if cr.TwoSlots {
 			cr.Workload = "operations-concurrent-v7"
+		}
+		if cr.isDSpark() {
+			cr.Workload = "operations-inkling-v1"
+			if cr.TwoSlots {
+				cr.Workload = "operations-inkling-concurrent-v1"
+			}
+			// Uncalibrated: retain wall-clock timings without borrowing another
+			// fixture's token volumes or inventing normalized measurements.
+			cr.ReferenceTokens = normalizationReference{}
 		}
 		var err error
 		if group == nil {
@@ -762,6 +782,10 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		if architecture == "" || strings.Contains(strings.ToLower(architecture), "moe") || experts > 1 || (expertCount != "" && (expertErr != nil || experts < 0)) {
 			return fmt.Errorf("fixture metadata must attest Dense routing, architecture=%q expert_count=%q", architecture, expertCount)
 		}
+	} else if r.isDSpark() {
+		if architecture != "inkling2_loop" || experts <= 1 {
+			return fmt.Errorf("fixture metadata must attest the selected Inkling2 MoE architecture")
+		}
 	} else if architecture != "qwen35moe" || experts <= 1 {
 		return fmt.Errorf("fixture metadata must attest the selected Qwen3.6 MoE architecture")
 	}
@@ -777,8 +801,9 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 	if r.TwoSlots {
 		slots = 2
 	}
-	if detail.Config.IMC == nil || *detail.Config.IMC == r.NoCache || len(e.Slots) != slots || (!r.TargetOnly && (!e.MTP || e.NDraft <= 0)) || (r.TargetOnly && (e.MTP || e.NDraft != 0)) {
-		return fmt.Errorf("fixture must expose requested IMC mode (off=%t), exactly %d slots, and requested MTP mode (target-only=%t): %+v", r.NoCache, slots, r.TargetOnly, e)
+	wantMTP := !r.TargetOnly && !r.isDSpark()
+	if detail.Config.IMC == nil || *detail.Config.IMC == r.NoCache || len(e.Slots) != slots || e.MTP != wantMTP || (!r.TargetOnly && e.NDraft <= 0) || (r.TargetOnly && e.NDraft != 0) {
+		return fmt.Errorf("fixture must expose requested IMC mode (off=%t), exactly %d slots, and requested speculation mode (target-only=%t): %+v", r.NoCache, slots, r.TargetOnly, e)
 	}
 	r.Slot = e.Slots[0].ID
 	for _, slot := range e.Slots {
@@ -938,7 +963,11 @@ func (c *client) systemPrompt() (string, int, error) {
 	// A fixed per-cell/repetition namespace prevents earlier working/System
 	// snapshots from serving this cell/repetition's initial cold prompt.
 	// It is stable across invocations, never random or resized to fit a tokenizer.
-	text := fmt.Sprintf("Quick-check cell %s; repetition %d.\n\n", c.cell, c.repetition) + handbook()
+	procedures := 72
+	if (report{ID: c.cell}).isDSpark() {
+		procedures = 12
+	}
+	text := fmt.Sprintf("Quick-check cell %s; repetition %d.\n\n", c.cell, c.repetition) + handbook(procedures)
 	var count struct {
 		Tokens int `json:"tokens"`
 	}

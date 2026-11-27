@@ -12,7 +12,7 @@ const workloadVersion = "operations-v7"
 
 // A stable synthetic handbook approximates an agent's large instruction/reference
 // prefix without importing a client prompt, tool loop, or executable task.
-func handbook() string {
+func handbook(procedures int) string {
 	var b strings.Builder
 	b.WriteString(`You are participating in a test of conversation memory and image understanding. Your task is to write the review requested in each user message.
 
@@ -31,7 +31,7 @@ Never use tools.
 REFERENCE HANDBOOK — FICTIONAL BACKGROUND
 `)
 	services := []string{"archive", "gateway", "ledger", "search", "dispatch", "catalog", "telemetry"}
-	for i := range 72 {
+	for i := range procedures {
 		fmt.Fprintf(&b, `Procedure %03d — %s handover revision %d.
 Before transferring ownership, inspect the request queue, identify the oldest
 unfinished operation, and distinguish admission delay from active processing.
@@ -99,7 +99,7 @@ func classifyFindings(findings []string) map[string][]string {
 	return classified
 }
 
-// checkResponse verifies a usable completed request and the requested MTP mode.
+// checkResponse verifies a usable completed request and the requested drafting mode.
 // Answer wording and image identification are intentionally not evaluated.
 func checkResponse(r result, targetOnly bool) error {
 	if strings.TrimSpace(r.Content) == "" || r.FinishReason != "stop" {
@@ -112,7 +112,7 @@ func checkResponse(r result, targetOnly bool) error {
 		return fmt.Errorf("[INFRASTRUCTURE] target-only request reported speculative activity: %+v", r.Usage)
 	}
 	if !targetOnly && (r.Usage.DraftDisableReason != "" || r.Usage.DraftTokens <= 0 || r.Usage.DraftCoverage <= 0) {
-		return fmt.Errorf("[INFRASTRUCTURE] MTP did not remain active: drafts=%d coverage=%g disabled=%q", r.Usage.DraftTokens, r.Usage.DraftCoverage, r.Usage.DraftDisableReason)
+		return fmt.Errorf("[INFRASTRUCTURE] speculation did not remain active: drafts=%d coverage=%g disabled=%q", r.Usage.DraftTokens, r.Usage.DraftCoverage, r.Usage.DraftDisableReason)
 	}
 	return nil
 }

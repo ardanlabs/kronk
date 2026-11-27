@@ -56,6 +56,11 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 		if phase == "warmup" && strings.HasPrefix(msg, "draft-model-mtp") && event["status"] == "loaded" {
 			r.MTPBackend, _ = event["backend"].(string)
 		}
+		if phase == "warmup" && msg == "draft-model-dspark" && event["status"] == "loaded" && event["execution"] == "text" {
+			if file, _ := event["file"].(string); file != "" {
+				r.MTPBackend = "dspark"
+			}
+		}
 		if res := requests[trace]; res != nil {
 			recordExecution(res, event)
 		}
@@ -251,11 +256,11 @@ func recordExecution(r *result, event map[string]any) {
 
 func validateExecution(r *report) {
 	fail := func(phase, text string) { r.Findings = append(r.Findings, phase+": "+text) }
-	if !r.TargetOnly && r.MTPBackend == "" {
-		fail("warmup", "MTP backend activation not attested")
+	if !r.TargetOnly && (r.MTPBackend == "" || r.isDSpark() && r.MTPBackend != "dspark") {
+		fail("warmup", r.draftMethod()+" backend activation not attested")
 	}
 	if r.TargetOnly && r.MTPBackend != "" {
-		fail("warmup", "target-only model loaded an MTP backend")
+		fail("warmup", "target-only model loaded an "+r.draftMethod()+" backend")
 	}
 	if len(r.Results) != len(r.phases()) {
 		fail("workload", "incomplete: all workload phases required")
@@ -296,7 +301,7 @@ func validateExecution(r *report) {
 				fail(res.Phase, "IMC-off execution reported cache planning, reuse, or saved state")
 			}
 			if e.InputTokens <= r.SystemTokens || (!res.Cancelled && e.InputTokens != res.Usage.PromptTokens) || (!r.TargetOnly && e.DraftResume != "fresh-prefill") {
-				fail(res.Phase, "full prompt prefill and any required fresh MTP prefill not attested")
+				fail(res.Phase, "full prompt prefill and any required fresh "+r.draftMethod()+" prefill not attested")
 			}
 			// Ordinary media prefill has no IMC decode-chunk event. Encoding,
 			// successful prefill/slot completion, and semantic answers attest it.
@@ -346,14 +351,14 @@ func validateExecution(r *report) {
 				fail(res.Phase, "required "+reason+" reuse extent not attested")
 			}
 			if !e.TargetRestored || (!r.TargetOnly && (!e.DraftRestored || e.DraftResume != "restored-draft-kv")) {
-				fail(res.Phase, "target restore and any required MTP continuation not attested")
+				fail(res.Phase, "target restore and any required "+r.draftMethod()+" continuation not attested")
 			}
 		}
 		if res.Phase == "fresh-session" {
 			freshStable = res.StableTokens
 		}
 		if res.Phase != "replay" && (!e.TargetSnapshotted || (!r.TargetOnly && !e.DraftSnapshotted)) {
-			fail(res.Phase, "target snapshot and any required MTP snapshot publication not attested")
+			fail(res.Phase, "target snapshot and any required "+r.draftMethod()+" snapshot publication not attested")
 		}
 	}
 }
