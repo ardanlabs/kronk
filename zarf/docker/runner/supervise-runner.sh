@@ -192,6 +192,11 @@ case "$DOCKER" in
             --device /dev/net/tun
             -v /sys:/sys
             -e DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS="-p 127.0.0.1:2375:2375/tcp"
+            # dockerd picks published ports from 32768-60999 in rootlesskit's
+            # namespace; rootlesskit binds them here, where the job's client
+            # sockets live. Disjoint ranges, or a bind fails "address already
+            # in use".
+            --sysctl net.ipv4.ip_local_port_range="61000 65535"
             -v "${NAME}-dind-data:/home/rootless/.local/share/docker")
         daemon_args+=(--host=unix:///run/user/1000/docker.sock) ;;
     privileged)
