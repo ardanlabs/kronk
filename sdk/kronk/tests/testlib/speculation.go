@@ -118,7 +118,9 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), TestDuration)
 					defer cancel()
-					d := model.D{"messages": []model.D{{"role": "user", "content": "Write a detailed numbered list of 40 distinct practical tips for maintaining a vegetable garden. Explain each tip in two sentences."}}, "max_tokens": 768, "enable_thinking": false, "temperature": 0.7, "stream_options": model.D{"include_usage": true}}
+					// Exercise sustained generation, not exact-count planning that can
+					// consume a reasoning model's entire budget before any answer.
+					d := model.D{"messages": []model.D{{"role": "user", "content": "Write a long, detailed essay about maintaining a vegetable garden. Explain soil preparation, watering, planting, and pest control with practical examples."}}, "max_tokens": 2048, "enable_thinking": false, "temperature": 0.7, "stream_options": model.D{"include_usage": true}}
 					for range 3 {
 						ch, err := krn.ChatStreaming(ctx, d)
 						if err != nil {

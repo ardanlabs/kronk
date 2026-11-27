@@ -754,7 +754,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		if err := c.unload(); err != nil {
 			return err
 		}
-		warmup, err := c.chat("warmup", []message{{Role: "user", Content: "Reply OK."}}, 8, false)
+		warmup, err := c.chat("warmup", []message{{Role: "user", Content: "Reply OK."}}, r.outputBudget(8), false)
 		r.WarmupRequest = &warmup
 		if err != nil {
 			return fmt.Errorf("warm-up request: %w", err)
@@ -832,7 +832,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 	}
 	start := time.Now()
 	perform := func(phase string, messages []message, cancelled bool) (result, error) {
-		res, err := c.chat(phase, messages, 384, cancelled)
+		res, err := c.chat(phase, messages, r.outputBudget(384), cancelled)
 		if err == nil && !cancelled {
 			err = checkResponse(res, r.TargetOnly)
 		}

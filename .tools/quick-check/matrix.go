@@ -71,6 +71,15 @@ func (r report) draftMethod() string {
 	return "MTP"
 }
 
+// outputBudget leaves room for Inkling's reasoning even at minimum effort.
+// Existing MTP workload limits stay unchanged.
+func (r report) outputBudget(defaultBudget int) int {
+	if r.isDSpark() {
+		return 2048
+	}
+	return defaultBudget
+}
+
 func selectedCells(selection []string) (map[string]bool, error) {
 	selected := make(map[string]bool)
 	for _, cell := range matrixCells {

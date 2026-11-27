@@ -88,12 +88,23 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 			return
 		}
 		var body struct {
-			Model    string    `json:"model"`
-			Messages []message `json:"messages"`
+			Model     string    `json:"model"`
+			Messages  []message `json:"messages"`
+			MaxTokens int       `json:"max_tokens"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			t.Error(err)
 			return
+		}
+		wantBudget := 768
+		if len(body.Messages) == 1 {
+			wantBudget = 8
+		}
+		if dspark {
+			wantBudget = 2048
+		}
+		if body.MaxTokens != wantBudget {
+			t.Errorf("request max_tokens: got %d, want %d", body.MaxTokens, wantBudget)
 		}
 		// Route by the initial conversation, never by arbitrary assistant output.
 		text, _ := json.Marshal(body.Messages[:min(2, len(body.Messages))])

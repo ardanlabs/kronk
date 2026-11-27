@@ -102,12 +102,23 @@ func TestQuickCheckCommand(t *testing.T) {
 					return
 				}
 				var body struct {
-					Model    string
-					Messages []message
+					Model     string
+					Messages  []message
+					MaxTokens int `json:"max_tokens"`
 				}
 				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 					t.Error(err)
 					return
+				}
+				wantBudget := 384
+				if body.Messages[0].Content == "Reply OK." {
+					wantBudget = 8
+				}
+				if dspark {
+					wantBudget = 2048
+				}
+				if body.MaxTokens != wantBudget {
+					t.Errorf("request max_tokens: got %d, want %d", body.MaxTokens, wantBudget)
 				}
 				mu.Lock()
 				model, loaded = body.Model, true
