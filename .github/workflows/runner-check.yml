@@ -1,7 +1,11 @@
 name: Runner check
 
 # Manual probe of the self-hosted runners. Run before relying on one, and
-# whenever one is rebuilt, moved, or re-registered.
+# whenever one is rebuilt, moved, or re-registered. One job per fleet:
+#
+#   linux  [self-hosted, Linux, X64, gpu]   GPU runners (vulkan or rocm)
+#   wsl2   [self-hosted, Linux, X64, wsl2]  CPU-only runners in WSL2
+#   macos  [self-hosted, macOS, ARM64, sand]
 #
 # Diagnostic steps are continue-on-error so one missing tool still yields a
 # full report; the Summary step is what fails the job.
@@ -16,12 +20,15 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Which runner(s) to probe
+        description: >
+          Which fleet(s) to probe: linux (GPU runners, `gpu` label),
+          wsl2 (CPU-only WSL2 runners, `wsl2` label), macos, or all.
         type: choice
-        default: both
+        default: all
         options:
-          - both
+          - all
           - linux
+          - wsl2
           - macos
       deep:
         description: >
@@ -38,11 +45,13 @@ env:
   GOTOOLCHAIN: local
 
 jobs:
+  # `gpu` keeps this probe on the GPU fleets (vulkan, or the optional
+  # rocm fleet) and off the CPU-only wsl2 runners, which have their own job.
   linux:
-    name: Linux self-hosted
+    name: Linux GPU self-hosted
     if: >-
       (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
-      && (github.event_name == 'pull_request' || inputs.target == 'both' || inputs.target == 'linux')
+      && (github.event_name == 'pull_request' || inputs.target == 'all' || inputs.target == 'linux')
     runs-on: [self-hosted, Linux, X64, gpu]
     timeout-minutes: 30
     steps:
@@ -57,7 +66,7 @@ jobs:
           echo "tool cache    : ${RUNNER_TOOL_CACHE:-?}"
           echo "hostname      : $(hostname)"
           echo "user          : $(id -un) (uid $(id -u), groups: $(id -Gn))"
-          echo "kernel        : $(uname -srmo)"
+          echo "kernel        : $(uname -s) $(uname -r | cut -d. -f1,2)"
           echo "distro        : $(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
 
       - name: Hardware
@@ -68,18 +77,7 @@ jobs:
           echo
           free -h
           echo
-          df -h / "$HOME" "${RUNNER_TEMP:-/tmp}"
-
-      # setup-kronk's disk-reclaim step is gated on runner.environment
-      # because of this.
-      - name: Privileges
-        continue-on-error: true
-        run: |
-          if sudo -n true 2>/dev/null; then
-            echo "passwordless sudo: YES"
-          else
-            echo "passwordless sudo: NO (workflows must not call sudo)"
-          fi
+          df -h --output=target,size,avail,pcent / "$HOME" "${RUNNER_TEMP:-/tmp}"
 
       - name: Tooling
         continue-on-error: true
@@ -101,13 +99,13 @@ jobs:
           rocminfo 2>&1 | grep -Ei 'Name:|Marketing|gfx|Compute Unit' | head -40 || echo "rocminfo unavailable"
           echo "::endgroup::"
           echo "::group::rocm-smi"
-          rocm-smi 2>&1 | head -30 || echo "rocm-smi unavailable"
+          rocm-smi --showproductname 2>&1 | grep -E 'Card (Series|Model|Vendor)' || echo "rocm-smi unavailable"
           echo "::endgroup::"
           echo "::group::vulkaninfo --summary"
-          vulkaninfo --summary 2>&1 | head -40 || echo "vulkaninfo unavailable"
+          vulkaninfo --summary 2>&1 | grep -E 'deviceName|driverName|driverInfo|apiVersion' || echo "vulkaninfo unavailable"
           echo "::endgroup::"
           echo "::group::kernel amdgpu"
-          ls -l /dev/kfd /dev/dri 2>&1 || true
+          for d in /dev/kfd /dev/dri; do if [[ -e $d ]]; then echo "$d present"; else echo "$d missing"; fi; done
           echo "::endgroup::"
 
       # $HOME is reused between jobs, so models and bundles survive.
@@ -123,14 +121,6 @@ jobs:
           else
             echo "no ~/.kronk yet (cold runner)"
           fi
-
-      - name: Network egress
-        continue-on-error: true
-        run: |
-          for u in https://proxy.golang.org https://github.com https://objects.githubusercontent.com https://huggingface.co; do
-            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$u" || echo FAILED)"
-            printf '%-45s %s\n' "$u" "$code"
-          done
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -169,11 +159,16 @@ jobs:
           echo "::endgroup::"
 
       # Everything above is advisory; this is the gate.
+      # GPU runners run with DOCKER=none: Docker jobs would compete for the
+      # host memory the GPU also draws from. Docker jobs select `docker`.
       - name: Summary
         run: |
           fail=0
           command -v go >/dev/null || { echo "::error::go not on PATH"; fail=1; }
           command -v git >/dev/null || { echo "::error::git not on PATH"; fail=1; }
+          if [[ -n "${DOCKER_HOST:-}" ]] || timeout 10 docker version >/dev/null 2>&1; then
+            echo "::warning::a Docker daemon is reachable; GPU runners are meant to run with DOCKER=none"
+          fi
           avail="$(df -Pk "$HOME" | awk 'NR==2{print int($4/1024/1024)}')"
           echo "free space on \$HOME: ${avail} GiB"
           if (( avail < 25 )); then
@@ -189,11 +184,164 @@ jobs:
           fi
           exit $fail
 
+  # CPU-only runners in WSL2 on a Windows host. They carry no `gpu` label, so
+  # only GPU-free jobs (`[self-hosted, Linux, X64]`, e.g. linux.yml's static
+  # checks) land here; no job may assume a GPU or pull the test models.
+  wsl2:
+    name: Linux WSL2 self-hosted (CPU)
+    if: >-
+      (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
+      && (github.event_name == 'pull_request' || inputs.target == 'all' || inputs.target == 'wsl2')
+    runs-on: [self-hosted, Linux, X64, wsl2]
+    timeout-minutes: 30
+    steps:
+      - name: Identity
+        continue-on-error: true
+        run: |
+          echo "runner name   : ${RUNNER_NAME:-?}"
+          echo "runner os/arch: ${RUNNER_OS:-?}/${RUNNER_ARCH:-?}"
+          echo "environment   : ${RUNNER_ENVIRONMENT:-?}"
+          echo "workspace     : ${GITHUB_WORKSPACE:-?}"
+          echo "runner temp   : ${RUNNER_TEMP:-?}"
+          echo "tool cache    : ${RUNNER_TOOL_CACHE:-?}"
+          echo "hostname      : $(hostname)"
+          echo "user          : $(id -un) (uid $(id -u), groups: $(id -Gn))"
+          echo "kernel        : $(uname -s) $(uname -r | cut -d. -f1,2)"
+          echo "distro        : $(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
+          if grep -qi microsoft /proc/version 2>/dev/null; then
+            echo "wsl kernel    : yes"
+          else
+            echo "::warning::/proc/version shows no Microsoft kernel; is this runner really in WSL2?"
+          fi
+
+      - name: Hardware
+        continue-on-error: true
+        run: |
+          echo "cores : $(nproc)"
+          echo "model : $(awk -F': ' '/model name/{print $2; exit}' /proc/cpuinfo)"
+          echo
+          free -h
+          echo
+          df -h --output=target,size,avail,pcent / "$HOME" "${RUNNER_TEMP:-/tmp}"
+
+      - name: Tooling
+        continue-on-error: true
+        run: |
+          for t in go git curl wget tar unzip jq gh docker vulkaninfo; do
+            if command -v "$t" >/dev/null 2>&1; then
+              printf '%-12s %s\n' "$t" "$(command -v "$t")"
+            else
+              printf '%-12s %s\n' "$t" "MISSING"
+            fi
+          done
+
+      # Informational. The fleet is CPU-only by contract; the `gpu` label, not
+      # this probe, is what keeps GPU jobs away.
+      - name: GPU absence
+        continue-on-error: true
+        run: |
+          for d in /dev/dxg /dev/dri /dev/kfd; do if [[ -e $d ]]; then echo "$d present"; else echo "$d missing"; fi; done
+          echo "::group::vulkaninfo --summary"
+          vulkaninfo --summary 2>&1 | grep -E 'deviceName|driverName|driverInfo|apiVersion' || echo "vulkaninfo unavailable"
+          echo "::endgroup::"
+
+      - name: Persistent state
+        continue-on-error: true
+        run: |
+          du -sh "$HOME"/go "$HOME"/.cache/go-build "$HOME"/.kronk 2>/dev/null || echo "no Go or Kronk caches yet (cold runner)"
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - name: Workspace writability
+        continue-on-error: true
+        run: |
+          find "$GITHUB_WORKSPACE" ! -writable -print 2>/dev/null | head -20 || true
+          echo "checkout ok: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD)"
+
+      # Same toolchain install as linux.yml's static job.
+      - name: Install Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        with:
+          go-version-file: .go-version
+          cache: false
+
+      - name: Go toolchain
+        continue-on-error: true
+        run: |
+          go version
+          go env GOROOT GOPATH GOMODCACHE GOCACHE GOTOOLCHAIN
+
+      # The job's daemon shares the workspace volume, so read-only bind
+      # mounts of $GITHUB_WORKSPACE must work. Under rootless Docker, nested
+      # containers cannot write to it; use `docker cp` or `--output`.
+      - name: Docker
+        id: docker
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          docker version --format 'client {{.Client.Version}}, server {{.Server.Version}}'
+          echo "::group::docker info"
+          docker info --format 'server {{.ServerVersion}}, {{.OperatingSystem}}, storage {{.Driver}}, cgroup {{.CgroupDriver}} v{{.CgroupVersion}}, {{.NCPU}} CPUs, {{.MemTotal}} bytes'
+          echo "::endgroup::"
+          docker buildx version || echo "::warning::docker buildx unavailable"
+          timeout 300 docker run --rm hello-world
+          timeout 300 docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" busybox:1.37 test -f /w/go.mod
+          echo "workspace bind mount: OK"
+
+      # Proves a CPU-only Kronk build loads here. KRONK_PROCESSOR is pinned
+      # so host detection cannot pick a GPU bundle, and no models are pulled.
+      - name: Kronk CPU build + libs
+        id: kronk_cpu
+        if: inputs.deep || github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          KRONK_PROCESSOR: cpu
+        run: |
+          set -euo pipefail
+          go install ./cmd/kronk
+          kronk libs --local
+          kronk devices
+          kronk diagnose --no-bench --format json --processor cpu
+
+      # Advisory: what an unpinned job would get on this host.
+      - name: Kronk auto-detected backend
+        if: steps.kronk_cpu.outcome == 'success'
+        continue-on-error: true
+        run: kronk diagnose --no-bench --format json || true
+
+      - name: Summary
+        env:
+          DOCKER_OUTCOME: ${{ steps.docker.outcome }}
+          KRONK_CPU_OUTCOME: ${{ steps.kronk_cpu.outcome }}
+        run: |
+          fail=0
+          command -v go >/dev/null || { echo "::error::go not on PATH"; fail=1; }
+          command -v git >/dev/null || { echo "::error::git not on PATH"; fail=1; }
+          if [[ "$DOCKER_OUTCOME" != "success" ]]; then
+            echo "::error::Docker step failed (outcome: ${DOCKER_OUTCOME:-none}); jobs on this runner cannot use Docker"
+            fail=1
+          fi
+          if [[ "$KRONK_CPU_OUTCOME" == "failure" ]]; then
+            echo "::error::CPU Kronk build or library install failed"
+            fail=1
+          fi
+          # No models here: Go module, build and tool caches only.
+          avail="$(df -Pk "$HOME" | awk 'NR==2{print int($4/1024/1024)}')"
+          echo "free space on \$HOME: ${avail} GiB"
+          if (( avail < 10 )); then
+            echo "::error::only ${avail} GiB free on \$HOME; leave room for the Go module, build and Docker caches"
+            fail=1
+          fi
+          exit $fail
+
   macos:
     name: macOS self-hosted
     if: >-
       (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
-      && (github.event_name == 'pull_request' || inputs.target == 'both' || inputs.target == 'macos')
+      && (github.event_name == 'pull_request' || inputs.target == 'all' || inputs.target == 'macos')
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 30
     steps:
@@ -208,8 +356,7 @@ jobs:
           echo "tool cache    : ${RUNNER_TOOL_CACHE:-?}"
           echo "hostname      : $(hostname)"
           echo "user          : $(id -un) (uid $(id -u))"
-          echo "macOS         : $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
-          echo "kernel        : $(uname -srm)"
+          echo "macOS         : $(sw_vers -productVersion)"
 
       - name: Hardware
         continue-on-error: true
@@ -218,16 +365,7 @@ jobs:
           echo "cores  : $(sysctl -n hw.ncpu) (perf $(sysctl -n hw.perflevel0.logicalcpu 2>/dev/null || echo ?))"
           echo "memory : $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GiB"
           echo
-          df -h / "$HOME" "${RUNNER_TEMP:-/tmp}"
-
-      - name: Privileges
-        continue-on-error: true
-        run: |
-          if sudo -n true 2>/dev/null; then
-            echo "passwordless sudo: YES"
-          else
-            echo "passwordless sudo: NO (workflows must not call sudo)"
-          fi
+          df -Ph / "$HOME" "${RUNNER_TEMP:-/tmp}" | awk '{print $6, $2, $4, $5}'
 
       - name: Tooling
         continue-on-error: true
@@ -245,7 +383,7 @@ jobs:
       - name: GPU probe
         continue-on-error: true
         run: |
-          system_profiler SPDisplaysDataType 2>/dev/null | head -30 || echo "SPDisplaysDataType unavailable"
+          system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Chipset Model|Metal' || echo "SPDisplaysDataType unavailable"
 
       - name: Persistent ~/.kronk state
         continue-on-error: true
@@ -259,14 +397,6 @@ jobs:
           else
             echo "no ~/.kronk yet (cold runner)"
           fi
-
-      - name: Network egress
-        continue-on-error: true
-        run: |
-          for u in https://proxy.golang.org https://github.com https://objects.githubusercontent.com https://huggingface.co; do
-            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$u" || echo FAILED)"
-            printf '%-45s %s\n' "$u" "$code"
-          done
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6

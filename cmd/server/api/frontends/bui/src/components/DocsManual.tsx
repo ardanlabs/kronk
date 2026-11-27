@@ -6787,6 +6787,57 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/model/internal/parsers/
             <li><code>api-tests</code>: server/API integration coverage;</li>
             <li><code>sdk-tests</code>: SDK/model integration coverage.</li>
           </ul>
+          <p>Self-hosted Linux runners come in fleets told apart by labels, and <code>runs-on</code> label lists are AND-matched:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Fleet</th>
+                <th>Labels</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Vulkan GPU runners</td>
+                <td><code>self-hosted, Linux, X64, gpu, vulkan</code></td>
+              </tr>
+              <tr>
+                <td>ROCm GPU runners (optional)</td>
+                <td><code>self-hosted, Linux, X64, gpu, rocm</code></td>
+              </tr>
+              <tr>
+                <td>WSL2 runners on a Windows host (CPU only)</td>
+                <td><code>self-hosted, Linux, X64, wsl2, docker</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p><code>start-runners.sh</code> adds the <code>docker</code> label exactly when a runner's jobs can reach Docker, which is unless it is started with <code>DOCKER=none</code>. The GPU fleets run with <code>DOCKER=none</code>: the GPU draws on the same host memory, and Docker jobs there could push the host out of memory under GPU test load. Choose labels by what the job needs:</p>
+          <ul>
+            <li>A job that needs a Docker daemon (testcontainers, <code>docker build</code>) adds <code>docker</code>, for example <code>[self-hosted, Linux, X64, docker]</code>. Today only the WSL2 runners carry it.</li>
+            <li>A job that needs no GPU selects <code>[self-hosted, Linux, X64]</code> and may land on any fleet. Today that is <code>linux.yml</code>'s <code>static</code> job for same-repository events. Such a job must not depend on a GPU: no <code>vulkaninfo</code> or <code>/dev/dri</code> checks, and if it runs Kronk, set <code>KRONK_PROCESSOR=cpu</code> so host detection cannot choose a GPU bundle. It must not use <code>setup-kronk</code> either, because that action pulls every model in <code>.github/test-models.txt</code>.</li>
+            <li>A job that needs a GPU selects <code>gpu</code> plus its backend, such as <code>[self-hosted, Linux, X64, gpu, vulkan]</code>, with <code>KRONK_PROCESSOR</code> set to that backend. <code>race</code>, <code>api-tests</code>, <code>sdk-tests</code> and <code>quick-check-linux-vulkan.yml</code> do this; both workflows set <code>KRONK_PROCESSOR: vulkan</code> at workflow level. No <code>wsl2</code> runner has the <code>gpu</code> label, so these jobs never run there.</li>
+            <li>Fork pull requests never reach self-hosted runners. <code>static</code> falls back to <code>ubuntu-latest</code> for them and the test jobs are skipped. A maintainer who has read the diff can dispatch <code>linux.yml</code> with the fork's head SHA. <code>docker.yml</code>, <code>release.yaml</code>, <code>cache-cleanup.yml</code>, <code>label-guard.yml</code> and <code>windows.yml</code> run only on GitHub-hosted runners.</li>
+            <li>The org's <code>kronk</code> runner group also admits other, private Ardan Labs repositories. Their jobs select <code>wsl2</code> or <code>docker</code>, so they run only on the WSL2 runners and never on the GPU fleets. <code>linux.yml</code>'s review rule does not cover them: their own repositories decide what code reaches the runners.</li>
+          </ul>
+          <p>On a runner with Docker, each job gets a Docker daemon of its own, started with the job and removed when it ends. Images, containers, volumes, networks and build cache never reach another job or runner, so images are pulled again in every job. Inside the job, <code>DOCKER_HOST</code> is set and <code>docker</code>, <code>docker buildx</code> (including the <code>docker-container</code> driver that <code>docker/setup-buildx-action</code> creates) and <code>docker compose</code> work as usual. A port the job publishes is reachable at <code>127.0.0.1:&lt;port&gt;</code>, so testcontainers works with no host override. Bind mounts of paths under the workspace and <code>$RUNNER_TEMP</code> work; other paths in the runner container are not visible to the daemon. <code>docker ps</code> in a job lists only that job's containers, and no other runner can reach the job's ports. By default (<code>MEMORY_SCOPE=container</code>) <code>MEMORY</code> caps the runner and, separately, its daemon (<code>DIND_MEMORY</code>, default <code>MEMORY</code>), so a job that uses Docker can use up to <code>MEMORY + DIND_MEMORY</code>. With <code>MEMORY_SCOPE=slice</code>, <code>MEMORY</code> is one budget for the whole job: the runner, its daemon and every container the job starts. The fleet's runners together are capped by <code>FLEET_MEMORY</code>. A job past its budget loses its largest process, on either side. Capped memory never spills into swap in either mode.</p>
+          <p>The daemon is rootless by default (<code>DOCKER=rootless</code>), which has two limits. Containers the job starts cannot write to bind-mounted workspace directories, so copy results out with <code>docker cp</code> or <code>docker build --output</code>, or <code>chmod</code> the directory first. They also ignore <code>--memory</code> and <code>--cpus</code>. <code>DOCKER=privileged</code> lifts both limits, but a job can then take over the host. Use it only where every job is trusted that far. Neither mode isolates one job from the next completely: each runner's model, Go module and build caches persist between jobs and are shared by every repository whose jobs that runner takes. A job that writes to them can affect the jobs that follow on the same runner, including Kronk's.</p>
+          <p>The fleets run from <code>zarf/docker/runner/</code>. <code>start-runners.sh</code> documents its settings and the <code>@reboot</code> crontab line each fleet needs. A host needs Docker Engine, <code>/dev/net/tun</code>, user namespaces enabled, and <code>bash</code>, <code>curl</code>, <code>jq</code> and <code>openssl</code>, plus cron or a systemd unit to start the fleet at boot. GPU hosts also need <code>/dev/dri</code> and the <code>video</code> and <code>render</code> groups. Build the image with <code>docker build -t kronk-runner:vulkan zarf/docker/runner</code>, then start the fleet:</p>
+          <pre className="code-block"><code className="language-shell">{`# GPU host: fail rather than register without \`gpu\` if the GPU is missing,
+# and no Docker in jobs.
+GPU=on DOCKER=none COUNT=2 APP_ID=<app-id> APP_KEY=$HOME/<app-key>.pem \\
+    zarf/docker/runner/start-runners.sh
+
+# Host without a GPU (WSL2): no devices, and never the gpu or backend labels.
+GPU=off LABELS=self-hosted,Linux,X64,wsl2 PREFIX=kronk-linux-wsl2 COUNT=4 MEMORY=12g \\
+    APP_ID=<app-id> APP_KEY=$HOME/<app-key>.pem zarf/docker/runner/start-runners.sh`}</code></pre>
+          <p><code>MEMORY_SCOPE=slice</code> needs Docker's <code>systemd</code> cgroup driver on cgroup v2 (<code>docker info -f '&#123;&#123;.CgroupDriver&#125;&#125; &#123;&#123;.CgroupVersion&#125;&#125;'</code> prints <code>systemd 2</code>) and a systemd slice per runner, which root writes once per host. Run the installer again with the new values whenever <code>COUNT</code>, <code>MEMORY</code> or <code>FLEET_MEMORY</code> changes, and give <code>start-runners.sh</code> the same values. It refuses to start if a slice is missing or has different limits.</p>
+          <pre className="code-block"><code className="language-shell">{`sudo PREFIX=kronk-linux-wsl2 COUNT=4 MEMORY=12g FLEET_MEMORY=48g \\
+    zarf/docker/runner/install-slices.sh
+MEMORY_SCOPE=slice PREFIX=kronk-linux-wsl2 COUNT=4 MEMORY=12g FLEET_MEMORY=48g \\
+    GPU=off LABELS=self-hosted,Linux,X64,wsl2 \\
+    APP_ID=<app-id> APP_KEY=$HOME/<app-key>.pem zarf/docker/runner/start-runners.sh`}</code></pre>
+          <p>The fleet's slice is <code>kronk_linux_wsl2.slice</code> and runner <code>kronk-linux-wsl2-1</code>'s is <code>kronk_linux_wsl2-1.slice</code>. The prefix's dashes become underscores because a dash nests slices. <code>systemd-cgls -u kronk_linux_wsl2.slice</code> shows each job's containers. <code>sudo PREFIX=kronk-linux-wsl2 zarf/docker/runner/install-slices.sh --remove</code> deletes the slices once the fleet is stopped.</p>
+          <p>Every runner name in the org must be unique, so give each fleet its own <code>PREFIX</code>. Reusing another host's prefix takes that host's idle runners offline. Add <code>--recreate</code> to replace running runners. It kills any job they are running. Stopping the fleet's systemd unit, or sending its <code>supervise-runner.sh</code> processes <code>TERM</code>, removes every runner and sidecar container within seconds and takes the runners offline. Running jobs are killed. <code>start-runners.sh</code> shows a unit that also removes containers left by a supervisor killed with <code>SIGKILL</code>.</p>
+          <p>A new custom label must also be added to <code>.github/actionlint.yaml</code>. To check a fleet after it is built, moved or re-registered, dispatch <code>runner-check.yml</code> with <code>target</code> set to <code>linux</code> (GPU fleets), <code>wsl2</code>, <code>macos</code> or <code>all</code>. The <code>wsl2</code> probe fails unless <code>docker version</code>, <code>docker run --rm hello-world</code> and a read-only bind mount of <code>$GITHUB_WORKSPACE</code> succeed. It also builds Kronk and installs the CPU libraries; it pulls no models. The <code>linux</code> probe warns if a GPU runner can reach a Docker daemon.</p>
           <p>The shared setup action is under <code>.github/actions/setup-kronk/</code>. CI model dependencies are declared in <code>.github/test-models.txt</code>; its contents also participate in cache behavior. When a CI test gains a required model, update the manifest with the correct backend and model ID and check the setup action's parser. Keep local human setup in sync where the Make workflow maintains a separate install list.</p>
           <p>The exact CI toolchain comes from <code>.go-version</code>, while <code>go.mod</code> declares the minimum language version. Their major/minor versions must match. Update workflow assumptions and run <code>.github/scripts/check-go-version.sh</code> when changing either.</p>
           <h4 id="20102-release">20.10.2 Release</h4>

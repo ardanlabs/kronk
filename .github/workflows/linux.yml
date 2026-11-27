@@ -50,7 +50,16 @@ permissions:
   contents: read
 
 # Four jobs — static, race, api-tests, sdk-tests — sharing one setup-go cache
-# key via .go-version. All inference tests use the Vulkan GPU runners.
+# key via .go-version.
+#
+# Runner selection (labels are AND-matched):
+#
+#   static                      [self-hosted, Linux, X64]
+#                               any Linux runner: the GPU fleets or the
+#                               CPU-only wsl2 fleet. Needs no GPU and runs
+#                               no kronk binary, so it must stay that way.
+#   race, api-tests, sdk-tests  [self-hosted, Linux, X64, gpu, vulkan]
+#                               model inference; `gpu` keeps them off wsl2.
 #
 # GOTOOLCHAIN=local so a dependency that bumps its `go` directive above
 # .go-version fails loudly instead of auto-downloading a toolchain.
@@ -102,6 +111,7 @@ jobs:
         # `git ls-files` skips gitignored files: vendored and generated code
         # is deliberately not gofmt'd.
         run: |
+          # shellcheck disable=SC2046 # one argument per tracked file.
           fmt="$(gofmt -l $(git ls-files '*.go'))"
           if [[ -n "$fmt" ]]; then
             printf '%s\n' "$fmt"
@@ -164,6 +174,7 @@ jobs:
       # runtimes against real models and belong to sdk-tests.
       - name: go test -race -short (sdk unit packages)
         run: |
+          # shellcheck disable=SC2046 # one argument per package.
           go test -race -short -count=1 -timeout 10m \
             $(go list ./sdk/... \
               | grep -v '/sdk/kronk/tests' \
@@ -214,6 +225,7 @@ jobs:
       - name: Run sdk tests
         run: |
           # Temporary Radeon/RADV workaround: cooperative matrices change repeated Qwen3-TTS output.
+          # shellcheck disable=SC2046 # one argument per package.
           GGML_VK_DISABLE_COOPMAT=1 go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
           go test -v -count=1 -timeout 20m ./sdk/kronk/tests/qwen3
           go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06

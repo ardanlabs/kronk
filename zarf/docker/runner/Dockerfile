@@ -1,5 +1,6 @@
-# GitHub Actions self-hosted runner image for the Linux CI box
-# (kronk-linux-gpu-1, AMD Ryzen AI MAX+ 395 w/ Radeon 8060S).
+# GitHub Actions self-hosted runner image for the Linux CI hosts: the GPU box
+# (kronk-linux-gpu-1, AMD Ryzen AI MAX+ 395 w/ Radeon 8060S) and hosts without
+# a GPU, such as WSL2, which run it with GPU=off (see start-runners.sh).
 #
 # Base is ubuntu-resolute (26.04) to match kronk's own runtime image
 # (zarf/docker/kronk/Dockerfile) and Malina's glibc 2.43 requirement.
@@ -28,12 +29,15 @@
 # Each loop mints a single-use JIT config on the host and runs one job in a
 # --rm container, so the image's own entrypoint is bypassed: run.sh --jitconfig
 # needs no registration token, and therefore no App key in the container.
+# By default each job also gets a Docker daemon of its own in an unprivileged
+# docker:dind-rootless sidecar (DOCKER IN JOBS in supervise-runner.sh); this
+# image supplies only the client side.
 # IMAGE selects the backend, so the rocm fleet names its image and takes a
 # PREFIX of its own:
 #
-#   COUNT=2 APP_ID=... APP_KEY=~/kronk-runners.pem \
+#   DOCKER=none COUNT=2 APP_ID=... APP_KEY=~/kronk-runners.pem \
 #       ./zarf/docker/runner/start-runners.sh
-#   PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm APP_ID=... \
+#   DOCKER=none PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm APP_ID=... \
 #       APP_KEY=~/kronk-runners.pem ./zarf/docker/runner/start-runners.sh
 #
 # COUNT is bounded by RAM, not by the number of jobs in flight: a runner
@@ -46,9 +50,9 @@
 #                   into the config. The Default group does not allow public
 #                   repositories, so landing there queues every job forever
 #                   with no error message. kronk is public.
-#   --group-add   — pass numeric GIDs from the host. Group NAMES resolve
-#                   against the container's /etc/group, where render/video
-#                   may not exist, and an unset variable yields
+#   --group-add   — with GPU on, pass numeric GIDs from the host. Group
+#                   NAMES resolve against the container's /etc/group, where
+#                   render/video may not exist, and an unset variable yields
 #                   --group-add "", which docker rejects.
 #   volumes       — the container is --rm per job, so nothing a job leaves
 #                   outside these volumes reaches the next one. They are this
@@ -62,19 +66,20 @@
 #                   All four are per-runner: nothing is shared between
 #                   runners or fleets. They still outlive a job, so a job
 #                   that runs unreviewed code can poison the next one — see
-#                   the dispatch note in linux.yml.
+#                   the dispatch note in linux.yml. /_work and the sidecar
+#                   daemon's storage are volumes too, but per job: removed
+#                   when it ends.
 #
 # LABELS AND TWO FLEETS
 #
-# A runner is labelled `gpu` plus exactly ONE backend, and gpu.yml's matrix
-# selects on it — that is what keeps ROCm suites off the Vulkan runners.
+# A GPU runner is labelled `gpu` plus exactly ONE backend, and linux.yml's
+# test jobs select on it — that is what keeps them off the ROCm runners.
 # start-runners.sh derives the labels from com.ardanlabs.kronk.backend, so a
-# rebuilt image cannot register runners advertising the wrong backend.
+# rebuilt image cannot register runners advertising the wrong backend. With
+# GPU=off neither label is advertised, whatever the image.
 #
-# Both legs are gated in gpu.yml, so BOTH fleets have to be running: an
-# unmatched runs-on does not fail, it queues silently until the 24h limit.
-# Retiring a fleet means dropping its matrix entry in
-# .github/workflows/gpu.yml in the same change.
+# An unmatched runs-on does not fail, it queues silently until the 24h limit,
+# so the Vulkan fleet linux.yml asks for has to be running.
 
 ARG RUNNER_TAG="ubuntu-resolute"
 
@@ -117,6 +122,11 @@ RUN apt-get update \
 RUN set -eux; \
     glibc_version="$(getconf GNU_LIBC_VERSION | cut -d ' ' -f 2)"; \
     dpkg --compare-versions "${glibc_version}" ge 2.43
+
+# The base already installs the Docker CLI with the buildx and compose plugins
+# from Docker's apt repo, and removes the repo afterwards, so they are checked
+# rather than installed again. Jobs drive the sidecar daemon with them.
+RUN docker --version && docker buildx version && docker compose version
 
 # -----------------------------------------------------------------------------
 # rocm — the CI target: ROCm on top of base, so it carries both backends

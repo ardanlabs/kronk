@@ -988,6 +988,126 @@ four parallel jobs:
 - `api-tests`: server/API integration coverage;
 - `sdk-tests`: SDK/model integration coverage.
 
+Self-hosted Linux runners come in fleets told apart by labels, and `runs-on` label
+lists are AND-matched:
+
+| Fleet | Labels |
+| --- | --- |
+| Vulkan GPU runners | `self-hosted, Linux, X64, gpu, vulkan` |
+| ROCm GPU runners (optional) | `self-hosted, Linux, X64, gpu, rocm` |
+| WSL2 runners on a Windows host (CPU only) | `self-hosted, Linux, X64, wsl2, docker` |
+
+`start-runners.sh` adds the `docker` label exactly when a runner's jobs can reach
+Docker, which is unless it is started with `DOCKER=none`. The GPU fleets run with
+`DOCKER=none`: the GPU draws on the same host memory, and Docker jobs there could push
+the host out of memory under GPU test load. Choose labels by what the job needs:
+
+- A job that needs a Docker daemon (testcontainers, `docker build`) adds `docker`,
+  for example `[self-hosted, Linux, X64, docker]`. Today only the WSL2 runners
+  carry it.
+
+- A job that needs no GPU selects `[self-hosted, Linux, X64]` and may land on any
+  fleet. Today that is `linux.yml`'s `static` job for same-repository events. Such a
+  job must not depend on a GPU: no `vulkaninfo` or `/dev/dri` checks, and if it runs
+  Kronk, set `KRONK_PROCESSOR=cpu` so host detection cannot choose a GPU bundle. It
+  must not use `setup-kronk` either, because that action pulls every model in
+  `.github/test-models.txt`.
+- A job that needs a GPU selects `gpu` plus its backend, such as
+  `[self-hosted, Linux, X64, gpu, vulkan]`, with `KRONK_PROCESSOR` set to that
+  backend. `race`, `api-tests`, `sdk-tests` and `quick-check-linux-vulkan.yml` do
+  this; both workflows set `KRONK_PROCESSOR: vulkan` at workflow level.
+  No `wsl2` runner has the `gpu` label, so these jobs never run there.
+- Fork pull requests never reach self-hosted runners. `static` falls back to
+  `ubuntu-latest` for them and the test jobs are skipped. A maintainer who has read
+  the diff can dispatch `linux.yml` with the fork's head SHA. `docker.yml`,
+  `release.yaml`, `cache-cleanup.yml`, `label-guard.yml` and `windows.yml` run only on
+  GitHub-hosted runners.
+- The org's `kronk` runner group also admits other, private Ardan Labs repositories.
+  Their jobs select `wsl2` or `docker`, so they run only on the WSL2 runners and
+  never on the GPU fleets. `linux.yml`'s review rule does not cover them: their own
+  repositories decide what code reaches the runners.
+
+On a runner with Docker, each job gets a Docker daemon of its own, started with the
+job and removed when it ends. Images, containers, volumes, networks and build cache
+never reach another job or runner, so images are pulled again in every job. Inside the job, `DOCKER_HOST` is
+set and `docker`, `docker buildx` (including the `docker-container` driver that
+`docker/setup-buildx-action` creates) and `docker compose` work as usual. A port the
+job publishes is reachable at `127.0.0.1:<port>`, so testcontainers works with no
+host override. Bind mounts of paths under the workspace and `$RUNNER_TEMP` work;
+other paths in the runner container are not visible to the daemon. `docker ps` in a
+job lists only that job's containers, and no other runner can reach the job's ports.
+By default (`MEMORY_SCOPE=container`) `MEMORY` caps the runner and, separately, its
+daemon (`DIND_MEMORY`, default `MEMORY`), so a job that uses Docker can use up to
+`MEMORY + DIND_MEMORY`. With `MEMORY_SCOPE=slice`, `MEMORY` is one budget for the
+whole job: the runner, its daemon and every container the job starts. The fleet's
+runners together are capped by `FLEET_MEMORY`. A job past its budget loses its
+largest process, on either side. Capped memory never spills into swap in either
+mode.
+
+The daemon is rootless by default (`DOCKER=rootless`), which has two limits. Containers
+the job starts cannot write to bind-mounted workspace directories, so copy results
+out with `docker cp` or `docker build --output`, or `chmod` the directory first.
+They also ignore `--memory` and `--cpus`. `DOCKER=privileged` lifts both limits, but
+a job can then take over the host. Use it only where every job is trusted that far.
+Neither mode isolates one job from the next completely: each runner's model, Go
+module and build caches persist between jobs and are shared by every repository whose
+jobs that runner takes. A job that writes to them can affect the jobs that follow on
+the same runner, including Kronk's.
+
+The fleets run from `zarf/docker/runner/`. `start-runners.sh` documents its settings
+and the `@reboot` crontab line each fleet needs. A host needs Docker Engine,
+`/dev/net/tun`, user namespaces enabled, and `bash`, `curl`, `jq` and `openssl`, plus
+cron or a systemd unit to start the fleet at boot. GPU hosts also need `/dev/dri` and
+the `video` and `render` groups. Build the image with
+`docker build -t kronk-runner:vulkan zarf/docker/runner`, then start the fleet:
+
+```shell
+# GPU host: fail rather than register without `gpu` if the GPU is missing,
+# and no Docker in jobs.
+GPU=on DOCKER=none COUNT=2 APP_ID=<app-id> APP_KEY=$HOME/<app-key>.pem \
+    zarf/docker/runner/start-runners.sh
+
+# Host without a GPU (WSL2): no devices, and never the gpu or backend labels.
+GPU=off LABELS=self-hosted,Linux,X64,wsl2 PREFIX=kronk-linux-wsl2 COUNT=4 MEMORY=12g \
+    APP_ID=<app-id> APP_KEY=$HOME/<app-key>.pem zarf/docker/runner/start-runners.sh
+```
+
+`MEMORY_SCOPE=slice` needs Docker's `systemd` cgroup driver on cgroup v2
+(`docker info -f '{{.CgroupDriver}} {{.CgroupVersion}}'` prints `systemd 2`) and a
+systemd slice per runner, which root writes once per host. Run the installer again
+with the new values whenever `COUNT`, `MEMORY` or `FLEET_MEMORY` changes, and give
+`start-runners.sh` the same values. It refuses to start if a slice is missing or has
+different limits.
+
+```shell
+sudo PREFIX=kronk-linux-wsl2 COUNT=4 MEMORY=12g FLEET_MEMORY=48g \
+    zarf/docker/runner/install-slices.sh
+MEMORY_SCOPE=slice PREFIX=kronk-linux-wsl2 COUNT=4 MEMORY=12g FLEET_MEMORY=48g \
+    GPU=off LABELS=self-hosted,Linux,X64,wsl2 \
+    APP_ID=<app-id> APP_KEY=$HOME/<app-key>.pem zarf/docker/runner/start-runners.sh
+```
+
+The fleet's slice is `kronk_linux_wsl2.slice` and runner `kronk-linux-wsl2-1`'s is
+`kronk_linux_wsl2-1.slice`. The prefix's dashes become underscores because a dash
+nests slices. `systemd-cgls -u kronk_linux_wsl2.slice` shows each job's containers.
+`sudo PREFIX=kronk-linux-wsl2 zarf/docker/runner/install-slices.sh --remove`
+deletes the slices once the fleet is stopped.
+
+Every runner name in the org must be unique, so give each fleet its own `PREFIX`.
+Reusing another host's prefix takes that host's idle runners offline. Add
+`--recreate` to replace running runners. It kills any job they are running.
+Stopping the fleet's systemd unit, or sending its `supervise-runner.sh` processes
+`TERM`, removes every runner and sidecar container within seconds and takes the
+runners offline. Running jobs are killed. `start-runners.sh` shows a unit that also
+removes containers left by a supervisor killed with `SIGKILL`.
+
+A new custom label must also be added to `.github/actionlint.yaml`. To check a fleet
+after it is built, moved or re-registered, dispatch `runner-check.yml` with `target`
+set to `linux` (GPU fleets), `wsl2`, `macos` or `all`. The `wsl2` probe fails unless
+`docker version`, `docker run --rm hello-world` and a read-only bind mount of
+`$GITHUB_WORKSPACE` succeed. It also builds Kronk and installs the CPU libraries; it
+pulls no models. The `linux` probe warns if a GPU runner can reach a Docker daemon.
+
 The shared setup action is under `.github/actions/setup-kronk/`. CI model dependencies
 are declared in `.github/test-models.txt`; its contents also participate in cache
 behavior. When a CI test gains a required model, update the manifest with the correct
