@@ -19,7 +19,7 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 	start := time.Now()
 	defer func() { r.WorkloadSeconds = time.Since(start).Seconds() }()
 	perform := func(client *client, phase string, messages []message, interrupted bool) result {
-		res, err := client.chat(phase, messages, 768, interrupted)
+		res, err := client.chat(phase, messages, r.outputBudget(768), interrupted)
 		if err == nil && !interrupted {
 			err = checkResponse(res, r.TargetOnly)
 		}

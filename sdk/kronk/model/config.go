@@ -98,16 +98,16 @@ func float32Or(p *float32, def float32) float32 {
 //     forward pass. Requires NSeqMax == 1 (single-slot mode) and a draft
 //     that shares the target's vocabulary (same tokenizer).
 //
-//  2. MTP nDraft override (ModelFiles empty): when the target GGUF ships
-//     an auto-detected MTP head, this block sets the number of draft tokens
-//     per round without supplying a separate model. NDraft defaults to
-//     defMTPNDraft when left unset.
+//  2. Companion/embedded nDraft override (ModelFiles empty): this block sets
+//     the proposal count for MTP or DSpark without supplying a classic draft
+//     model. MTP defaults to 3; DSpark defaults to its trained block size minus
+//     the anchor and caps overrides at that trained limit.
 //
 // A model can have at most one drafter. If ModelFiles is set, the
 // separate-GGUF drafter wins even on a target that also has an MTP head.
 type DraftModelConfig struct {
-	ModelFiles    []string  // Path to the draft model GGUF file(s); empty means MTP nDraft override
-	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 3)
+	ModelFiles    []string  // Path to classic draft GGUF file(s); empty means companion/embedded nDraft override
+	NDraft        int       // Proposal count (classic default 5, MTP default 3, DSpark trained limit)
 	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
 	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
 	PtrMainGPU    *int      // Primary GPU index for draft model
@@ -118,8 +118,8 @@ func (d DraftModelConfig) NGpuLayers() int { return intOr(d.PtrNGpuLayers, 0) }
 func (d DraftModelConfig) MainGPU() int    { return intOr(d.PtrMainGPU, 0) }
 
 // IsSeparate reports whether this config points at a separate draft GGUF.
-// When false, the config is an MTP nDraft override that carries no model
-// files and only applies when the target ships an auto-detected MTP head.
+// When false, the config is a companion/embedded nDraft override that carries
+// no classic model files.
 func (d DraftModelConfig) IsSeparate() bool { return len(d.ModelFiles) > 0 }
 
 // AdapterConfig configures a local llama.cpp-compatible LoRA adapter GGUF.
@@ -316,11 +316,12 @@ type AdapterConfig struct {
 // ProjFile is the path to the projection files. This is mandatory for media
 // based models like vision and audio.
 //
-// MTPDrafterFile is the path to a separate-file MTP drafter GGUF that ships
-// alongside the main model. Supported files are Gemma assistant heads that
-// share target KV and Qwen35 heads that own their draft KV. It is not the main
-// model or a vocab-matched classic draft model. The catalog wires this field
-// when it downloads a compatible companion from the model repository.
+// DrafterFile is the path to the selected companion drafter GGUF. Its metadata
+// identifies the drafting algorithm; Speculation can require MTP or DSpark.
+// Only one companion is selected, and disabled ignores it. Conventional
+// separate-model drafting is configured through PtrDraftModel instead.
+// DSpark proposes tokens for greedy or sampled text requests. Unsupported
+// sampling, media, or unavailable cached prefixes use target-only generation.
 //
 // ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When
 // nil or false, the projector runs on whichever device llama.cpp picks by
@@ -441,7 +442,7 @@ type Config struct {
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
 	ProjFile                   string
-	MTPDrafterFile             string
+	DrafterFile                string
 	PtrProjOnCPU               *bool
 	ProjDevice                 string
 	PtrQueueDepth              *int
@@ -607,14 +608,14 @@ func (cfg Config) String() string {
 		physicalBatch = fmt.Sprintf("%d", cfg.BatchBaseSize())
 	}
 
-	return fmt.Sprintf("\nPhysicalBatchSize[%s]", physicalBatch) + fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nPhysicalBatchSize[%s]", physicalBatch) + fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.DecisionProtocol, chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		cfg.LazyMode, cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles,
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrPrefillBatchSize), cfg.EffectiveNBatch(), cfg.EffectiveNUBatch(),
 		cfg.NUMA,
-		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.ProjDevice, cfg.QueueDepth(),
+		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), cfg.ProjFile, cfg.DrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.ProjDevice, cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
 		cfg.SpeculationMode(),
 		formatSplitModePtr(cfg.PtrSplitMode),
@@ -769,10 +770,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	switch cfg.SpeculationMode() {
-	case SpeculationAuto, SpeculationDisabled, SpeculationClassic, SpeculationMTP:
+	case SpeculationAuto, SpeculationDisabled, SpeculationClassic, SpeculationMTP, SpeculationDSpark:
 		// valid
 	default:
-		return fmt.Errorf("validate-config: unknown speculation mode %q (valid: auto, disabled, classic, mtp)", cfg.Speculation)
+		return fmt.Errorf("validate-config: unknown speculation mode %q (valid: auto, disabled, classic, mtp, dspark)", cfg.Speculation)
 	}
 
 	if cfg.SpeculationMode() != SpeculationDisabled && cfg.PtrDraftModel != nil {
@@ -789,10 +790,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 				}
 			}
 		} else {
-			// MTP nDraft override (no model files): only the draft token
-			// count is configurable here. It applies when the target ships
-			// an auto-detected MTP head; on a target without one it is a
-			// harmless no-op.
+			// Companion/embedded override: only the proposal count applies.
 			if cfg.PtrDraftModel.NDraft < 0 {
 				return fmt.Errorf("validate-config: draft model ndraft must be >= 0, got %d", cfg.PtrDraftModel.NDraft)
 			}
@@ -836,11 +834,11 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		}
 	}
 
-	if cfg.SpeculationMode() != SpeculationDisabled && cfg.SpeculationMode() != SpeculationClassic && cfg.MTPDrafterFile != "" {
-		log(ctx, "validate-config", "model-file", cfg.MTPDrafterFile)
+	if cfg.SpeculationMode() != SpeculationDisabled && cfg.SpeculationMode() != SpeculationClassic && cfg.SpeculationMode() != SpeculationDSpark && cfg.DrafterFile != "" {
+		log(ctx, "validate-config", "model-file", cfg.DrafterFile)
 
-		if err := verifyConfiguredArtifact(ctx, cfg, log, cfg.MTPDrafterFile); err != nil {
-			return fmt.Errorf("validate-config: mtp-drafter-file[%s]: %w", cfg.MTPDrafterFile, err)
+		if err := verifyConfiguredArtifact(ctx, cfg, log, cfg.DrafterFile); err != nil {
+			return fmt.Errorf("validate-config: drafter-file[%s]: %w", cfg.DrafterFile, err)
 		}
 	}
 
@@ -1424,7 +1422,7 @@ func WithNUMA(v NUMAStrategy) Option           { return func(c *Config) { c.NUMA
 func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
 func WithOpOffload(v bool) Option              { return func(c *Config) { c.PtrOpOffload = new(v) } }
 func WithProjFile(v string) Option             { return func(c *Config) { c.ProjFile = v } }
-func WithMTPDrafterFile(v string) Option       { return func(c *Config) { c.MTPDrafterFile = v } }
+func WithDrafterFile(v string) Option          { return func(c *Config) { c.DrafterFile = v } }
 func WithProjOnCPU(v bool) Option              { return func(c *Config) { c.PtrProjOnCPU = new(v) } }
 func WithProjDevice(v string) Option           { return func(c *Config) { c.ProjDevice = v } }
 func WithRopeFreqBase(v float32) Option        { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }

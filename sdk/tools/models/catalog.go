@@ -196,30 +196,11 @@ func (r *Resolver) loadLocked() (Catalog, error) {
 	if err := yaml.Unmarshal(data, &rm); err != nil {
 		return Catalog{}, fmt.Errorf("resolver-load: unmarshal: %w", err)
 	}
-	switch rm.Version {
-	case "2", "3", "3.1", catalogVersion:
-	default:
-		return Catalog{}, fmt.Errorf("resolver-load: unsupported catalog version %q", rm.Version)
-	}
-
-	if rm.Models == nil {
-		rm.Models = map[string]CatalogEntry{}
-	}
-	migrated := rm.Version != catalogVersion
-	if rm.Version == "2" {
-		if err := migrateCatalogV2(data, &rm); err != nil {
-			return Catalog{}, fmt.Errorf("resolver-load: migrate: %w", err)
-		}
-	}
-	rm.Version = catalogVersion
-	capabilitiesChanged, err := migrateDraftCapabilities(data, &rm)
+	migrated, err := migrateCatalog(data, &rm)
 	if err != nil {
-		return Catalog{}, fmt.Errorf("resolver-load: draft capabilities: %w", err)
-	}
-	if err := validateDrafts(rm); err != nil {
 		return Catalog{}, fmt.Errorf("resolver-load: %w", err)
 	}
-	if migrated || capabilitiesChanged {
+	if migrated {
 		if err := r.saveLocked(rm); err != nil {
 			return Catalog{}, fmt.Errorf("resolver-load: migrate: %w", err)
 		}

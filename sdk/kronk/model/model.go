@@ -70,12 +70,12 @@ type imcSession struct {
 	prefixHash       [32]byte       // Reject-only lookup digest; exact resident verification is mandatory.
 	seqID            llama.SeqId    // KV sequence id the session is currently bound to, or imcSeqIDUnbound when its state is externalized.
 	kvState          *imcCheckpoint // Internal RAM checkpoint of the target sequence.
-	draftKVState     *imcCheckpoint // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
-	pendingH         []float32      // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
+	draftKVState     *imcCheckpoint // Independent draft KV paired with kvState; nil without the checkpoint capability.
+	pendingH         []float32      // Algorithm-owned checkpoint vector (MTP hidden or DSpark Markov state). Legacy name retained in persisted metadata; interpreted only by the drafter.
 	lastUsed         time.Time      // Last access time (for eviction)
 	reserved         bool           // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	allocatedContext int            // Largest physical KV-cell count allocated for this session.
-	snapshotBytes    int            // Reported target, compatible draft, and MTP hidden-row snapshot capacity in bytes.
+	snapshotBytes    int            // Reported target, compatible draft, and algorithm-state snapshot capacity in bytes.
 	highWaterContext int            // Largest current context published for this session across reuse and snapshot ownership changes.
 	peakContext      int            // Largest live slot context observed for this session, including generated output.
 	inputMessages    int            // Message count from the latest request completed by this session.
@@ -132,12 +132,10 @@ func (s *imcPrefix) logicalPosition() int {
 	return s.totalTokensCached
 }
 
-// draftCore holds the llama resources shared by every speculative-decoding
-// strategy. It is wrapped by the concrete drafter types in draft.go
-// (classicDrafter, mtpDrafter); the engine reaches these resources via
-// drafter.core(). Decode and MemorySeqRm on draftCore are safe for every
-// mode. The strategy TYPE — not a flag on this struct — decides which
-// code paths run; see draft.go for the mode separation.
+// draftCore exposes native handles common to speculative-decoding strategies.
+// Classic drafting owns these resources; MTP borrows them from its internal
+// resource owner. Operations through core() must respect the concrete drafter's
+// KV ownership and externalization capabilities, especially shared-target KV.
 //
 // The strategies using draftCore include:
 //
@@ -151,7 +149,7 @@ func (s *imcPrefix) logicalPosition() int {
 //     file. The MTP head takes (token_id, pre_norm_hidden_state) per
 //     position, so every target llama_decode must be mirrored into the
 //     draft context using NextN host rows or borrowed device-row references.
-//     See loadDraftModelMTP and the MTP speculation package.
+//     Internal MTP owns these resources; core only borrows their handles.
 //
 //   - Separate MTP draft (*separateMTPDrafter): the same own-KV MTP runtime
 //     with the prediction head loaded from a companion GGUF.
@@ -170,8 +168,6 @@ type draftCore struct {
 	nDraft           int
 	promptBuf        []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf         []llama.Token // Reusable buffer for generateDraftTokens output
-	mtp              *mtpengine.Resources
-	mtpStateSource   llama.Context // Borrowed target owning device NextN rows; zero selects host state.
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).
@@ -313,7 +309,7 @@ func NewModel(ctx context.Context, cfg Config) (_ *Model, err error) {
 	if plan.Source == speculationSourceMTP && plan.MTPArtifact == mtpArtifactEmbedded {
 		targetEmbeddingWidth := llama.ModelNEmbd(mdl)
 		mtpOutputWidth := llama.ModelNEmbdOut(mdl)
-		compatiblePlan, err := resolveEmbeddedMTPCompatibility(plan, targetEmbeddingWidth, mtpOutputWidth)
+		compatiblePlan, err := mtpengine.ResolveEmbeddedCompatibility(plan, targetEmbeddingWidth, mtpOutputWidth)
 		if err != nil {
 			return nil, fmt.Errorf("resolve speculation compatibility: %w", err)
 		}
@@ -1759,6 +1755,13 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	if err != nil {
 		return int64(mi.Size), 0, err.Error()
 	}
+
+	companion, err := CompanionMemory(cfg, vramCfg)
+	if err != nil {
+		return int64(mi.Size), 0, err.Error()
+	}
+	result.TotalVRAM += companion.TotalVRAM
+	result.SlotMemory += companion.SlotMemory
 
 	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] n_swa[%d] swa_full[%t] swa_window_metadata[%d] swa_layers[%d] recurrent_layers[%d] recurrent_state_copies[%d] nextn_layers[%d]",
 		mi.profile.Architecture,

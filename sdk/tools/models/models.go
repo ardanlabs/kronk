@@ -128,6 +128,7 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 			dedicatedMTPRepo := repoMatchesRenameRule(modelFamily)
 
 			var pendingMTP []string
+			var pendingDSpark []string
 
 			for _, fileEntry := range fileEntries {
 				if fileEntry.IsDir() {
@@ -147,6 +148,10 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 				}
 
 				filePath := filepath.Join(m.modelsPath, org, modelFamily, fileEntry.Name())
+				if strings.HasPrefix(strings.ToLower(name), "dspark-") && strings.HasSuffix(strings.ToLower(name), ".gguf") {
+					pendingDSpark = append(pendingDSpark, filePath)
+					continue
+				}
 				if draftPaths[filePath] {
 					continue
 				}
@@ -172,6 +177,20 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 
 				modelID := extractModelID(filepath.Base(mtpPath))
 				modelfiles[modelID] = append(modelfiles[modelID], mtpPath)
+			}
+
+			for _, draftPath := range pendingDSpark {
+				matched := draftPaths[draftPath]
+				for _, files := range modelfiles {
+					if pickDSparkCompanion([]string{draftPath}, modelFamily, files).File != "" {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					id := extractModelID(filepath.Base(draftPath))
+					modelfiles[id] = append(modelfiles[id], draftPath)
+				}
 			}
 
 			ctx := context.Background()
@@ -210,16 +229,28 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 					mp.MTPFile = mtpFile
 					mp.DraftFile = mtpFile
 				}
-				if entry, exists := cat.Models[indexKey]; exists && entry.Draft.File != "" {
+				entry := cat.Models[indexKey]
+				if entry.Draft.File != "" {
 					mp.DraftFile = filepath.Join(m.modelsPath, org, modelFamily, entry.Draft.File)
-					mp.MTPFile = ""
 					if entry.Draft.isMTP() {
 						mp.MTPFile = mp.DraftFile
 					}
-					if _, err := os.Stat(mp.DraftFile); err != nil {
-						isValidated = false
+					if entry.Draft.Method != DraftMethodDSpark && !entry.Draft.isMTP() {
+						mp.MTPFile = ""
 					}
-					if checkModel(mp.DraftFile, false) != nil {
+				}
+				// Retain both installed companion types. The catalog still chooses
+				// what to download; runtime auto prefers an installed DSpark.
+				if entry.Draft.File == "" || entry.Draft.isMTP() {
+					if draft := pickDSparkCompanion(pendingDSpark, modelFamily, files); draft.File != "" {
+						mp.DraftFile = draft.Original
+					}
+				}
+				for _, file := range []string{mp.DraftFile, mp.MTPFile} {
+					if file == "" {
+						continue
+					}
+					if _, err := os.Stat(file); err != nil || checkModel(file, false) != nil {
 						isValidated = false
 					}
 				}
@@ -244,13 +275,20 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 						}
 					}
 
-					if mp.DraftFile != "" {
-						log(ctx, "running check ", "draft", path.Base(mp.DraftFile))
-						if _, err := os.Stat(mp.DraftFile); err != nil {
+					companions := []string{mp.DraftFile}
+					if mp.MTPFile != mp.DraftFile {
+						companions = append(companions, mp.MTPFile)
+					}
+					for _, file := range companions {
+						if file == "" {
+							continue
+						}
+						log(ctx, "running check ", "draft", path.Base(file))
+						if _, err := os.Stat(file); err != nil {
 							validated = false
 						}
-						if err := checkModel(mp.DraftFile, true); err != nil {
-							log(ctx, "running check ", "draft", path.Base(mp.DraftFile), "ERROR", err)
+						if err := checkModel(file, true); err != nil {
+							log(ctx, "running check ", "draft", path.Base(file), "ERROR", err)
 							validated = false
 						}
 					}

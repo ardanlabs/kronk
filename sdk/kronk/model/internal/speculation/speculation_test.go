@@ -57,6 +57,58 @@ func TestPlanRowsPerSequence(t *testing.T) {
 	}
 }
 
+func TestResolveDSpark(t *testing.T) {
+	for _, tt := range []struct {
+		name                          string
+		mode                          Mode
+		classic, companion, available bool
+		want                          Source
+		wantErr                       string
+	}{
+		{"auto prefers DSpark over MTP", ModeAuto, false, true, true, SourceDSpark, ""},
+		{"auto stages unavailable DSpark without activation", ModeAuto, false, true, false, SourceDSpark, ""},
+		{"auto classic still wins", ModeAuto, true, true, true, SourceClassic, ""},
+		{"disabled ignores all", ModeDisabled, true, true, true, SourceNone, ""},
+		{"explicit MTP ignores DSpark", ModeMTP, false, true, true, SourceMTP, ""},
+		{"explicit classic ignores DSpark", ModeClassic, true, true, true, SourceClassic, ""},
+		{"explicit DSpark", ModeDSpark, false, true, true, SourceDSpark, ""},
+		{"explicit DSpark missing", ModeDSpark, false, false, true, SourceNone, "requires a compatible DSpark companion in DrafterFile"},
+		{"explicit DSpark unavailable", ModeDSpark, false, true, false, SourceNone, "DSpark execution is not yet available"},
+		{"explicit DSpark conflicts with classic", ModeDSpark, true, true, true, SourceNone, "cannot use a separate draft model"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := Resolve(Config{
+				Mode: tt.mode, ClassicConfigured: tt.classic, ClassicNDraft: 5,
+				DSparkConfigured: tt.companion, DSparkAvailable: tt.available, DSparkNDraft: 7,
+				CompanionMTPArchitecture: MTPArchitectureGemmaSharedKV,
+				EmbeddedMTPArchitecture:  MTPArchitectureQwen35OwnKV,
+				MTPAvailable:             true, MTPArchitectureEnabled: true, MTPNDraft: 3,
+			})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Resolve() error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || plan.Source != tt.want {
+				t.Fatalf("Resolve() = %+v, %v, want source %s", plan, err, tt.want)
+			}
+			if plan.Source == SourceDSpark {
+				if plan.Active() != tt.available || plan.NDraft != 7 || plan.MTP() || plan.LoadMTP {
+					t.Errorf("DSpark plan = %+v, active = %t", plan, plan.Active())
+				}
+				wantRows := 1
+				if tt.available {
+					wantRows = 8
+				}
+				if plan.RowsPerSequence() != wantRows {
+					t.Errorf("rows = %d, want %d", plan.RowsPerSequence(), wantRows)
+				}
+			}
+		})
+	}
+}
+
 func TestResolveGLM5Next(t *testing.T) {
 	cfg := Config{
 		Mode:                    ModeAuto,

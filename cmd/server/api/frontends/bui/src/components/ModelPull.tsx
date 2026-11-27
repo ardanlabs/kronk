@@ -500,7 +500,13 @@ export default function ModelPull() {
                   <code>{draftMethod}-{'<target-model>'}.gguf</code>.
                   Leave the field empty (or close this section) to let the catalog select companions.
                 </p>
-                {draftMethod === 'dspark' && <p>DSpark companion download only. DSpark inference is not supported.</p>}
+                {draftMethod === 'dspark' && (
+                  <p>
+                    Choose a DSpark companion compatible with your target model and Kronk's bundled llama.cpp.
+                    With speculation set to auto (the default), Kronk uses the compatible companion automatically.
+                    Set speculation to disabled to turn drafting off.
+                  </p>
+                )}
               </div>
             </details>
 

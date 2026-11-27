@@ -46,10 +46,38 @@ var matrixCells = []struct {
 	{"Dense/2s/IMC-/MTP+/img+", true, false, true, true},
 	{"Dense/2s/IMC-/MTP-/img-", false, true, true, true},
 	{"Dense/2s/IMC-/MTP-/img+", true, true, true, true},
+	{"Inkling/1s/IMC+/DSpark+/img-", false, false, false, false},
+	{"Inkling/1s/IMC+/DSpark-/img-", false, true, false, false},
+	{"Inkling/1s/IMC-/DSpark+/img-", false, false, true, false},
+	{"Inkling/1s/IMC-/DSpark-/img-", false, true, true, false},
+	{"Inkling/2s/IMC+/DSpark+/img-", false, false, false, true},
+	{"Inkling/2s/IMC+/DSpark-/img-", false, true, false, true},
+	{"Inkling/2s/IMC-/DSpark+/img-", false, false, true, true},
+	{"Inkling/2s/IMC-/DSpark-/img-", false, true, true, true},
 }
 
 func (r report) isDense() bool {
 	return strings.HasPrefix(r.ID, "Dense/")
+}
+
+func (r report) isDSpark() bool {
+	return strings.HasPrefix(r.ID, "Inkling/")
+}
+
+func (r report) draftMethod() string {
+	if r.isDSpark() {
+		return "DSpark"
+	}
+	return "MTP"
+}
+
+// outputBudget leaves room for Inkling's reasoning even at minimum effort.
+// Existing MTP workload limits stay unchanged.
+func (r report) outputBudget(defaultBudget int) int {
+	if r.isDSpark() {
+		return 2048
+	}
+	return defaultBudget
 }
 
 func selectedCells(selection []string) (map[string]bool, error) {

@@ -179,6 +179,8 @@ func generationMode(e *batchEngine, s *slot) string {
 		return "mrope"
 	case e.model.draft == nil:
 		return "ordinary"
+	case !e.model.cfg.speculationPlan.Active():
+		return "ordinary-draft-unavailable"
 	case e.model.draft.mtp() && s.mtp.Disabled:
 		return "ordinary-mtp-disabled"
 	case e.model.draft.mtp():

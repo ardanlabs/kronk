@@ -8,6 +8,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/dspark"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -140,6 +141,141 @@ func TestMTPControllerDiscardsDraftWhenDecodeDisablesMTP(t *testing.T) {
 	}
 }
 
+type dsparkHost struct {
+	fakeHost
+	input dspark.GenerationInput
+}
+
+func (h *dsparkHost) DSparkGenerationInput(int) dspark.GenerationInput { return h.input }
+
+func TestDSparkGenerationPolicy(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		temperature       float32
+		media, compatible bool
+		limit             int
+		reason            string
+	}{
+		{"greedy text", 0, false, true, 3, ""},
+		{"sampled", 0.8, false, true, 3, ""},
+		{"unsupported controls", 0, false, false, 3, "unsupported-sampling"},
+		{"media", 0, true, true, 3, "unsupported-media"},
+		{"no room for proposals", 0, false, true, 0, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			host := dsparkHost{active: []bool{true}}
+			host.input = dspark.GenerationInput{Temperature: tt.temperature, HasMedia: tt.media, SamplingCompatible: tt.compatible, MaxDraft: tt.limit,
+				Generate: func(count int) (dspark.Proposal, error) {
+					return dspark.Proposal{Candidates: []llama.Token{11, 23, 47}[:count]}, nil
+				}}
+			controller := dspark.New(&host)
+			got, err := controller.PlanGeneration(0)
+			want := 0
+			if tt.reason == "" {
+				want = tt.limit
+			}
+			if err != nil || len(got.Candidates) != want || controller.DisableReason(0) != tt.reason {
+				t.Fatalf("generation=%+v error=%v reason=%q, want count=%d reason=%q", got, err, controller.DisableReason(0), want, tt.reason)
+			}
+			if err := controller.StartRequest(0); err != nil || controller.DisableReason(0) != "" {
+				t.Fatalf("new request retained fallback: %v %q", err, controller.DisableReason(0))
+			}
+		})
+	}
+}
+
+func TestDSparkGenerationFailure(t *testing.T) {
+	nativeErr := errors.New("native block cleanup failed")
+	host := dsparkHost{active: []bool{true}}
+	host.input = dspark.GenerationInput{SamplingCompatible: true, MaxDraft: 3,
+		Generate: func(int) (dspark.Proposal, error) { return dspark.Proposal{}, nativeErr }}
+	got, err := dspark.New(&host).PlanGeneration(0)
+	if !errors.Is(err, nativeErr) || len(got.Candidates) != 0 {
+		t.Errorf("generation: got %+v/%v, want no proposals and native cause", got, err)
+	}
+}
+
+func TestControllerPrefillContract(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		newController func(*fakeHost) speculation.Controller
+		wantReason    string
+	}{
+		{"disabled", func(h *fakeHost) speculation.Controller { return speculation.NewDisabled(h) }, ""},
+		{"classic", func(h *fakeHost) speculation.Controller { return classic.New(h) }, ""},
+		{"mtp", func(h *fakeHost) speculation.Controller { return mtp.New(h) }, ""},
+		{"dspark", func(h *fakeHost) speculation.Controller { return dspark.New(h) }, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			host := fakeHost{active: []bool{true}}
+			controller := tt.newController(&host)
+			for range 2 {
+				if err := controller.StartRequest(0); err != nil {
+					t.Fatal(err)
+				}
+				if err := controller.AfterPrefill(0, speculation.Prefill{Start: 3, Count: 2, NextPosition: 17}); err != nil {
+					t.Fatal(err)
+				}
+				if got := controller.DisableReason(0); got != tt.wantReason {
+					t.Errorf("DisableReason: got %q, want %q", got, tt.wantReason)
+				}
+			}
+			if len(host.events) != 0 {
+				t.Errorf("prefill emitted target output or started generation: %v", host.events)
+			}
+		})
+	}
+}
+
+func TestMTPPrefillFallback(t *testing.T) {
+	for _, tt := range []struct {
+		name                      string
+		decodeFails, cleanupFails bool
+	}{
+		{"input failure", false, false},
+		{"draft decode failure", true, false},
+		{"input and cleanup failure", false, true},
+		{"draft decode and cleanup failure", true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			syncErr, cleanupErr := errors.New("sync"), errors.New("cleanup")
+			host := fakeHost{active: []bool{true, true}, syncErr: map[int]error{0: syncErr}}
+			if tt.decodeFails {
+				delete(host.syncErr, 0)
+				host.prefillInput = map[int]mtp.SyncInput{0: {
+					RowCount: 1, HiddenRows: []float32{11, 13}, EmbeddingSize: 2, ChunkSize: 1,
+					DecodeOwnChunk: func(int, int, []float32) error { return syncErr },
+				}}
+			}
+			if tt.cleanupFails {
+				host.disableErr = cleanupErr
+			}
+			controller := mtp.New(&host)
+			err := controller.AfterPrefill(0, speculation.Prefill{Count: 2})
+			if tt.cleanupFails && !errors.Is(err, cleanupErr) || !tt.cleanupFails && err != nil {
+				t.Fatalf("AfterPrefill: got %v, cleanup-fails=%t", err, tt.cleanupFails)
+			}
+			if tt.cleanupFails && !errors.Is(err, syncErr) {
+				t.Errorf("cleanup failure lost sync cause: %v", err)
+			}
+			if got := controller.DisableReason(0); got != "sync-error" {
+				t.Errorf("failed request reason: got %q, want sync-error", got)
+			}
+			if err := controller.AfterPrefill(1, speculation.Prefill{Count: 3}); err != nil {
+				t.Fatal(err)
+			}
+			if got := controller.DisableReason(1); got != "" {
+				t.Errorf("unaffected request reason: got %q, want empty", got)
+			}
+			if !tt.cleanupFails {
+				if err := controller.AfterPrefill(0, speculation.Prefill{Count: 1}); err != nil {
+					t.Fatalf("target-only continuation: %v", err)
+				}
+			}
+		})
+	}
+}
+
 type fakeHost struct {
 	active             []bool
 	needsPrefill       []bool
@@ -149,7 +285,10 @@ type fakeHost struct {
 	candidates         map[int][]llama.Token
 	disableDuringDraft map[int]bool
 	prefillErr         map[int]error
+	prefillInput       map[int]mtp.SyncInput
 	syncErr            map[int]error
+	disabled           map[int]string
+	disableErr         error
 	mtpCommits         []int
 	events             []string
 }
@@ -221,14 +360,18 @@ func (fh *fakeHost) ClassicVerifyInput(slot int, _ []byte) (classic.VerifyInput,
 		Accept: func(int, llama.Token, bool) bool { return true }}, nil
 }
 
-func (fh *fakeHost) CommitClassicVerify(slot int, _ []byte, _ classic.VerifyResult) {
+func (fh *fakeHost) CommitDistributionVerify(slot int, _ []byte, _ speculation.DistributionResult) {
 	fh.event("verify", slot)
 }
-func (*fakeHost) ClassicFinalizePlan(int) (classic.FinalizePlan, bool) {
-	return classic.FinalizePlan{}, true
+
+func (fh *fakeHost) DistributionVerifyInput(slot int, _ []byte, q [][]llama.DraftCandidate) speculation.DistributionInput {
+	return speculation.DistributionInput{Candidates: fh.candidates[slot], Distributions: q,
+		Target: func(int) speculation.DistributionTarget {
+			return speculation.DistributionTarget{Probabilities: []float32{0, 1}}
+		},
+		Accept: func(int, llama.Token, bool) bool { return true }}
 }
-func (*fakeHost) RollbackClassicTarget(int, classic.FinalizePlan) (bool, error) { return false, nil }
-func (*fakeHost) RollbackClassicDraft(int, classic.FinalizePlan) error          { return nil }
+func (*fakeHost) RollbackClassicDraft(int, classic.FinalizePlan) error { return nil }
 func (fh *fakeHost) CompleteClassicFinalize(slot int, _ []byte, _ classic.FinalizePlan, _ bool) {
 	fh.event("finalize", slot)
 }
@@ -240,6 +383,32 @@ func (fh *fakeHost) MTPSyncInput(slot int, _ int) (mtp.SyncInput, error) {
 
 func (fh *fakeHost) CommitMTPSync(int, mtp.SyncResult) {}
 
+func (*fakeHost) ResetDSparkSequence(int) error { return nil }
+
+func (*fakeHost) WithDSparkTarget(consume func(dspark.SyncInput) []dspark.SyncResult) {
+	consume(dspark.SyncInput{})
+}
+
+func (*fakeHost) DSparkGenerationInput(int) dspark.GenerationInput {
+	return dspark.GenerationInput{}
+}
+
+func (fh *fakeHost) MatchVerifyInput(slot int, buf []byte) speculation.MatchInput {
+	input, _ := fh.MTPVerifyInput(slot, buf)
+	return input
+}
+
+func (fh *fakeHost) MTPDisableReason(slot int) string {
+	return fh.disabled[slot]
+}
+
+func (fh *fakeHost) MTPPrefillInput(slot int, _ speculation.Prefill) (mtp.SyncInput, error) {
+	if fh.disabled[slot] != "" {
+		return mtp.SyncInput{}, nil
+	}
+	return fh.prefillInput[slot], fh.syncErr[slot]
+}
+
 func (fh *fakeHost) MTPVerifyInput(slot int, _ []byte) (mtp.VerifyInput, error) {
 	return mtp.VerifyInput{
 		Candidates: fh.candidates[slot],
@@ -248,21 +417,25 @@ func (fh *fakeHost) MTPVerifyInput(slot int, _ []byte) (mtp.VerifyInput, error) 
 	}, nil
 }
 
-func (fh *fakeHost) CommitMTPVerify(slot int, _ []byte, _ mtp.VerifyResult) {
+func (fh *fakeHost) CommitMatchVerify(slot int, _ []byte, _ mtp.VerifyResult) {
 	fh.event("verify", slot)
 }
 
-func (fh *fakeHost) MTPFinalizePlan(int) (mtp.FinalizePlan, bool) {
+func (fh *fakeHost) SpeculativeFinalizePlan(int) (mtp.FinalizePlan, bool) {
 	return mtp.FinalizePlan{}, true
 }
 
-func (fh *fakeHost) RollbackMTPTarget(int, mtp.FinalizePlan) (bool, error) { return false, nil }
-func (fh *fakeHost) RollbackMTPDraft(int, mtp.FinalizePlan) error          { return nil }
-func (fh *fakeHost) DisableMTP(slot int, _ string, _ int) error {
+func (fh *fakeHost) RollbackSpeculativeTarget(int, mtp.FinalizePlan) (bool, error) { return false, nil }
+func (fh *fakeHost) RollbackMTPDraft(int, mtp.FinalizePlan) error                  { return nil }
+func (fh *fakeHost) DisableMTP(slot int, reason string, _ int) error {
 	fh.event("disable", slot)
-	return nil
+	if fh.disabled == nil {
+		fh.disabled = make(map[int]string)
+	}
+	fh.disabled[slot] = reason
+	return fh.disableErr
 }
-func (fh *fakeHost) CompleteMTPFinalize(slot int, _ []byte, _ mtp.FinalizePlan, _ bool) {
+func (fh *fakeHost) CompleteSpeculativeFinalize(slot int, _ []byte, _ mtp.FinalizePlan, _ bool) {
 	fh.event("finalize", slot)
 }
 

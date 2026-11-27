@@ -1136,7 +1136,8 @@ func MustParseMoEMode(value string) MoEMode {
 type SpeculationMode = internalspec.Mode
 
 var (
-	// SpeculationAuto selects a configured classic drafter or available MTP.
+	// SpeculationAuto selects a configured classic drafter, compatible DSpark
+	// companion, or available MTP, in that order.
 	SpeculationAuto = internalspec.ModeAuto
 	// SpeculationDisabled runs target-only generation.
 	SpeculationDisabled = internalspec.ModeDisabled
@@ -1144,6 +1145,8 @@ var (
 	SpeculationClassic = internalspec.ModeClassic
 	// SpeculationMTP requires a companion or embedded MTP implementation.
 	SpeculationMTP = internalspec.ModeMTP
+	// SpeculationDSpark requires a compatible DSpark companion implementation.
+	SpeculationDSpark = internalspec.ModeDSpark
 )
 
 // ParseSpeculationMode parses a known speculation mode or an unset value.

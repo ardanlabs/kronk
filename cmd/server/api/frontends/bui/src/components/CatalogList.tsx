@@ -948,7 +948,6 @@ export default function CatalogList() {
                           return method ? DRAFT_CAPABILITY_LABELS[method] : modelInfo.capabilities ? 'None' : 'Unknown';
                         })() },
                       ]} />
-                      {draftCapability(modelInfo.capabilities, modelInfo.mtp_source) === 'dspark' && <p>DSpark inference is not supported.</p>}
                     </div>
 
                   </div>

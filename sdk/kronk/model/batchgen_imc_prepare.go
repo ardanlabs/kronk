@@ -166,12 +166,13 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 	var err error
 	if job.imcMediaAnchorAdvance && job.imcSessionUseMRoPE {
 		_, err = e.model.decodeTextMRoPEIntoCache(chunk, s.seqID, prep.position, func(batch *extendedBatch, nextPosition llama.Pos) error {
-			return e.syncMTPDecodedRows(s, batch, 0, nextPosition)
+			return e.afterDraftPrefill(s, batch, 0, nextPosition)
 		})
-	} else if e.model.draft != nil && e.model.draft.mtp() && !s.mtp.Disabled {
-		err = e.decodeTokensIntoCacheMTP(job.ctx, s, chunk, prep.position)
 	} else {
-		err = e.model.decodeTokensIntoCache(job.ctx, chunk, s.seqID, prep.position)
+		err = e.model.decodeTokensIntoCache(job.ctx, chunk, s.seqID, prep.position, func(batch *extendedBatch) error {
+			nextPosition := batch.entries[batch.len()-1].positions[0] + 1
+			return e.afterDraftPrefill(s, batch, 0, nextPosition)
+		})
 	}
 	if err != nil {
 		e.imcPrepNext = imcPreparationNext(selectedIndex, len(e.slots), true)
@@ -256,7 +257,7 @@ func (e *batchEngine) advanceIMCMediaPreparation(s *slot, selectorStart, selecte
 	e.publishDiagnostics(true)
 	started := time.Now()
 	complete, err := e.model.advanceIMCMediaChunk(p, s.seqID, s.mtmdCtx, func(batch *extendedBatch, nextPosition llama.Pos) error {
-		return e.syncMTPDecodedRows(s, batch, 0, nextPosition)
+		return e.afterDraftPrefill(s, batch, 0, nextPosition)
 	})
 	elapsed := time.Since(started)
 	metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", elapsed)

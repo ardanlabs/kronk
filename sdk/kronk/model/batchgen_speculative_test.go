@@ -78,7 +78,7 @@ func TestNeedsTargetSpecSnapshot(t *testing.T) {
 	}
 }
 
-func TestClassicSpeculationSupportsOnlyRepresentedSamplingControls(t *testing.T) {
+func TestIndependentDraftSamplingSupported(t *testing.T) {
 	tests := []struct {
 		name   string
 		params Params
@@ -96,8 +96,8 @@ func TestClassicSpeculationSupportsOnlyRepresentedSamplingControls(t *testing.T)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := classicSpeculationSupports(tt.params); got != tt.want {
-				t.Errorf("classicSpeculationSupports() = %t, want %t", got, tt.want)
+			if got := independentDraftSamplingSupported(tt.params); got != tt.want {
+				t.Errorf("independentDraftSamplingSupported() = %t, want %t", got, tt.want)
 			}
 		})
 	}
@@ -126,7 +126,7 @@ func TestCommitSpeculativeReturnsRequiredSnapshotFailure(t *testing.T) {
 }
 
 func TestMaxDraftForSlot(t *testing.T) {
-	e := batchEngine{model: &Model{cfg: Config{PtrContextWindow: new(10)}}}
+	e := batchEngine{model: &Model{cfg: Config{PtrContextWindow: new(10)}}, batch: &extendedBatch{}}
 
 	tests := []struct {
 		name             string
@@ -135,6 +135,7 @@ func TestMaxDraftForSlot(t *testing.T) {
 		maxTokens        int
 		reasonTokens     int
 		completionTokens int
+		trayRows         int
 		want             int
 	}{
 		{name: "full draft fits", nPast: 5, configured: 3, maxTokens: 100, want: 3},
@@ -144,10 +145,14 @@ func TestMaxDraftForSlot(t *testing.T) {
 		{name: "draft capped at remaining budget", nPast: 1, configured: 3, maxTokens: 5, completionTokens: 3, want: 1},
 		{name: "reasoning and completion share budget", nPast: 1, configured: 3, maxTokens: 5, reasonTokens: 2, completionTokens: 2, want: 0},
 		{name: "last output token reserved for target", nPast: 1, configured: 3, maxTokens: 5, completionTokens: 4, want: 0},
+		{name: "shared tray reserves anchor", nPast: 1, configured: 3, maxTokens: 100, trayRows: 2, want: 1},
+		{name: "shared tray only fits anchor", nPast: 1, configured: 3, maxTokens: 100, trayRows: 3, want: 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			e.model.cfg.nBatch = 4
+			e.batch.entries = make([]extendedBatchEntry, tt.trayRows)
 			s := slot{
 				nPast:            tt.nPast,
 				reasonTokens:     tt.reasonTokens,
@@ -217,33 +222,6 @@ func TestApplyContextTokenBudgetClampsRequest(t *testing.T) {
 	}
 	if !logged {
 		t.Error("clamp log not emitted")
-	}
-}
-
-func TestValidMTPDraftState(t *testing.T) {
-	tests := []struct {
-		name          string
-		actualBytes   uint64
-		expectedBytes uint64
-		pendingH      []float32
-		nEmbd         int
-		want          bool
-	}{
-		{"complete state", 100, 100, []float32{1, 2}, 2, true},
-		{"empty state", 0, 0, []float32{}, 0, false},
-		{"partial bytes", 99, 100, []float32{1, 2}, 2, false},
-		{"missing hidden state", 100, 100, nil, 2, false},
-		{"wrong hidden width", 100, 100, []float32{1}, 2, false},
-		{"invalid embedding width", 100, 100, nil, 0, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := validMTPDraftState(tt.actualBytes, tt.expectedBytes, tt.pendingH, tt.nEmbd)
-			if got != tt.want {
-				t.Errorf("validMTPDraftState() = %t, want %t", got, tt.want)
-			}
-		})
 	}
 }
 

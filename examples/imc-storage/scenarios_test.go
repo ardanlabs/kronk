@@ -138,7 +138,7 @@ func verifyScenario(scenario, phase, modelPath, projPath, drafterPath, directory
 	var observed evidence
 	opts := []model.Option{
 		model.WithModelFiles([]string{modelPath}),
-		model.WithProjFile(projPath), model.WithMTPDrafterFile(drafterPath),
+		model.WithProjFile(projPath), model.WithDrafterFile(drafterPath),
 		model.WithContextWindow(2048), model.WithNSeqMax(1),
 		model.WithIncrementalCache(true), model.WithCacheMinTokens(1),
 		model.WithLog(observed.log),

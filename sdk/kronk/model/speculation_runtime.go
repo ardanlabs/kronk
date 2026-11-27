@@ -5,25 +5,38 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
+	dsparkengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/dspark"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
-	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 func newSpeculationController(e *batchEngine) speculation.Controller {
 	plan := e.model.cfg.speculationPlan
-	if !plan.Active() {
-		return speculation.NewDisabled(e)
-	}
-
 	switch plan.Source {
 	case speculationSourceClassic:
-		return classicengine.New(e)
+		if plan.Active() {
+			return classicengine.New(e)
+		}
 	case speculationSourceMTP:
-		return mtp.New(e)
+		if plan.Active() {
+			return mtp.New(e)
+		}
+	case speculation.SourceDSpark:
+		if e.model.draft != nil {
+			return dsparkengine.New(e)
+		}
 	}
 	return speculation.NewDisabled(e)
+}
+
+func (e *batchEngine) afterDraftPrefill(s *slot, batch *extendedBatch, start int, nextPosition llama.Pos) error {
+	e.decodedPrefill = batch
+	defer func() { e.decodedPrefill = nil }()
+	count := int32(batch.len() - start)
+	return e.speculation.AfterPrefill(s.id, speculation.Prefill{
+		Start: int32(start), Count: count, NextPosition: nextPosition,
+	})
 }
 
 func (e *batchEngine) SlotCount() int {
@@ -46,13 +59,13 @@ func (e *batchEngine) PrefillDraft(slotID int) error {
 
 func (e *batchEngine) CanSpeculate(slotID int) bool {
 	s := e.slots[slotID]
-	if e.model.cfg.speculationPlan.Source == speculationSourceClassic && !classicSpeculationSupports(s.job.params) {
+	if e.model.cfg.speculationPlan.Source == speculationSourceClassic && !independentDraftSamplingSupported(s.job.params) {
 		return false
 	}
 	return e.model.draft != nil && !s.draftPrefillNeeded && s.draftNPast > 0 && (!e.model.cfg.speculationPlan.MTP() || !s.mtp.Disabled)
 }
 
-func classicSpeculationSupports(p Params) bool {
+func independentDraftSamplingSupported(p Params) bool {
 	return p.Grammar == "" &&
 		p.AdaptivePTarget == 0 &&
 		p.DryMultiplier == 0 &&
@@ -93,7 +106,7 @@ func (e *batchEngine) CommitMTPDraft(slotID int, result mtp.DraftResult) {
 	s.draftTokensBuf = result.Candidates
 	s.mtp.DraftHidden = result.Hidden
 	s.draftNPast = result.Position
-	if mtpUsesSharedKV(e.model.draft) && len(result.Hidden) == e.model.draft.core().mtp.EmbeddingSize() {
+	if mtpUsesSharedKV(e.model.draft) && len(result.Hidden) == mtpResources(e.model.draft).EmbeddingSize() {
 		s.mtp.PendingHidden = append(s.mtp.PendingHidden[:0], result.Hidden...)
 	}
 	s.specDraftedTotal += len(result.Candidates)
@@ -141,7 +154,7 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 		return mtp.SyncInput{}, nil
 	}
 
-	draft := e.model.draft.core()
+	resources := mtpResources(e.model.draft)
 	count := int(s.mtp.TargetRange.Count)
 	if effectiveCount > 0 {
 		count = effectiveCount
@@ -152,11 +165,11 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 		return mtp.SyncInput{}, fmt.Errorf("target rows unavailable for range [%d..%d)", start, start+count)
 	}
 	var hiddenRows []float32
-	nEmbd := draft.mtp.EmbeddingSize()
+	nEmbd := resources.EmbeddingSize()
 	if len(s.mtp.VerifyHidden) >= count*nEmbd {
 		hiddenRows = s.mtp.VerifyHidden[:count*nEmbd]
-	} else if draft.mtpStateSource == 0 {
-		hidden := yzmaspec.GetEmbeddingsNextN(e.model.lctx, totalRows, nEmbd)
+	} else if !resources.DeviceRows() {
+		hidden := resources.TargetHidden(totalRows)
 		if hidden == nil {
 			return mtp.SyncInput{}, fmt.Errorf("target pre-norm rows unavailable for range [%d..%d)", start, start+count)
 		}
@@ -185,35 +198,49 @@ func (e *batchEngine) ProcessOrdinary(slotID int, buf []byte) {
 
 func (e *batchEngine) ClassicVerifyInput(slotID int, buf []byte) (classicengine.VerifyInput, error) {
 	s := e.slots[slotID]
+	distributions := s.classic.DraftDistributions
+	s.classic.DraftDistributions = nil
+	input := e.DistributionVerifyInput(slotID, buf, distributions)
+	return classicengine.VerifyInput{
+		State: &s.classic, Candidates: input.Candidates, Distributions: input.Distributions,
+		Greedy: input.Greedy, Target: input.Target, Accept: input.Accept,
+		Random: input.Random, Random32: input.Random32,
+	}, nil
+}
+
+// DistributionVerifyInput adapts target distributions and output processing
+// without selecting an algorithm's proposal law or acceptance policy.
+func (e *batchEngine) DistributionVerifyInput(slotID int, buf []byte, distributions [][]llama.DraftCandidate) speculation.DistributionInput {
+	s := e.slots[slotID]
 	draft := e.model.draft.core()
 	nVocab := int(llama.VocabNTokens(e.model.vocab))
 	greedy := s.job.params.Temperature == 0
 	s.specPendingOriginalSampled = s.sampled
-	distributions := s.classic.DraftDistributions
-	s.classic.DraftDistributions = nil
+	if len(draft.targetProbs) != nVocab {
+		draft.targetProbs = make([]float32, nVocab)
+	}
 
-	return classicengine.VerifyInput{
-		State:         &s.classic,
+	return speculation.DistributionInput{
 		Candidates:    s.specDraftTokens,
 		Distributions: distributions,
 		Greedy:        greedy,
-		Target: func(index int) classicengine.Target {
+		Target: func(index int) speculation.DistributionTarget {
 			row := s.specBaseBatch + int32(index)
 			if s.grammarSampler != nil && s.reasonFlag == 0 {
-				return classicengine.Target{Token: e.sampleSlotToken(s, row), SamplerAccepted: true}
+				return speculation.DistributionTarget{Token: e.sampleSlotToken(s, row), SamplerAccepted: true}
 			}
 			logits, err := llama.GetLogitsIth(e.model.lctx, row, nVocab)
 			if err != nil {
-				return classicengine.Target{Token: e.sampleSlotToken(s, row), SamplerAccepted: true}
+				return speculation.DistributionTarget{Token: e.sampleSlotToken(s, row), SamplerAccepted: true}
 			}
 			if greedy {
 				maskSuppressTokenLogits(logits, e.model.suppressTokens)
-				return classicengine.Target{Token: classicengine.GreedyToken(logits)}
+				return speculation.DistributionTarget{Token: classicengine.GreedyToken(logits)}
 			}
 			draft.sortIndices = applySamplerFilters(logits, draft.targetProbs, e.model.suppressTokens,
 				s.job.params.Temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK,
 				draft.sortIndices, &draft.filterBuf)
-			return classicengine.Target{Probabilities: draft.targetProbs}
+			return speculation.DistributionTarget{Probabilities: draft.targetProbs}
 		},
 		Accept: func(index int, token llama.Token, samplerAccepted bool) bool {
 			s.specAcceptedTotal++
@@ -223,10 +250,10 @@ func (e *batchEngine) ClassicVerifyInput(slotID int, buf []byte) (classicengine.
 		},
 		Random:   s.specRNG.Float64,
 		Random32: s.specRNG.Float32,
-	}, nil
+	}
 }
 
-func (e *batchEngine) CommitClassicVerify(slotID int, buf []byte, result classicengine.VerifyResult) {
+func (e *batchEngine) CommitDistributionVerify(slotID int, buf []byte, result speculation.DistributionResult) {
 	s := e.slots[slotID]
 	if !result.Complete || !s.active {
 		return
@@ -251,41 +278,6 @@ func (e *batchEngine) CommitClassicVerify(slotID int, buf []byte, result classic
 	s.specPendingFinalize = true
 }
 
-func (e *batchEngine) ClassicFinalizePlan(slotID int) (classicengine.FinalizePlan, bool) {
-	s := e.slots[slotID]
-	if !s.specPendingFinalize {
-		return classicengine.FinalizePlan{}, false
-	}
-	return classicengine.FinalizePlan{Accepted: s.specPendingAccepted, Drafted: len(s.specDraftTokens)}, true
-}
-
-func (e *batchEngine) RollbackClassicTarget(slotID int, plan classicengine.FinalizePlan) (bool, error) {
-	s := e.slots[slotID]
-	rollbackFrom := s.specBasePast + llama.Pos(1+plan.Accepted)
-	rollbackTo := s.specBasePast + llama.Pos(1+plan.Drafted)
-	recurrentRestore := e.model.modelInfo.profile.MemorySemantics == modelprofile.MemoryRecurrent && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
-	if recurrentRestore {
-		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
-			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
-		}
-		e.recordTargetSpecRollback(s, true)
-		return true, nil
-	}
-	if rollbackFrom < rollbackTo {
-		e.model.decodeMu.Lock()
-		removed, err := llama.MemorySeqRm(e.model.mem, s.seqID, rollbackFrom, rollbackTo)
-		e.model.decodeMu.Unlock()
-		if err != nil {
-			return false, fmt.Errorf("removing rejected target draft positions: %w", err)
-		}
-		if !removed {
-			return false, fmt.Errorf("removing rejected target draft positions for seq %d", s.seqID)
-		}
-		e.recordTargetSpecRollback(s, false)
-	}
-	return false, nil
-}
-
 func (e *batchEngine) RollbackClassicDraft(slotID int, plan classicengine.FinalizePlan) error {
 	s := e.slots[slotID]
 	return e.rollbackDraft(s.job.ctx, s, plan.Accepted, plan.Drafted)
@@ -293,38 +285,15 @@ func (e *batchEngine) RollbackClassicDraft(slotID int, plan classicengine.Finali
 
 func (e *batchEngine) CompleteClassicFinalize(slotID int, buf []byte, plan classicengine.FinalizePlan, hybridRestore bool) {
 	s := e.slots[slotID]
-	bonusToken := s.specPendingBonusToken
-	bonusSamplerAccepted := s.specPendingSamplerAccepted
-	bonusLogprobReady := s.specPendingLogprobReady
-	bonusLogprob := s.specPendingLogprob
-	baseBatch := s.specBaseBatch
-	basePast := s.specBasePast
-
-	s.specPendingFinalize = false
-	s.specPendingAccepted = 0
-	s.specPendingBonusToken = 0
-	s.specPendingOriginalSampled = 0
-	s.specPendingSamplerAccepted = false
-	s.specPendingLogprobReady = false
-	s.specPendingLogprob = nil
-	s.specDraftTokens = nil
-	s.nPast = specAcceptedNPast(basePast, plan.Accepted)
 	s.classic.Rounds++
 	if s.classic.Rounds == 1 || s.classic.Rounds%32 == 0 {
 		e.model.log(s.job.ctx, "speculative", "status", "verify-done",
 			"slot", s.id, "round", s.classic.Rounds, "accepted", plan.Accepted, "nDraft", plan.Drafted,
-			"target_nPast", s.nPast, "draft_nPast", s.draftNPast,
+			"target_nPast", specAcceptedNPast(s.specBasePast, plan.Accepted), "draft_nPast", s.draftNPast,
 			"acc_ema", fmt.Sprintf("%.2f", s.classic.AcceptanceEMA))
 	}
 
-	bonusBatch := baseBatch + int32(plan.Accepted)
-	if hybridRestore {
-		bonusBatch = int32(plan.Accepted)
-	}
-	e.handleSpeculativeToken(s, bonusToken, bonusBatch, buf, bonusSamplerAccepted, bonusLogprobReady, bonusLogprob)
-	if s.active {
-		s.iBatch = -1
-	}
+	e.CompleteSpeculativeFinalize(slotID, buf, plan, hybridRestore)
 }
 
 func (e *batchEngine) MTPVerifyInput(slotID int, buf []byte) (mtp.VerifyInput, error) {
@@ -336,9 +305,15 @@ func (e *batchEngine) MTPVerifyInput(slotID int, buf []byte) (mtp.VerifyInput, e
 			s.mtp.Disable("verify-prenorm-capture")
 		}
 	}
+	return e.MatchVerifyInput(slotID, buf), nil
+}
+
+// MatchVerifyInput exposes target sampling/output without algorithm state.
+func (e *batchEngine) MatchVerifyInput(slotID int, buf []byte) speculation.MatchInput {
+	s := e.slots[slotID]
 	s.specPendingOriginalSampled = s.sampled
 
-	return mtp.VerifyInput{
+	return speculation.MatchInput{
 		Candidates: s.specDraftTokens,
 		Sample: func(index int) llama.Token {
 			row := s.specBaseBatch + int32(index)
@@ -350,10 +325,10 @@ func (e *batchEngine) MTPVerifyInput(slotID int, buf []byte) (mtp.VerifyInput, e
 			e.handleSpeculativeToken(s, token, s.specBaseBatch+int32(index), buf, true, false, nil)
 			return s.active
 		},
-	}, nil
+	}
 }
 
-func (e *batchEngine) CommitMTPVerify(slotID int, buf []byte, result mtp.VerifyResult) {
+func (e *batchEngine) CommitMatchVerify(slotID int, buf []byte, result speculation.MatchResult) {
 	s := e.slots[slotID]
 	if !result.Complete || !s.active {
 		return
@@ -363,8 +338,12 @@ func (e *batchEngine) CommitMTPVerify(slotID int, buf []byte, result mtp.VerifyR
 	bonusLogprobReady := false
 	if s.job.params.Logprobs {
 		bonusLogprobReady = true
-		bonusLogprob, _ = extractLogprobs(e.model.lctx, e.model.vocab, e.model.suppressTokens, result.Bonus,
+		var err error
+		bonusLogprob, err = extractLogprobs(e.model.lctx, e.model.vocab, e.model.suppressTokens, result.Bonus,
 			s.specBaseBatch+int32(result.Accepted), s.job.params.TopLogprobs, buf)
+		if err != nil {
+			e.model.log(s.job.ctx, "batch-engine", "status", "logprobs-error", "slot", s.id, "error", err.Error())
+		}
 	}
 	s.specPendingAccepted = result.Accepted
 	s.specPendingBonusToken = result.Bonus
@@ -374,15 +353,15 @@ func (e *batchEngine) CommitMTPVerify(slotID int, buf []byte, result mtp.VerifyR
 	s.specPendingFinalize = true
 }
 
-func (e *batchEngine) MTPFinalizePlan(slotID int) (mtp.FinalizePlan, bool) {
+func (e *batchEngine) SpeculativeFinalizePlan(slotID int) (speculation.FinalizePlan, bool) {
 	s := e.slots[slotID]
 	if !s.specPendingFinalize {
-		return mtp.FinalizePlan{}, false
+		return speculation.FinalizePlan{}, false
 	}
-	return mtp.FinalizePlan{Accepted: s.specPendingAccepted, Drafted: len(s.specDraftTokens)}, true
+	return speculation.FinalizePlan{Accepted: s.specPendingAccepted, Drafted: len(s.specDraftTokens)}, true
 }
 
-func (e *batchEngine) RollbackMTPTarget(slotID int, plan mtp.FinalizePlan) (bool, error) {
+func (e *batchEngine) RollbackSpeculativeTarget(slotID int, plan speculation.FinalizePlan) (bool, error) {
 	s := e.slots[slotID]
 	rollbackFrom := s.specBasePast + llama.Pos(1+plan.Accepted)
 	rollbackTo := s.specBasePast + llama.Pos(1+plan.Drafted)
@@ -455,7 +434,7 @@ func (e *batchEngine) DisableMTP(slotID int, reason string, accepted int) error 
 	return e.disableMTPForRequestSpec(s.job.ctx, s, reason, accepted)
 }
 
-func (e *batchEngine) CompleteMTPFinalize(slotID int, buf []byte, plan mtp.FinalizePlan, hybridRestore bool) {
+func (e *batchEngine) CompleteSpeculativeFinalize(slotID int, buf []byte, plan speculation.FinalizePlan, hybridRestore bool) {
 	s := e.slots[slotID]
 	bonusToken := s.specPendingBonusToken
 	bonusSamplerAccepted := s.specPendingSamplerAccepted

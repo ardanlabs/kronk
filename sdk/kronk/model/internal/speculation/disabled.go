@@ -16,6 +16,10 @@ func (*disabledController) Enabled() bool { return false }
 func (*disabledController) BeginBatch()   {}
 func (*disabledController) Prepare()      {}
 
+func (*disabledController) StartRequest(int) error          { return nil }
+func (*disabledController) AfterPrefill(int, Prefill) error { return nil }
+func (*disabledController) DisableReason(int) string        { return "" }
+
 func (*disabledController) PlanGeneration(int) (Generation, error) {
 	return Generation{}, nil
 }

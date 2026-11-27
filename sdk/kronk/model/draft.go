@@ -1,74 +1,34 @@
 package model
 
 import (
-	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// This file defines the speculative-decoding strategy types. The goal is
-// CLEAR CODE-PATH SEPARATION between the runtime drafting modes so that
-// each resource-ownership mode is a distinct Go type. Architecture-specific
-// loading and runtime behavior is selected through mtpBackend instead of
-// concrete-type checks at call sites.
-//
-// Modes today:
-//
-//	nil              — no drafting / no speculation.
-//	*classicDrafter  — separate-GGUF, vocab-matched draft model. Owns its
-//	                   own llama_model AND its own KV cache.
-//	*mtpDrafter      — embedded MTP head living inside the TARGET GGUF
-//	                   (Qwen3.5 / Qwen3.6, arch qwen35). Shares the
-//	                   target's llama_model but has its OWN draft KV; the
-//	                   engine mirror-replays each target batch into it.
-//	*separateMTPDrafter — separate-file Qwen MTP head. Owns its llama_model
-//	                   and draft KV; otherwise uses the same mirror-replay
-//	                   runtime as the embedded MTP head.
-//	*sharedMTPDrafter — separate-file MTP "assistant" (Gemma4
-//	                   gemma4-assistant). Loads its OWN llama_model from
-//	                   Config.MTPDrafterFile but creates its context with
-//	                   ctx_other==target, SHARING the target's
-//	                   llama_memory. There is no separate draft KV to
-//	                   mirror into: the target's decode populates the
-//	                   shared KV directly, so the engine only captures the
-//	                   last pre-norm hidden row (pendingH) after each
-//	                   target decode and drafts at a fixed KV position.
-//
-// For the shared-KV mode, restoring draft KV state writes THROUGH aliased
-// tensor pointers into the TARGET's KV buffer and corrupts it. That is why
-// draft-KV state externalization lives behind the draftKVExternalizer
-// capability below: a shared-KV strategy simply does not implement it, so
-// the unsafe restore call site is unreachable for it at compile time
-// rather than guarded by a runtime flag.
+// Shared drafter contracts and classic cleanup live here. Internal MTP owns its
+// native resources; its model-facing adapters are defined in mtp.go.
 
-// drafter is the speculative-decoding strategy held by a Model. A nil
-// drafter means no speculation. The engine dispatches the mode-varying
-// operations (generate, unload) through this interface; the heavy
-// per-token bodies remain batchEngine methods that read draft resources
-// via core().
+// drafter is the model-owned resource adapter for speculative decoding. A nil
+// drafter means no speculation. Algorithm controllers own the decoding lifecycle;
+// their model-facing host methods access native resources through core().
 type drafter interface {
-	// sealedDrafter prevents types outside this package from satisfying
-	// the interface, so the set of drafting modes is closed and every
-	// mode is accounted for here.
+	// sealedDrafter keeps native resource adapters in the model package.
+	// Algorithm controllers live behind the internal speculation contract.
 	sealedDrafter()
 
 	// kind reports the strategy for logging/metrics only.
 	kind() draftKind
 
 	// mtp reports whether this is an MTP (multi-token-prediction) head
-	// strategy. True for any MTP mode (own- or shared-KV). MTP-common
-	// behavior that is safe regardless of KV ownership (target-batch
-	// mirroring, draft-KV trim via MemorySeqRm, the generate dispatch)
-	// is gated on this.
+	// strategy. True for any MTP mode (own- or shared-KV). It does not
+	// grant permission to mutate or externalize the draft KV cache.
 	mtp() bool
 
 	// core returns the shared llama resources (context, memory, sampler,
-	// batches, reusable buffers). Decode and MemorySeqRm on these are
-	// safe for every mode, including a future shared-KV mode.
+	// batches, reusable buffers). Operations on these handles must respect
+	// the adapter's KV ownership and externalization capabilities.
 	core() *draftCore
 
-	// unload releases the strategy's resources. Implementations differ in
-	// whether they free the llama_model (classic owns it; MTP shares it
-	// with the target) and whether MTP extended batches exist.
+	// unload releases owned resources without freeing borrowed target state.
 	unload()
 }
 
@@ -76,7 +36,7 @@ type drafter interface {
 // draft KV cache and participate in IMC draft-KV state externalization
 // (snapshot to / restore from a RAM checkpoint in lock-step with the target seq).
 //
-// A shared-KV strategy (future Gemma4 gemma4-assistant, ctx_other==target)
+// A shared-KV strategy (Gemma4 gemma4-assistant, ctx_other==target)
 // MUST NOT implement this: llama.StateSeqSetData on a shared draft context
 // writes through aliased tensor pointers into the TARGET's KV buffer and
 // corrupts it. Because the shared-KV type does not satisfy this interface,
@@ -89,22 +49,27 @@ type draftKVExternalizer interface {
 	// draftKVCtx returns the draft context whose per-seq KV state may be
 	// safely serialized/restored. Only own-draft-KV strategies expose it.
 	draftKVCtx() llama.Context
+
+	// draftCheckpointState returns the borrowed algorithm state paired with
+	// the exact accepted prefix, or nil when it cannot be checkpointed.
+	draftCheckpointState(s *slot, position llama.Pos) []float32
+
+	// restoreDraftCheckpoint validates and restores algorithm state after a
+	// complete native KV transfer. It must not retain the borrowed state slice.
+	restoreDraftCheckpoint(s *slot, position llama.Pos, state []float32) bool
+
+	// clearDraftCheckpoint invalidates algorithm state after failed recovery.
+	// The caller has already removed the independent native sequence.
+	clearDraftCheckpoint(s *slot)
 }
 
 // =============================================================================
 
-// freeCommon releases the resources every drafter holds: the per-slot
+// freeCommon releases classic draft resources: the per-slot
 // draft sampler registration, the greedy sampler, and the token batch.
 // It does NOT free the context or the model — unload sequences
-// those per strategy.
+// those. MTP uses its internal resource owner's cleanup instead.
 func (dc *draftCore) freeCommon() {
-	if dc.mtpStateSource != 0 {
-		llama.Synchronize(dc.lctx)
-		yzmaspec.SetCtxStateSrc(dc.lctx, 0)
-		yzmaspec.SetEmbeddingsNextNDev(dc.mtpStateSource, false)
-		dc.mtpStateSource = 0
-	}
-
 	if dc.registeredSampler != 0 {
 		llama.SetSampler(dc.lctx, dc.registeredSeqID, 0)
 		dc.registeredSampler = 0
@@ -136,96 +101,4 @@ func (d *classicDrafter) unload() {
 
 // =============================================================================
 
-// mtpDrafter is an embedded MTP head (Qwen). It shares the target's
-// llama_model but owns its own draft KV cache, so it can externalize draft
-// KV state for IMC cache hits.
-type mtpDrafter struct {
-	c *draftCore
-	b mtpBackend
-}
-
-func (*mtpDrafter) sealedDrafter()           {}
-func (*mtpDrafter) kind() draftKind          { return draftMTPQwen }
-func (*mtpDrafter) mtp() bool                { return true }
-func (d *mtpDrafter) core() *draftCore       { return d.c }
-func (d *mtpDrafter) mtpBackend() mtpBackend { return d.b }
-
-func (d *mtpDrafter) draftKVCtx() llama.Context { return d.c.lctx }
-
-func (d *mtpDrafter) unload() {
-	d.c.freeCommon()
-	d.c.mtp.Free()
-	llama.Free(d.c.lctx)
-	// MTP shares the target's llama_model — the target's Unload path owns
-	// its lifetime. Skip ModelFree to avoid a double-free.
-}
-
-// =============================================================================
-
-// separateMTPDrafter is a separate-file Qwen MTP head. It owns its model and
-// KV cache, and participates in the same mirroring and IMC state lifecycle as
-// an embedded MTP head.
-type separateMTPDrafter struct {
-	c *draftCore
-	b mtpBackend
-}
-
-func (*separateMTPDrafter) sealedDrafter()           {}
-func (*separateMTPDrafter) kind() draftKind          { return draftMTPQwenSeparate }
-func (*separateMTPDrafter) mtp() bool                { return true }
-func (d *separateMTPDrafter) core() *draftCore       { return d.c }
-func (d *separateMTPDrafter) mtpBackend() mtpBackend { return d.b }
-
-func (d *separateMTPDrafter) draftKVCtx() llama.Context { return d.c.lctx }
-
-func (d *separateMTPDrafter) unload() {
-	d.c.freeCommon()
-	d.c.mtp.Free()
-	llama.Free(d.c.lctx)
-	llama.ModelFree(d.c.model)
-}
-
-// =============================================================================
-
-// sharedMTPDrafter is a separate-file MTP "assistant" head (Gemma4
-// gemma4-assistant). It loads its OWN llama_model from Config.MTPDrafterFile,
-// but its context is created with ctx_other==target so it SHARES the
-// target's llama_memory. There is no separate draft KV to externalize or
-// mirror into, so it does NOT implement draftKVExternalizer.
-type sharedMTPDrafter struct {
-	c *draftCore
-	b mtpBackend
-}
-
-func (*sharedMTPDrafter) sealedDrafter()           {}
-func (*sharedMTPDrafter) kind() draftKind          { return draftMTPGemma4 }
-func (*sharedMTPDrafter) mtp() bool                { return true }
-func (d *sharedMTPDrafter) core() *draftCore       { return d.c }
-func (d *sharedMTPDrafter) mtpBackend() mtpBackend { return d.b }
-
-func (d *sharedMTPDrafter) unload() {
-	d.c.freeCommon()
-	d.c.mtp.Free()
-	llama.Free(d.c.lctx)
-	// Shared MTP loaded its OWN assistant llama_model from MTPDrafterFile —
-	// free it (unlike embedded Qwen MTP, which shares the target model).
-	llama.ModelFree(d.c.model)
-}
-
-// =============================================================================
-
-// Compile-time guarantees about which capabilities each strategy exposes.
-// The absence of a draftKVExternalizer assertion for *sharedMTPDrafter is
-// intentional and load-bearing: it is what keeps the unsafe draft-KV
-// restore path unreachable for shared-KV modes at compile time.
-var (
-	_ drafter             = (*classicDrafter)(nil)
-	_ drafter             = (*mtpDrafter)(nil)
-	_ drafter             = (*separateMTPDrafter)(nil)
-	_ drafter             = (*sharedMTPDrafter)(nil)
-	_ mtpBackendDrafter   = (*mtpDrafter)(nil)
-	_ mtpBackendDrafter   = (*separateMTPDrafter)(nil)
-	_ mtpBackendDrafter   = (*sharedMTPDrafter)(nil)
-	_ draftKVExternalizer = (*mtpDrafter)(nil)
-	_ draftKVExternalizer = (*separateMTPDrafter)(nil)
-)
+var _ drafter = (*classicDrafter)(nil)

@@ -109,12 +109,32 @@ func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 	}
 	out.Adapters = adapters
 
-	// fp.MTPFile is the on-disk path to the separate-file MTP assistant
-	// drafter companion (e.g. Gemma4's "mtp-*.gguf"), discovered by the
-	// download/catalog layer. The runtime config calls it MTPDrafterFile to
-	// avoid confusion with MTP-capable MAIN models (whose own filenames
-	// also start with "mtp-", e.g. mtp-Qwen3.6-...).
-	out.MTPDrafterFile = fp.MTPFile
+	// Resolve one companion from the installed alternatives. Explicit MTP
+	// keeps its companion; auto prefers DSpark when both are installed.
+	out.DrafterFile = fp.MTPFile
+
+	if (out.SpeculationMode() == model.SpeculationAuto || out.SpeculationMode() == model.SpeculationDSpark) && fp.DraftFile != "" && fp.DraftFile != fp.MTPFile {
+		id, err := ParseModelID(modelID)
+		if err != nil {
+			return model.Config{}, fmt.Errorf("kronk-resolved-config: %w", err)
+		}
+		entry, _, err := m.CatalogEntry(id.Base())
+		if err != nil {
+			return model.Config{}, fmt.Errorf("kronk-resolved-config: draft identity: %w", err)
+		}
+		// Catalog identity wins for custom filenames, including conventional
+		// drafts. An uncataloged co-located dspark-* companion keeps its identity.
+		method := DraftMethod{}
+		switch {
+		case entry.Draft.File == filepath.Base(fp.DraftFile):
+			method = entry.Draft.Method
+		case strings.HasPrefix(strings.ToLower(filepath.Base(fp.DraftFile)), "dspark-"):
+			method = DraftMethodDSpark
+		}
+		if method == DraftMethodDSpark {
+			out.DrafterFile = fp.DraftFile
+		}
+	}
 
 	// Resolve a relative jinja template path against the kronk base
 	// directory so users can write portable values like

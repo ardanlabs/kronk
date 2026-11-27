@@ -1,5 +1,6 @@
-# Pulled by .github/scripts/pull-models.sh. One `<backend> <model-id>`
+# Pulled by .github/scripts/pull-models.sh. One `<backend> <model-id> [<draft-method> <draft-url>]`
 # per line, backend `kronk` or `bucky`; blank lines and `#` comments ignored.
+# Optional draft columns pin a kronk companion instead of relying on discovery.
 #
 # Used by GitHub race, API and SDK test jobs. Local Make targets keep
 # their separate inline lists in .make/install.mk.
@@ -11,6 +12,7 @@ kronk mradermacher/Qwopus3.5-4B-Coder.Q4_K_M
 kronk unsloth/LFM2-700M-Q8_0
 kronk unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M
 kronk unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL
+kronk ggml-org/Inkling-2-Mini-Q8_0 dspark https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file
 kronk ggml-org/Qwen2.5-Omni-3B-Q4_K_M
 kronk unsloth/Qwen3-1.7B-Q4_K_M
 kronk nomic-ai/nomic-embed-text-v1.5.Q8_0

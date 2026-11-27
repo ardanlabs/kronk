@@ -48,6 +48,9 @@ jobs:
         run: |
           kronk model pull --local unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL
           kronk model pull --local ornith-ai/Ornith-1.5-9B-Q8_0
+          kronk model pull --local ggml-org/Inkling-2-Mini-Q8_0 \
+            --draft-method dspark \
+            --draft 'https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file'
 
       - name: Build and start tools server
         if: steps.prepare.outputs.skip == 'false'

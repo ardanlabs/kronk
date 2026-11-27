@@ -30,7 +30,9 @@ the next request becomes a cache hit.
 Use --proj <URL> to pin a projection file. Use --draft <URL> with
 --draft-method <mtp|dspark|conventional> to pin a draft companion.
 Companions are installed as <method>-<target-model-id>.gguf. DSpark download
-support does not enable DSpark inference.
+support does not establish compatibility: inference requires a qualified matching
+target and companion. Compatible companions activate in speculation auto mode;
+use speculation disabled for target-only execution.
 Companion URLs must be fully qualified HuggingFace URLs:
   - With an id source the resolver is consulted to expand split shards.
     Any companion you pin replaces the resolver's choice; any companion

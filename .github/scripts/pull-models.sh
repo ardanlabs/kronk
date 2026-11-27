@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # pull-models.sh — pull all models from a model list. Each line is
-# `<backend> <model-id>`.
+# `<backend> <model-id> [<draft-method> <draft-url>]`.
+# The optional companion pair is supported only by the kronk backend.
 
 set -euo pipefail
 
@@ -25,17 +26,29 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   line="${line%"${line##*[![:space:]]}"}"
   [[ -z "$line" ]] && continue
 
-  # shellcheck disable=SC2086  # intentional word-splitting on the spaces.
-  set -- $line
-  if [[ "$#" -ne 2 ]]; then
-    echo "::error file=${list}::Expected '<backend> <model-id>': $line"
+  read -r -a fields <<< "$line"
+  set -- "${fields[@]}"
+  if [[ "$#" -ne 2 && "$#" -ne 4 ]]; then
+    echo "::error file=${list}::Expected '<backend> <model-id> [<draft-method> <draft-url>]': $line"
     exit 1
   fi
   backend="$1"; model="$2"
 
   case "$backend" in
-    kronk) kronk model pull --local "$model" ;;
-    bucky) kronk bucky model pull --local "$model" ;;
+    kronk)
+      if [[ "$#" -eq 4 ]]; then
+        kronk model pull --local "$model" --draft-method "$3" --draft "$4"
+      else
+        kronk model pull --local "$model"
+      fi
+      ;;
+    bucky)
+      if [[ "$#" -ne 2 ]]; then
+        echo "::error file=${list}::Draft companions require the kronk backend: $line"
+        exit 1
+      fi
+      kronk bucky model pull --local "$model"
+      ;;
     *)
       echo "::error file=${list}::Unknown backend '$backend' (expected 'kronk' or 'bucky')"
       exit 1

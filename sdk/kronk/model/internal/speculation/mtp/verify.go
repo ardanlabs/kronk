@@ -1,40 +1,15 @@
 package mtp
 
-import "github.com/hybridgroup/yzma/pkg/llama"
+import "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 
 // VerifyInput contains callbacks into target sampling and output processing.
-type VerifyInput struct {
-	Candidates []llama.Token
-	Sample     func(index int) llama.Token
-	Accept     func(index int, token llama.Token) bool
-}
+type VerifyInput = speculation.MatchInput
 
 // VerifyResult contains the accepted prefix and target bonus token.
-type VerifyResult struct {
-	Accepted int
-	Drafted  int
-	Bonus    llama.Token
-	Complete bool
-}
+type VerifyResult = speculation.MatchResult
 
-// Verify performs MTP's greedy target verification. MTP has no draft
-// distribution, so each proposal is accepted only when it matches the target
-// request sampler at the corresponding output row.
+// Verify uses MTP's target-sample matching policy. MTP has no draft distribution;
+// each proposal must match the request sampler at the corresponding target row.
 func Verify(input VerifyInput) VerifyResult {
-	result := VerifyResult{Drafted: len(input.Candidates), Complete: true}
-	for i, candidate := range input.Candidates {
-		target := input.Sample(i)
-		if candidate != target {
-			result.Bonus = target
-			return result
-		}
-		result.Accepted++
-		if !input.Accept(i, candidate) {
-			result.Complete = false
-			return result
-		}
-	}
-
-	result.Bonus = input.Sample(len(input.Candidates))
-	return result
+	return speculation.VerifyMatches(input)
 }

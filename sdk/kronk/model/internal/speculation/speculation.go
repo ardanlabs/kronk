@@ -37,6 +37,18 @@ func Resolve(cfg Config) (Plan, error) {
 		}
 		return Plan{Mode: cfg.Mode, Source: SourceClassic, NDraft: cfg.ClassicNDraft, Available: true}, nil
 
+	case ModeDSpark:
+		if cfg.ClassicConfigured {
+			return Plan{}, fmt.Errorf("speculation mode %q cannot use a separate draft model", cfg.Mode)
+		}
+		if !cfg.DSparkConfigured {
+			return Plan{}, fmt.Errorf("speculation mode %q requires a compatible DSpark companion in DrafterFile", cfg.Mode)
+		}
+		if !cfg.DSparkAvailable {
+			return Plan{}, fmt.Errorf("speculation mode %q requested but DSpark execution is not yet available in this Kronk release", cfg.Mode)
+		}
+		return Plan{Mode: cfg.Mode, Source: SourceDSpark, NDraft: cfg.DSparkNDraft, Available: true}, nil
+
 	case ModeMTP:
 		if cfg.ClassicConfigured {
 			return Plan{}, fmt.Errorf("speculation mode %q cannot use a separate draft model", cfg.Mode)
@@ -45,6 +57,9 @@ func Resolve(cfg Config) (Plan, error) {
 	case ModeAuto:
 		if cfg.ClassicConfigured {
 			return Plan{Mode: cfg.Mode, Source: SourceClassic, NDraft: cfg.ClassicNDraft, Available: true}, nil
+		}
+		if cfg.DSparkConfigured {
+			return Plan{Mode: cfg.Mode, Source: SourceDSpark, NDraft: cfg.DSparkNDraft, Available: cfg.DSparkAvailable}, nil
 		}
 
 	default:
@@ -89,6 +104,15 @@ type TargetRange struct {
 	BasePos llama.Pos
 }
 
+// Prefill identifies a completed contribution in the borrowed target batch.
+// NextPosition is the logical continuation position, which need not equal the
+// starting position plus Count for media inputs.
+type Prefill struct {
+	Start        int32
+	Count        int32
+	NextPosition llama.Pos
+}
+
 // Generation contains candidates proposed for one target verification round.
 type Generation struct {
 	Candidates []llama.Token
@@ -103,9 +127,14 @@ type Host interface {
 }
 
 // Controller owns the speculative lifecycle around each target decode.
+// AfterPrefill runs under the host's decode lock and must consume borrowed
+// target outputs before returning. It must not process or emit target tokens.
 type Controller interface {
 	Mode() Mode
 	Enabled() bool
+	StartRequest(slot int) error
+	AfterPrefill(slot int, prefill Prefill) error
+	DisableReason(slot int) string
 	BeginBatch()
 	Prepare()
 	PlanGeneration(slot int) (Generation, error)

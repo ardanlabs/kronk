@@ -11,85 +11,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
-	"github.com/hybridgroup/yzma/pkg/llama"
 )
-
-func TestEmbeddedMTPContextParamsCapsOutputs(t *testing.T) {
-	target := llama.ContextParams{
-		NCtx:               4096,
-		NBatch:             2064,
-		NUbatch:            2064,
-		NSeqMax:            4,
-		NRsSeq:             3,
-		NThreads:           6,
-		NThreadsBatch:      8,
-		FlashAttentionType: llama.FlashAttentionTypeAuto,
-		TypeK:              llama.GGMLTypeF16,
-		TypeV:              llama.GGMLTypeF16,
-		Offload_kqv:        1,
-		OpOffload:          1,
-		KVUnified:          1,
-		SwaFull:            1,
-		RopeScalingType:    llama.RopeScalingTypeYARN,
-		RopeFreqBase:       1_000_000,
-		RopeFreqScale:      0.25,
-		YarnExtFactor:      1.5,
-		YarnAttnFactor:     1.25,
-		YarnBetaFast:       32,
-		YarnBetaSlow:       1,
-		YarnOrigCtx:        32_768,
-	}
-
-	got := embeddedMTPContextParams(llama.ContextParams{NRsSeq: 7}, target)
-	if got.CtxType != llama.ContextTypeMTP {
-		t.Errorf("CtxType = %d, want %d", got.CtxType, llama.ContextTypeMTP)
-	}
-	if got.NRsSeq != 0 {
-		t.Errorf("NRsSeq = %d, want 0 for the MTP draft context", got.NRsSeq)
-	}
-	if got.NOutputsMax != target.NSeqMax {
-		t.Errorf("NOutputsMax = %d, want %d", got.NOutputsMax, target.NSeqMax)
-	}
-	if got.NOutputsMaxPerSeq != 1 {
-		t.Errorf("NOutputsMaxPerSeq = %d, want 1", got.NOutputsMaxPerSeq)
-	}
-	if got.NCtx != target.NCtx || got.NBatch != target.NBatch || got.NUbatch != target.NUbatch || got.NSeqMax != target.NSeqMax {
-		t.Errorf("context sizing = (%d, %d, %d, %d), want (%d, %d, %d, %d)",
-			got.NCtx, got.NBatch, got.NUbatch, got.NSeqMax,
-			target.NCtx, target.NBatch, target.NUbatch, target.NSeqMax)
-	}
-	if got.RopeScalingType != target.RopeScalingType || got.RopeFreqBase != target.RopeFreqBase || got.RopeFreqScale != target.RopeFreqScale {
-		t.Errorf("RoPE params = (%d, %g, %g), want (%d, %g, %g)",
-			got.RopeScalingType, got.RopeFreqBase, got.RopeFreqScale,
-			target.RopeScalingType, target.RopeFreqBase, target.RopeFreqScale)
-	}
-	if got.YarnExtFactor != target.YarnExtFactor || got.YarnAttnFactor != target.YarnAttnFactor || got.YarnBetaFast != target.YarnBetaFast || got.YarnBetaSlow != target.YarnBetaSlow || got.YarnOrigCtx != target.YarnOrigCtx {
-		t.Errorf("YaRN params = (%g, %g, %g, %g, %d), want (%g, %g, %g, %g, %d)",
-			got.YarnExtFactor, got.YarnAttnFactor, got.YarnBetaFast, got.YarnBetaSlow, got.YarnOrigCtx,
-			target.YarnExtFactor, target.YarnAttnFactor, target.YarnBetaFast, target.YarnBetaSlow, target.YarnOrigCtx)
-	}
-}
-
-func TestSpeculativeContextCount(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  Config
-		want int64
-	}{
-		{name: "target only", cfg: Config{}, want: 1},
-		{name: "separate draft estimated independently", cfg: Config{PtrDraftModel: &DraftModelConfig{ModelFiles: []string{"draft.gguf"}}}, want: 1},
-		{name: "companion MTP", cfg: Config{MTPDrafterFile: "mtp.gguf"}, want: 2},
-		{name: "disabled", cfg: Config{Speculation: SpeculationDisabled, MTPDrafterFile: "mtp.gguf"}, want: 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := SpeculativeContextCount(tt.cfg); got != tt.want {
-				t.Errorf("SpeculativeContextCount: got %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
 
 func TestQwen4ExpCompanionMTPResourceEstimates(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "qwen4exp-mtp.gguf")
@@ -97,7 +19,14 @@ func TestQwen4ExpCompanionMTPResourceEstimates(t *testing.T) {
 		"general.architecture":          "qwen4exp",
 		"qwen4exp.nextn_predict_layers": uint32(1),
 	})
-	cfg := Config{MTPDrafterFile: file}
+	target := filepath.Join(t.TempDir(), "target.gguf")
+	writeTestGGUF(t, target, map[string]any{"general.architecture": "llama"})
+	cfg := Config{ModelFiles: []string{target}, DrafterFile: file}
+
+	plan, err := resolveSpeculationPlan(t.Context(), nil, cfg)
+	if err != nil || plan.Source != speculationSourceMTP || plan.MTPArtifact != mtpArtifactCompanion {
+		t.Fatalf("auto companion plan = %+v, %v, want companion MTP", plan, err)
+	}
 
 	if !mtpFilesEnabled([]string{file}) {
 		t.Fatal("mtpFilesEnabled = false, want Qwen4Exp MTP enabled")
@@ -115,7 +44,7 @@ func TestUnsupportedMTPResourceEstimates(t *testing.T) {
 				"general.architecture":         arch,
 				arch + ".nextn_predict_layers": uint32(1),
 			})
-			if got := SpeculativeContextCount(Config{MTPDrafterFile: file}); got != 1 {
+			if got := SpeculativeContextCount(Config{DrafterFile: file}); got != 1 {
 				t.Errorf("SpeculativeContextCount: got %d, want 1", got)
 			}
 			if got := RecurrentStateCopies(Config{ModelFiles: []string{file}}, true); got != 1 {
@@ -149,55 +78,6 @@ func TestResolveSpeculationPlanGLM5Next(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "MTP architecture glm5-next is unsupported") {
 		t.Fatalf("resolveSpeculationPlan(mtp) error = %v, want unsupported glm5-next error", err)
-	}
-}
-
-func TestMetadataHasMTP(t *testing.T) {
-	tests := []struct {
-		name     string
-		metadata map[string]string
-		want     bool
-	}{
-		{"no MTP key", map[string]string{"general.architecture": "qwen35moe"}, false},
-		{"zero layers", map[string]string{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": "0"}, false},
-		{"positive layers", map[string]string{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": "1"}, true},
-		{"malformed layers", map[string]string{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": "invalid"}, false},
-		{"unsupported architecture", map[string]string{"general.architecture": "cohere2moe", "cohere2moe.nextn_predict_layers": " 2 "}, false},
-		{"matching text within unrelated key", map[string]string{"general.architecture": "vendor", "vendor.optional_nextn_predict_layers.count": "3"}, false},
-		{"qwen4exp architecture", map[string]string{"general.architecture": "qwen4exp", "qwen4exp.nextn_predict_layers": "1"}, true},
-		{"Nemotron architecture", map[string]string{"general.architecture": "nemotron_h_moe", "nemotron_h_moe.nextn_predict_layers": "1"}, true},
-		{"glm5-next unsupported runtime", map[string]string{"general.architecture": "glm5-next", "glm5-next.nextn_predict_layers": "1"}, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := metadataHasMTP(tt.metadata)
-			if got != tt.want {
-				t.Errorf("metadataHasMTP() = %t, want %t", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestMetadataHasAssistantMTP(t *testing.T) {
-	tests := []struct {
-		name     string
-		metadata map[string]string
-		want     bool
-	}{
-		{"assistant with MTP", map[string]string{"general.architecture": "gemma4-assistant", "gemma4.nextn_predict_layers": "1"}, true},
-		{"assistant without MTP", map[string]string{"general.architecture": "gemma4-assistant"}, false},
-		{"target with MTP", map[string]string{"general.architecture": "gemma4", "gemma4.nextn_predict_layers": "1"}, false},
-		{"malformed MTP", map[string]string{"general.architecture": "gemma4-assistant", "gemma4.nextn_predict_layers": "invalid"}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := metadataHasAssistantMTP(tt.metadata)
-			if got != tt.want {
-				t.Errorf("metadataHasAssistantMTP() = %t, want %t", got, tt.want)
-			}
-		})
 	}
 }
 

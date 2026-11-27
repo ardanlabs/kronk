@@ -282,3 +282,58 @@ func TestClassicDraftGeneratedSeedReplay(t *testing.T) {
 		}
 	}
 }
+
+func TestDSparkCachedConversation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("model inference skipped in short mode")
+	}
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := mdls.FullPath("ggml-org/Inkling-2-Mini-Q8_0")
+	if err != nil || len(path.ModelFiles) == 0 || path.DraftFile == "" {
+		t.Skip("matching Inkling-2-Mini target and DSpark companion not downloaded")
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	krn, err := kronk.New(model.WithModelFiles(path.ModelFiles), model.WithDrafterFile(path.DraftFile),
+		model.WithContextWindow(2048), model.WithNSeqMax(2), model.WithPrefillBatchSize(128),
+		model.WithPhysicalBatchSize(32), model.WithIncrementalCache(true), model.WithCacheMinTokens(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := krn.Unload(context.Background()); err != nil {
+			t.Errorf("unload: %v", err)
+		}
+	})
+	messages := model.Messages(
+		model.TextMessage(model.RoleSystem, strings.Repeat("Background only. ", 70)+"Follow the final instruction exactly."),
+		model.TextMessage(model.RoleUser, "Reply with exactly these words and nothing else: COPPER VIOLET"))
+	for _, name := range []string{"fresh", "repeat", "append"} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+			defer cancel()
+			response, err := krn.Chat(ctx, model.D{"messages": messages, "temperature": 0, "seed": 77, "max_tokens": 256})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Choices) != 1 || response.Choices[0].Message == nil || strings.TrimSpace(response.Choices[0].Message.Content) != "COPPER VIOLET" {
+				t.Fatalf("incorrect response: %+v", response)
+			}
+			usage := response.Usage
+			if usage == nil || usage.DraftTokens == 0 || usage.DraftAcceptedTokens == 0 || usage.DraftDisableReason != "" {
+				t.Fatalf("DSpark did not stay active: %+v", usage)
+			}
+			if name != "fresh" && usage.PromptTokensDetails.CachedTokens == 0 {
+				t.Error("request did not reuse the target prefix")
+			}
+		})
+		if name == "repeat" {
+			messages = append(messages, model.TextMessage(model.RoleAssistant, "COPPER VIOLET"),
+				model.TextMessage(model.RoleUser, "Again, reply with exactly these words and nothing else: COPPER VIOLET"))
+		}
+	}
+}

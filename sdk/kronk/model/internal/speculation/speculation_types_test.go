@@ -8,8 +8,8 @@ import (
 
 func TestRegisteredTypes(t *testing.T) {
 	for _, value := range []any{
-		Mode{}, ModeAuto, ModeDisabled, ModeClassic, ModeMTP,
-		SourceNone, SourceClassic, SourceMTP,
+		Mode{}, ModeAuto, ModeDisabled, ModeClassic, ModeMTP, ModeDSpark,
+		SourceNone, SourceClassic, SourceMTP, SourceDSpark,
 		MTPArchitectureNone, MTPArchitectureQwen35OwnKV, MTPArchitectureQwen4ExpOwnKV,
 		MTPArchitectureNemotronOwnKV, MTPArchitectureGemmaSharedKV, MTPArchitectureGLM5Next,
 		MTPArtifactNone, MTPArtifactEmbedded, MTPArtifactCompanion,

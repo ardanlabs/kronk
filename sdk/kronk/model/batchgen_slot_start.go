@@ -100,6 +100,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		e.finishSlot(s, err)
 		return
 	}
+	if err := e.speculation.StartRequest(s.id); err != nil {
+		e.finishSlot(s, fmt.Errorf("start-slot: reset draft sequence: %w", err))
+		return
+	}
 
 	// Token-v2 planning already computed the complete prompt size. Reject an
 	// oversized prompt before restoring or extending its cached KV state.
@@ -334,115 +338,33 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 				"physical_kv_cells", restoredPhysicalKVCells,
 				"restored_bytes", fmtBytes(nRead), "elapsed", fmtDur(time.Since(restoreStart)))
 
-			// MTP: restore the draft seq state and pendingH alongside
-			// the target. The previous request that built the cache
-			// also snapshotted the draft seq KV (see imc-draft-
-			// snapshot-done above), so we restore both seqs in
-			// lock-step here. With the draft seq populated and
-			// pendingH carrying the last cached position's pre-norm
-			// row, MTP can keep drafting from the very first round
-			// instead of being disabled for the whole request.
-			//
-			// Snapshot the draft store reference, committed length, and hidden
-			// state under cacheMu. The potentially blocking Bytes call runs
-			// afterward while this request retains the session reservation.
+			// Restore independent draft KV and its algorithm-owned state at
+			// the same boundary. Read store references under cacheMu; blocking
+			// backing I/O runs outside it under the session reservation.
 			if ext, ok := e.model.draft.(draftKVExternalizer); ok && job.imcSession != nil {
-				draft := ext.core()
-
 				var draftStore *imcCheckpoint
 				var draftLength int
-				var savedPendingH []float32
+				var savedState []float32
 				e.model.cacheMu.RLock()
-				nEmbd := draft.mtp.EmbeddingSize()
 				switch {
 				case job.imcSystemCache != nil:
 					draftStore = job.imcSystemCache.draftKVState
 					if draftStore != nil {
 						draftLength = draftStore.Len()
 					}
-					if len(job.imcSystemCache.pendingH) == nEmbd {
-						savedPendingH = append(savedPendingH, job.imcSystemCache.pendingH...)
-					}
+					savedState = append(savedState, job.imcSystemCache.pendingH...)
 				default:
 					draftStore = job.imcSession.draftKVState
 					if draftStore != nil {
 						draftLength = draftStore.Len()
 					}
-					if len(job.imcSession.pendingH) == nEmbd {
-						savedPendingH = append(savedPendingH, job.imcSession.pendingH...)
-					}
+					savedState = append(savedState, job.imcSession.pendingH...)
 				}
 				e.model.cacheMu.RUnlock()
 
-				var draftBytes []byte
-				var draftReadErr error
-				if draftStore != nil {
-					draftBytes, draftReadErr = draftStore.Bytes(job.ctx)
-					if draftReadErr == nil && len(draftBytes) != draftLength {
-						draftReadErr = fmt.Errorf("got %d bytes, want %d", len(draftBytes), draftLength)
-					}
-				}
-
-				switch {
-				case draftReadErr != nil:
-					s.mtp.Disable("imc-hit")
-					e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-read-failed",
-						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx, "err", draftReadErr)
-				case len(draftBytes) > 0:
-					draftRestoreStart := time.Now()
-
-					e.model.decodeMu.Lock()
-					nDraftRead := llama.StateSeqSetData(ext.draftKVCtx(), draftBytes, s.seqID)
-					e.model.decodeMu.Unlock()
-
-					switch {
-					case validMTPDraftState(nDraftRead, uint64(len(draftBytes)), savedPendingH, nEmbd):
-						// Mirror the slot's draft state to what the
-						// snapshot covers so subsequent mirror /
-						// generateDraftTokensMTP calls find a
-						// consistent draftNPast and pendingH.
-						s.draftNPast = cacheIdx
-						s.mtp.ResumeSource = "restored-draft-kv"
-						if len(savedPendingH) == nEmbd {
-							if cap(s.mtp.PendingHidden) < nEmbd {
-								s.mtp.PendingHidden = make([]float32, nEmbd)
-							} else {
-								s.mtp.PendingHidden = s.mtp.PendingHidden[:nEmbd]
-							}
-							copy(s.mtp.PendingHidden, savedPendingH)
-						}
-						e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-done",
-							"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
-							"restored_bytes", fmtBytes(nDraftRead),
-							"pending_h", len(s.mtp.PendingHidden) == nEmbd,
-							"elapsed", fmtDur(time.Since(draftRestoreStart)))
-					default:
-						// Restore failed or did not include the paired
-						// target hidden state — drop draft seq + pendingH so
-						// startSlotText falls back to the mtp-disabled
-						// path. We don't fail the whole request because
-						// the target restored fine; only MTP is lost.
-						e.model.decodeMu.Lock()
-						llama.MemorySeqRm(draft.mem, s.seqID, -1, -1)
-						e.model.decodeMu.Unlock()
-						s.draftNPast = 0
-						s.mtp.Disable("imc-hit")
-						e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-failed",
-							"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
-							"restored_bytes", fmtBytes(nDraftRead),
-							"expected_bytes", fmtBytes(uint64(len(draftBytes))),
-							"pending_h", len(savedPendingH) == nEmbd)
-					}
-
-				default:
-					// No draft snapshot on the session (e.g., the
-					// build-time draft snapshot failed). Leave draft
-					// seq empty so startSlotText disables MTP for the
-					// request via the existing mtp-disabled-imc-hit
-					// path.
-					s.mtp.Disable("imc-hit")
-					e.model.log(job.ctx, "start-slot", "status", "imc-draft-restore-skip-empty",
-						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
+				if err := e.restoreDraftCheckpoint(job.ctx, ext, s, draftStore, draftLength, savedState, cacheIdx); err != nil {
+					e.finishSlot(s, err)
+					return
 				}
 			}
 			s.imcRestoring = false
@@ -492,7 +414,7 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 				}
 				// MTP: the prior imc-restore (or a previous decode in
 				// this slot) populated the draft seq KV at positions
-				// [0..N). The forthcoming decodeTokensIntoCacheMTP
+				// [0..N). The forthcoming prefill handoff
 				// rewrites draft positions starting at 0; without
 				// clearing the draft seq first, the mirror decode
 				// collides with the surviving positions and fails
@@ -726,72 +648,18 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 					"elapsed", fmtDur(time.Since(snapshotStart)))
 			}
 
-			// MTP: snapshot the draft seq's per-sequence state alongside
-			// the target's, so cache hits on later requests can restore
-			// both seqs and MTP can keep running through the cached prefix
-			// (instead of being disabled via mtp-disabled-imc-hit). Also
-			// snapshot the slot's pendingH so the first MTP draft round on
-			// the next request can condition on the correct previous-
-			// position hidden state. Gated on a successful target snapshot
-			// (nExtracted > 0) — without that the cache hit is going to
-			// fail anyway.
+			// Pair independent draft KV and algorithm state with this exact
+			// target boundary. Never publish an old draft against a new prefix.
 			draftSnapshotOK := false
-			if s.mtp.Disabled && job.imcSession.draftKVState != nil {
-				if err := job.imcSession.draftKVState.Reset(job.ctx); err != nil {
-					e.model.log(job.ctx, "start-slot", "status", "imc-draft-reset-failed", "err", err)
-				}
+			if ext, ok := e.model.draft.(draftKVExternalizer); ok && snapshotOK && job.imcSession.draftKVState != nil {
+				draftCapBefore := job.imcSession.draftKVState.Cap()
+				state, draftSnapshotErr := e.snapshotDraftCheckpoint(job.ctx, ext, s, job.imcSession.draftKVState, cacheIdx)
+				draftCapAfter := job.imcSession.draftKVState.Cap()
+				draftSnapshotOK = draftSnapshotErr == nil
 				e.model.cacheMu.Lock()
 				job.imcSession.pendingH = job.imcSession.pendingH[:0]
-				e.model.cacheMu.Unlock()
-			}
-			if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled && snapshotOK && s.draftNPast == cacheIdx && job.imcSession.draftKVState != nil {
-				draft := ext.core()
-				dctx := ext.draftKVCtx()
-
-				draftCapBefore := job.imcSession.draftKVState.Cap()
-
-				e.model.decodeMu.Lock()
-				llama.Synchronize(dctx)
-				draftKVSize := llama.StateSeqGetSize(dctx, s.seqID)
-				e.model.decodeMu.Unlock()
-
-				draftBuf, draftSnapshotErr := prepareSessionSnapshot(job.ctx, job.imcSession.draftKVState, draftKVSize)
-				var nDraftExtracted uint64
-				if draftSnapshotErr == nil {
-					e.model.decodeMu.Lock()
-					nDraftExtracted = llama.StateSeqGetData(dctx, draftBuf, s.seqID)
-					e.model.decodeMu.Unlock()
-				}
-
-				draftCapAfter := job.imcSession.draftKVState.Cap()
-
-				nEmbd := draft.mtp.EmbeddingSize()
-				draftSnapshotOK = draftSnapshotErr == nil && validMTPDraftState(nDraftExtracted, draftKVSize, s.mtp.PendingHidden, nEmbd)
 				if draftSnapshotOK {
-					if err := job.imcSession.draftKVState.Commit(job.ctx, int(nDraftExtracted)); err != nil {
-						draftSnapshotErr = fmt.Errorf("commit draft snapshot: %w", err)
-						draftSnapshotOK = false
-					}
-				}
-				if !draftSnapshotOK {
-					if err := job.imcSession.draftKVState.Reset(job.ctx); err != nil {
-						draftSnapshotErr = errors.Join(draftSnapshotErr, fmt.Errorf("reset failed draft snapshot: %w", err))
-					}
-				}
-
-				e.model.cacheMu.Lock()
-				// pendingH snapshot: copy the slot's pendingH into the
-				// session so a later cache hit can restore it. Lazy-grow
-				// the session's pendingH backing slice.
-				if draftSnapshotOK {
-					if cap(job.imcSession.pendingH) < nEmbd {
-						job.imcSession.pendingH = make([]float32, nEmbd)
-					} else {
-						job.imcSession.pendingH = job.imcSession.pendingH[:nEmbd]
-					}
-					copy(job.imcSession.pendingH, s.mtp.PendingHidden)
-				} else {
-					job.imcSession.pendingH = job.imcSession.pendingH[:0]
+					job.imcSession.pendingH = append(job.imcSession.pendingH, state...)
 				}
 				e.model.cacheMu.Unlock()
 
@@ -799,20 +667,16 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 				case draftSnapshotOK:
 					e.model.log(job.ctx, "start-slot", "status", "imc-draft-snapshot-done",
 						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
-						"snapshot_bytes", fmtBytes(nDraftExtracted),
-						"kv_alloc", fmtBytes(draftKVSize),
+						"snapshot_bytes", fmtBytes(uint64(job.imcSession.draftKVState.Len())),
 						"buf_cap_before", fmtBytes(uint64(draftCapBefore)),
 						"buf_cap_after", fmtBytes(uint64(draftCapAfter)),
-						"pending_h", len(s.mtp.PendingHidden) == nEmbd)
+						"state_values", len(state))
 				default:
 					e.model.log(job.ctx, "start-slot", "status", "imc-draft-snapshot-failed",
 						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx,
-						"extracted_bytes", fmtBytes(nDraftExtracted),
-						"kv_alloc", fmtBytes(draftKVSize),
 						"buf_cap_before", fmtBytes(uint64(draftCapBefore)),
 						"buf_cap_after", fmtBytes(uint64(draftCapAfter)),
-						"err", draftSnapshotErr,
-						"pending_h", len(s.mtp.PendingHidden) == nEmbd)
+						"err", draftSnapshotErr)
 				}
 			}
 
@@ -1021,7 +885,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 				"draft_n_past", s.draftNPast)
 		}
 	}
-	if e.model.draft != nil && !e.model.draft.mtp() && !draftSlotHasMedia {
+	if _, classic := e.model.draft.(*classicDrafter); classic && !draftSlotHasMedia {
 		draft := e.model.draft.core()
 		var needed int
 		var cachedLen int
@@ -1197,7 +1061,7 @@ func (e *batchEngine) applyContextTokenBudget(s *slot, operation string) bool {
 	return true
 }
 
-// snapshotSystemCache serializes the live target and own-KV MTP state at
+// snapshotSystemCache serializes the live target and independent draft state at
 // the verified system-only token boundary. The model publishes it into the
 // immutable System preload pool. A missing draft snapshot degrades safely to
 // target-only reuse.
@@ -1239,36 +1103,13 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 		return false
 	}
 
-	var draftStore *imcCheckpoint
-	var pendingH []float32
-	if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled {
-		draftStore = e.model.imcSystemCacheStore(cache, true)
-		draftErr := draftStore.Reset(ctx)
-		draft := ext.core()
-		dctx := ext.draftKVCtx()
-		e.model.decodeMu.Lock()
-		llama.Synchronize(dctx)
-		draftSize := llama.StateSeqGetSize(dctx, s.seqID)
-		e.model.decodeMu.Unlock()
-		var draftBuf []byte
-		if draftErr == nil {
-			draftBuf, draftErr = prepareSessionSnapshot(ctx, draftStore, draftSize)
-		}
-		var draftExtracted uint64
-		if draftErr == nil {
-			e.model.decodeMu.Lock()
-			draftExtracted = llama.StateSeqGetData(dctx, draftBuf, s.seqID)
-			e.model.decodeMu.Unlock()
-		}
-		if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
-			draftErr = draftStore.Commit(ctx, int(draftExtracted))
-		}
-		if draftErr == nil && validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
-			pendingH = s.mtp.PendingHidden
-		} else {
-			resetErr := draftStore.Reset(ctx)
-			e.model.log(ctx, "start-slot", "status", "imc-system-draft-snapshot-failed",
-				"extracted_bytes", draftExtracted, "expected_bytes", draftSize, "err", errors.Join(draftErr, resetErr))
+	var state []float32
+	if ext, ok := e.model.draft.(draftKVExternalizer); ok {
+		draftStore := e.model.imcSystemCacheStore(cache, true)
+		var draftErr error
+		state, draftErr = e.snapshotDraftCheckpoint(ctx, ext, s, draftStore, llama.Pos(boundary))
+		if draftErr != nil {
+			e.model.log(ctx, "start-slot", "status", "imc-system-draft-snapshot-failed", "err", draftErr)
 		}
 	} else if cache.draftKVState != nil {
 		if err := cache.draftKVState.Reset(ctx); err != nil {
@@ -1276,7 +1117,7 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 		}
 	}
 
-	return e.model.imcPublishSystemCache(ctx, cache, pendingH)
+	return e.model.imcPublishSystemCache(ctx, cache, state)
 }
 
 func contextOutputBudget(promptTokens, requestedMaxTokens, contextWindow int) (int, bool) {
@@ -1285,10 +1126,6 @@ func contextOutputBudget(promptTokens, requestedMaxTokens, contextWindow int) (i
 	}
 
 	return min(requestedMaxTokens, contextWindow-promptTokens), true
-}
-
-func validMTPDraftState(actualBytes, expectedBytes uint64, pendingH []float32, nEmbd int) bool {
-	return expectedBytes > 0 && actualBytes == expectedBytes && nEmbd > 0 && len(pendingH) == nEmbd
 }
 
 func primeSampler(sampler llama.Sampler, tokens []llama.Token, params Params) {

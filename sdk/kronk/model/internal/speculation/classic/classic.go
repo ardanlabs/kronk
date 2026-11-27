@@ -27,9 +27,9 @@ type Host interface {
 	HasPendingFinalize(slot int) bool
 	ProcessOrdinary(slot int, buf []byte)
 	ClassicVerifyInput(slot int, buf []byte) (VerifyInput, error)
-	CommitClassicVerify(slot int, buf []byte, result VerifyResult)
-	ClassicFinalizePlan(slot int) (FinalizePlan, bool)
-	RollbackClassicTarget(slot int, plan FinalizePlan) (bool, error)
+	CommitDistributionVerify(slot int, buf []byte, result VerifyResult)
+	SpeculativeFinalizePlan(slot int) (FinalizePlan, bool)
+	RollbackSpeculativeTarget(slot int, plan FinalizePlan) (bool, error)
 	RollbackClassicDraft(slot int, plan FinalizePlan) error
 	CompleteClassicFinalize(slot int, buf []byte, plan FinalizePlan, hybridRestore bool)
 	Fail(slot int, err error)
@@ -44,6 +44,15 @@ func New(host Host) *Controller {
 func (*Controller) Mode() speculation.Mode { return speculation.ModeClassic }
 func (*Controller) Enabled() bool          { return true }
 func (*Controller) BeginBatch()            {}
+
+// StartRequest retains classic prompt-cache state between requests.
+func (*Controller) StartRequest(int) error { return nil }
+
+// AfterPrefill leaves classic prompt replay to Prepare's own draft prefill.
+func (*Controller) AfterPrefill(int, speculation.Prefill) error { return nil }
+
+// DisableReason reports no request-local fallback for classic speculation.
+func (*Controller) DisableReason(int) string { return "" }
 
 func (c *Controller) Prepare() {
 	for slot := range c.host.SlotCount() {
@@ -93,7 +102,7 @@ func (c *Controller) AfterTargetDecode(buf []byte) {
 			c.host.Fail(slot, err)
 			continue
 		}
-		c.host.CommitClassicVerify(slot, buf, Verify(input))
+		c.host.CommitDistributionVerify(slot, buf, Verify(input))
 	}
 	for slot := range c.host.SlotCount() {
 		if c.host.SlotActive(slot) && c.host.HasPendingFinalize(slot) {
@@ -103,11 +112,11 @@ func (c *Controller) AfterTargetDecode(buf []byte) {
 }
 
 func (c *Controller) finalize(slot int, buf []byte) {
-	plan, ok := c.host.ClassicFinalizePlan(slot)
+	plan, ok := c.host.SpeculativeFinalizePlan(slot)
 	if !ok {
 		return
 	}
-	hybridRestore, err := c.host.RollbackClassicTarget(slot, plan)
+	hybridRestore, err := c.host.RollbackSpeculativeTarget(slot, plan)
 	if err != nil {
 		c.host.Fail(slot, err)
 		return

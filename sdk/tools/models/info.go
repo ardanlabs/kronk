@@ -50,7 +50,7 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 // callers that already hold raw file paths (e.g. SDK auto-tune via kronk.New)
 // run the analysis. id supplies fallback identity hints and the ID field;
 // when empty it is derived from the first model file name.
-func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile string) (ModelInfo, error) {
+func ModelInfoFromPath(id string, modelFiles []string, projFile string, drafterFile string) (ModelInfo, error) {
 	if len(modelFiles) == 0 {
 		return ModelInfo{}, fmt.Errorf("model-info-from-path: no model files provided")
 	}
@@ -79,7 +79,20 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 		return ModelInfo{}, fmt.Errorf("model-information: %w", err)
 	}
 
-	result := ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", mtpFile != "")
+	hasMTP := false
+	if drafterFile != "" {
+		data, err := gguf.ReadHeaderBytes(drafterFile)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("model-information: read drafter: %w", err)
+		}
+		drafter, err := gguf.ParseMetadata(data)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("model-information: parse drafter: %w", err)
+		}
+		speculation := arch.Resolve(drafter).Speculation
+		hasMTP = speculation.SharedKVCompanion || speculation.NextNPredictLayers > 0 && speculation.MTPArchitecture != modelprofile.MTPArchitectureNone
+	}
+	result := ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", hasMTP)
 
 	if projFile != "" {
 		data, err := gguf.ReadHeaderBytes(projFile)

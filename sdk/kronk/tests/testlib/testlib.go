@@ -44,6 +44,7 @@ var (
 	MPDecision       models.Path
 	MPMTP            models.Path
 	MPDraft          models.Path
+	MPDSpark         models.Path
 )
 
 // Setup initializes the test environment. Call from each package's TestMain.
@@ -77,6 +78,7 @@ func Setup() {
 	resolveModel(mdls, "unsloth/LFM2-700M-Q8_0", &MPLFMChat)
 	resolveModel(mdls, "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL", &MPMTP)
 	resolveModel(mdls, "unsloth/Qwen3-0.6B-Q8_0", &MPDraft)
+	resolveModel(mdls, "ggml-org/Inkling-2-Mini-Q8_0", &MPDSpark)
 
 	printInfo(mdls)
 
@@ -513,14 +515,14 @@ func CfgClassicDraftChat() model.Config {
 // gemma4-assistant separate-file MTP drafter, using the same
 // gemma-4-26B-A4B-it-UD-Q4_K_M target the vision tests use (MPMoEVision).
 // The drafter is the "mtp-*.gguf" companion that ships alongside the main
-// model; we wire it via MTPDrafterFile exactly as the runtime's kronkresolve
-// does (out.MTPDrafterFile = fp.MTPFile). The loader auto-loads it as a
+// model; we wire it via DrafterFile exactly as the runtime's kronkresolve
+// does (out.DrafterFile = fp.MTPFile). The loader auto-loads it as a
 // shared-KV MTP head (ctx_other==target). F16 KV matches the other MTP /
 // SWA configs. NSeqMax=1 for the single-slot path.
 func CfgGemma4MTPChat() model.Config {
 	return model.Config{
 		ModelFiles:          MPMoEVision.ModelFiles,
-		MTPDrafterFile:      MPMoEVision.MTPFile,
+		DrafterFile:         MPMoEVision.MTPFile,
 		PtrContextWindow:    new(8192),
 		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeF16,
@@ -536,13 +538,46 @@ func CfgGemma4MTPChat() model.Config {
 func CfgGemma4MTPChatMultiSlot() model.Config {
 	return model.Config{
 		ModelFiles:          MPMoEVision.ModelFiles,
-		MTPDrafterFile:      MPMoEVision.MTPFile,
+		DrafterFile:         MPMoEVision.MTPFile,
 		PtrContextWindow:    new(8192),
 		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(2),
 	}
+}
+
+// CfgDSparkChat returns a single-slot Inkling2 text configuration. Auto mode
+// selects the installed DSpark companion with a three-token proposal bound.
+// The per-slot window is bounded at 8192 tokens; the shared workload retains
+// its 5400-word peer padding and three bounded paragraph continuations.
+// Inkling uses reasoning_effort rather than enable_thinking. Request minimum
+// effort, but budget for reasoning because none does not guarantee its absence.
+// The projector is deliberately omitted: this suite qualifies text speculation.
+func CfgDSparkChat() model.Config {
+	return model.Config{
+		ModelFiles:          MPDSpark.ModelFiles,
+		DrafterFile:         MPDSpark.DraftFile,
+		Speculation:         model.SpeculationAuto,
+		PtrDraftModel:       &model.DraftModelConfig{NDraft: 3},
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
+		DefaultParams: model.Params{
+			Thinking:        model.ThinkingDisabled,
+			ReasoningEffort: model.ReasoningEffortNone,
+		},
+	}
+}
+
+// CfgDSparkChatMultiSlot returns the two-slot Inkling2 configuration, retaining
+// 8192 tokens per slot (16384 total native context tokens).
+func CfgDSparkChatMultiSlot() model.Config {
+	cfg := CfgDSparkChat()
+	cfg.PtrNSeqMax = new(2)
+	return cfg
 }
 
 func CfgHybridVisionIMC() model.Config {

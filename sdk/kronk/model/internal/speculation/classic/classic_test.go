@@ -112,9 +112,9 @@ func TestVerifyAdjustedRejectionSampling(t *testing.T) {
 }
 
 func TestSlotStateReset(t *testing.T) {
-	state := SlotState{AcceptanceEMA: 0.2, ProbeTick: 7, Rounds: 4, DraftStartPosition: 12, DraftDistributions: [][]llama.DraftCandidate{{{Tok: 1}}}, AdjustedScratch: []llama.DraftCandidate{{Tok: 2}}}
+	state := SlotState{AcceptanceEMA: 0.2, ProbeTick: 7, Rounds: 4, DraftStartPosition: 12, DraftDistributions: [][]llama.DraftCandidate{{{Tok: 1}}}}
 	state.Reset()
-	if state.AcceptanceEMA != 1 || state.ProbeTick != 0 || state.Rounds != 0 || state.DraftStartPosition != 0 || state.DraftDistributions != nil || len(state.AdjustedScratch) != 0 {
+	if state.AcceptanceEMA != 1 || state.ProbeTick != 0 || state.Rounds != 0 || state.DraftStartPosition != 0 || state.DraftDistributions != nil {
 		t.Errorf("Reset() state = %+v, want clean request state", state)
 	}
 }
@@ -144,14 +144,20 @@ func TestProbabilitySamplingIsRepeatable(t *testing.T) {
 	probabilities := []float32{0.1, 0.2, 0.3, 0.4}
 	rng1 := rand.New(rand.NewSource(42))
 	rng2 := rand.New(rand.NewSource(42))
-	input1 := VerifyInput{Random32: rng1.Float32}
-	input2 := VerifyInput{Random32: rng2.Float32}
+	input1 := VerifyInput{
+		State:    &SlotState{},
+		Random32: rng1.Float32,
+		Target:   func(int) Target { return Target{Probabilities: probabilities} },
+		Accept:   func(int, llama.Token, bool) bool { return true },
+	}
+	input2 := input1
+	input2.Random32 = rng2.Float32
 
 	for range 20 {
-		got := sampleProbabilities(input1, probabilities)
-		want := sampleProbabilities(input2, probabilities)
+		got := Verify(input1).Bonus
+		want := Verify(input2).Bonus
 		if got != want {
-			t.Fatalf("sampleProbabilities() = %d, want %d", got, want)
+			t.Fatalf("Verify().Bonus = %d, want %d", got, want)
 		}
 	}
 }

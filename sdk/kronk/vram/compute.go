@@ -60,6 +60,8 @@ func selectMemoryPolicy(input Input) memoryPolicy {
 	}
 
 	switch {
+	case input.dsparkBlockSize > 0:
+		policy.compute = dsparkComputeMemory
 	case input.ComputeKind == modelprofile.ComputeChatterboxTurboBackbone:
 		policy.compute = chatterboxTurboBackboneMemory
 	case input.ComputeKind == modelprofile.ComputeChatterboxTurboDecoder:

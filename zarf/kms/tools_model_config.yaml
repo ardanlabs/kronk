@@ -8,7 +8,7 @@ kms:
   insecure-logging: true
 
 models:
-  # Quick-check fixtures: one/two-slot text/image workloads, IMC and MTP modes.
+  # Quick-check fixtures: one/two-slot workloads, IMC and speculation modes.
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK: &quick
     nseq-max: 1
     context-window: 32768
@@ -81,6 +81,54 @@ models:
 
   ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC-NO-MTP-2S:
     <<: *quick
+    nseq-max: 2
+    incremental-cache: false
+    speculation: disabled
+
+  # Inkling DSpark is text-only. Keep its context and fixed handbook smaller
+  # than the MTP fixtures; context-window is per slot (16K total for two).
+  ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK: &quickDSpark
+    nseq-max: 1
+    context-window: 8192
+    prefill-batch-size: 512
+    queue-depth: 2
+    incremental-cache: true
+    speculation: dspark
+    draft-model:
+      ndraft: 3
+    sampling-parameters:
+      enable_thinking: false
+      reasoning_effort: none
+
+  ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-NO-DSPARK:
+    <<: *quickDSpark
+    speculation: disabled
+
+  ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-NO-IMC:
+    <<: *quickDSpark
+    incremental-cache: false
+
+  ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-NO-IMC-NO-DSPARK:
+    <<: *quickDSpark
+    incremental-cache: false
+    speculation: disabled
+
+  ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-2S:
+    <<: *quickDSpark
+    nseq-max: 2
+
+  ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-NO-DSPARK-2S:
+    <<: *quickDSpark
+    nseq-max: 2
+    speculation: disabled
+
+  ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-NO-IMC-2S:
+    <<: *quickDSpark
+    nseq-max: 2
+    incremental-cache: false
+
+  ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-NO-IMC-NO-DSPARK-2S:
+    <<: *quickDSpark
     nseq-max: 2
     incremental-cache: false
     speculation: disabled

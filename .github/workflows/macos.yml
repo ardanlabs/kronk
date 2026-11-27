@@ -14,6 +14,7 @@ on:
       - ".github/actions/setup-kronk/**"
       - ".github/scripts/check-go-version.sh"
       - ".github/scripts/pull-models.sh"
+      - ".github/scripts/pull-models-test.sh"
       - ".github/test-models.txt"
   pull_request:
     branches:
@@ -28,6 +29,7 @@ on:
       - ".github/actions/setup-kronk/**"
       - ".github/scripts/check-go-version.sh"
       - ".github/scripts/pull-models.sh"
+      - ".github/scripts/pull-models-test.sh"
       - ".github/test-models.txt"
   workflow_dispatch:
     inputs:
@@ -73,6 +75,9 @@ jobs:
 
       - name: Check Go version pin
         run: ./.github/scripts/check-go-version.sh
+
+      - name: Test model-list downloader
+        run: bash .github/scripts/pull-models-test.sh
 
       - name: Install Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -226,3 +231,4 @@ jobs:
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/moe_vision_imc
           go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/mtp
           go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/gemma4mtp
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/dspark

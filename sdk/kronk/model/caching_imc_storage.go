@@ -75,7 +75,7 @@ func (m *Model) imcStorageEnabled() bool {
 // This runs once at model construction, not on the batch engine.
 func (m *Model) imcStorageCompatibility(ctx context.Context) ([sha256.Size]byte, error) {
 	files := slices.Clone(m.cfg.ModelFiles)
-	for _, path := range []string{m.cfg.ProjFile, m.cfg.MTPDrafterFile} {
+	for _, path := range []string{m.cfg.ProjFile, m.cfg.DrafterFile} {
 		if path != "" {
 			files = append(files, path)
 		}

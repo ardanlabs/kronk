@@ -49,6 +49,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">AddParams adds the values from the Params struct into the provided D map. Only non-zero values are added.</p>
             </div>
 
+            <div className="doc-section" id="func-companionmemory">
+              <h4>CompanionMemory</h4>
+              <pre className="code-block">
+                <code>func CompanionMemory(cfg Config, target vram.Config) (vram.Result, error)</code>
+              </pre>
+              <p className="doc-description">CompanionMemory estimates independently shaped companion allocations in addition to target-context accounting. Currently this covers DSpark's own context and feature storage; target-shaped MTP contexts are accounted through SpeculativeContextCount. Disabled or unselected companions contribute nothing.</p>
+            </div>
+
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
@@ -472,7 +480,7 @@ export default function DocsSDKModel() {
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
 	ProjFile                   string
-	MTPDrafterFile             string
+	DrafterFile                string
 	PtrProjOnCPU               *bool
 	ProjDevice                 string
 	PtrQueueDepth              *int
@@ -538,7 +546,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference.</p>
               <p className="doc-description">OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU.</p>
               <p className="doc-description">ProjFile is the path to the projection files. This is mandatory for media based models like vision and audio.</p>
-              <p className="doc-description">MTPDrafterFile is the path to a separate-file MTP drafter GGUF that ships alongside the main model. Supported files are Gemma assistant heads that share target KV and Qwen35 heads that own their draft KV. It is not the main model or a vocab-matched classic draft model. The catalog wires this field when it downloads a compatible companion from the model repository.</p>
+              <p className="doc-description">DrafterFile is the path to the selected companion drafter GGUF. Its metadata identifies the drafting algorithm; Speculation can require MTP or DSpark. Only one companion is selected, and disabled ignores it. Conventional separate-model drafting is configured through PtrDraftModel instead. DSpark proposes tokens for greedy or sampled text requests. Unsupported sampling, media, or unavailable cached prefixes use target-only generation.</p>
               <p className="doc-description">ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When nil or false, the projector runs on whichever device llama.cpp picks by default (GPU when available). Set to true to keep the projector on the CPU — equivalent to llama-mtmd-cli's --no-mmproj-offload. The LLM itself is unaffected and still runs on whatever device WithNGpuLayers selects.</p>
               <p className="doc-description">ProjDevice names the backend device used by the multimodal projector (mmproj), such as "CUDA1" or "MTL0". When empty, llama.cpp selects the projector device automatically. It cannot be combined with ProjOnCPU=true. The LLM device selection is unaffected.</p>
               <p className="doc-description">QueueDepth sets the number of admitted request layers for generation and decision models. The admission capacity is NSeqMax * QueueDepth. A depth of 1 admits only the requests that can occupy execution slots; the default depth of 2 admits one additional waiting layer. QueueDepth also determines the default IMC session capacity for text inference models.</p>
@@ -681,8 +689,8 @@ export default function DocsSDKModel() {
               <h4>DraftModelConfig</h4>
               <pre className="code-block">
                 <code>{`type DraftModelConfig struct {
-	ModelFiles    []string  // Path to the draft model GGUF file(s); empty means MTP nDraft override
-	NDraft        int       // Number of tokens to draft per step (separate-GGUF default 5, MTP default 3)
+	ModelFiles    []string  // Path to classic draft GGUF file(s); empty means companion/embedded nDraft override
+	NDraft        int       // Proposal count (classic default 5, MTP default 3, DSpark trained limit)
 	PtrNGpuLayers *int      // GPU layers for draft model (nil = all layers on GPU)
 	Devices       []string  // Devices for draft model (e.g., ["CUDA0"])
 	PtrMainGPU    *int      // Primary GPU index for draft model
@@ -691,7 +699,7 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">DraftModelConfig configures speculative decoding for a target model. It serves two purposes depending on whether ModelFiles is set:</p>
               <p className="doc-description">1. Separate-GGUF draft (ModelFiles set): a smaller, faster model generates candidate tokens that the target verifies in a single forward pass. Requires NSeqMax == 1 (single-slot mode) and a draft that shares the target's vocabulary (same tokenizer).</p>
-              <p className="doc-description">2. MTP nDraft override (ModelFiles empty): when the target GGUF ships an auto-detected MTP head, this block sets the number of draft tokens per round without supplying a separate model. NDraft defaults to defMTPNDraft when left unset.</p>
+              <p className="doc-description">2. Companion/embedded nDraft override (ModelFiles empty): this block sets the proposal count for MTP or DSpark without supplying a classic draft model. MTP defaults to 3; DSpark defaults to its trained block size minus the anchor and caps overrides at that trained limit.</p>
               <p className="doc-description">A model can have at most one drafter. If ModelFiles is set, the separate-GGUF drafter wins even on a target that also has an MTP head.</p>
             </div>
 
@@ -1950,7 +1958,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (d DraftModelConfig) IsSeparate() bool</code>
               </pre>
-              <p className="doc-description">IsSeparate reports whether this config points at a separate draft GGUF. When false, the config is an MTP nDraft override that carries no model files and only applies when the target ships an auto-detected MTP head.</p>
+              <p className="doc-description">IsSeparate reports whether this config points at a separate draft GGUF. When false, the config is a companion/embedded nDraft override that carries no classic model files.</p>
             </div>
 
             <div className="doc-section" id="method-draftmodelconfig-maingpu">
@@ -3211,7 +3219,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`var (`}</code>
               </pre>
-              <p className="doc-description">// SpeculationAuto selects a configured classic drafter or available MTP. SpeculationAuto = internalspec.ModeAuto // SpeculationDisabled runs target-only generation. SpeculationDisabled = internalspec.ModeDisabled // SpeculationClassic requires a separate draft model. SpeculationClassic = internalspec.ModeClassic // SpeculationMTP requires a companion or embedded MTP implementation. SpeculationMTP = internalspec.ModeMTP</p>
+              <p className="doc-description">// SpeculationAuto selects a configured classic drafter, compatible DSpark // companion, or available MTP, in that order. SpeculationAuto = internalspec.ModeAuto // SpeculationDisabled runs target-only generation. SpeculationDisabled = internalspec.ModeDisabled // SpeculationClassic requires a separate draft model. SpeculationClassic = internalspec.ModeClassic // SpeculationMTP requires a companion or embedded MTP implementation. SpeculationMTP = internalspec.ModeMTP // SpeculationDSpark requires a compatible DSpark companion implementation. SpeculationDSpark = internalspec.ModeDSpark</p>
             </div>
 
             <div className="doc-section" id="var-variable">
@@ -3326,6 +3334,7 @@ export default function DocsSDKModel() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
+                <li><a href="#func-companionmemory">CompanionMemory</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>

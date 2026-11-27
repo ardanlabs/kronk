@@ -409,8 +409,8 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 	}
 	discrete := newLlama(func(context.Context, string, ...any) {}, nil, nil, discreteRM, devices.Devices{}, false)
 	vramBytes, ramBytes, err := additional(discrete, model.Config{
-		ProjFile:       projection,
-		MTPDrafterFile: mtp,
+		ProjFile:    projection,
+		DrafterFile: mtp,
 	})
 	if err != nil {
 		t.Fatalf("additionalMemory discrete: %v", err)
@@ -420,9 +420,9 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 	}
 
 	vramBytes, ramBytes, err = additional(discrete, model.Config{
-		ProjFile:       projection,
-		MTPDrafterFile: mtp,
-		Speculation:    model.SpeculationDisabled,
+		ProjFile:    projection,
+		DrafterFile: mtp,
+		Speculation: model.SpeculationDisabled,
 	})
 	if err != nil {
 		t.Fatalf("additionalMemory disabled speculation: %v", err)
@@ -439,8 +439,8 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 	}
 	unified := newLlama(func(context.Context, string, ...any) {}, nil, nil, unifiedRM, devices.Devices{}, false)
 	vramBytes, ramBytes, err = additional(unified, model.Config{
-		ProjFile:       projection,
-		MTPDrafterFile: mtp,
+		ProjFile:    projection,
+		DrafterFile: mtp,
 	})
 	if err != nil {
 		t.Fatalf("additionalMemory unified: %v", err)
@@ -457,8 +457,8 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 	}
 	cpu := newLlama(func(context.Context, string, ...any) {}, nil, nil, cpuRM, devices.Devices{}, false)
 	vramBytes, ramBytes, err = additional(cpu, model.Config{
-		ProjFile:       projection,
-		MTPDrafterFile: mtp,
+		ProjFile:    projection,
+		DrafterFile: mtp,
 	})
 	if err != nil {
 		t.Fatalf("additionalMemory CPU: %v", err)
@@ -574,12 +574,24 @@ func TestPlanQwen35CompanionReservations(t *testing.T) {
 		}
 		write(gguf.Magic)
 		write(uint32(3))
-		write(uint64(0))
+		tensors := uint64(0)
+		if name == "mtp" {
+			tensors = 1
+		}
+		write(tensors)
 		write(uint64(len(metadata)))
 		for key, value := range metadata {
 			writeString(key)
 			write(gguf.MetadataValueTypeString)
 			writeString(value)
+		}
+		if name == "mtp" {
+			writeString("blk.40.nextn.eh_proj.weight")
+			write(uint32(2))
+			write(uint64(2048))
+			write(uint64(4096))
+			write(uint32(0)) // F32
+			write(uint64(0))
 		}
 		path := filepath.Join(dir, name+".gguf")
 		if err := os.WriteFile(path, header.Bytes(), 0600); err != nil {
@@ -596,12 +608,14 @@ func TestPlanQwen35CompanionReservations(t *testing.T) {
 		t.Fatal(err)
 	}
 	l := newLlama(log, mdls, nil, rm, devices.Devices{}, false)
-	cfg := model.Config{ModelFiles: files[:1], MTPDrafterFile: files[1], ProjFile: files[2], PtrContextWindow: new(262144), PtrNSeqMax: new(1), PtrSWAFull: new(true)}
+	cfg := model.Config{ModelFiles: files[:1], DrafterFile: files[1], ProjFile: files[2], PtrContextWindow: new(262144), PtrNSeqMax: new(1), PtrSWAFull: new(true)}
 	plan, err := l.Plan(context.Background(), loader.LoadRequest{Key: "model", ModelID: "test/target", Prepared: cfg})
 	if err != nil {
 		t.Fatal(err)
 	}
-	calcCfg := vram.Config{ComputeBackend: devices.Backend(), ContextWindow: 262144, Slots: 1, BytesPerElement: 2, NUBatch: effectivePrefillBatchSize(cfg), SWAFull: true, RecurrentStateCopies: model.RecurrentStateCopies(cfg, false)}
+	// The default 2048-token prefill shares a batch with an anchor and three
+	// MTP proposals. The companion fixture includes the required MTP tensor.
+	calcCfg := vram.Config{ComputeBackend: devices.Backend(), ContextWindow: 262144, Slots: 1, BytesPerElement: 2, NBatch: 2052, NUBatch: 2052, SWAFull: true, RecurrentStateCopies: model.RecurrentStateCopies(cfg, false)}
 	var want int64
 	for i, path := range files {
 		calcCfg.MTPContext = i == 1

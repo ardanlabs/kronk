@@ -3,6 +3,7 @@
 ## Index
 
 - [v1.33.4](#v1334)
+  - [Companion Drafter Configuration](#v1334-companion-drafter-configuration)
   - [Generic Draft Pull Options](#v1334-generic-draft-pull-options)
   - [Catalog Draft Schema](#v1334-catalog-draft-schema)
 - [v1.33.3](#v1333)
@@ -68,11 +69,21 @@
 
 ## v1.33.4
 
+### v1.33.4: Companion Drafter Configuration
+
+`model.Config.MTPDrafterFile` is replaced by `model.Config.DrafterFile`, and
+`model.WithMTPDrafterFile(path)` is replaced by `model.WithDrafterFile(path)`.
+Rename these in SDK callers; there are no compatibility aliases. The single
+field holds the selected companion GGUF, whose metadata identifies its drafting
+algorithm. Use `SpeculationMTP` or `SpeculationDSpark` to require a particular
+algorithm, or `SpeculationDisabled` to disable drafting. Conventional
+separate-model configuration remains in `DraftModelConfig`.
+
 ### v1.33.4: Generic Draft Pull Options
 
 `kronk model pull --mtp-draft URL` is replaced by
 `--draft URL --draft-method mtp`. The other supported draft methods are
-`dspark` and `conventional`; DSpark inference is not yet supported.
+`dspark` and `conventional`.
 The pull HTTP request replaces `mtp_url` with
 `"draft": {"method": "mtp", "url": "..."}`. Download metadata reports
 `draft.method` and `draft.url`, and the completion response uses `draft_file`
@@ -88,9 +99,9 @@ progress reporting is needed.
 The model catalog now uses schema version 3.2. MTP-specific companion fields
 (`mtp`, `mtp_orig`, `mtp_url`, `mtp_size`, and `mtp_checked`) are replaced by
 `draft` metadata (`method`, `file`, `original`, `url`, and `size`) and
-`draft_checked`. Version 2, 3, and 3.1 catalogs are migrated automatically on first load,
-preserving local filenames, explicit source URLs, and existing model metadata;
-no model re-download is required.
+`draft_checked`. Unversioned catalogs and versions 0, 1, 2, 3, and 3.1 are migrated
+automatically on first load, preserving local filenames, explicit source URLs,
+and existing model metadata; no model re-download is required.
 
 The catalog's `capabilities.mtp` boolean is replaced by the optional
 `capabilities.draft` method (`mtp`, `dspark`, or `conventional`). An omitted
@@ -99,8 +110,6 @@ value means no declared drafting capability. Existing true values migrate to
 omitted. HTTP responses retain `capabilities.mtp` as a compatibility view and
 also expose the generic drafting capability.
 
-Unversioned and version 1 catalogs are no longer supported. Upgrade those
-catalogs with a previous Kronk release before upgrading to this release.
 Version 3.2 catalogs cannot be read by older releases, so back up
 `~/.kronk/catalog/catalog.yaml` before upgrading if a rollback is needed.
 Catalog-producing tools must emit `version: "3.2"` and the generic draft fields.
@@ -109,8 +118,7 @@ are identifiers, not decimal numbers.
 
 Go callers of `models.CatalogEntry` and `models.Resolution` must use the new
 generic draft fields instead of the removed MTP artifact fields. Existing
-MTP download APIs and MTP-specific HTTP compatibility fields remain available;
-DSpark draft metadata does not enable DSpark inference.
+MTP download APIs and MTP-specific HTTP compatibility fields remain available.
 
 ## v1.33.3
 

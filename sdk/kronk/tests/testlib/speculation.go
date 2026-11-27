@@ -33,6 +33,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 			}
 			var mu sync.Mutex
 			var loaded bool
+			var selected bool
 			var disableReason string
 			log := cfg.Log
 			cfg.Log = func(ctx context.Context, msg string, args ...any) {
@@ -48,20 +49,29 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 				if msg == "batch-engine" && fields["status"] == "slot-finished" && fields["draft_disable_reason"] != "" {
 					disableReason = fields["draft_disable_reason"]
 				}
+				// DSpark logs selection separately; its load event has no backend
+				// or source fields. Require both the active source and exact file.
+				if msg == "speculation" && fields["source"] == "dspark" && fields["active"] == "true" && fields["execution"] == "text" {
+					selected = true
+				}
 				if msg == loadEvent && fields["status"] == "loaded" {
 					loaded = backend == "classic-own-kv" || fields["backend"] == backend &&
 						((backend == "qwen35-own-kv" && fields["source"] == "auto-detected") ||
-							(backend == "gemma-shared-kv" && fields["source"] == "mtp-drafter-file" && fields["file"] == cfg.MTPDrafterFile))
+							(backend == "gemma-shared-kv" && fields["source"] == "mtp-drafter-file" && fields["file"] == cfg.DrafterFile))
+					if backend == "dspark" {
+						loaded = fields["file"] == cfg.DrafterFile && fields["execution"] == "text" && fields["nDraft"] == "3"
+					}
 				}
 			}
 			WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
 				mu.Lock()
 				gotLoad := loaded
+				gotSelection := selected
 				mu.Unlock()
-				if !disabled && !gotLoad {
+				if !disabled && (!gotLoad || backend == "dspark" && !gotSelection) {
 					t.Fatal("missing qualified drafter load provenance")
 				}
-				if disabled && gotLoad {
+				if disabled && (gotLoad || backend == "dspark" && gotSelection) {
 					t.Fatal("disabled control loaded a drafter")
 				}
 				var accepted int
@@ -76,7 +86,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 							t.Errorf("disabled speculation: got %+v, want zero draft/accepted/rate/coverage", u)
 						}
 					} else if backend != "classic-own-kv" && u.DraftDisableReason != "" {
-						t.Errorf("qualified MTP unexpectedly disabled: %s", u.DraftDisableReason)
+						t.Errorf("qualified speculation unexpectedly disabled: backend=%s reason=%s", backend, u.DraftDisableReason)
 					}
 					accepted += u.DraftAcceptedTokens
 				}
@@ -96,6 +106,9 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 					if result.Err != nil {
 						t.Fatal(result.Err)
 					}
+					if err := CheckStateReply(resp, GetMsg(resp.Choices[0], false).Content, "ALPHA"); err != nil {
+						t.Fatal(err)
+					}
 					check(t, resp.Usage)
 				})
 				t.Run("LongContinuation", func(t *testing.T) {
@@ -105,7 +118,9 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), TestDuration)
 					defer cancel()
-					d := model.D{"messages": []model.D{{"role": "user", "content": "Write a detailed numbered list of 40 distinct practical tips for maintaining a vegetable garden. Explain each tip in two sentences."}}, "max_tokens": 768, "enable_thinking": false, "temperature": 0.7, "stream_options": model.D{"include_usage": true}}
+					// Exercise generation and growing history without making essay
+					// length the cost of proving rejected-round rollback and recovery.
+					d := model.D{"messages": []model.D{{"role": "user", "content": "Write one practical paragraph about preparing soil for a vegetable garden."}}, "max_tokens": 512, "enable_thinking": false, "temperature": 0.7, "stream_options": model.D{"include_usage": true}}
 					for range 3 {
 						ch, err := krn.ChatStreaming(ctx, d)
 						if err != nil {
@@ -115,12 +130,16 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 						if err != nil {
 							t.Fatal(err)
 						}
-						if strings.TrimSpace(text) == "" || len(resp.Choices) != 1 || resp.Choices[0].FinishReason() == "" {
-							t.Fatal("long request did not complete with text")
+						if len(resp.Choices) != 1 {
+							t.Fatalf("long request: got %d terminal choices, want one: content=%q usage=%+v", len(resp.Choices), text, resp.Usage)
+						}
+						if choice := resp.Choices[0]; strings.TrimSpace(text) == "" || choice.FinishReason() == "" {
+							t.Fatalf("long request did not complete with text: finish_reason=%q content=%q message=%+v delta=%+v usage=%+v",
+								choice.FinishReason(), text, choice.Message, choice.Delta, resp.Usage)
 						}
 						check(t, resp.Usage)
 						// Continue using actual output, never compare stochastic text.
-						d["messages"] = append(d["messages"].([]model.D), model.D{"role": "assistant", "content": text}, model.D{"role": "user", "content": "Continue with more detailed gardening advice."})
+						d["messages"] = append(d["messages"].([]model.D), model.D{"role": "assistant", "content": text}, model.D{"role": "user", "content": "Continue with one practical paragraph of gardening advice."})
 					}
 					after, ok := krn.BatchEngineSnapshot()
 					if !ok {
@@ -254,7 +273,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 						mu.Lock()
 						defer mu.Unlock()
 						if backend != "classic-own-kv" && disableReason != "" {
-							t.Errorf("MTP disabled during IMC/isolation/workload: %s", disableReason)
+							t.Errorf("speculation disabled during IMC/isolation/workload: backend=%s reason=%s", backend, disableReason)
 						}
 						snapshot, ok := krn.BatchEngineSnapshot()
 						if !ok || snapshot.SpeculativeRollbacks[strategy] == 0 {

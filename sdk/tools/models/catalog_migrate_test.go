@@ -12,7 +12,7 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-func TestCatalogV2MigrationOffline(t *testing.T) {
+func TestCatalogLegacyMigrationOffline(t *testing.T) {
 	blockDraftTestNetwork(t)
 	const input = `version: 2
 models:
@@ -48,58 +48,70 @@ models:
     family: unknown-repo
     files: [unknown.gguf]
 `
-	file := filepath.Join(t.TempDir(), "catalog.yaml")
-	mustWriteFile(t, file, input)
-	var want Catalog
-	if err := yaml.Unmarshal([]byte(input), &want); err != nil {
-		t.Fatal(err)
-	}
-	want.Version = "3.2"
-	custom := want.Models["custom/renamed-Q4"]
-	custom.Draft = CatalogDraft{
-		Method: DraftMethodMTP, File: "mtp-custom-name.gguf", Original: "drafts/original.gguf",
-		URL: "https://huggingface.co/other/drafter/resolve/pinned/drafts/original.gguf?download=true", Size: 789,
-	}
-	custom.DraftChecked = true
-	custom.Capabilities.Draft = DraftMethodMTP
-	custom.Capabilities.MTP = true
-	want.Models["custom/renamed-Q4"] = custom
-	embedded := want.Models["custom/embedded"]
-	embedded.DraftChecked = true
-	embedded.Capabilities.Draft = DraftMethodMTP
-	embedded.Capabilities.MTP = true
-	want.Models["custom/embedded"] = embedded
-	r := newResolver(nil, file, &fakeHF{}, func() bool { t.Fatal("migration probed network"); return false })
-	got, err := r.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("migration: got %+v, want %+v", got, want)
-	}
-	first, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(first, []byte("mtp_orig:")) || bytes.Contains(first, []byte("mtp_checked:")) || !bytes.HasPrefix(first, []byte("version: \"3.2\"\n")) {
-		t.Fatalf("migration retained obsolete schema: %s", first)
-	}
-	got, err = NewResolver(nil, file).Load()
-	if err != nil || !reflect.DeepEqual(got, want) {
-		t.Fatalf("second Load: got %+v, %v, want %+v", got, err, want)
-	}
-	second, err := os.ReadFile(file)
-	if err != nil || !bytes.Equal(first, second) {
-		t.Fatalf("idempotence: contents changed: %v", err)
-	}
-	leftovers, err := filepath.Glob(file + ".*.tmp")
-	if err != nil || len(leftovers) != 0 {
-		t.Fatalf("temporary files: got %v, %v", leftovers, err)
+	for _, version := range []string{"", "version: 0\n", "version: \"0\"\n", "version: 1\n", "version: \"1\"\n", "version: 2\n"} {
+		t.Run(strings.TrimSpace(version), func(t *testing.T) {
+			input := version + strings.TrimPrefix(input, "version: 2\n")
+			file := filepath.Join(t.TempDir(), "catalog.yaml")
+			mustWriteFile(t, file, input)
+			var want Catalog
+			if err := yaml.Unmarshal([]byte(input), &want); err != nil {
+				t.Fatal(err)
+			}
+			want.Version = "3.2"
+			custom := want.Models["custom/renamed-Q4"]
+			custom.Draft = CatalogDraft{
+				Method: DraftMethodMTP, File: "mtp-custom-name.gguf", Original: "drafts/original.gguf",
+				URL: "https://huggingface.co/other/drafter/resolve/pinned/drafts/original.gguf?download=true", Size: 789,
+			}
+			custom.DraftChecked = true
+			custom.Capabilities.Draft = DraftMethodMTP
+			custom.Capabilities.MTP = true
+			want.Models["custom/renamed-Q4"] = custom
+			embedded := want.Models["custom/embedded"]
+			embedded.DraftChecked = true
+			embedded.Capabilities.Draft = DraftMethodMTP
+			embedded.Capabilities.MTP = true
+			want.Models["custom/embedded"] = embedded
+			r := newResolver(nil, file, &fakeHF{}, func() bool { t.Fatal("migration probed network"); return false })
+			got, err := r.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("migration: got %+v, want %+v", got, want)
+			}
+			first, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(first, []byte("mtp_orig:")) || bytes.Contains(first, []byte("mtp_checked:")) || !bytes.HasPrefix(first, []byte("version: \"3.2\"\n")) {
+				t.Fatalf("migration retained obsolete schema: %s", first)
+			}
+			got, err = NewResolver(nil, file).Load()
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("second Load: got %+v, %v, want %+v", got, err, want)
+			}
+			cached := newResolver(nil, file, &fakeHF{}, func() bool { return false })
+			resolved, err := cached.Resolve(t.Context(), "custom/renamed-Q4")
+			if err != nil || !resolved.FromCache || len(resolved.DownloadURLs) != 1 ||
+				resolved.DownloadURLs[0] != "https://huggingface.co/custom/private-repository/resolve/pinned-commit/nested/renamed-Q4.gguf" ||
+				resolved.DownloadDraft != "https://huggingface.co/other/drafter/resolve/pinned/drafts/original.gguf?download=true" {
+				t.Fatalf("resolve migrated entry: got %+v, %v", resolved, err)
+			}
+			second, err := os.ReadFile(file)
+			if err != nil || !bytes.Equal(first, second) {
+				t.Fatalf("idempotence: contents changed: %v", err)
+			}
+			leftovers, err := filepath.Glob(file + ".*.tmp")
+			if err != nil || len(leftovers) != 0 {
+				t.Fatalf("temporary files: got %v, %v", leftovers, err)
+			}
+		})
 	}
 }
 
 func TestCatalogVersionRejection(t *testing.T) {
-	for _, version := range []string{"", "-1", "0", "1", "3.0", "3.01", "3.10", "3.20", "3.3", "4", "99"} {
+	for _, version := range []string{"-1", "3.0", "3.01", "3.10", "3.20", "3.3", "4", "99"} {
 		t.Run(version, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "catalog.yaml")
 			input := fmt.Sprintf("version: %s\nmodels: {}\n", version)
@@ -119,14 +131,18 @@ func TestCatalogVersionRejection(t *testing.T) {
 }
 
 func TestCatalogMigrationValidationIsAtomic(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "catalog.yaml")
-	const input = "version: 2\nmodels:\n  owner/model:\n    mtp: ../bad.gguf\n    mtp_checked: true\n"
-	mustWriteFile(t, file, input)
-	if _, err := NewResolver(nil, file).Load(); err == nil {
-		t.Fatal("Load accepted invalid artifact")
-	}
-	if data, err := os.ReadFile(file); err != nil || string(data) != input {
-		t.Fatalf("failed validation changed catalog: %q, %v", data, err)
+	for _, version := range []string{"", "version: 0\n", "version: 1\n", "version: 2\n"} {
+		t.Run(strings.TrimSpace(version), func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "catalog.yaml")
+			input := version + "models:\n  owner/model:\n    mtp: ../bad.gguf\n    mtp_checked: true\n"
+			mustWriteFile(t, file, input)
+			if _, err := NewResolver(nil, file).Load(); err == nil {
+				t.Fatal("Load accepted invalid artifact")
+			}
+			if data, err := os.ReadFile(file); err != nil || string(data) != input {
+				t.Fatalf("failed validation changed catalog: %q, %v", data, err)
+			}
+		})
 	}
 }
 

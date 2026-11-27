@@ -162,6 +162,8 @@ type Input struct {
 	tinyVocaGraphBytes          int64                    // Source-derived duration and frame-stack graph allowance.
 	tinyVocaHostBytes           int64                    // Shared frame states, host tables and source-filter scratch.
 	tinyVocaTableBytes          int64                    // Per-helper token/stress tables and padded segment storage.
+	dsparkBlockSize             int64                    // Qualified Markov sidecar's block capacity.
+	dsparkFeatureWidth          int64                    // Concatenated target extraction width.
 }
 
 // Result contains the calculated VRAM requirements.

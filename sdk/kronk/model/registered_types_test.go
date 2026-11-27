@@ -62,6 +62,7 @@ func TestNumericSetSerialization(t *testing.T) {
 func TestRegisteredSetText(t *testing.T) {
 	for _, value := range []any{
 		GGMLTypeAuto, GGMLTypeF8E4M3,
+		SpeculationMode{}, SpeculationAuto, SpeculationDisabled, SpeculationClassic, SpeculationMTP, SpeculationDSpark,
 		MediaTypeNone, MediaTypeVision, MediaTypeAudio,
 		ChannelNone, ChannelReasoning, ChannelAnswer, ChannelTool,
 		DecisionQuestionType{}, DecisionQuestionTypeChoice, DecisionQuestionTypeScore, DecisionQuestionTypeNoul,
@@ -107,6 +108,7 @@ func TestRegisteredSetZeros(t *testing.T) {
 func TestStringSetSerialization(t *testing.T) {
 	for _, value := range []any{
 		GGMLTypeAuto, GGMLTypeF8E4M3,
+		SpeculationMode{}, SpeculationAuto, SpeculationDisabled, SpeculationClassic, SpeculationMTP, SpeculationDSpark,
 		DecisionQuestionType{}, DecisionQuestionTypeChoice, DecisionQuestionTypeScore, DecisionQuestionTypeNoul,
 		IMCSessionState{}, IMCSessionStateActive, IMCSessionStateIdle, IMCSessionStateEmpty,
 		NUMADisabled, NUMADistribute, NUMAIsolate, NUMANumactl, NUMAMirror,

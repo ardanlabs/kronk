@@ -59,6 +59,10 @@ install-test-models: install-kronk ## Download test models
 	@echo
 	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q2_K_XL"
 	@echo
+	kronk model pull --local "ggml-org/Inkling-2-Mini-Q8_0" \
+		--draft-method dspark \
+		--draft "https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/resolve/main/Mainline_Support/dspark-Inkling-2-Mini-Q8_0.gguf_file"
+	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-Omni-3B-Q4_K_M"
 	@echo
 	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"

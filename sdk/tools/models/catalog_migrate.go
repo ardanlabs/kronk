@@ -8,9 +8,42 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-// migrateCatalogV2 is deliberately the only legacy decoder. All non-artifact
-// metadata has already been decoded into the current schema by the caller.
-func migrateCatalogV2(data []byte, cat *Catalog) error {
+// migrateCatalog owns the supported upgrade paths to catalogVersion:
+// unversioned/v0/v1/v2 convert MTP artifact fields, then v3/v3.1 convert
+// drafting capabilities. Earlier versions share the same legacy artifact
+// representation, so they do not need separate intermediate files or writes.
+// The caller saves only after the entire migration and validation succeed.
+func migrateCatalog(data []byte, cat *Catalog) (bool, error) {
+	switch cat.Version {
+	case "", "0", "1", "2", "3", "3.1", catalogVersion:
+	default:
+		return false, fmt.Errorf("unsupported catalog version %q", cat.Version)
+	}
+	if cat.Models == nil {
+		cat.Models = map[string]CatalogEntry{}
+	}
+	migrated := cat.Version != catalogVersion
+	switch cat.Version {
+	case "", "0", "1", "2":
+		if err := migrateCatalogDrafts(data, cat); err != nil {
+			return false, fmt.Errorf("migrate draft artifacts: %w", err)
+		}
+	}
+	cat.Version = catalogVersion
+	capabilitiesChanged, err := migrateDraftCapabilities(data, cat)
+	if err != nil {
+		return false, fmt.Errorf("migrate draft capabilities: %w", err)
+	}
+	if err := validateDrafts(*cat); err != nil {
+		return false, err
+	}
+	return migrated || capabilitiesChanged, nil
+}
+
+// migrateCatalogDrafts decodes MTP artifact fields shared by unversioned, v0,
+// v1, and v2 catalogs. Other metadata is decoded into the current schema by
+// the caller and remains unchanged.
+func migrateCatalogDrafts(data []byte, cat *Catalog) error {
 	var legacy struct {
 		Models map[string]struct {
 			MTP      string `yaml:"mtp"`
@@ -32,8 +65,7 @@ func migrateCatalogV2(data []byte, cat *Catalog) error {
 		entry.DraftChecked = old.Checked
 		cat.Models[id] = entry
 	}
-	cat.Version = catalogVersion
-	return validateDrafts(*cat)
+	return nil
 }
 
 // migrateDraftCapabilities also accepts catalogs written during v3 development

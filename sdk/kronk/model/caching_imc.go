@@ -168,7 +168,7 @@ func (m *Model) imcRecordCompletedHistory(session *imcSession, version uint64, h
 // decodeTokensIntoCache decodes tokens into a cache sequence starting at startPos.
 // Unlike addTokensToCache, this does NOT clear the sequence first — the caller
 // is responsible for clearing if needed (e.g., rebuild from scratch).
-func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int) error {
+func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token, seqID llama.SeqId, startPos int, afterDecode func(*extendedBatch) error) error {
 	ctx, decodeSpan := otel.AddSpan(ctx, "cache-decode",
 		attribute.Int("tokens", len(tokens)),
 	)
@@ -213,6 +213,11 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 		}
 		if err != nil || ret != 0 {
 			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", startPos+i, decodeError(ret, err))
+		}
+		if afterDecode != nil {
+			if err := afterDecode(batch); err != nil {
+				return err
+			}
 		}
 		// The engine may call this with just one chunk per iteration. Leave
 		// output-free text in flight across calls, not only within this loop.

@@ -10,8 +10,8 @@ type Mode struct {
 var modes = make(map[string]Mode)
 
 var (
-	// ModeAuto selects a classic drafter when explicitly configured, otherwise
-	// a companion or embedded MTP implementation when available.
+	// ModeAuto selects a configured classic drafter, a compatible DSpark
+	// companion, or a companion or embedded MTP implementation, in that order.
 	ModeAuto = newMode("auto")
 
 	// ModeDisabled runs target-only generation.
@@ -22,6 +22,9 @@ var (
 
 	// ModeMTP requires a companion or embedded MTP implementation.
 	ModeMTP = newMode("mtp")
+
+	// ModeDSpark requires a compatible DSpark companion implementation.
+	ModeDSpark = newMode("dspark")
 )
 
 func newMode(value string) Mode {
@@ -85,6 +88,9 @@ var (
 
 	// SourceMTP selects an architecture-specific MTP backend.
 	SourceMTP = newSource("mtp", 2)
+
+	// SourceDSpark selects a DSpark block drafter.
+	SourceDSpark = newSource("dspark", 3)
 )
 
 // MTPArchitecture identifies the model-family runtime contract. It is kept
@@ -164,6 +170,8 @@ func (s Source) String() string {
 		return "classic"
 	case SourceMTP:
 		return "mtp"
+	case SourceDSpark:
+		return "dspark"
 	default:
 		return "none"
 	}
@@ -297,6 +305,9 @@ type Config struct {
 	Mode                     Mode
 	ClassicConfigured        bool
 	ClassicNDraft            int
+	DSparkConfigured         bool
+	DSparkNDraft             int
+	DSparkAvailable          bool
 	MTPNDraft                int
 	EmbeddedMTPArchitecture  MTPArchitecture
 	CompanionMTPArchitecture MTPArchitecture

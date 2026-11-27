@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
 func blockDraftTestNetwork(t *testing.T) {
@@ -288,6 +290,79 @@ func TestDraftMTPCompatibilityMetadata(t *testing.T) {
 	}
 	if !summary.Capabilities.MTP || summary.Capabilities.Draft != DraftMethodMTP || summary.MTPSource != MTPSourceEmbedded || summary.HasDraft || fields["draft"] != nil {
 		t.Fatalf("embedded MTP advertised as a companion: %+v, %s, %v", summary, data, err)
+	}
+}
+
+func TestInstalledDSparkAndMTPSelectionPaths(t *testing.T) {
+	for _, method := range []DraftMethod{{}, DraftMethodMTP, DraftMethodDSpark, DraftMethodConventional} {
+		t.Run(method.String(), func(t *testing.T) {
+			m := newTestModels(t)
+			const id = "owner/Inkling-2-Mini-Q8_0"
+			dir := filepath.Join(m.Path(), "owner", "repo")
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(dir, "Inkling-2-Mini-Q8_0.gguf")
+			mtp := filepath.Join(dir, "mtp-Inkling-2-Mini-Q8_0.gguf")
+			dspark := filepath.Join(dir, "dspark-Inkling-2-Mini-Q8_0.gguf")
+			if method == DraftMethodDSpark {
+				dspark = filepath.Join(dir, "custom-companion.gguf")
+			}
+			for _, file := range []string{target, mtp, dspark} {
+				writeCatalogTestGGUF(t, file, nil)
+			}
+			if !method.IsZero() {
+				file := filepath.Base(dspark)
+				if method == DraftMethodMTP {
+					file = filepath.Base(mtp)
+				}
+				r := NewResolver(m, filepath.Join(m.BasePath(), "catalog", "catalog.yaml"))
+				if err := r.Save(Catalog{Version: catalogVersion, Models: map[string]CatalogEntry{id: {
+					Provider: "owner", Family: "repo", Files: []string{filepath.Base(target)},
+					Draft: CatalogDraft{Method: method, File: file}, DraftChecked: true,
+				}}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := m.BuildIndex(testLog, false); err != nil {
+				t.Fatal(err)
+			}
+			mp, err := m.FullPath(id)
+			if err != nil || len(mp.ModelFiles) != 1 || mp.ModelFiles[0] != target || mp.DraftFile != dspark {
+				t.Fatalf("installed paths = %+v, %v", mp, err)
+			}
+			wantMTP := mtp
+			if method == DraftMethodConventional {
+				wantMTP = ""
+			}
+			if mp.MTPFile != wantMTP {
+				t.Errorf("MTPFile = %q, want %q", mp.MTPFile, wantMTP)
+			}
+			files, err := m.Files()
+			if err != nil || len(files) != 1 {
+				t.Fatalf("companions became standalone models: %+v, %v", files, err)
+			}
+			for _, mode := range []model.SpeculationMode{model.SpeculationAuto, model.SpeculationDSpark, model.SpeculationMTP} {
+				cfg, err := m.KronkResolvedConfig(id, map[string]ModelConfig{id: {Speculation: mode}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := dspark
+				switch {
+				case mode == model.SpeculationMTP:
+					want = wantMTP
+				case method == DraftMethodConventional:
+					want = ""
+				}
+				if cfg.DrafterFile != want || cfg.SpeculationMode() != mode {
+					t.Errorf("runtime config: DrafterFile=%q mode=%s, want %q mode=%s", cfg.DrafterFile, cfg.SpeculationMode(), want, mode)
+				}
+				info, err := ModelInfoFromPath(id, cfg.ModelFiles, cfg.ProjFile, cfg.DrafterFile)
+				if err != nil || info.HasMTP {
+					t.Errorf("metadata-only companion without an MTP head: HasMTP=%t, err=%v", info.HasMTP, err)
+				}
+			}
+		})
 	}
 }
 
