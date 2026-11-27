@@ -551,6 +551,8 @@ func CfgGemma4MTPChatMultiSlot() model.Config {
 // selects the installed DSpark companion with a three-token proposal bound.
 // The per-slot window is bounded at 8192 tokens; the shared workload retains
 // its 5400-word peer padding and three 768-token continuations.
+// Inkling uses reasoning_effort rather than enable_thinking; disable reasoning
+// so the bounded requests exercise answers rather than exhaust their budgets.
 // The projector is deliberately omitted: this suite qualifies text speculation.
 func CfgDSparkChat() model.Config {
 	return model.Config{
@@ -563,6 +565,10 @@ func CfgDSparkChat() model.Config {
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(1),
+		DefaultParams: model.Params{
+			Thinking:        model.ThinkingDisabled,
+			ReasoningEffort: model.ReasoningEffortNone,
+		},
 	}
 }
 

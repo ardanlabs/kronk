@@ -9,6 +9,9 @@ no separate Dense MTP file is needed.
 
 **Inkling** uses `ggml-org/Inkling-2-Mini-Q8_0` and its compatible DSpark
 sidecar, with **8,192 tokens per slot**, prefill batch 512 and draft depth 3.
+The SDK fixture and all eight Quick-check aliases set `reasoning_effort: none`:
+Inkling's template ignores `enable_thinking` and otherwise defaults to high
+reasoning, exhausting these bounded answer budgets before producing text.
 Both nightly jobs and the local fixture install pass `--draft-method dspark`
 and an explicit `--draft` URL for the Unsloth `Mainline_Support` companion.
 SDK CI supplies the same pair through the optional draft-method and draft-URL

@@ -106,6 +106,9 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 					if result.Err != nil {
 						t.Fatal(result.Err)
 					}
+					if err := CheckStateReply(resp, GetMsg(resp.Choices[0], false).Content, "ALPHA"); err != nil {
+						t.Fatal(err)
+					}
 					check(t, resp.Usage)
 				})
 				t.Run("LongContinuation", func(t *testing.T) {

@@ -402,6 +402,10 @@ func TestQuickCheckModelConfig(t *testing.T) {
 			Draft       struct {
 				NDraft int `yaml:"ndraft"`
 			} `yaml:"draft-model"`
+			Sampling struct {
+				Thinking        *bool  `yaml:"enable_thinking"`
+				ReasoningEffort string `yaml:"reasoning_effort"`
+			} `yaml:"sampling-parameters"`
 		} `yaml:"models"`
 	}
 	if err := yaml.Unmarshal(data, &config); err != nil {
@@ -441,6 +445,9 @@ func TestQuickCheckModelConfig(t *testing.T) {
 		cfg, ok := config.Models[model]
 		if !selected[cell.id] || !ok || cfg.Slots != slots || cfg.Context != contextWindow || cfg.IMC == cell.noCache || cfg.Speculation != speculation || dspark && cfg.Draft.NDraft != 3 {
 			t.Fatalf("%s: incorrect alias %s: %+v", cell.id, model, cfg)
+		}
+		if dspark && (cfg.Sampling.ReasoningEffort != "none" || cfg.Sampling.Thinking == nil || *cfg.Sampling.Thinking) {
+			t.Fatalf("%s: bounded Inkling workload must disable reasoning: %+v", cell.id, cfg.Sampling)
 		}
 	}
 	selected, err = selectedCells([]string{matrixCells[16].id})

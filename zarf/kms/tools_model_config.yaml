@@ -96,6 +96,9 @@ models:
     speculation: dspark
     draft-model:
       ndraft: 3
+    sampling-parameters:
+      enable_thinking: false
+      reasoning_effort: none
 
   ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK-NO-DSPARK:
     <<: *quickDSpark
