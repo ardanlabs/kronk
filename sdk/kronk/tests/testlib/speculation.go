@@ -125,8 +125,12 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 						if err != nil {
 							t.Fatal(err)
 						}
-						if strings.TrimSpace(text) == "" || len(resp.Choices) != 1 || resp.Choices[0].FinishReason() == "" {
-							t.Fatal("long request did not complete with text")
+						if len(resp.Choices) != 1 {
+							t.Fatalf("long request: got %d terminal choices, want one: content=%q usage=%+v", len(resp.Choices), text, resp.Usage)
+						}
+						if choice := resp.Choices[0]; strings.TrimSpace(text) == "" || choice.FinishReason() == "" {
+							t.Fatalf("long request did not complete with text: finish_reason=%q content=%q message=%+v delta=%+v usage=%+v",
+								choice.FinishReason(), text, choice.Message, choice.Delta, resp.Usage)
 						}
 						check(t, resp.Usage)
 						// Continue using actual output, never compare stochastic text.

@@ -72,8 +72,12 @@ func DrainStateChat(ctx context.Context, ch <-chan model.ChatResponse) (model.Ch
 // CheckStateReply rejects wrong, stale or mixed-session answers, incomplete
 // streams and invalid usage. Exact answer matching excludes every foreign word.
 func CheckStateReply(resp model.ChatResponse, content, want string) error {
-	if len(resp.Choices) != 1 || resp.Choices[0].FinishReason() != model.FinishReasonStop {
-		return fmt.Errorf("expected one completed stop choice, got %+v", resp.Choices)
+	if len(resp.Choices) != 1 {
+		return fmt.Errorf("expected one completed stop choice, got %d choices: content=%q usage=%+v", len(resp.Choices), content, resp.Usage)
+	}
+	if choice := resp.Choices[0]; choice.FinishReason() != model.FinishReasonStop {
+		return fmt.Errorf("expected finish_reason=%q, got %q: content=%q message=%+v delta=%+v usage=%+v",
+			model.FinishReasonStop, choice.FinishReason(), content, choice.Message, choice.Delta, resp.Usage)
 	}
 	if strings.TrimSpace(content) != want {
 		return fmt.Errorf("content: got %q, want only %q", content, want)

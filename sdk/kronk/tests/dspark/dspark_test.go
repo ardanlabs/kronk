@@ -8,10 +8,10 @@ import (
 )
 
 func TestSuite(t *testing.T) {
-	testlib.TestSpeculation(t, testlib.CfgDSparkChat(), "dspark", "draft-model-dspark", "attention-suffix")
+	testlib.TestSpeculation(t, testlib.CfgDSparkChat(), "dspark", "draft-model-dspark", "recurrent-native")
 }
 
 func TestSuiteMultiSlot(t *testing.T) {
 	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
-	testlib.TestSpeculation(t, testlib.CfgDSparkChatMultiSlot(), "dspark", "draft-model-dspark", "attention-suffix")
+	testlib.TestSpeculation(t, testlib.CfgDSparkChatMultiSlot(), "dspark", "draft-model-dspark", "recurrent-native")
 }
