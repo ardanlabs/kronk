@@ -40,7 +40,9 @@ export default function DraftDetails({ url, size, ...info }: DraftDetailsProps) 
         { label: labelWithTip('Draft URL', 'catalogDraftURL'), value: sourceURL ? <code style={{ overflowWrap: 'anywhere' }}>{sourceURL}</code> : 'Not specified' },
         { label: labelWithTip('Draft size', 'catalogDraftSize'), value: bytes != null && bytes > 0 ? formatBytes(bytes) : 'Unknown' },
       ]} />
-      {draft?.method === 'dspark' && <p>DSpark companion download only. DSpark inference is not supported.</p>}
+      {draft?.method === 'dspark' && (
+        <p>Compatible DSpark companions are used automatically with speculation set to auto (the default). Set speculation to disabled to turn drafting off.</p>
+      )}
     </div>
   );
 }

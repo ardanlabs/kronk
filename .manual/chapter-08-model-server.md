@@ -701,18 +701,19 @@ This field describes the model's declared drafting method, not whether the
 current Kronk runtime implements it. The BUI displays the method and provides
 separate MTP, DSpark, and conventional capability filters.
 
-Version 2, 3, and 3.1 catalogs are migrated automatically to version 3.2 on
-first load, without network access or re-downloading models. Existing version 2
-`mtp`, `mtp_orig`, `mtp_url`,
-`mtp_size`, and `mtp_checked` values become generic draft metadata with
+Unversioned catalogs and versions 0, 1, 2, 3, and 3.1 are migrated automatically
+to version 3.2 on first load, without network access or re-downloading models.
+Existing legacy `mtp`, `mtp_orig`, `mtp_url`, `mtp_size`, and `mtp_checked`
+values become generic draft metadata with
 `method: mtp`; installed filenames and other entry metadata are preserved.
 `capabilities.mtp: true` becomes `capabilities.draft: mtp`; false is omitted.
 Version 3 and 3.1 catalogs retain their generic companion metadata while upgrading the
 capability field. The migrated file is saved with `version: "3.2"`. Catalog
 versions are identifiers, not decimal numbers; quote them when writing YAML.
-Unversioned catalogs and versions 1 and earlier are no longer supported. Keep a
-backup before upgrading if you need to return to an older Kronk version; older
-versions cannot read version 3.2.
+Migration preserves catalog entries; do not delete the catalog to upgrade it.
+If validation or saving fails, loading returns an error without replacing the
+original file. Keep a backup before upgrading if you need to return to an older
+Kronk version; older versions cannot read version 3.2.
 
 Source specificity controls catalog resolution:
 

@@ -99,9 +99,9 @@ progress reporting is needed.
 The model catalog now uses schema version 3.2. MTP-specific companion fields
 (`mtp`, `mtp_orig`, `mtp_url`, `mtp_size`, and `mtp_checked`) are replaced by
 `draft` metadata (`method`, `file`, `original`, `url`, and `size`) and
-`draft_checked`. Version 2, 3, and 3.1 catalogs are migrated automatically on first load,
-preserving local filenames, explicit source URLs, and existing model metadata;
-no model re-download is required.
+`draft_checked`. Unversioned catalogs and versions 0, 1, 2, 3, and 3.1 are migrated
+automatically on first load, preserving local filenames, explicit source URLs,
+and existing model metadata; no model re-download is required.
 
 The catalog's `capabilities.mtp` boolean is replaced by the optional
 `capabilities.draft` method (`mtp`, `dspark`, or `conventional`). An omitted
@@ -110,8 +110,6 @@ value means no declared drafting capability. Existing true values migrate to
 omitted. HTTP responses retain `capabilities.mtp` as a compatibility view and
 also expose the generic drafting capability.
 
-Unversioned and version 1 catalogs are no longer supported. Upgrade those
-catalogs with a previous Kronk release before upgrading to this release.
 Version 3.2 catalogs cannot be read by older releases, so back up
 `~/.kronk/catalog/catalog.yaml` before upgrading if a rollback is needed.
 Catalog-producing tools must emit `version: "3.2"` and the generic draft fields.

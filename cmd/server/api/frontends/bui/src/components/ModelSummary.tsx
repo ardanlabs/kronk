@@ -81,7 +81,6 @@ export default function ModelSummary({ id, provider, family, size, metadata, sum
             { label: labelWithTip('Speculation mode', 'summarySpeculation'), value: summary?.speculation || 'Unknown' },
             ...(summary?.classic_draft ? [{ label: 'Classic draft', value: summary.classic_draft }] : []),
           ]} />
-          {draft === 'dspark' && <p>DSpark inference is not supported.</p>}
         </section>
         <section>
           <h4 className="meta-section-title">Model</h4>
