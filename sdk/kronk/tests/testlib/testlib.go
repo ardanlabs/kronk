@@ -550,7 +550,7 @@ func CfgGemma4MTPChatMultiSlot() model.Config {
 // CfgDSparkChat returns a single-slot Inkling2 text configuration. Auto mode
 // selects the installed DSpark companion with a three-token proposal bound.
 // The per-slot window is bounded at 8192 tokens; the shared workload retains
-// its 5400-word peer padding and three 2048-token continuations.
+// its 5400-word peer padding and three bounded paragraph continuations.
 // Inkling uses reasoning_effort rather than enable_thinking. Request minimum
 // effort, but budget for reasoning because none does not guarantee its absence.
 // The projector is deliberately omitted: this suite qualifies text speculation.

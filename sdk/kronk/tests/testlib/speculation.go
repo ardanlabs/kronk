@@ -118,9 +118,9 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), TestDuration)
 					defer cancel()
-					// Exercise sustained generation, not exact-count planning that can
-					// consume a reasoning model's entire budget before any answer.
-					d := model.D{"messages": []model.D{{"role": "user", "content": "Write a long, detailed essay about maintaining a vegetable garden. Explain soil preparation, watering, planting, and pest control with practical examples."}}, "max_tokens": 2048, "enable_thinking": false, "temperature": 0.7, "stream_options": model.D{"include_usage": true}}
+					// Exercise generation and growing history without making essay
+					// length the cost of proving rejected-round rollback and recovery.
+					d := model.D{"messages": []model.D{{"role": "user", "content": "Write one practical paragraph about preparing soil for a vegetable garden."}}, "max_tokens": 512, "enable_thinking": false, "temperature": 0.7, "stream_options": model.D{"include_usage": true}}
 					for range 3 {
 						ch, err := krn.ChatStreaming(ctx, d)
 						if err != nil {
@@ -139,7 +139,7 @@ func TestSpeculation(t *testing.T, cfg model.Config, backend, loadEvent, strateg
 						}
 						check(t, resp.Usage)
 						// Continue using actual output, never compare stochastic text.
-						d["messages"] = append(d["messages"].([]model.D), model.D{"role": "assistant", "content": text}, model.D{"role": "user", "content": "Continue with more detailed gardening advice."})
+						d["messages"] = append(d["messages"].([]model.D), model.D{"role": "assistant", "content": text}, model.D{"role": "user", "content": "Continue with one practical paragraph of gardening advice."})
 					}
 					after, ok := krn.BatchEngineSnapshot()
 					if !ok {
