@@ -55,6 +55,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
     customScript, setCustomScript,
     contextWindow, setContextWindow,
     prefillBatchSize, setPrefillBatchSize,
+    prefillBatchSizeWhileGenerating, setPrefillBatchSizeWhileGenerating,
     physicalBatchSize, setPhysicalBatchSize,
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
@@ -186,6 +187,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       .then((info) => {
         if (cancelled) return;
         const mc = info.model_config;
+        setPrefillBatchSizeWhileGenerating(mc?.['prefill-batch-size-while-generating'] ?? undefined);
         setPhysicalBatchSize(mc?.['physical-batch-size'] ?? undefined);
         if (mc) {
           const nSeqMax = mc['nseq-max'] || 1;
@@ -289,6 +291,10 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       }
       if (!catalogConfig || prefillBatchSize !== (catalogConfig['prefill-batch-size'] || DEFAULT_PREFILL_BATCH_SIZE)) {
         config['prefill_batch_size'] = prefillBatchSize;
+      }
+      if (prefillBatchSizeWhileGenerating !== undefined && prefillBatchSizeWhileGenerating > 0 &&
+          (!catalogConfig || prefillBatchSizeWhileGenerating !== catalogConfig['prefill-batch-size-while-generating'])) {
+        config['prefill_batch_size_while_generating'] = prefillBatchSizeWhileGenerating;
       }
       if (physicalBatchSize !== undefined && physicalBatchSize > 0 &&
           (!catalogConfig || physicalBatchSize !== catalogConfig['physical-batch-size'])) {
@@ -756,6 +762,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                   base_config: {
                     context_window: contextWindow,
                     prefill_batch_size: prefillBatchSize,
+                    prefill_batch_size_while_generating: prefillBatchSizeWhileGenerating,
                     physical_batch_size: physicalBatchSize,
                     nseq_max: nSeqMax,
                     flash_attention: flashAttention,
@@ -830,6 +837,22 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                 value={prefillBatchSize}
                 onChange={(e) => setPrefillBatchSize(Number(e.target.value))}
                 min={1}
+                disabled={!!session}
+              />
+            </div>
+            <div className="form-group">
+              <FieldLabel htmlFor="pg-prefill-batch-size-while-generating" tooltipKey="prefillBatchSizeWhileGenerating">Prefill Batch Size While Generating</FieldLabel>
+              <input
+                id="pg-prefill-batch-size-while-generating"
+                type="number"
+                value={prefillBatchSizeWhileGenerating ?? ''}
+                placeholder="Follow Prefill Batch Size"
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  setPrefillBatchSizeWhileGenerating(Number.isInteger(value) && value > 0 ? value : undefined);
+                }}
+                min={1}
+                step={1}
                 disabled={!!session}
               />
             </div>

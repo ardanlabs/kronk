@@ -439,67 +439,68 @@ export default function DocsSDKModel() {
               <h4>Config</h4>
               <pre className="code-block">
                 <code>{`type Config struct {
-	Adapters                   []AdapterConfig
-	ArtifactIntegrity          map[string]ArtifactIntegrity
-	Storage                    StorageConfig
-	PtrAdmissionTimeout        *time.Duration
-	AutoTune                   bool
-	AutoTuned                  bool
-	BasePath                   string
-	PtrCacheMinTokens          *int
-	CacheTypeK                 GGMLType
-	CacheTypeV                 GGMLType
-	PtrContextWindow           *int
-	DefaultParams              Params
-	DecisionProtocol           DecisionProtocol
-	ChatTemplateKwargs         D
-	PtrDraftModel              *DraftModelConfig
-	Devices                    []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
-	PtrFlashAttention          *FlashAttentionType
-	PtrIMCSessionCapacity      *int
-	PtrImageBatchTokenCapacity *int
-	PtrImageTokenBudget        *int
-	PtrIncrementalCache        *bool
-	PtrInsecureLogging         *bool
-	JinjaFile                  string
-	JinjaScript                string
-	PtrKVCacheMode             *KVCacheMode
-	LazyMode                   LazyMode
-	LoadMode                   LoadMode
-	Log                        applog.Logger
-	PtrMainGPU                 *int
-	PtrMoE                     *MoEConfig
-	ModelFiles                 []string
-	PtrNGpuLayers              *int
-	PtrNSeqMax                 *int
-	PtrNThreads                *int
-	PtrNThreadsBatch           *int
-	PtrPrefillBatchSize        *int
-	PtrPhysicalBatchSize       *int
-	NUMA                       NUMAStrategy
-	PtrOffloadKQV              *bool
-	PtrOpOffload               *bool
-	ProjFile                   string
-	DrafterFile                string
-	PtrProjOnCPU               *bool
-	ProjDevice                 string
-	PtrQueueDepth              *int
-	ResponseModelID            string
-	PtrRopeFreqBase            *float32
-	PtrRopeFreqScale           *float32
-	RecordArtifactVerification ArtifactVerificationRecorder
-	RopeScaling                RopeScalingType
-	Speculation                SpeculationMode
-	PtrSpeech                  *SpeechConfig
-	PtrSplitMode               *SplitMode
-	PtrSWAFull                 *bool
-	TensorBuftOverrides        []string
-	TensorSplit                []float32
-	PtrYarnAttnFactor          *float32
-	PtrYarnBetaFast            *float32
-	PtrYarnBetaSlow            *float32
-	PtrYarnExtFactor           *float32
-	PtrYarnOrigCtx             *int
+	Adapters                           []AdapterConfig
+	ArtifactIntegrity                  map[string]ArtifactIntegrity
+	Storage                            StorageConfig
+	PtrAdmissionTimeout                *time.Duration
+	AutoTune                           bool
+	AutoTuned                          bool
+	BasePath                           string
+	PtrCacheMinTokens                  *int
+	CacheTypeK                         GGMLType
+	CacheTypeV                         GGMLType
+	PtrContextWindow                   *int
+	DefaultParams                      Params
+	DecisionProtocol                   DecisionProtocol
+	ChatTemplateKwargs                 D
+	PtrDraftModel                      *DraftModelConfig
+	Devices                            []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
+	PtrFlashAttention                  *FlashAttentionType
+	PtrIMCSessionCapacity              *int
+	PtrImageBatchTokenCapacity         *int
+	PtrImageTokenBudget                *int
+	PtrIncrementalCache                *bool
+	PtrInsecureLogging                 *bool
+	JinjaFile                          string
+	JinjaScript                        string
+	PtrKVCacheMode                     *KVCacheMode
+	LazyMode                           LazyMode
+	LoadMode                           LoadMode
+	Log                                applog.Logger
+	PtrMainGPU                         *int
+	PtrMoE                             *MoEConfig
+	ModelFiles                         []string
+	PtrNGpuLayers                      *int
+	PtrNSeqMax                         *int
+	PtrNThreads                        *int
+	PtrNThreadsBatch                   *int
+	PtrPrefillBatchSize                *int
+	PtrPrefillBatchSizeWhileGenerating *int
+	PtrPhysicalBatchSize               *int
+	NUMA                               NUMAStrategy
+	PtrOffloadKQV                      *bool
+	PtrOpOffload                       *bool
+	ProjFile                           string
+	DrafterFile                        string
+	PtrProjOnCPU                       *bool
+	ProjDevice                         string
+	PtrQueueDepth                      *int
+	ResponseModelID                    string
+	PtrRopeFreqBase                    *float32
+	PtrRopeFreqScale                   *float32
+	RecordArtifactVerification         ArtifactVerificationRecorder
+	RopeScaling                        RopeScalingType
+	Speculation                        SpeculationMode
+	PtrSpeech                          *SpeechConfig
+	PtrSplitMode                       *SplitMode
+	PtrSWAFull                         *bool
+	TensorBuftOverrides                []string
+	TensorSplit                        []float32
+	PtrYarnAttnFactor                  *float32
+	PtrYarnBetaFast                    *float32
+	PtrYarnBetaSlow                    *float32
+	PtrYarnExtFactor                   *float32
+	PtrYarnOrigCtx                     *int
 
 	// Has unexported fields.
 }`}</code>
@@ -535,6 +536,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">PtrMoE controls expert-tensor placement for Mixture of Experts models.</p>
               <p className="doc-description">ModelFiles is the path to the model files. This is mandatory to provide.</p>
               <p className="doc-description">PrefillBatchSize is the maximum number of prompt tokens one prefill owner can contribute to a decode iteration. The default is 2048. Larger values can reduce the number of decode calls needed to reach generation, but each call takes longer before already-generating slots can run again and requires larger compute buffers. Kronk derives llama.cpp's logical and physical batch capacities from this value, the configured slot count, and the generation mode, with ImageBatchTokenCapacity providing an independent media floor.</p>
+              <p className="doc-description">PrefillBatchSizeWhileGenerating limits ordinary text and text-only IMC preparation chunks while another slot is generating. When unset, it follows PrefillBatchSize. Explicit values must be positive and are capped by PrefillBatchSize when scheduling. It does not change native batch capacities, media chunk sizes, or IMC snapshot/restore work.</p>
               <p className="doc-description">PhysicalBatchSize requests the physical compute capacity independently of the prompt contribution. When unset, it follows the legacy prefill capacity unless AutoTune selects a value. Image floors can raise it, logical capacity caps it, and specialized evaluation retains its sizing policy. Explicit requests apply with or without MTP; MTP's generation reserve remains logical. EffectiveNUBatch reports the resolved capacity; the request is preserved.</p>
               <p className="doc-description">ImageBatchTokenCapacity provides an independent image-capacity floor for native batches without increasing the text prefill contribution or changing image preprocessing. The default is zero (no extra floor). Oversized non-causal image chunks return an error instead of being split.</p>
               <p className="doc-description">ImageTokenBudget explicitly sets the preprocessing token budget for supported projectors. Lower values can reduce image resolution and detail. When unset, the projector's default is preserved. Explicit values must be positive and also contribute to native batch capacity. Not all projectors honor the budget, and final chunk sizes are still checked before decoding.</p>
@@ -1785,6 +1787,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) PrefillBatchSize() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-prefillbatchsizewhilegenerating">
+              <h4>Config.PrefillBatchSizeWhileGenerating</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) PrefillBatchSizeWhileGenerating() int</code>
+              </pre>
+              <p className="doc-description">PrefillBatchSizeWhileGenerating returns the requested contention limit, defaulting to PrefillBatchSize when unset.</p>
             </div>
 
             <div className="doc-section" id="method-config-queuedepth">
@@ -3488,6 +3498,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-nthreadsbatch">Config.NThreadsBatch</a></li>
                 <li><a href="#method-config-physicalbatchsize">Config.PhysicalBatchSize</a></li>
                 <li><a href="#method-config-prefillbatchsize">Config.PrefillBatchSize</a></li>
+                <li><a href="#method-config-prefillbatchsizewhilegenerating">Config.PrefillBatchSizeWhileGenerating</a></li>
                 <li><a href="#method-config-queuedepth">Config.QueueDepth</a></li>
                 <li><a href="#method-config-ropefreqbase">Config.RopeFreqBase</a></li>
                 <li><a href="#method-config-ropefreqscale">Config.RopeFreqScale</a></li>

@@ -34,6 +34,18 @@ func (e *batchEngine) prefillSlotIDs() []int {
 	return ids
 }
 
+// prefillChunkSize limits prompt work only while a peer is generating. Queued,
+// prefilling, and cancelled requests do not trigger the contention limit.
+func (e *batchEngine) prefillChunkSize(owner *slot) int {
+	limit := e.model.cfg.PrefillBatchSize()
+	for _, s := range e.slots {
+		if s != owner && s.active && s.prefillDone && s.job.ctx.Err() == nil {
+			return min(limit, e.model.cfg.PrefillBatchSizeWhileGenerating())
+		}
+	}
+	return limit
+}
+
 // stagedSlotProgress holds ordinary target progress until submission succeeds.
 // It does not represent completed GPU work; existing synchronization boundaries
 // must still be observed before reading or releasing native state.

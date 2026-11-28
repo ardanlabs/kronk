@@ -24,6 +24,33 @@ func changesFor(t *testing.T, qs []Question, f source.Facts, a *Answers, existin
 	return out
 }
 
+func TestPrefillWhileGeneratingAnswer(t *testing.T) {
+	qs := Chat()
+	f := sampleFacts()
+	a := NewAnswers(qs)
+	for _, answer := range []string{"", "512"} {
+		*a.Sel["prefill-batch-size-while-generating"] = answer
+		changes, err := Diff(qs, f, a, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := ToModelConfig(Apply(nil, changes))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := cfg.PtrPrefillBatchSizeWhileGenerating
+		if answer == "" {
+			if got != nil {
+				t.Errorf("blank answer: got %v, want omitted", got)
+			}
+			continue
+		}
+		if got == nil || *got != 512 {
+			t.Errorf("explicit answer: got %v, want 512", got)
+		}
+	}
+}
+
 func TestMediaQuestionKeys(t *testing.T) {
 	for kind, qs := range map[source.ModelKind][]Question{source.KindAudioModel: Audio(), source.KindImageModel: Image()} {
 		flat := map[string]any{}

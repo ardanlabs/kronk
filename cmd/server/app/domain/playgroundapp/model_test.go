@@ -51,13 +51,25 @@ func TestSessionResponseInputCapabilities(t *testing.T) {
 
 func TestSessionConfigPrefillBatchSizeJSON(t *testing.T) {
 	var cfg SessionConfig
-	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096,"physical_batch_size":512,"image_batch_token_capacity":768,"image_token_budget":1120}`), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096,"prefill_batch_size_while_generating":257,"physical_batch_size":512,"image_batch_token_capacity":768,"image_token_budget":1120}`), &cfg); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
 	got := cfg.ApplyTo(model.Config{})
 	if got.PrefillBatchSize() != 4096 {
 		t.Errorf("PrefillBatchSize() = %d, want 4096", got.PrefillBatchSize())
+	}
+	if got.PrefillBatchSizeWhileGenerating() != 257 {
+		t.Errorf("PrefillBatchSizeWhileGenerating() = %d, want 257", got.PrefillBatchSizeWhileGenerating())
+	}
+	for _, size := range []int{-1, 0, 512} {
+		cfg := SessionConfig{PrefillBatchSizeWhileGenerating: new(size)}
+		if !cfg.HasOverrides() {
+			t.Fatal("contention limit alone must select a custom config")
+		}
+		if err := cfg.Validate(); (err != nil) != (size <= 0) {
+			t.Errorf("Validate limit %d: got %v, want error=%t", size, err, size <= 0)
+		}
 	}
 	if got.PhysicalBatchSize() != 512 {
 		t.Errorf("PhysicalBatchSize: got %d, want 512", got.PhysicalBatchSize())

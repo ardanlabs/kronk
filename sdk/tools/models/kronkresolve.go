@@ -451,6 +451,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrPrefillBatchSize != nil {
 		dst.PtrPrefillBatchSize = src.PtrPrefillBatchSize
 	}
+	if src.PtrPrefillBatchSizeWhileGenerating != nil {
+		dst.PtrPrefillBatchSizeWhileGenerating = src.PtrPrefillBatchSizeWhileGenerating
+	}
 	if src.PtrPhysicalBatchSize != nil {
 		dst.PtrPhysicalBatchSize = src.PtrPhysicalBatchSize
 	}

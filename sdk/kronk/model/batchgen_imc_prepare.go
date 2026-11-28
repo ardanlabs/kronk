@@ -76,7 +76,7 @@ func (e *batchEngine) queueIMCMediaPreparation(s *slot, cacheIdx llama.Pos, sess
 		"build", job.imcMediaBuild, "append", job.imcMediaAppend,
 		"total_chunks", mtmd.InputChunksSize(media.inputChunks), "total_tokens", media.totalPhysicalTokens,
 		"start_logical_position", prep.position,
-		"prefill_batch_size", e.imcPreparationChunkSize(),
+		"prefill_batch_size", e.model.cfg.PrefillBatchSize(),
 		"nbatch", e.model.cfg.EffectiveNBatch(), "nubatch", e.model.cfg.EffectiveNUBatch())
 	return nil
 }
@@ -155,7 +155,7 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 		e.advanceIMCMediaPreparation(s, selectorStart, selectedIndex, preparationSlots, buf)
 		return
 	}
-	chunkSize := e.imcPreparationChunkSize()
+	chunkSize := e.prefillChunkSize(s)
 	boundary := job.imcSystemBoundaryTokens
 	end := imcPreparationChunkEnd(prep.nextToken, prep.position, len(job.imcNewCacheTokens),
 		chunkSize, boundary, job.imcNewTotalCached)
@@ -369,10 +369,6 @@ func (e *batchEngine) clearFailedIMCPreparation(s *slot) error {
 	}
 	e.model.decodeMu.Unlock()
 	return nil
-}
-
-func (e *batchEngine) imcPreparationChunkSize() int {
-	return e.model.cfg.PrefillBatchSize()
 }
 
 func imcPreparationChunkEnd(nextToken, position, totalTokens, chunkSize, boundary, finalPosition int) int {

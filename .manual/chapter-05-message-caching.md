@@ -430,6 +430,10 @@ ready, cancelled, or no longer eligible. Work proceeds in bounded steps, so
 already-generating requests can continue between steps. Media encoding and
 indivisible image chunks can still take longer; this is not a fixed latency
 guarantee. Text preparation uses `prefill-batch-size`, 2048 tokens by default.
+While another active slot is generating, text-only preparation instead uses
+the smaller of that size and `prefill-batch-size-while-generating`. The latter
+follows the normal prefill size when omitted. It does not limit media chunks,
+snapshot saving, or restoration, so it cannot eliminate pauses from those operations.
 
 Kronk reserves a session as soon as it selects it for an exact match, append,
 or rebuild. Other requests cannot select that identity while the reservation

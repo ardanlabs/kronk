@@ -13,7 +13,7 @@ func TestOnlyTextModelsGetGenerationQuestions(t *testing.T) {
 		"sampling-parameters.temperature", "sampling-parameters.top_p", "sampling-parameters.top_k", "sampling-parameters.min_p",
 		"sampling-parameters.max_tokens", "sampling-parameters.repeat_penalty", "sampling-parameters.frequency_penalty",
 		"sampling-parameters.presence_penalty", "incremental-cache", "cache-min-tokens", "imc-session-capacity",
-		"speculation", "draft-model.ndraft",
+		"speculation", "draft-model.ndraft", "prefill-batch-size-while-generating",
 	}
 	always := []string{"context-window", "nseq-max", "cache-type-k", "flash-attention", "queue-depth", "prefill-batch-size"}
 

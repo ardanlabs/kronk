@@ -173,6 +173,15 @@ The Basic, Sampling, and Configuration tools create server-side playground
 sessions. Their configuration applies to that test session; it does not edit
 the persistent model configuration file.
 
+In the playground's setup, **Prefill Batch Size While Generating** optionally
+limits text prefill and text-only IMC preparation chunks while another slot
+generates. Leave it blank to inherit the model's setting (which follows
+**Prefill Batch Size** when not configured). For example, use `512` alongside
+a `2048` prefill size to experiment with streaming responsiveness versus time
+to first token. It does not resize logical or physical native batches. See
+[Chapter 3 §3.5](https://www.kronkai.com/manual#35-concurrency-and-batching)
+for its constraints and limitations.
+
 The VRAM calculator's SWA control follows runtime precedence. An explicit
 calculator value wins; for an installed model, its `swa-full` model setting is
 next; otherwise the calculator uses the llama.cpp default shipped with the

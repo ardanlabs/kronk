@@ -624,6 +624,7 @@ Text scheduling, image capacity, and image preprocessing are configured separate
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
 | `prefill-batch-size` | `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `prefill-batch-size-while-generating` | Follows `prefill-batch-size` | Text prefill chunk limit while another slot is generating; does not change native batch capacities |
 | `physical-batch-size` | Unset | Requested physical compute capacity for generation, independent of the prompt contribution; applies with or without MTP, constrained by image floors and logical/native capacity |
 | `image-batch-token-capacity` | `0` (no additional floor) | Independent native capacity floor for image chunks; does not change text scheduling or image detail |
 | `image-token-budget` | Unset (projector default) | Explicit preprocessing budget for supported projectors; lowering it may reduce image resolution and detail |
@@ -633,6 +634,38 @@ fewer decode calls, but requires larger compute buffers and each call runs
 longer before already-generating slots can run again. A smaller value gives
 generating slots more frequent scheduling opportunities at the cost of more
 prefill decode calls.
+
+To experiment with shorter streaming pauses without reducing normal prefill
+throughput when no peer is generating, set `prefill-batch-size-while-generating`
+in the model's `model_config.yaml` entry:
+
+```yaml
+my-model:
+  nseq-max: 2
+  prefill-batch-size: 2048
+  prefill-batch-size-while-generating: 512
+```
+
+This limits each ordinary text prefill or text-only IMC preparation chunk to
+512 tokens while another active slot is generating. Otherwise the normal
+2048-token limit applies. Queued, prefilling, finished, and cancelled peers do
+not activate the smaller limit. With one slot, it has no effect. The setting
+must be positive; values above `prefill-batch-size` cannot increase the normal
+limit. When omitted, it follows `prefill-batch-size`, preserving existing behavior.
+
+Smaller chunks trade prompt throughput and time to first token for more frequent
+generation opportunities; they do not guarantee a particular streaming latency.
+The limit applies separately to text chunks, not to aggregate work across all
+preparation and prefill in an iteration. It does not resize native logical or
+physical batches (`n_batch`/`n_ubatch`), change media chunks or IMC snapshot/restore
+work, or affect embedding/reranking batches. `physical-batch-size` remains an
+independent setting and does not need to match it.
+
+In the SDK, use `model.WithPrefillBatchSizeWhileGenerating(512)` alongside
+`model.WithPrefillBatchSize(2048)`. The interactive `kronk config` command asks
+for this optional setting for generation models. `kronk model show` reports its
+configured value. The browser playground exposes **Prefill Batch Size While Generating**;
+its session configuration JSON key is `prefill_batch_size_while_generating`.
 
 For embedding and reranking, `prefill-batch-size` limits the combined tokens
 evaluated together, not the token capacity of each input.
@@ -1065,6 +1098,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `queue-depth` | Non-negative integer, default `2` | Admitted request layers: `1` allows slot occupants only; `2` adds one waiting layer |
 | `imc-session-capacity` | Positive integer; derived when omitted | Maximum reusable IMC conversation identities; built-in storage is RAM |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `prefill-batch-size-while-generating` | Positive token count; follows `prefill-batch-size` when omitted | Text prefill/IMC preparation chunk limit while a peer generates; capped by normal prefill size; no native capacity change |
 | `physical-batch-size` | Positive token count up to `2147483647`; unset by default | Requested generation compute batch size; AutoTune can choose it, and correctness constraints determine the effective capacity |
 | `image-batch-token-capacity` | Non-negative token count, default `0` | Image-capacity floor for native generation batches; does not change image detail |
 | `image-token-budget` | Positive token count up to `2147483647`; unset by default | Explicit projector preprocessing budget; may reduce image detail; also contributes to native capacity |
