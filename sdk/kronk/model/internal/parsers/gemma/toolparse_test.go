@@ -12,6 +12,31 @@ import (
 
 var noopLog applog.Logger = func(context.Context, string, ...any) {}
 
+func TestToolCall_EmptyArrays(t *testing.T) {
+	tests := []struct {
+		name, content, want string
+	}{
+		{"native", `call:report_findings{findings:[]}`, `{"findings":[]}`},
+		{"JSON", `call:report_findings{"findings":[]}`, `{"findings":[]}`},
+		{"nested and null", `call:report_findings{findings:[[],{items:[]}],missing:null,object:{},text:<|"|>[]<|"|>}`, `{"findings":[[],{"items":[]}],"missing":null,"object":{},"text":"[]"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := Parser{}.ToolCall(t.Context(), nil, tt.content)
+			if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "report_findings" {
+				t.Fatalf("calls: got %+v, want one successful report_findings call", calls)
+			}
+			encoded, err := json.Marshal(map[string]any(calls[0].Function.Arguments))
+			if err != nil {
+				t.Fatalf("encoding arguments: %v", err)
+			}
+			if string(encoded) != tt.want {
+				t.Errorf("arguments: got %s, want %s", encoded, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseGemma_GemmaQuotes(t *testing.T) {
 	calls := parseGemma(context.Background(), noopLog,
 		`call:get_weather{location:<|"|>New York<|"|>}`)
