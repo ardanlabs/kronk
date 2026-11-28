@@ -452,7 +452,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	if s != nil && e.batch.len() < e.model.cfg.EffectiveNBatch() {
 		beforeSlot := e.batch.len()
 		var ok bool
-		stagedPrefill, ok = e.addPrefillChunk(s, e.model.cfg.PrefillBatchSize())
+		stagedPrefill, ok = e.addPrefillChunk(s, e.prefillChunkSize(s))
 		if !ok {
 			if s.job != nil {
 				e.finishSlot(s, e.slotCancelError(s))

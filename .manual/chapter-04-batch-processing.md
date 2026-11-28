@@ -236,6 +236,15 @@ responses can continue, but each compute batch still takes time. Larger prefill
 batches can increase pauses between streamed output tokens. This is a
 responsiveness tradeoff, not a fixed latency guarantee.
 
+`prefill-batch-size-while-generating` optionally reduces ordinary text prefill
+and text-only IMC preparation chunks only while another active slot is generating.
+For example, keep `prefill-batch-size: 2048` and set this limit to `512` to
+experiment with shorter streaming pauses under contention. It defaults to the
+normal prefill size and has no effect with one slot. Smaller chunks can increase
+time to first token. Native batch capacities, media chunks, and IMC snapshot or
+restore costs are unchanged. See [Chapter 3 §3.5](https://www.kronkai.com/manual#35-concurrency-and-batching)
+for configuration and constraints.
+
 Eligible text-only, layer-split multi-GPU workloads can overlap prompt
 computation across GPUs. This includes building or extending a text IMC prefix.
 Actual overlap depends on the backend; media and speculative workloads should

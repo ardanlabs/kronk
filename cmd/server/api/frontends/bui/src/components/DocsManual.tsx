@@ -922,6 +922,11 @@ malina-models:
                 <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
               </tr>
               <tr>
+                <td><code>prefill-batch-size-while-generating</code></td>
+                <td>Follows <code>prefill-batch-size</code></td>
+                <td>Text prefill chunk limit while another slot is generating; does not change native batch capacities</td>
+              </tr>
+              <tr>
                 <td><code>physical-batch-size</code></td>
                 <td>Unset</td>
                 <td>Requested physical compute capacity for generation, independent of the prompt contribution; applies with or without MTP, constrained by image floors and logical/native capacity</td>
@@ -939,6 +944,14 @@ malina-models:
             </tbody>
           </table>
           <p>For generation models, a larger <code>prefill-batch-size</code> can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
+          <p>To experiment with shorter streaming pauses without reducing normal prefill throughput when no peer is generating, set <code>prefill-batch-size-while-generating</code> in the model's <code>model_config.yaml</code> entry:</p>
+          <pre className="code-block"><code className="language-yaml">{`my-model:
+  nseq-max: 2
+  prefill-batch-size: 2048
+  prefill-batch-size-while-generating: 512`}</code></pre>
+          <p>This limits each ordinary text prefill or text-only IMC preparation chunk to 512 tokens while another active slot is generating. Otherwise the normal 2048-token limit applies. Queued, prefilling, finished, and cancelled peers do not activate the smaller limit. With one slot, it has no effect. The setting must be positive; values above <code>prefill-batch-size</code> cannot increase the normal limit. When omitted, it follows <code>prefill-batch-size</code>, preserving existing behavior.</p>
+          <p>Smaller chunks trade prompt throughput and time to first token for more frequent generation opportunities; they do not guarantee a particular streaming latency. The limit applies separately to text chunks, not to aggregate work across all preparation and prefill in an iteration. It does not resize native logical or physical batches (<code>n_batch</code>/<code>n_ubatch</code>), change media chunks or IMC snapshot/restore work, or affect embedding/reranking batches. <code>physical-batch-size</code> remains an independent setting and does not need to match it.</p>
+          <p>In the SDK, use <code>model.WithPrefillBatchSizeWhileGenerating(512)</code> alongside <code>model.WithPrefillBatchSize(2048)</code>. The interactive <code>kronk config</code> command asks for this optional setting for generation models. <code>kronk model show</code> reports its configured value. The browser playground exposes <strong>Prefill Batch Size While Generating</strong>; its session configuration JSON key is <code>prefill_batch_size_while_generating</code>.</p>
           <p>For embedding and reranking, <code>prefill-batch-size</code> limits the combined tokens evaluated together, not the token capacity of each input. The batch is constrained independently by <code>nseq-max</code> complete sequences and by <code>prefill-batch-size</code> combined tokens. For example, <code>nseq-max: 8</code> with <code>prefill-batch-size: 2048</code> can evaluate eight 256-token sequences, four 512-token sequences, two 1024-token sequences, or one 2048-token sequence in a single batch. Kronk does not multiply the token capacity by <code>nseq-max</code>; larger aggregate batches require more compute memory. Increase <code>prefill-batch-size</code> explicitly when the expected embedding or reranking workload needs a larger aggregate batch.</p>
           <p>Most deployments should leave the prompt contribution at its default.</p>
           <p>For ordinary causal generation, <code>physical-batch-size</code> lets llama.cpp divide one logical submission into smaller compute batches without changing how many prompt tokens Kronk schedules. For example, <code>prefill-batch-size: 2048</code>, <code>physical-batch-size: 512</code>, and <code>nseq-max: 1</code> allow a prompt contribution to be processed in smaller compute batches. This can enable layer-split multi-GPU pipeline overlap within a submission.</p>
@@ -1152,6 +1165,11 @@ models:
                 <td><code>prefill-batch-size</code></td>
                 <td>Positive token count, default <code>2048</code></td>
                 <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
+              </tr>
+              <tr>
+                <td><code>prefill-batch-size-while-generating</code></td>
+                <td>Positive token count; follows <code>prefill-batch-size</code> when omitted</td>
+                <td>Text prefill/IMC preparation chunk limit while a peer generates; capped by normal prefill size; no native capacity change</td>
               </tr>
               <tr>
                 <td><code>physical-batch-size</code></td>
@@ -1381,6 +1399,7 @@ models:
           <h4 id="472-prefill-uncached-work">4.7.2 Prefill Uncached Work</h4>
           <p>Prefill computes the prompt state that is not already reusable from a cache. For ordinary text, one slot retains prefill priority until its prompt is complete, cancelled, or no longer eligible. <code>prefill-batch-size</code>—2048 tokens by default—caps its text contribution per scheduling iteration. A long prompt can therefore delay another new prompt even when both have execution slots.</p>
           <p>Kronk interleaves this work with output generation from ready slots. A new prompt does not normally need to finish all of its prefill before existing responses can continue, but each compute batch still takes time. Larger prefill batches can increase pauses between streamed output tokens. This is a responsiveness tradeoff, not a fixed latency guarantee.</p>
+          <p><code>prefill-batch-size-while-generating</code> optionally reduces ordinary text prefill and text-only IMC preparation chunks only while another active slot is generating. For example, keep <code>prefill-batch-size: 2048</code> and set this limit to <code>512</code> to experiment with shorter streaming pauses under contention. It defaults to the normal prefill size and has no effect with one slot. Smaller chunks can increase time to first token. Native batch capacities, media chunks, and IMC snapshot or restore costs are unchanged. See <a href="https://www.kronkai.com/manual#35-concurrency-and-batching">Chapter 3 §3.5</a> for configuration and constraints.</p>
           <p>Eligible text-only, layer-split multi-GPU workloads can overlap prompt computation across GPUs. This includes building or extending a text IMC prefix. Actual overlap depends on the backend; media and speculative workloads should not be assumed to have the same behavior.</p>
           <p>Media requires additional encoding and may require isolated processing rather than sharing a text batch. Supported causal media can share computation when it fits; other media uses a separate decode path. In particular, non-causal image chunks must fit completely in one physical batch. Increase <code>image-batch-token-capacity</code> and reload the model if an oversized chunk is rejected. This capacity setting does not increase image detail; an explicit <code>image-token-budget</code> controls preprocessing on supported projectors.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/09-restore-session-state.svg" alt="The two prefill phases: restore reusable IMC state, then compute missing request state" /></p>
@@ -1614,7 +1633,7 @@ Next stable rendering retroactively changes an assistant turn:
           <p>Setting <code>queue-depth: 1</code> with two slots instead provides two working sessions and two System entries. It does not reduce two-request execution concurrency; it prevents additional requests from passing admission until a slot's request finishes.</p>
           <p>An explicit <code>imc-session-capacity</code> must be at least <code>nseq-max × queue-depth</code>. This preserves one reservable session identity for every admitted generation request. Values above that floor retain more completed conversation branches and may reduce LRU rebuilds, at the cost of additional session-store capacity.</p>
           <p>Admission waiting is controlled separately by the per-model <code>admission-timeout</code> setting (default <code>3m</code>). It only bounds the wait for an SDK admission permit. The server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>) instead bounds admitted preparation, slot waiting, and inference; neither setting changes IMC session retention.</p>
-          <p>Slot assignment and cache preparation are separate steps. Text and media cache builds and extensions run as scheduled work after a request receives a slot. One preparing request retains priority until its reusable prefix is ready, cancelled, or no longer eligible. Work proceeds in bounded steps, so already-generating requests can continue between steps. Media encoding and indivisible image chunks can still take longer; this is not a fixed latency guarantee. Text preparation uses <code>prefill-batch-size</code>, 2048 tokens by default.</p>
+          <p>Slot assignment and cache preparation are separate steps. Text and media cache builds and extensions run as scheduled work after a request receives a slot. One preparing request retains priority until its reusable prefix is ready, cancelled, or no longer eligible. Work proceeds in bounded steps, so already-generating requests can continue between steps. Media encoding and indivisible image chunks can still take longer; this is not a fixed latency guarantee. Text preparation uses <code>prefill-batch-size</code>, 2048 tokens by default. While another active slot is generating, text-only preparation instead uses the smaller of that size and <code>prefill-batch-size-while-generating</code>. The latter follows the normal prefill size when omitted. It does not limit media chunks, snapshot saving, or restoration, so it cannot eliminate pauses from those operations.</p>
           <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is held. If all session identities are reserved, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
           <p>Repetition penalties and DRY still account for the complete prompt, including the restored portion. Cache reuse does not remove earlier text from sampling history merely because the model computation was skipped.</p>
@@ -2416,7 +2435,7 @@ malina-models:
               </tr>
               <tr>
                 <td>Throughput</td>
-                <td><code>queue-depth</code>, <code>admission-timeout</code>, <code>prefill-batch-size</code>, <code>kv-cache-mode</code>, <code>nthreads</code>, <code>nthreads-batch</code>, <code>incremental-cache</code>, <code>cache-min-tokens</code>, <code>imc-session-capacity</code></td>
+                <td><code>queue-depth</code>, <code>admission-timeout</code>, <code>prefill-batch-size</code>, <code>prefill-batch-size-while-generating</code> (generation only), <code>kv-cache-mode</code>, <code>nthreads</code>, <code>nthreads-batch</code>, <code>incremental-cache</code>, <code>cache-min-tokens</code>, <code>imc-session-capacity</code></td>
               </tr>
               <tr>
                 <td>Features</td>
@@ -4637,6 +4656,7 @@ kronk server start`}</code></pre>
             <li><strong>Configuration</strong> runs automated runtime-configuration sweeps.</li>
           </ul>
           <p>The Basic, Sampling, and Configuration tools create server-side playground sessions. Their configuration applies to that test session; it does not edit the persistent model configuration file.</p>
+          <p>In the playground's setup, <strong>Prefill Batch Size While Generating</strong> optionally limits text prefill and text-only IMC preparation chunks while another slot generates. Leave it blank to inherit the model's setting (which follows <strong>Prefill Batch Size</strong> when not configured). For example, use <code>512</code> alongside a <code>2048</code> prefill size to experiment with streaming responsiveness versus time to first token. It does not resize logical or physical native batches. See <a href="https://www.kronkai.com/manual#35-concurrency-and-batching">Chapter 3 §3.5</a> for its constraints and limitations.</p>
           <p>The VRAM calculator's SWA control follows runtime precedence. An explicit calculator value wins; for an installed model, its <code>swa-full</code> model setting is next; otherwise the calculator uses the llama.cpp default shipped with the Kronk release. Leaving the control unset therefore does not mean compact SWA. The result separates model weights, KV or recurrent state, compute buffers, and CPU/GPU placement. It is an estimate rather than a reservation guarantee, so retain operating headroom and use the same settings that will load the model.</p>
           <h4 id="docs">Docs</h4>
           <p>The binary includes an offline documentation snapshot built with that Kronk release:</p>

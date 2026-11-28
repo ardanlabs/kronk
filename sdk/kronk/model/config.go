@@ -263,6 +263,12 @@ type AdapterConfig struct {
 // capacities from this value, the configured slot count, and the generation
 // mode, with ImageBatchTokenCapacity providing an independent media floor.
 //
+// PrefillBatchSizeWhileGenerating limits ordinary text and text-only IMC
+// preparation chunks while another slot is generating. When unset, it follows
+// PrefillBatchSize. Explicit values must be positive and are capped by
+// PrefillBatchSize when scheduling. It does not change native batch capacities,
+// media chunk sizes, or IMC snapshot/restore work.
+//
 // PhysicalBatchSize requests the physical compute capacity independently of
 // the prompt contribution. When unset, it follows the legacy prefill capacity
 // unless AutoTune selects a value. Image floors can raise it, logical capacity
@@ -401,70 +407,71 @@ type AdapterConfig struct {
 // YarnOrigCtx sets the original training context size for YaRN scaling. When nil
 // or 0, uses the model's native training context length from metadata.
 type Config struct {
-	Adapters                   []AdapterConfig
-	ArtifactIntegrity          map[string]ArtifactIntegrity
-	Storage                    StorageConfig
-	PtrAdmissionTimeout        *time.Duration
-	AutoTune                   bool
-	AutoTuned                  bool
-	BasePath                   string
-	PtrCacheMinTokens          *int
-	CacheTypeK                 GGMLType
-	CacheTypeV                 GGMLType
-	PtrContextWindow           *int
-	DefaultParams              Params
-	DecisionProtocol           DecisionProtocol
-	ChatTemplateKwargs         D
-	PtrDraftModel              *DraftModelConfig
-	Devices                    []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
-	PtrFlashAttention          *FlashAttentionType
-	PtrIMCSessionCapacity      *int
-	PtrImageBatchTokenCapacity *int
-	PtrImageTokenBudget        *int
-	PtrIncrementalCache        *bool
-	PtrInsecureLogging         *bool
-	JinjaFile                  string
-	JinjaScript                string
-	PtrKVCacheMode             *KVCacheMode
-	LazyMode                   LazyMode
-	LoadMode                   LoadMode
-	Log                        applog.Logger
-	PtrMainGPU                 *int
-	PtrMoE                     *MoEConfig
-	ModelFiles                 []string
-	PtrNGpuLayers              *int
-	PtrNSeqMax                 *int
-	PtrNThreads                *int
-	PtrNThreadsBatch           *int
-	PtrPrefillBatchSize        *int
-	PtrPhysicalBatchSize       *int
-	NUMA                       NUMAStrategy
-	PtrOffloadKQV              *bool
-	PtrOpOffload               *bool
-	ProjFile                   string
-	DrafterFile                string
-	PtrProjOnCPU               *bool
-	ProjDevice                 string
-	PtrQueueDepth              *int
-	ResponseModelID            string
-	PtrRopeFreqBase            *float32
-	PtrRopeFreqScale           *float32
-	RecordArtifactVerification ArtifactVerificationRecorder
-	RopeScaling                RopeScalingType
-	Speculation                SpeculationMode
-	PtrSpeech                  *SpeechConfig
-	PtrSplitMode               *SplitMode
-	PtrSWAFull                 *bool
-	TensorBuftOverrides        []string
-	TensorSplit                []float32
-	PtrYarnAttnFactor          *float32
-	PtrYarnBetaFast            *float32
-	PtrYarnBetaSlow            *float32
-	PtrYarnExtFactor           *float32
-	PtrYarnOrigCtx             *int
-	nBatch                     int
-	nUBatch                    int
-	speculationPlan            internalspec.Plan
+	Adapters                           []AdapterConfig
+	ArtifactIntegrity                  map[string]ArtifactIntegrity
+	Storage                            StorageConfig
+	PtrAdmissionTimeout                *time.Duration
+	AutoTune                           bool
+	AutoTuned                          bool
+	BasePath                           string
+	PtrCacheMinTokens                  *int
+	CacheTypeK                         GGMLType
+	CacheTypeV                         GGMLType
+	PtrContextWindow                   *int
+	DefaultParams                      Params
+	DecisionProtocol                   DecisionProtocol
+	ChatTemplateKwargs                 D
+	PtrDraftModel                      *DraftModelConfig
+	Devices                            []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
+	PtrFlashAttention                  *FlashAttentionType
+	PtrIMCSessionCapacity              *int
+	PtrImageBatchTokenCapacity         *int
+	PtrImageTokenBudget                *int
+	PtrIncrementalCache                *bool
+	PtrInsecureLogging                 *bool
+	JinjaFile                          string
+	JinjaScript                        string
+	PtrKVCacheMode                     *KVCacheMode
+	LazyMode                           LazyMode
+	LoadMode                           LoadMode
+	Log                                applog.Logger
+	PtrMainGPU                         *int
+	PtrMoE                             *MoEConfig
+	ModelFiles                         []string
+	PtrNGpuLayers                      *int
+	PtrNSeqMax                         *int
+	PtrNThreads                        *int
+	PtrNThreadsBatch                   *int
+	PtrPrefillBatchSize                *int
+	PtrPrefillBatchSizeWhileGenerating *int
+	PtrPhysicalBatchSize               *int
+	NUMA                               NUMAStrategy
+	PtrOffloadKQV                      *bool
+	PtrOpOffload                       *bool
+	ProjFile                           string
+	DrafterFile                        string
+	PtrProjOnCPU                       *bool
+	ProjDevice                         string
+	PtrQueueDepth                      *int
+	ResponseModelID                    string
+	PtrRopeFreqBase                    *float32
+	PtrRopeFreqScale                   *float32
+	RecordArtifactVerification         ArtifactVerificationRecorder
+	RopeScaling                        RopeScalingType
+	Speculation                        SpeculationMode
+	PtrSpeech                          *SpeechConfig
+	PtrSplitMode                       *SplitMode
+	PtrSWAFull                         *bool
+	TensorBuftOverrides                []string
+	TensorSplit                        []float32
+	PtrYarnAttnFactor                  *float32
+	PtrYarnBetaFast                    *float32
+	PtrYarnBetaSlow                    *float32
+	PtrYarnExtFactor                   *float32
+	PtrYarnOrigCtx                     *int
+	nBatch                             int
+	nUBatch                            int
+	speculationPlan                    internalspec.Plan
 }
 
 func (cfg Config) AdmissionTimeout() time.Duration {
@@ -487,6 +494,12 @@ func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) 
 func (cfg Config) IMCSessionCapacity() int { return intOr(cfg.PtrIMCSessionCapacity, 0) }
 func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
 func (cfg Config) PrefillBatchSize() int   { return intOr(cfg.PtrPrefillBatchSize, 0) }
+
+// PrefillBatchSizeWhileGenerating returns the requested contention limit,
+// defaulting to PrefillBatchSize when unset.
+func (cfg Config) PrefillBatchSizeWhileGenerating() int {
+	return intOr(cfg.PtrPrefillBatchSizeWhileGenerating, cfg.PrefillBatchSize())
+}
 
 // PhysicalBatchSize returns the requested physical capacity, or zero when unset.
 func (cfg Config) PhysicalBatchSize() int { return intOr(cfg.PtrPhysicalBatchSize, 0) }
@@ -608,7 +621,7 @@ func (cfg Config) String() string {
 		physicalBatch = fmt.Sprintf("%d", cfg.BatchBaseSize())
 	}
 
-	return fmt.Sprintf("\nPhysicalBatchSize[%s]", physicalBatch) + fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nPrefillBatchSizeWhileGenerating[%d]\nPhysicalBatchSize[%s]", cfg.PrefillBatchSizeWhileGenerating(), physicalBatch) + fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.DecisionProtocol, chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
@@ -684,6 +697,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 	if cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() <= 0 {
 		return fmt.Errorf("validate-config: prefill batch size must be > 0, got %d", cfg.PrefillBatchSize())
+	}
+
+	if cfg.PtrPrefillBatchSizeWhileGenerating != nil && cfg.PrefillBatchSizeWhileGenerating() <= 0 {
+		return fmt.Errorf("validate-config: prefill batch size while generating must be > 0, got %d", cfg.PrefillBatchSizeWhileGenerating())
 	}
 
 	if cfg.PtrPhysicalBatchSize != nil && (cfg.PhysicalBatchSize() <= 0 || cfg.PhysicalBatchSize() > math.MaxInt32) {
@@ -1401,22 +1418,31 @@ func WithImageBatchTokenCapacity(v int) Option {
 func WithImageTokenBudget(v int) Option {
 	return func(c *Config) { c.PtrImageTokenBudget = new(v) }
 }
-func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
-func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
-func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
-func WithJinjaScript(v string) Option          { return func(c *Config) { c.JinjaScript = v } }
-func WithKVCacheMode(v KVCacheMode) Option     { return func(c *Config) { c.PtrKVCacheMode = new(v) } }
-func WithLazyMode(v LazyMode) Option           { return func(c *Config) { c.LazyMode = v } }
-func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
-func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }
-func WithMainGPU(v int) Option                 { return func(c *Config) { c.PtrMainGPU = new(v) } }
-func WithMoE(v *MoEConfig) Option              { return func(c *Config) { c.PtrMoE = v } }
-func WithModelFiles(v []string) Option         { return func(c *Config) { c.ModelFiles = v } }
-func WithNGpuLayers(v int) Option              { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
-func WithNSeqMax(v int) Option                 { return func(c *Config) { c.PtrNSeqMax = new(v) } }
-func WithNThreads(v int) Option                { return func(c *Config) { c.PtrNThreads = new(v) } }
-func WithNThreadsBatch(v int) Option           { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
-func WithPrefillBatchSize(v int) Option        { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
+func WithIncrementalCache(v bool) Option   { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
+func WithInsecureLogging(v bool) Option    { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
+func WithJinjaFile(v string) Option        { return func(c *Config) { c.JinjaFile = v } }
+func WithJinjaScript(v string) Option      { return func(c *Config) { c.JinjaScript = v } }
+func WithKVCacheMode(v KVCacheMode) Option { return func(c *Config) { c.PtrKVCacheMode = new(v) } }
+func WithLazyMode(v LazyMode) Option       { return func(c *Config) { c.LazyMode = v } }
+func WithLoadMode(v LoadMode) Option       { return func(c *Config) { c.LoadMode = v } }
+func WithLog(v applog.Logger) Option       { return func(c *Config) { c.Log = v } }
+func WithMainGPU(v int) Option             { return func(c *Config) { c.PtrMainGPU = new(v) } }
+func WithMoE(v *MoEConfig) Option          { return func(c *Config) { c.PtrMoE = v } }
+func WithModelFiles(v []string) Option     { return func(c *Config) { c.ModelFiles = v } }
+func WithNGpuLayers(v int) Option          { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
+func WithNSeqMax(v int) Option             { return func(c *Config) { c.PtrNSeqMax = new(v) } }
+func WithNThreads(v int) Option            { return func(c *Config) { c.PtrNThreads = new(v) } }
+func WithNThreadsBatch(v int) Option       { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
+func WithPrefillBatchSize(v int) Option    { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
+
+// WithPrefillBatchSizeWhileGenerating caps text prefill chunks while another
+// slot is generating, without changing native batch capacities. Values must be
+// positive; the scheduler never exceeds PrefillBatchSize. When unset, the limit
+// follows PrefillBatchSize.
+func WithPrefillBatchSizeWhileGenerating(v int) Option {
+	return func(c *Config) { c.PtrPrefillBatchSizeWhileGenerating = new(v) }
+}
+
 func WithPhysicalBatchSize(v int) Option       { return func(c *Config) { c.PtrPhysicalBatchSize = new(v) } }
 func WithNUMA(v NUMAStrategy) Option           { return func(c *Config) { c.NUMA = v } }
 func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }

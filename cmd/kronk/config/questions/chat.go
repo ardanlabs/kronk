@@ -367,6 +367,13 @@ func Chat() []Question {
 			show:  always,
 		},
 		{
+			Key: "prefill-batch-size-while-generating", Group: gThroughput, Kind: kindInt, min: 1, generation: true,
+			Title: "How many prompt tokens per step while another request generates?",
+			About: "Smaller chunks can shorten streaming pauses but increase time to first token for the new request. Native batch capacities stay unchanged.",
+			Def:   text("follow prefill-batch-size"),
+			show:  always,
+		},
+		{
 			Key: "kv-cache-mode", Group: gThroughput, Kind: kindChoice,
 			Title:   "Give each request its own memory slice, or share one pool?",
 			About:   "Both use the same total memory. Shared lets requests use one pool, each still within the context window.",

@@ -564,6 +564,31 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	}
 }
 
+func TestPrefillBatchSizeWhileGenerating(t *testing.T) {
+	for _, size := range []int{512, 4096} {
+		base := NewConfig(WithPrefillBatchSize(size), WithNSeqMax(3))
+		if got := base.PrefillBatchSizeWhileGenerating(); got != size {
+			t.Errorf("default contention limit: got %d, want %d", got, size)
+		}
+		cfg := NewConfig(WithPrefillBatchSize(size), WithNSeqMax(3), WithPrefillBatchSizeWhileGenerating(257))
+		if got := cfg.PrefillBatchSizeWhileGenerating(); got != 257 {
+			t.Errorf("explicit contention limit: got %d, want 257", got)
+		}
+		batch, ubatch := base.GenerationBatchSizes(1, false)
+		gotBatch, gotUBatch := cfg.GenerationBatchSizes(1, false)
+		if gotBatch != batch || gotUBatch != ubatch {
+			t.Errorf("native capacities changed: got %d/%d, want %d/%d", gotBatch, gotUBatch, batch, ubatch)
+		}
+	}
+	for _, size := range []int{-1, 0, 512, 4096} {
+		cfg := NewConfig(WithModelFiles([]string{"test.gguf"}), WithPrefillBatchSizeWhileGenerating(size))
+		err := validateConfig(t.Context(), cfg, func(context.Context, string, ...any) {})
+		if (err != nil) != (size <= 0) {
+			t.Errorf("limit %d: got %v, want error=%t", size, err, size <= 0)
+		}
+	}
+}
+
 func TestPhysicalBatchSize(t *testing.T) {
 	for _, tt := range []struct {
 		name       string

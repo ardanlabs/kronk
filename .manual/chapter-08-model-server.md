@@ -493,7 +493,7 @@ questions are all asked.
 | Sampling | `temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`, `repeat_penalty`, `frequency_penalty`, `presence_penalty` |
 | Memory and GPU | `cache-type-k`, `cache-type-v`, `ngpu-layers`, `offload-kqv`, `moe`, `numa`, `flash-attention`, `swa-full`, `load-mode`, `lazy-mode` |
 | Multiple GPUs | `devices`, `split-mode`, `main-gpu`, `tensor-split` |
-| Throughput | `queue-depth`, `admission-timeout`, `prefill-batch-size`, `kv-cache-mode`, `nthreads`, `nthreads-batch`, `incremental-cache`, `cache-min-tokens`, `imc-session-capacity` |
+| Throughput | `queue-depth`, `admission-timeout`, `prefill-batch-size`, `prefill-batch-size-while-generating` (generation only), `kv-cache-mode`, `nthreads`, `nthreads-batch`, `incremental-cache`, `cache-min-tokens`, `imc-session-capacity` |
 | Features | `speculation`, `draft-model`, `adapters`, `proj-on-cpu`, `proj-device`, `image-token-budget`, `image-batch-token-capacity`, `insecure-logging` |
 | Audio (`bucky-models`) | `nseq-max`, `queue-depth`, `admission-timeout`, `nthreads` |
 | Image (`malina-models`) | `concurrency`, `queue-depth`, `admission-timeout`, `cpu-threads` |

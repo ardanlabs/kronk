@@ -48,6 +48,8 @@ interface PlaygroundState {
   setContextWindow: React.Dispatch<React.SetStateAction<number>>;
   prefillBatchSize: number;
   setPrefillBatchSize: React.Dispatch<React.SetStateAction<number>>;
+  prefillBatchSizeWhileGenerating: number | undefined;
+  setPrefillBatchSizeWhileGenerating: React.Dispatch<React.SetStateAction<number | undefined>>;
   physicalBatchSize: number | undefined;
   setPhysicalBatchSize: React.Dispatch<React.SetStateAction<number | undefined>>;
   nSeqMax: number;
@@ -91,6 +93,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [customScript, setCustomScript] = useState('');
   const [contextWindow, setContextWindow] = useState(8192);
   const [prefillBatchSize, setPrefillBatchSize] = useState(DEFAULT_PREFILL_BATCH_SIZE);
+  const [prefillBatchSizeWhileGenerating, setPrefillBatchSizeWhileGenerating] = useState<number | undefined>();
   const [physicalBatchSize, setPhysicalBatchSize] = useState<number | undefined>();
   const [nSeqMax, setNSeqMax] = useState(1);
   const [flashAttention, setFlashAttention] = useState('auto');
@@ -117,6 +120,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     customScript, setCustomScript,
     contextWindow, setContextWindow,
     prefillBatchSize, setPrefillBatchSize,
+    prefillBatchSizeWhileGenerating, setPrefillBatchSizeWhileGenerating,
     physicalBatchSize, setPhysicalBatchSize,
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
@@ -131,6 +135,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   }), [
     session, chatMessages, selectedModel, playgroundMode, sweepMode, activeTab, systemPrompt, lastTPS,
     templateMode, selectedTemplate, customScript, contextWindow, prefillBatchSize, physicalBatchSize,
+    prefillBatchSizeWhileGenerating,
     nSeqMax, flashAttention, cacheType, kvCacheMode, loadMode, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
   ]);
 

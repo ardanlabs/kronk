@@ -56,34 +56,35 @@ func (s *SessionRequest) Validate() error {
 // distinguishing "not set by user" (nil) from an explicit value, so that only
 // user-provided overrides are merged on top of the catalog-resolved base config.
 type SessionConfig struct {
-	ContextWindow           *int                      `json:"context_window"`
-	PrefillBatchSize        *int                      `json:"prefill_batch_size"`
-	PhysicalBatchSize       *int                      `json:"physical_batch_size"`
-	ImageBatchTokenCapacity *int                      `json:"image_batch_token_capacity"`
-	ImageTokenBudget        *int                      `json:"image_token_budget"`
-	NSeqMax                 *int                      `json:"nseq_max"`
-	FlashAttention          *model.FlashAttentionType `json:"flash_attention"`
-	CacheTypeK              *model.GGMLType           `json:"cache_type_k"`
-	CacheTypeV              *model.GGMLType           `json:"cache_type_v"`
-	KVCacheMode             *model.KVCacheMode        `json:"kv_cache_mode"`
-	LoadMode                *model.LoadMode           `json:"load_mode"`
-	NGpuLayers              *int                      `json:"ngpu_layers"`
-	IncrementalCache        *bool                     `json:"incremental_cache"`
-	RopeScaling             *model.RopeScalingType    `json:"rope_scaling_type"`
-	RopeFreqBase            *float32                  `json:"rope_freq_base"`
-	RopeFreqScale           *float32                  `json:"rope_freq_scale"`
-	YarnExtFactor           *float32                  `json:"yarn_ext_factor"`
-	YarnAttnFactor          *float32                  `json:"yarn_attn_factor"`
-	YarnBetaFast            *float32                  `json:"yarn_beta_fast"`
-	YarnBetaSlow            *float32                  `json:"yarn_beta_slow"`
-	YarnOrigCtx             *int                      `json:"yarn_orig_ctx"`
-	SplitMode               *model.SplitMode          `json:"split_mode"`
-	Devices                 []string                  `json:"devices"`
-	MainGPU                 *int                      `json:"main_gpu"`
-	TensorSplit             []float32                 `json:"tensor_split"`
-	TensorBuftOverrides     []string                  `json:"tensor_buft_overrides"`
-	DraftModelID            *string                   `json:"draft_model_id"`
-	DraftNDraft             *int                      `json:"draft_ndraft"`
+	ContextWindow                   *int                      `json:"context_window"`
+	PrefillBatchSize                *int                      `json:"prefill_batch_size"`
+	PrefillBatchSizeWhileGenerating *int                      `json:"prefill_batch_size_while_generating"`
+	PhysicalBatchSize               *int                      `json:"physical_batch_size"`
+	ImageBatchTokenCapacity         *int                      `json:"image_batch_token_capacity"`
+	ImageTokenBudget                *int                      `json:"image_token_budget"`
+	NSeqMax                         *int                      `json:"nseq_max"`
+	FlashAttention                  *model.FlashAttentionType `json:"flash_attention"`
+	CacheTypeK                      *model.GGMLType           `json:"cache_type_k"`
+	CacheTypeV                      *model.GGMLType           `json:"cache_type_v"`
+	KVCacheMode                     *model.KVCacheMode        `json:"kv_cache_mode"`
+	LoadMode                        *model.LoadMode           `json:"load_mode"`
+	NGpuLayers                      *int                      `json:"ngpu_layers"`
+	IncrementalCache                *bool                     `json:"incremental_cache"`
+	RopeScaling                     *model.RopeScalingType    `json:"rope_scaling_type"`
+	RopeFreqBase                    *float32                  `json:"rope_freq_base"`
+	RopeFreqScale                   *float32                  `json:"rope_freq_scale"`
+	YarnExtFactor                   *float32                  `json:"yarn_ext_factor"`
+	YarnAttnFactor                  *float32                  `json:"yarn_attn_factor"`
+	YarnBetaFast                    *float32                  `json:"yarn_beta_fast"`
+	YarnBetaSlow                    *float32                  `json:"yarn_beta_slow"`
+	YarnOrigCtx                     *int                      `json:"yarn_orig_ctx"`
+	SplitMode                       *model.SplitMode          `json:"split_mode"`
+	Devices                         []string                  `json:"devices"`
+	MainGPU                         *int                      `json:"main_gpu"`
+	TensorSplit                     []float32                 `json:"tensor_split"`
+	TensorBuftOverrides             []string                  `json:"tensor_buft_overrides"`
+	DraftModelID                    *string                   `json:"draft_model_id"`
+	DraftNDraft                     *int                      `json:"draft_ndraft"`
 }
 
 // ApplyTo merges user overrides onto a base model config. Only fields
@@ -94,6 +95,9 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	}
 	if sc.PrefillBatchSize != nil {
 		cfg.PtrPrefillBatchSize = sc.PrefillBatchSize
+	}
+	if sc.PrefillBatchSizeWhileGenerating != nil {
+		cfg.PtrPrefillBatchSizeWhileGenerating = sc.PrefillBatchSizeWhileGenerating
 	}
 	if sc.PhysicalBatchSize != nil {
 		cfg.PtrPhysicalBatchSize = sc.PhysicalBatchSize
@@ -193,6 +197,7 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 func (sc SessionConfig) HasOverrides() bool {
 	return sc.ContextWindow != nil ||
 		sc.PrefillBatchSize != nil ||
+		sc.PrefillBatchSizeWhileGenerating != nil ||
 		sc.PhysicalBatchSize != nil ||
 		sc.ImageBatchTokenCapacity != nil ||
 		sc.ImageTokenBudget != nil ||
@@ -238,6 +243,10 @@ func (sc SessionConfig) Validate() error {
 
 	if sc.PrefillBatchSize != nil && (*sc.PrefillBatchSize < 1 || *sc.PrefillBatchSize > 16384) {
 		return fmt.Errorf("prefill-batch-size must be between 1 and 16384, got %d", *sc.PrefillBatchSize)
+	}
+
+	if sc.PrefillBatchSizeWhileGenerating != nil && *sc.PrefillBatchSizeWhileGenerating < 1 {
+		return fmt.Errorf("prefill-batch-size-while-generating must be > 0, got %d", *sc.PrefillBatchSizeWhileGenerating)
 	}
 
 	if sc.PhysicalBatchSize != nil && (*sc.PhysicalBatchSize < 1 || *sc.PhysicalBatchSize > 2147483647) {

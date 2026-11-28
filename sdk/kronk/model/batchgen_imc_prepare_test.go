@@ -7,7 +7,7 @@ func TestIMCPreparationUsesPrefillBase(t *testing.T) {
 		cfg: adjustGenerationBatch(adjustConfig(NewConfig(WithNSeqMax(4), WithPrefillBatchSize(2048)), 0, false), 1+defMTPNDraft, true),
 	}}
 
-	if got := e.imcPreparationChunkSize(); got != 2048 {
+	if got := e.prefillChunkSize(nil); got != 2048 {
 		t.Errorf("IMC preparation chunk: got %d, want 2048", got)
 	}
 }

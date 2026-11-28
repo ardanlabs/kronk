@@ -181,6 +181,7 @@ export type KVCacheMode = 'partitioned' | 'shared';
 export interface ModelConfig {
   'context-window': number;
   'prefill-batch-size': number;
+  'prefill-batch-size-while-generating'?: number | null;
   'physical-batch-size'?: number | null;
   nthreads: number;
   'nthreads-batch': number;
@@ -822,6 +823,7 @@ export interface PlaygroundModelConfig {
   'context_window'?: number;
   'kv_cache_mode'?: KVCacheMode;
   'prefill_batch_size'?: number;
+  'prefill_batch_size_while_generating'?: number;
   'physical_batch_size'?: number;
   'nseq_max'?: number;
   'flash_attention'?: string;

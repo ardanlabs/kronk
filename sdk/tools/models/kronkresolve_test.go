@@ -462,6 +462,7 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
   admission-timeout: 3m
   imc-session-capacity: 8
   prefill-batch-size: 4096
+  prefill-batch-size-while-generating: 512
   physical-batch-size: 512
   image-batch-token-capacity: 1120
   image-token-budget: 768
@@ -487,6 +488,9 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	if got := kronkCfg.PrefillBatchSize(); got != 4096 {
 		t.Errorf("PrefillBatchSize() = %d, want 4096", got)
 	}
+	if got := kronkCfg.PrefillBatchSizeWhileGenerating(); got != 512 {
+		t.Errorf("PrefillBatchSizeWhileGenerating() = %d, want 512", got)
+	}
 	if got := kronkCfg.PhysicalBatchSize(); got != 512 {
 		t.Errorf("PhysicalBatchSize: got %d, want 512", got)
 	}
@@ -502,13 +506,14 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	overridePrefillBatchSize := 1024
 	overrideSessions := 10
 	MergeModelConfig(&cfg, ModelConfig{
-		PtrAdmissionTimeout:        &overrideTimeout,
-		PtrIMCSessionCapacity:      &overrideSessions,
-		PtrPrefillBatchSize:        &overridePrefillBatchSize,
-		PtrPhysicalBatchSize:       new(256),
-		PtrImageBatchTokenCapacity: new(0),
-		PtrImageTokenBudget:        new(1536),
-		PtrQueueDepth:              &overrideDepth,
+		PtrAdmissionTimeout:                &overrideTimeout,
+		PtrIMCSessionCapacity:              &overrideSessions,
+		PtrPrefillBatchSize:                &overridePrefillBatchSize,
+		PtrPrefillBatchSizeWhileGenerating: new(256),
+		PtrPhysicalBatchSize:               new(256),
+		PtrImageBatchTokenCapacity:         new(0),
+		PtrImageTokenBudget:                new(1536),
+		PtrQueueDepth:                      &overrideDepth,
 	})
 	kronkCfg = cfg.ToKronkConfig()
 	if got := kronkCfg.AdmissionTimeout(); got != 45*time.Second {
@@ -522,6 +527,18 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	}
 	if got := kronkCfg.PrefillBatchSize(); got != 1024 {
 		t.Errorf("merged PrefillBatchSize() = %d, want 1024", got)
+	}
+	MergeModelConfig(&cfg, ModelConfig{})
+	encoded, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ModelConfig
+	if err := yaml.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.ToKronkConfig().PrefillBatchSizeWhileGenerating(); got != 256 {
+		t.Errorf("merged round-trip contention limit: got %d, want 256", got)
 	}
 	if got := kronkCfg.PhysicalBatchSize(); got != 256 {
 		t.Errorf("merged PhysicalBatchSize: got %d, want 256", got)

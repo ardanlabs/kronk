@@ -463,7 +463,7 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 			}
 			e.model.log(job.ctx, "start-slot", "status", "imc-preparation-queued",
 				"slot", s.id, "seq", s.seqID, "tokens", len(job.imcNewCacheTokens),
-				"start_position", cacheIdx, "chunk_tokens", e.imcPreparationChunkSize())
+				"start_position", cacheIdx, "chunk_tokens", e.prefillChunkSize(s))
 			return
 
 		case cacheIdx > 0:

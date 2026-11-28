@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
@@ -79,6 +80,45 @@ func TestPrefillContributionSizeUsesSpaceRemainingAfterGenerationRows(t *testing
 			got := prefillContributionSize(tt.remaining, tt.availableAfterRows, tt.chunkLimit)
 			if got != tt.want {
 				t.Errorf("prefill contribution: got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrefillChunksWhilePeerGenerates(t *testing.T) {
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, tt := range []struct {
+		name  string
+		limit *int
+		peer  *slot
+		want  int
+	}{
+		{"single slot", new(2), nil, 5},
+		{"peer prefilling", new(2), &slot{active: true, job: &chatJob{ctx: t.Context()}}, 5},
+		{"peer generating", new(2), &slot{active: true, prefillDone: true, job: &chatJob{ctx: t.Context()}}, 2},
+		{"peer finished", new(2), &slot{prefillDone: true}, 5},
+		{"peer cancelled", new(2), &slot{active: true, prefillDone: true, job: &chatJob{ctx: cancelled}}, 5},
+		{"unset follows prefill", nil, &slot{active: true, prefillDone: true, job: &chatJob{ctx: t.Context()}}, 5},
+		{"cannot exceed prefill", new(9), &slot{active: true, prefillDone: true, job: &chatJob{ctx: t.Context()}}, 5},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &slot{active: true, seqIDs: []llama.SeqId{0}, job: &chatJob{ctx: t.Context()}, prefillTokens: []llama.Token{11, 22, 33, 44, 55, 66}}
+			cfg := NewConfig(WithPrefillBatchSize(5))
+			cfg.PtrPrefillBatchSizeWhileGenerating = tt.limit
+			cfg = adjustConfig(cfg, 0, false)
+			e := batchEngine{model: &Model{cfg: cfg}, batch: &extendedBatch{capacity: 10}, slots: []*slot{s}, shutdownCh: make(chan struct{})}
+			if tt.peer != nil {
+				e.slots = append(e.slots, tt.peer)
+			}
+			e.speculation = speculation.NewDisabled(&e)
+			pending, ok := e.addPrefillChunk(s, e.prefillChunkSize(s))
+			if !ok {
+				t.Fatal("prefill contribution was not staged")
+			}
+			pending.commit()
+			if e.batch.len() != tt.want || s.nPrefilled != tt.want {
+				t.Errorf("prefill: got rows %d, progress %d, want %d", e.batch.len(), s.nPrefilled, tt.want)
 			}
 		})
 	}
