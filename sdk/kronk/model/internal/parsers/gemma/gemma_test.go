@@ -103,15 +103,19 @@ func TestParser_TokenNestedValuesAndParallelCalls(t *testing.T) {
 			{"<|channel>", true}, {"thought", false}, {"Plan.", false}, {"<channel|>", true},
 			{"<|tool_call>", true}, {"call:echo{obj:{text:", false}, {`<|"|>`, true},
 			{literal[:split], false}, {literal[split:], false}, {`<|"|>`, true},
-			{`},list:[`, false}, {`<|"|>`, true}, {literal, false}, {`<|"|>`, true},
-			{`],id:9007199254740993,decimal:1.2300,enabled:true}`, false}, {"<tool_call|>", true},
+			{`},list:[{text:`, false}, {`<|"|>`, true}, {literal, false}, {`<|"|>`, true},
+			{`,id:1},{text:`, false}, {`<|"|>`, true}, {literal, false}, {`<|"|>`, true},
+			{`,id:2}],id:9007199254740993,decimal:1.2300,enabled:true}`, false}, {"<tool_call|>", true},
 			{"\n", false}, {"<|tool_call>", true}, {`call:second{"text":"\u0000q\u00000"}`, false}, {"<tool_call|>", true},
 		})
 		calls := (Parser{}).ToolCallWithSchema(t.Context(), nil, output[parsers.ChannelTool], []parsers.D{{
 			"type": "function", "function": parsers.D{"name": "echo", "parameters": parsers.D{"properties": parsers.D{"enabled": parsers.D{"type": "string"}}}},
 		}})
 		want := parsers.ToolCallArguments{
-			"obj": map[string]any{"text": literal}, "list": []any{literal},
+			"obj": map[string]any{"text": literal}, "list": []any{
+				map[string]any{"text": literal, "id": json.Number("1")},
+				map[string]any{"text": literal, "id": json.Number("2")},
+			},
 			"id": json.Number("9007199254740993"), "decimal": json.Number("1.2300"), "enabled": "true",
 		}
 		if len(calls) != 2 || calls[0].Status != 0 || calls[1].Status != 0 || !reflect.DeepEqual(calls[0].Function.Arguments, want) || calls[1].Function.Arguments["text"] != "\x00q\x000" {

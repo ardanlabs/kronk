@@ -110,7 +110,7 @@ func parseGemma(ctx context.Context, log applog.Logger, content string) []parser
 			jsonCandidate = "{" + jsonCandidate + "}"
 		}
 
-		args, err := decodeRepairedGemmaObject(jsonCandidate)
+		args, err := decodeRepairedGemmaObject(jsonCandidate, quote)
 		if err != nil {
 			if errors.Is(err, errDuplicateGemmaKey) {
 				return []parsers.ResponseToolCall{failedGemmaToolCall(raw,
@@ -287,13 +287,7 @@ func parseGemmaArgs(raw, quote string) (map[string]any, error) {
 				return nil, fmt.Errorf("argument %q has an unterminated composite value", key)
 			}
 
-			rawValue := remaining[:endIdx]
-			jsonVal := rawValue
-			if quote != "" {
-				jsonVal = strings.ReplaceAll(rawValue, quote, "\"")
-			}
-
-			parsed, err := decodeRepairedGemmaJSON(jsonVal)
+			parsed, err := decodeRepairedGemmaJSON(remaining[:endIdx], quote)
 			if err != nil {
 				return nil, fmt.Errorf("argument %q has an invalid composite value: %w", key, err)
 			}
@@ -357,8 +351,8 @@ func parseGemmaBareValue(s string) any {
 	return s
 }
 
-func decodeRepairedGemmaObject(raw string) (map[string]any, error) {
-	value, err := decodeRepairedGemmaJSON(raw)
+func decodeRepairedGemmaObject(raw, quote string) (map[string]any, error) {
+	value, err := decodeRepairedGemmaJSON(raw, quote)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +365,18 @@ func decodeRepairedGemmaObject(raw string) (map[string]any, error) {
 	return object, nil
 }
 
-func decodeRepairedGemmaJSON(raw string) (any, error) {
+func decodeRepairedGemmaJSON(raw, quote string) (any, error) {
+	// Bare keys and native strings are valid Gemma syntax, not broken JSON.
+	// Normalize them without guessing at string boundaries or array structure.
+	if normalized, err := normalizeGemmaJSON(raw, quote); err == nil {
+		value, err := decodeUniqueGemmaJSON(normalized)
+		if err == nil || errors.Is(err, errDuplicateGemmaKey) {
+			return value, err
+		}
+		raw = normalized
+	}
+
+	// Preserve recovery for genuinely malformed input after native decoding.
 	repaired, err := jsonrepair.Repair(raw)
 	if err != nil {
 		return nil, err
@@ -383,6 +388,81 @@ func decodeRepairedGemmaJSON(raw string) (any, error) {
 	}
 
 	return value, nil
+}
+
+// normalizeGemmaJSON quotes bare object keys at every nesting level and encodes
+// native strings. Standard JSON strings remain opaque, including marker text.
+// The JSON decoder validates the resulting structure and rejects duplicate keys.
+func normalizeGemmaJSON(raw, quote string) (string, error) {
+	var result strings.Builder
+	var stack []byte
+	key := false
+	for raw != "" {
+		switch {
+		case quote != "" && strings.HasPrefix(raw, quote):
+			value, rest, found := strings.Cut(raw[len(quote):], quote)
+			if !found {
+				return "", errors.New("native string is not closed")
+			}
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return "", err
+			}
+			result.Write(encoded)
+			raw = rest
+			key = false
+			continue
+
+		case raw[0] == '"':
+			end := findClosingStandardQuote(raw[1:])
+			if end == -1 {
+				return "", errors.New("JSON string is not closed")
+			}
+			result.WriteString(raw[:end+2])
+			raw = raw[end+2:]
+			key = false
+			continue
+
+		case raw[0] == '{' || raw[0] == '[':
+			stack = append(stack, raw[0])
+			key = raw[0] == '{'
+
+		case raw[0] == '}' || raw[0] == ']':
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+			key = false
+
+		case raw[0] == ',':
+			key = len(stack) > 0 && stack[len(stack)-1] == '{'
+
+		case raw[0] == ':':
+			key = false
+
+		case raw[0] == ' ' || raw[0] == '\t' || raw[0] == '\n' || raw[0] == '\r':
+			// Whitespace does not change whether an object key is expected.
+
+		case key:
+			end := strings.IndexAny(raw, " \t\r\n:{}[],\"'")
+			if end == -1 {
+				end = len(raw)
+			}
+			if end == 0 {
+				return "", errors.New("invalid native object key")
+			}
+			encoded, err := json.Marshal(raw[:end])
+			if err != nil {
+				return "", err
+			}
+			result.Write(encoded)
+			raw = raw[end:]
+			key = false
+			continue
+		}
+		result.WriteByte(raw[0])
+		raw = raw[1:]
+	}
+	return result.String(), nil
 }
 
 func decodeUniqueGemmaJSON(raw string) (any, error) {

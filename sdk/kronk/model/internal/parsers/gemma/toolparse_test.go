@@ -37,6 +37,70 @@ func TestParseGemma_PureJSONInside(t *testing.T) {
 	}
 }
 
+func TestToolCall_NestedArrayObjects(t *testing.T) {
+	for _, content := range []string{
+		`call:report{findings:[{comment:"x",issue:"a"},{comment:"x",issue:"b"}]}`,
+		`call:report{findings:[{comment:<|"|>x<|"|>,issue:<|"|>a<|"|>},{comment:<|"|>x<|"|>,issue:<|"|>b<|"|>}]}`,
+	} {
+		calls := Parser{}.ToolCall(t.Context(), nil, content)
+		if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "report" {
+			t.Fatalf("%s: got %+v, want one successful report call", content, calls)
+		}
+		want := parsers.ToolCallArguments{"findings": []any{
+			map[string]any{"comment": "x", "issue": "a"},
+			map[string]any{"comment": "x", "issue": "b"},
+		}}
+		if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+			t.Fatalf("arguments: got %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestToolCall_RepairFallback(t *testing.T) {
+	calls := Parser{}.ToolCall(t.Context(), nil, `call:record{"text":"import "fmt""}`)
+	if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "record" {
+		t.Fatalf("calls: got %+v, want one repaired record call", calls)
+	}
+	want := parsers.ToolCallArguments{"text": `import "fmt"`}
+	if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+		t.Fatalf("arguments: got %#v, want %#v", got, want)
+	}
+}
+
+func TestToolCall_NestedNativeArguments(t *testing.T) {
+	const native = `call:report{findings:[{comment:<|"|>first "quote"<|"|>,issue:<|"|>alpha<|"|>,meta:{enabled:false,n:9007199254740993}},{comment:<|"|>second \ path<|"|>,issue:<|"|>beta<|"|>,meta:{enabled:true,n:-2}}],text:"{fake:key,<|\"|>}"}`
+	tests := []struct {
+		name, content string
+	}{
+		{name: "bare keys and JSON strings", content: `call:report{findings:[{comment:"first \"quote\"",issue:"alpha",meta:{enabled:false,n:9007199254740993}},{comment:"second \\ path",issue:"beta",meta:{enabled:true,n:-2}}],text:"{fake:key,<|\"|>}"}`},
+		{name: "native strings", content: native},
+		{name: "token-provenance strings", content: tokenToolPrefix + `call:report{findings:[{comment:` + tokenQuote + `first "quote"` + tokenQuote + `,issue:` + tokenQuote + `alpha` + tokenQuote + `,meta:{enabled:false,n:9007199254740993}},{comment:` + tokenQuote + `second \ path` + tokenQuote + `,issue:` + tokenQuote + `beta` + tokenQuote + `,meta:{enabled:true,n:-2}}],text:"{fake:key,<|\"|>}"}`},
+		{name: "quoted JSON keys", content: `call:report{"findings":[{"comment":"first \"quote\"","issue":"alpha","meta":{"enabled":false,"n":9007199254740993}},{"comment":"second \\ path","issue":"beta","meta":{"enabled":true,"n":-2}}],"text":"{fake:key,<|\"|>}"}`},
+	}
+	want := parsers.ToolCallArguments{
+		"findings": []any{
+			map[string]any{"comment": `first "quote"`, "issue": "alpha", "meta": map[string]any{"enabled": false, "n": json.Number("9007199254740993")}},
+			map[string]any{"comment": `second \ path`, "issue": "beta", "meta": map[string]any{"enabled": true, "n": json.Number("-2")}},
+		},
+		"text": `{fake:key,<|"|>}`,
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := Parser{}.ToolCall(t.Context(), nil, tt.content)
+			if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "report" {
+				t.Fatalf("calls: got %+v, want one successful report call", calls)
+			}
+			if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+				t.Fatalf("arguments: got %#v, want %#v", got, want)
+			}
+			encoded, err := json.Marshal(calls[0].Function.Arguments)
+			if err != nil || !json.Valid(encoded) {
+				t.Fatalf("serialized arguments: got %q, %v, want valid JSON", encoded, err)
+			}
+		})
+	}
+}
+
 func TestParseGemmaBareValue(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -121,6 +185,7 @@ func TestParseGemma_RejectsMalformedOutputAtomically(t *testing.T) {
 		{name: "duplicate json argument", content: `call:bash{"command":"echo safe","command":"id"}`},
 		{name: "escaped duplicate json argument", content: `call:bash{"command":"echo safe","\u0063ommand":"id"}`},
 		{name: "nested duplicate json argument", content: `call:run{"config":{"command":"echo safe","command":"id"}}`},
+		{name: "nested duplicate native argument", content: `call:run{config:{command:<|"|>echo safe<|"|>,command:<|"|>id<|"|>}}`},
 		{name: "invalid composite", content: `call:first{config:{]}}`},
 	}
 
