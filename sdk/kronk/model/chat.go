@@ -213,7 +213,7 @@ func (m *Model) prepareChat(ctx context.Context, d D, streaming bool, requestSta
 		return preparedChat{}, err
 	}
 
-	prompt, media, cache, err := m.prepareCacheAndPrompt(ctx, d, object, requestStart)
+	prompt, media, cache, err := m.prepareCacheAndPrompt(ctx, d, object, requestStart, params.CacheReadOnly)
 	prepared := preparedChat{
 		d:      cache.modifiedD,
 		object: object,
@@ -420,7 +420,7 @@ func (m *Model) prepareContext(ctx context.Context, d D) (D, string, error) {
 
 // prepareCacheAndPrompt handles cache processing and prompt creation. Returns
 // the prompt, media bytes, cache result, and any error.
-func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, requestStart time.Time) (string, [][]byte, cacheResult, error) {
+func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, requestStart time.Time, readOnly bool) (string, [][]byte, cacheResult, error) {
 	var cache cacheResult
 
 	// Deserialize tool call arguments from JSON strings to maps so Jinja
@@ -431,7 +431,9 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 
 	// IMC caches through media messages using the mtmd pipeline —
 	// images and audio remain in the KV cache across requests.
-	cachingEnabled := m.cfg.IncrementalCache() && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != ""))
+	// A read-only request uses the text planner only: media requests run
+	// without the cache rather than advance a media session.
+	cachingEnabled := m.cfg.IncrementalCache() && (object == ObjectChatText || (object == ObjectChatMedia && m.projFile != "" && !readOnly))
 
 	// IMC uses complete-conversation token planning. Render from two
 	// independent top-level maps because the Jinja path injects request
@@ -458,7 +460,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 			actualTokens := llama.Tokenize(m.vocab, actualPrompt, m.addBOSToken, true)
 			stableTokens := llama.Tokenize(m.vocab, stablePrompt, m.addBOSToken, true)
 
-			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, systemTokens, requestStart)
+			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, systemTokens, requestStart, readOnly)
 		}
 		if cache.err != nil {
 			return "", nil, cache, cache.err
@@ -550,6 +552,7 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		imcNewLogicalPosition:   cache.imcNewLogicalPosition,
 		imcReservationHeld:      cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild || cache.imcMediaAppend,
 		imcPureHitSkipSnapshot:  cache.imcPureHitSkipSnapshot,
+		imcCacheReadOnly:        cache.imcCacheReadOnly,
 		imcSystemBoundaryTokens: cache.imcSystemBoundaryTokens,
 		imcSystemCache:          cache.imcSystemCache,
 

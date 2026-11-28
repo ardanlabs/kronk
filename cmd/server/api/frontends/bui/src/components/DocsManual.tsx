@@ -1621,6 +1621,12 @@ Next stable rendering retroactively changes an assistant turn:
           <p>The exact token lengths depend on the template; the brackets show logical regions, not token counts. The diagram combines normal deterministic growth with the System-only recovery path used when every Current cache diverges.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/07-select-imc-session.svg" alt="IMC cache population and session selection" /></p>
           <p>System never advances to a user, assistant, tool, or computed token boundary. The pool has the same number of entries as the working-session pool, and one immutable entry can preload multiple conversation branches.</p>
+          <h3 id="522-side-requests">5.2.2 Side Requests</h3>
+          <p>A side request sends a conversation plus a message of its own that the conversation will never contain, such as a request for a suggested next message. As an append, it would store its own message as the conversation's cached state, so the conversation's next request would no longer extend that state:</p>
+          <pre className="code-block"><code className="language-text">{`Cached stable tokens:   [A B C]
+Side request:           [A B C S]      -> append S (cached state is now A B C S)
+Next request:           [A B C D E]    -> rebuild`}</code></pre>
+          <p>Send such requests with <code>cache_read_only: true</code>. The side request still reuses <code>[A B C]</code> as an exact or append match, but the cached state stays <code>[A B C]</code>, so the next request is an append of <code>D E</code>. A read-only request that matches no cached state is processed without the cache and replaces no session. See <a href="https://www.kronkai.com/manual#108-cache-control">Chapter 10</a>.</p>
           <h2 id="53-sessions-slots-and-snapshots">5.3 Sessions, Slots, and Snapshots</h2>
           <p>An IMC <strong>session</strong> is a reusable conversation identity and its saved model state. An execution <strong>slot</strong> is a lane that can actively run a request. These are deliberately separate:</p>
           <ul>
@@ -4131,6 +4137,38 @@ afplay speech.wav # macOS; use a WAV player on other systems.`}</code></pre>
 }`}</code></pre>
           <p>Each entry in <code>choices[].logprobs.content</code> contains the generated <code>token</code>, its <code>logprob</code>, its UTF-8 <code>bytes</code>, and up to <code>top_logprobs</code> alternatives. Values closer to zero were more probable under that generation step, but they are not proof of factual correctness.</p>
           <p>Streaming responses attach logprob data to individual delta chunks. Non-streaming responses collect the entries in the final choice. This data is useful for token-level diagnostics and comparative scoring; it does not alter sampling after generation has occurred.</p>
+          <h2 id="108-cache-control">10.8 Cache Control</h2>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>JSON key</th>
+                <th>Type</th>
+                <th>Baseline</th>
+                <th>Behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>cache_read_only</code></td>
+                <td>boolean</td>
+                <td><code>false</code></td>
+                <td>Reads the Incremental Message Cache without changing it.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>A side request branches off a conversation without becoming part of it. Examples are asking for a suggested next message, a title, or a summary. It sends the conversation plus one message of its own, and the conversation's next real request will not contain that message. Normally IMC caches the side request's prompt as the conversation's new state. The next real request then no longer extends the cached state and rebuilds it from the start, which takes a full prompt prefill.</p>
+          <p>With <code>cache_read_only: true</code>, a request whose prompt extends a cached conversation reuses that cache as usual. The cached state is left exactly as it was: what the side request adds is never stored, saved, or restored for another request. If no cached conversation matches, the request is processed in full without the cache, rather than replacing another conversation's cached state.</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
+  "messages": [
+    {"role": "user", "content": "How do I prepare soil for a vegetable garden?"},
+    {"role": "assistant", "content": "Loosen it, mix in compost, then test the pH."},
+    {"role": "user", "content": "Suggest the user's most likely next message in one line."}
+  ],
+  "cache_read_only": true,
+  "max_tokens": 64
+}`}</code></pre>
+          <p>The setting applies to text requests. A media request with <code>cache_read_only</code> is processed in full without the cache. Without IMC enabled, the field has no effect. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for how IMC matches and reuses a conversation.</p>
           <h2 id="chapter-11-multimodal-models">Chapter 11: Multimodal Models</h2>
           <p>Multimodal models combine a language model with a media projector that turns images or audio into input the language model can process. They use the Chat Completions endpoint described in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>. Text-to-speech is a separate SDK operation described in <a href="#119-text-to-speech-sdk">§11.9</a>; it also has a buffered <code>/v1/audio/speech</code> endpoint. Neither uses Chat Completions or Bucky's transcription API.</p>
           <h2 id="111-models-and-projectors">11.1 Models and Projectors</h2>
@@ -6993,6 +7031,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/model/internal/parsers/
               <a href="#52-how-kronk-reuses-a-text-prefix" className={`doc-index-header ${activeSection === '52-how-kronk-reuses-a-text-prefix' ? 'active' : ''}`}>5.2 How Kronk Reuses a Text Prefix</a>
               <ul>
                 <li><a href="#521-system-cache-lifecycle-and-template-behavior" className={activeSection === '521-system-cache-lifecycle-and-template-behavior' ? 'active' : ''}>5.2.1 System Cache Lifecycle and Template Behavior</a></li>
+                <li><a href="#522-side-requests" className={activeSection === '522-side-requests' ? 'active' : ''}>5.2.2 Side Requests</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -7197,6 +7236,9 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/model/internal/parsers/
             </div>
             <div className="doc-index-section">
               <a href="#107-token-log-probabilities" className={`doc-index-header ${activeSection === '107-token-log-probabilities' ? 'active' : ''}`}>10.7 Token Log Probabilities</a>
+            </div>
+            <div className="doc-index-section">
+              <a href="#108-cache-control" className={`doc-index-header ${activeSection === '108-cache-control' ? 'active' : ''}`}>10.8 Cache Control</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-11-multimodal-models" className={`doc-index-header ${activeSection === 'chapter-11-multimodal-models' ? 'active' : ''}`}>Chapter 11: Multimodal Models</a>

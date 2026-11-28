@@ -171,7 +171,7 @@ func (m *Model) imcNewStoredIdentity(s *imcSession) {
 // lock is held during encoding or storage I/O, and all buffers remain borrowed.
 func (m *Model) imcSaveCompleted(ctx context.Context, job *chatJob, request json.RawMessage, assistant string) {
 	s := job.imcSession
-	if !m.imcStorageEnabled() || !job.hasIMCReservation() || s.storageConflict || len(request) == 0 ||
+	if !m.imcStorageEnabled() || !job.hasIMCReservation() || job.imcCacheReadOnly || s.storageConflict || len(request) == 0 ||
 		s.usageVersion != job.imcUsageVersion || s.cache.totalTokensCached == 0 || s.kvState.Len() == 0 {
 		return
 	}

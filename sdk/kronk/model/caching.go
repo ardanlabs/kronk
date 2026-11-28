@@ -49,6 +49,7 @@ type cacheResult struct {
 	imcMediaAppend          bool // True when the media-anchor extension contains new image or audio chunks.
 	imcNewLogicalPosition   int  // Next logical position after a media-anchor advance.
 	imcPureHitSkipSnapshot  bool // True when startSlot may skip the post-restore snapshot.
+	imcCacheReadOnly        bool // True when the request uses its session without changing it (cache_read_only).
 	imcSystemBoundaryTokens int  // Exact system-prefix boundary at which to publish a missing immutable preload.
 	imcSystemCache          *imcSystemCache
 

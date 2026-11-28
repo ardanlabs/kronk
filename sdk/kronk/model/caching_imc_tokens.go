@@ -12,7 +12,10 @@ import (
 // processIMCTokenPlan selects a text session using cached tokens as the
 // authority. Only complete cached sequences are reusable; divergence never
 // trims an existing session and instead rebuilds an empty/LRU session.
-func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, system []llama.Token, requestStart time.Time) cacheResult {
+//
+// A readOnly request (cache_read_only) reuses a complete-prefix session without
+// changing it, and on a miss runs without the cache instead of rebuilding one.
+func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, system []llama.Token, requestStart time.Time, readOnly bool) cacheResult {
 	result := cacheResult{modifiedD: d}
 	if len(actual) == 0 || !tokensHavePrefix(actual, stable) {
 		return result
@@ -65,6 +68,17 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 
 	if best == nil {
 		best = m.imcFindStoredSession(ctx, target, nil, matches)
+	}
+
+	// A read-only request never resets a session: that would evict another
+	// conversation's cache for a request whose state is thrown away.
+	if best == nil && readOnly {
+		m.cacheMu.Unlock()
+		result.imcTailTokens = slices.Clone(actual)
+		m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
+			"match_kind", "bypass", "match_reason", "read-only-miss", "reusable_tokens", 0, "extension_tokens", 0,
+			"tail_tokens", len(actual), "actual_tokens", len(actual), "stable_tokens", targetLen)
+		return result
 	}
 
 	// System is an immutable preload tier. Search it only when no Current
@@ -150,6 +164,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	result.imcMatchKind = matchKind
 	result.imcReadOnlyReservation = matchKind == "exact"
 	result.imcPureHitSkipSnapshot = matchKind == "exact"
+	result.imcCacheReadOnly = readOnly
 	result.imcSystemCache = systemCache
 	if systemCache == nil && len(system) >= m.cfg.CacheMinTokens() && reusable == 0 && len(system) < targetLen && tokensHavePrefix(target, system) {
 		result.imcSystemBoundaryTokens = len(system)
@@ -157,7 +172,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
-		"imc_cache_entry", selected.id, "match_kind", matchKind, "match_reason", matchReason, "reusable_tokens", reusable,
+		"imc_cache_entry", selected.id, "match_kind", matchKind, "match_reason", matchReason, "read_only", readOnly, "reusable_tokens", reusable,
 		"system_boundary_tokens", result.imcSystemBoundaryTokens,
 		"full_input_snapshot_tokens", targetLen, "full_input_snapshot_messages", messageCount(d),
 		"extension_tokens", len(extension), "tail_tokens", len(tail), "actual_tokens", len(actual),
