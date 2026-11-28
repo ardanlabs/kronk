@@ -69,6 +69,7 @@ type chatJob struct {
 	imcNewLogicalPosition   int  // Next logical position after a media-anchor advance.
 	imcReservationHeld      bool // True until this request publishes or releases its reservation.
 	imcPureHitSkipSnapshot  bool // True when startSlot may skip the post-restore snapshot.
+	imcCacheReadOnly        bool // True when the request uses its session without changing it (cache_read_only).
 	imcSystemBoundaryTokens int  // Exact system-prefix boundary for publishing a missing immutable preload.
 	imcSystemCache          *imcSystemCache
 

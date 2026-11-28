@@ -20,7 +20,11 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	s.active = true
 	s.job = job
 	s.stopGate = newStopGate(job.params.Stop)
-	job.imcUsageVersion = e.model.imcBeginRequestUsage(job.imcSession)
+	if !job.imcCacheReadOnly {
+		// A read-only request leaves the session's usage and history alone, so
+		// its output is never recorded or saved against the session.
+		job.imcUsageVersion = e.model.imcBeginRequestUsage(job.imcSession)
+	}
 	s.reusedPromptTokens = job.reusedPromptTokens
 	s.suppressTools = job.d["tool_choice"] == "none"
 	if stateMachine, ok := s.stateMachine.(ToolAwareStateMachine); ok {
@@ -197,7 +201,9 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 	// fixed slot-to-session correspondence: the session is bound to this
 	// slot's KV sequence here and unbound in finishSlot.
 	var cacheIdx llama.Pos
-	var sessionUpdateDisabled bool
+	// A read-only request extends the restored prefix in its own slot only: no
+	// commit, no snapshot, so the session stays as the planner found it.
+	sessionUpdateDisabled := job.imcCacheReadOnly
 
 	// sessionWasCommitted records whether we called imcCommitSession in
 	// the cache-build / cache-extend branches below. When true, the

@@ -6,6 +6,7 @@
   - [5.1.1 Quick Semantic Understanding](#511-quick-semantic-understanding)
 - [5.2 How Kronk Reuses a Text Prefix](#52-how-kronk-reuses-a-text-prefix)
   - [5.2.1 System Cache Lifecycle and Template Behavior](#521-system-cache-lifecycle-and-template-behavior)
+  - [5.2.2 Side Requests](#522-side-requests)
 - [5.3 Sessions, Slots, and Snapshots](#53-sessions-slots-and-snapshots)
 - [5.4 Media Requests](#54-media-requests)
 - [5.5 Configuration and Storage](#55-configuration-and-storage)
@@ -382,6 +383,26 @@ with the System-only recovery path used when every Current cache diverges.
 System never advances to a user, assistant, tool, or computed token boundary.
 The pool has the same number of entries as the working-session pool, and one
 immutable entry can preload multiple conversation branches.
+
+### 5.2.2 Side Requests
+
+A side request sends a conversation plus a message of its own that the
+conversation will never contain, such as a request for a suggested next
+message. As an append, it would store its own message as the conversation's
+cached state, so the conversation's next request would no longer extend that
+state:
+
+```text
+Cached stable tokens:   [A B C]
+Side request:           [A B C S]      -> append S (cached state is now A B C S)
+Next request:           [A B C D E]    -> rebuild
+```
+
+Send such requests with `cache_read_only: true`. The side request still reuses
+`[A B C]` as an exact or append match, but the cached state stays `[A B C]`,
+so the next request is an append of `D E`. A read-only request that matches no
+cached state is processed without the cache and replaces no session. See
+[Chapter 10](https://www.kronkai.com/manual#108-cache-control).
 
 ## 5.3 Sessions, Slots, and Snapshots
 

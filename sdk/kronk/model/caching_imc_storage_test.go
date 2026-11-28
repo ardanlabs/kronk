@@ -226,7 +226,7 @@ func TestIMCStorageRoundTrip(t *testing.T) {
 				actual.units = append(slices.Clone(stable.units), promptUnit{token: 40})
 				result = m.processIMCMediaPlans(t.Context(), d, d, actual, stable, []llama.Token{40}, nil, time.Now())
 			} else {
-				result = m.processIMCTokenPlan(t.Context(), d, []llama.Token{10, 20, 30, 40}, []llama.Token{10, 20, 30}, nil, time.Now())
+				result = m.processIMCTokenPlan(t.Context(), d, []llama.Token{10, 20, 30, 40}, []llama.Token{10, 20, 30}, nil, time.Now(), false)
 			}
 			wantPosition := llama.Pos(2)
 			if media {
@@ -266,7 +266,7 @@ func TestIMCStorageSaveFailurePreservesRAMAndRecovers(t *testing.T) {
 		t.Fatal("failed save changed the usable RAM checkpoint")
 	}
 	store.findErr = errors.New("RAM hit must not need storage")
-	result := m.processIMCTokenPlan(t.Context(), d, []llama.Token{10, 20, 40}, []llama.Token{10, 20}, nil, time.Now())
+	result := m.processIMCTokenPlan(t.Context(), d, []llama.Token{10, 20, 40}, []llama.Token{10, 20}, nil, time.Now(), false)
 	if result.err != nil || result.imcMatchKind != "exact" || result.cacheIdx != 2 {
 		t.Fatalf("RAM reuse after save failure = %+v", result)
 	}
@@ -314,7 +314,7 @@ func TestIMCStorageRejectedImportsRebuild(t *testing.T) {
 			if name == "different tokens" {
 				stable[1] = 99
 			}
-			result := m.processIMCTokenPlan(t.Context(), d, append(slices.Clone(stable), 40), stable, nil, time.Now())
+			result := m.processIMCTokenPlan(t.Context(), d, append(slices.Clone(stable), 40), stable, nil, time.Now(), false)
 			if result.err != nil || result.cacheIdx != 0 || !result.imcClearSeq || result.imcMatchKind != "rebuild" {
 				t.Fatalf("optional storage failure did not rebuild: %+v", result)
 			}
@@ -343,7 +343,7 @@ func TestIMCStorageSearchWindowAndLongestPrefix(t *testing.T) {
 			t.Fatal("unrelated conversation reused a durable ID")
 		}
 		resetTestSession(t, job.imcSession)
-		result := m.processIMCTokenPlan(t.Context(), d, []llama.Token{10, 20, 30, 40}, []llama.Token{10, 20, 30}, nil, time.Now())
+		result := m.processIMCTokenPlan(t.Context(), d, []llama.Token{10, 20, 30, 40}, []llama.Token{10, 20, 30}, nil, time.Now(), false)
 		if result.err != nil || int(result.cacheIdx) != limit || store.query.Limit != 100 || store.query.MaxPrefixLength != 3 {
 			t.Fatalf("limit %d: prefix/query/error = %d/%+v/%v", limit, result.cacheIdx, store.query, result.err)
 		}

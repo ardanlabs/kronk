@@ -61,7 +61,7 @@ func TestMessagePrefixHash(t *testing.T) {
 				publishTestIMCPrefixes(m)
 				stable := append(slices.Clone(tokens), 5)
 				actual := append(slices.Clone(stable), 6)
-				result := m.processIMCTokenPlan(context.Background(), D{}, actual, stable, nil, time.Now())
+				result := m.processIMCTokenPlan(context.Background(), D{}, actual, stable, nil, time.Now(), false)
 				if result.err != nil || result.imcSession != m.imcSessions[2] || result.cacheIdx != 1640 || result.imcMatchKind != "append" || !slices.Equal(result.imcNewCacheTokens, []llama.Token{5}) {
 					t.Fatalf("mixed-length selection: got session=%p prefix=%d kind=%q extension=%v err=%v", result.imcSession, result.cacheIdx, result.imcMatchKind, result.imcNewCacheTokens, result.err)
 				}
@@ -114,7 +114,7 @@ func TestIMCPrefixHashCollision(t *testing.T) {
 				full.mediaBytes = plan.mediaBytes
 				result = m.processIMCMediaPlans(context.Background(), d, d, full, plan, []llama.Token{3}, nil, time.Now())
 			} else {
-				result = m.processIMCTokenPlan(context.Background(), d, actual, stable, nil, time.Now())
+				result = m.processIMCTokenPlan(context.Background(), d, actual, stable, nil, time.Now(), false)
 			}
 			if result.err != nil || result.imcMatchKind != "rebuild" || result.cacheIdx != 0 || !result.imcClearSeq {
 				t.Fatalf("collision plan: got kind=%q reused=%d clear=%v err=%v, want rebuild without restore", result.imcMatchKind, result.cacheIdx, result.imcClearSeq, result.err)

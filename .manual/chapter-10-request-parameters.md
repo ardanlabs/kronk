@@ -9,6 +9,7 @@
 - [10.5 Generation and Reasoning](#105-generation-and-reasoning)
 - [10.6 Structured Output](#106-structured-output)
 - [10.7 Token Log Probabilities](#107-token-log-probabilities)
+- [10.8 Cache Control](#108-cache-control)
 
 ---
 
@@ -265,3 +266,41 @@ Streaming responses attach logprob data to individual delta chunks.
 Non-streaming responses collect the entries in the final choice. This data is
 useful for token-level diagnostics and comparative scoring; it does not alter
 sampling after generation has occurred.
+
+## 10.8 Cache Control
+
+| JSON key          | Type    | Baseline | Behavior |
+| ----------------- | ------- | -------- | -------- |
+| `cache_read_only` | boolean | `false`  | Reads the Incremental Message Cache without changing it. |
+
+A side request branches off a conversation without becoming part of it. Examples
+are asking for a suggested next message, a title, or a summary. It sends the
+conversation plus one message of its own, and the conversation's next real
+request will not contain that message. Normally IMC caches the side request's
+prompt as the conversation's new state. The next real request then no longer
+extends the cached state and rebuilds it from the start, which takes a full
+prompt prefill.
+
+With `cache_read_only: true`, a request whose prompt extends a cached
+conversation reuses that cache as usual. The cached state is left exactly as it
+was: what the side request adds is never stored, saved, or restored for another
+request. If no cached conversation matches, the request is processed in full
+without the cache, rather than replacing another conversation's cached state.
+
+```json
+{
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
+  "messages": [
+    {"role": "user", "content": "How do I prepare soil for a vegetable garden?"},
+    {"role": "assistant", "content": "Loosen it, mix in compost, then test the pH."},
+    {"role": "user", "content": "Suggest the user's most likely next message in one line."}
+  ],
+  "cache_read_only": true,
+  "max_tokens": 64
+}
+```
+
+The setting applies to text requests. A media request with `cache_read_only`
+is processed in full without the cache. Without IMC enabled, the field has no
+effect. See [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching)
+for how IMC matches and reuses a conversation.

@@ -65,7 +65,7 @@ func TestProcessIMCTokenPlanPublishesVerifiedSystemBoundary(t *testing.T) {
 	}
 	publishTestIMCPrefixes(&m)
 	target := []llama.Token{1, 2, 3, 4, 5, 6}
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}, {"role": "user", "content": "hello"}}}, append(slices.Clone(target), 9), target, target[:2], time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}, {"role": "user", "content": "hello"}}}, append(slices.Clone(target), 9), target, target[:2], time.Now(), false)
 
 	if result.cacheIdx != 0 || result.imcSystemBoundaryTokens != 2 {
 		t.Errorf("plan restored/system tokens = %d/%d, want 0/2", result.cacheIdx, result.imcSystemBoundaryTokens)
@@ -80,7 +80,7 @@ func TestProcessIMCTokenPlanRejectsUnverifiedSystemBoundary(t *testing.T) {
 	}
 	publishTestIMCPrefixes(&m)
 	target := []llama.Token{1, 2, 3, 4, 5}
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}}}, append(slices.Clone(target), 9), target, []llama.Token{1, 9}, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}}}, append(slices.Clone(target), 9), target, []llama.Token{1, 9}, time.Now(), false)
 
 	if result.imcSystemBoundaryTokens != 0 {
 		t.Errorf("imcSystemBoundaryTokens = %d, want 0", result.imcSystemBoundaryTokens)
@@ -101,7 +101,7 @@ func TestProcessIMCTokenPlanSelectsLongestCompletePrefix(t *testing.T) {
 
 	actual := []llama.Token{1, 2, 3, 4}
 	stable := []llama.Token{1, 2, 3}
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, actual, stable, nil, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, actual, stable, nil, time.Now(), false)
 
 	if result.imcSessionID != 1 {
 		t.Errorf("imcSessionID = %d, want 1", result.imcSessionID)
@@ -130,7 +130,7 @@ func TestProcessIMCTokenPlanRejectsNonPrefixRender(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Model{cfg: Config{PtrCacheMinTokens: new(1)}}
-			result := m.processIMCTokenPlan(t.Context(), nil, tt.actual, tt.stable, nil, time.Now())
+			result := m.processIMCTokenPlan(t.Context(), nil, tt.actual, tt.stable, nil, time.Now(), false)
 			if result.imcTokenPlan {
 				t.Fatal("imcTokenPlan = true, want false")
 			}
@@ -150,7 +150,7 @@ func TestProcessIMCTokenPlanUsesSystemCacheAfterCurrentDiverges(t *testing.T) {
 	m := Model{cfg: Config{PtrCacheMinTokens: new(1)}, log: applog.DiscardLogger, imcSessions: []*imcSession{session}, imcSystemCaches: []*imcSystemCache{cache}}
 	publishTestIMCPrefixes(&m)
 	stable := []llama.Token{1, 2, 3, 4}
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}}}, append(slices.Clone(stable), 9), stable, system, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}}}, append(slices.Clone(stable), 9), stable, system, time.Now(), false)
 
 	if result.imcMatchKind != "append" {
 		t.Errorf("imcMatchKind = %q, want append", result.imcMatchKind)
@@ -185,7 +185,7 @@ func TestProcessIMCTokenPlanSkipsSystemCacheBeingRebuilt(t *testing.T) {
 	publishTestIMCPrefixes(&m)
 	stable := []llama.Token{1, 2, 3, 4}
 
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}}}, append(slices.Clone(stable), 9), stable, []llama.Token{1, 2}, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}}}, append(slices.Clone(stable), 9), stable, []llama.Token{1, 2}, time.Now(), false)
 
 	if result.imcSystemCache != nil || cache.activeRestores != 0 {
 		t.Error("System cache was restored while its allocation was being rebuilt")
@@ -209,7 +209,7 @@ func TestProcessIMCTokenPlanChecksAllCurrentCachesBeforeSystem(t *testing.T) {
 	}
 	publishTestIMCPrefixes(&m)
 
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3, 4, 5}, []llama.Token{1, 2, 3, 4}, nil, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3, 4, 5}, []llama.Token{1, 2, 3, 4}, nil, time.Now(), false)
 
 	if result.imcSessionID != current.id || result.cacheIdx != 1 {
 		t.Errorf("selected session/cacheIdx = %d/%d, want %d/1", result.imcSessionID, result.cacheIdx, current.id)
@@ -233,7 +233,7 @@ func TestProcessIMCTokenPlanPrefersLongerCurrentSnapshotOverCheckpoint(t *testin
 	}
 	publishTestIMCPrefixes(&m)
 
-	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3, 4, 5}, []llama.Token{1, 2, 3, 4}, []llama.Token{1, 2}, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "user", "content": "x"}}}, []llama.Token{1, 2, 3, 4, 5}, []llama.Token{1, 2, 3, 4}, []llama.Token{1, 2}, time.Now(), false)
 
 	if result.cacheIdx != 3 {
 		t.Errorf("cacheIdx = %d, want longer current prefix 3", result.cacheIdx)
@@ -261,7 +261,7 @@ func TestProcessIMCTokenPlanReservesExactMatch(t *testing.T) {
 	publishTestIMCPrefixes(&m)
 	session.cache.cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
 
-	result := m.processIMCTokenPlan(context.Background(), d, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, nil, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), d, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, nil, time.Now(), false)
 
 	if result.imcMatchKind != "exact" {
 		t.Errorf("imcMatchKind = %q, want exact", result.imcMatchKind)
@@ -310,7 +310,7 @@ func TestProcessIMCTokenPlanPreservesCompletePrompt(t *testing.T) {
 			publishTestIMCPrefixes(&m)
 			sessions[0].cache.cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
 
-			result := m.processIMCTokenPlan(context.Background(), d, tt.actual, tt.stable, nil, time.Now())
+			result := m.processIMCTokenPlan(context.Background(), d, tt.actual, tt.stable, nil, time.Now(), false)
 			if result.imcMatchKind != tt.wantMatch {
 				t.Errorf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
 			}
@@ -349,7 +349,7 @@ func TestProcessIMCTokenPlanRebuildsExactTokensWhenRenderFingerprintChanges(t *t
 	publishTestIMCPrefixes(&m)
 	m.imcSessions[0].cache.cachedRenderInputHash, _ = m.imcRenderFingerprint(priorD, dMessages(priorD))
 
-	result := m.processIMCTokenPlan(context.Background(), currentD, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, nil, time.Now())
+	result := m.processIMCTokenPlan(context.Background(), currentD, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, nil, time.Now(), false)
 	if result.imcMatchKind != "rebuild" {
 		t.Errorf("imcMatchKind: got %q, want %q", result.imcMatchKind, "rebuild")
 	}
@@ -395,7 +395,7 @@ func TestProcessIMCTokenPlanRebuildResetsSession(t *testing.T) {
 			d := D{"messages": []D{{"role": "user", "content": "x"}}}
 			stable := []llama.Token{1, 2, 3}
 
-			result := m.processIMCTokenPlan(context.Background(), d, []llama.Token{1, 2, 3, 9}, stable, nil, now)
+			result := m.processIMCTokenPlan(context.Background(), d, []llama.Token{1, 2, 3, 9}, stable, nil, now, false)
 
 			if result.err != nil {
 				t.Fatalf("planner error: got %v, want nil", result.err)
@@ -516,7 +516,7 @@ func TestIMCPlannerSessionSelection(t *testing.T) {
 					if media {
 						result = m.processIMCMediaPlans(ctx, d, d, actual, stable, []llama.Token{9}, nil, time.Now())
 					} else {
-						result = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, nil, time.Now())
+						result = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, nil, time.Now(), false)
 					}
 					if scenario == "busy" {
 						if result.err == nil {

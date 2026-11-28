@@ -23,7 +23,7 @@ func TestProcessIMCTokenPlanReturnsResetError(t *testing.T) {
 	}
 	publishTestIMCPrefixes(&m)
 
-	result := m.processIMCTokenPlan(ctx, D{"messages": []D{{"role": "user", "content": "hello"}}}, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, nil, time.Now())
+	result := m.processIMCTokenPlan(ctx, D{"messages": []D{{"role": "user", "content": "hello"}}}, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, nil, time.Now(), false)
 	if !errors.Is(result.err, wantErr) {
 		t.Fatalf("processIMCTokenPlan() error = %v, want %v", result.err, wantErr)
 	}
@@ -149,7 +149,7 @@ func TestIMCReclaimsOversizedBuffersOnlyOnShorterRebuild(t *testing.T) {
 						actual := mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true}, promptUnit{token: 9})
 						result = m.processIMCMediaPlans(ctx, d, d, actual, stable, []llama.Token{9}, nil, time.Now())
 					} else {
-						result = m.processIMCTokenPlan(ctx, d, []llama.Token{1, 2, 9}, []llama.Token{1, 2}, nil, time.Now())
+						result = m.processIMCTokenPlan(ctx, d, []llama.Token{1, 2, 9}, []llama.Token{1, 2}, nil, time.Now(), false)
 					}
 					if tt.cancel {
 						if !errors.Is(result.err, context.Canceled) {

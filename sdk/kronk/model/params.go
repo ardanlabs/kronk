@@ -165,6 +165,15 @@ type Params struct {
 	// DryBase is the base for exponential penalty growth in DRY. Default is 1.75.
 	DryBase float32 `json:"dry_base"`
 
+	// CacheReadOnly lets a request read the incremental message cache without
+	// changing it. A complete-prefix match is restored and extended for this
+	// request only: the session's metadata, snapshots, and saved history stay as
+	// they were, ready for the conversation's next request. Without a match the
+	// request runs without the cache rather than evicting a session. Use it for
+	// side requests that branch off a conversation (a suggested reply, a title,
+	// a summary). Default is false.
+	CacheReadOnly bool `json:"cache_read_only"`
+
 	// DryMultiplier controls the DRY (Don't Repeat Yourself) sampler which
 	// penalizes n-gram pattern repetition. 0.8 - Light repetition penalty,
 	// 1.0–1.5 - Moderate (typical starting point), 2.0–3.0 - Aggressive.
@@ -337,6 +346,9 @@ func AddParams(params Params, d D) {
 	if params.FrequencyPenalty != 0 {
 		d["frequency_penalty"] = params.FrequencyPenalty
 	}
+	if params.CacheReadOnly {
+		d["cache_read_only"] = params.CacheReadOnly
+	}
 	if params.Grammar != "" {
 		d["grammar"] = params.Grammar
 	}
@@ -458,6 +470,14 @@ func (m *Model) parseParams(ctx context.Context, d D) (Params, error) {
 			return Params{}, err
 		}
 		p.FrequencyPenalty = fp
+	}
+
+	if val, exists := d["cache_read_only"]; exists {
+		readOnly, err := parseBool("cache_read_only", val)
+		if err != nil {
+			return Params{}, err
+		}
+		p.CacheReadOnly = readOnly
 	}
 
 	if val, exists := d["enable_thinking"]; exists {
