@@ -624,9 +624,9 @@ func run(o options) (runErr error) {
 			cr.Workload = "operations-concurrent-v7"
 		}
 		if cr.isDSpark() {
-			cr.Workload = "operations-inkling-v1"
+			cr.Workload = "operations-inkling-v2"
 			if cr.TwoSlots {
-				cr.Workload = "operations-inkling-concurrent-v1"
+				cr.Workload = "operations-inkling-concurrent-v2"
 			}
 			// Uncalibrated: retain wall-clock timings without borrowing another
 			// fixture's token volumes or inventing normalized measurements.
@@ -818,8 +818,8 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 	if r.TwoSlots {
 		return runConcurrent(c, r, system, log)
 	}
-	a := conversation(system, "River", "Alice", "Apple")
-	b := conversation(system, "Mountain", "Bob", "Lemon")
+	a := r.conversation(system, "River", "Alice", "Apple")
+	b := r.conversation(system, "Mountain", "Bob", "Lemon")
 	if o.images {
 		a, err = picturedConversation(a, "giraffe.jpg")
 		if err != nil {
@@ -849,7 +849,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		_, err = perform("replay", a, false)
 	}
 	if err == nil {
-		question := "The destination is now Orange; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."
+		question := r.reviewPrompt("The destination is now Orange; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery.")
 		if o.images {
 			question = strings.Replace(question, "Begin with the current identifier, owner and destination.", "In the opening paragraph, include the current identifier, owner and destination, and name the animal shown in the image previously supplied in this conversation.", 1)
 		}
@@ -967,7 +967,7 @@ func (c *client) systemPrompt() (string, int, error) {
 	if (report{ID: c.cell}).isDSpark() {
 		procedures = 12
 	}
-	text := fmt.Sprintf("Quick-check cell %s; repetition %d.\n\n", c.cell, c.repetition) + handbook(procedures)
+	text := fmt.Sprintf("Quick-check cell %s; repetition %d.\n\n", c.cell, c.repetition) + (report{ID: c.cell}).reviewPrompt(handbook(procedures))
 	var count struct {
 		Tokens int `json:"tokens"`
 	}

@@ -21,8 +21,14 @@ SDK CI supplies the same pair through the optional draft-method and draft-URL
 columns in `.github/test-models.txt`, avoiding reliance on a cached catalog's
 companion entry. Existing two-column entries remain supported.
 Its fixed handbook contains 12 procedures instead of 72, leaving room for the
-conversation in the smaller window. It has separate workload identities; the
-existing MTP prompts and timing references are unchanged. DSpark currently
+conversation in the smaller window. Inkling requests brief reviews without word
+or paragraph counts; its concurrent survivor requests a detailed review to sustain
+overlap with cancellation and recovery. This avoids spending the generation budget
+counting and revising prose. Completed, nonempty answers are still required.
+These prompts use the `operations-inkling-v2` and
+`operations-inkling-concurrent-v2` workload identities, distinct from the earlier
+count-constrained workloads. The existing MTP prompts, limits and timing references
+are unchanged. DSpark currently
 supports text drafting only, so image fallbacks are not counted as DSpark cells.
 
 ## Run

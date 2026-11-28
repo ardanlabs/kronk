@@ -42,8 +42,8 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 	continueChat := func(history []message, answer result, question message) []message {
 		return append(append([]message{}, history...), message{Role: "assistant", Content: answer.Content}, question)
 	}
-	a := conversation(system, "River", "Alice", "Apple")
-	b := conversation(system, "Mountain", "Bob", "Lemon")
+	a := r.conversation(system, "River", "Alice", "Apple")
+	b := r.conversation(system, "Mountain", "Bob", "Lemon")
 	if r.Images {
 		var err error
 		b, err = picturedConversation(b, "giraffe.jpg")
@@ -62,8 +62,8 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 	if err := save(fresh); err != nil {
 		return err
 	}
-	aQuestion := message{Role: "user", Content: "The destination is now Orange; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."}
-	bQuestion := message{Role: "user", Content: "The destination is now Cherry; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery."}
+	aQuestion := message{Role: "user", Content: r.reviewPrompt("The destination is now Orange; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery.")}
+	bQuestion := message{Role: "user", Content: r.reviewPrompt("The destination is now Cherry; keep the identifier and owner unchanged. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery.")}
 	if r.Images {
 		var err error
 		aQuestion, err = picturedMessage(strings.Replace(aQuestion.Content.(string), "Begin with the current identifier, owner and destination.", "In the opening paragraph, include the current identifier, owner and destination, and name the animal shown in the image attached to this message.", 1), "giraffe.jpg")
@@ -113,7 +113,7 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 			return ctx.Err()
 		}
 	}
-	survivorQuestion := "Write a review of the current handover in four paragraphs totaling about 180 words. Begin with its current identifier, owner and destination. Use only current values. Do not mention earlier destinations or explain how the handover changed. Explain queue checks, safe interruption, cache reuse and recovery."
+	survivorQuestion := r.reviewPrompt("Write a review of the current handover in four paragraphs totaling about 180 words. Begin with its current identifier, owner and destination. Use only current values. Do not mention earlier destinations or explain how the handover changed. Explain queue checks, safe interruption, cache reuse and recovery.")
 	if r.Images {
 		survivorQuestion = strings.Replace(survivorQuestion, "Begin with its current identifier, owner and destination.", "In the opening paragraph, include its current identifier, owner and destination, and name the animal shown in the most recently supplied image in this conversation. Omit animals from earlier images.", 1)
 	}
@@ -138,7 +138,7 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 		err = base.waitPeerIdle()
 		r.CancelReleaseSeconds = time.Since(released).Seconds()
 		if err == nil {
-			recovered = perform(&base, "recovery", conversation(system, "River", "Alice", "Apple"), false)
+			recovered = perform(&base, "recovery", r.conversation(system, "River", "Alice", "Apple"), false)
 		}
 	}
 	if err != nil || recovered.Error != "" {
