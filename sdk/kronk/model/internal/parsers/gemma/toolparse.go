@@ -523,7 +523,7 @@ func decodeUniqueGemmaJSONValue(decoder *json.Decoder) (any, error) {
 		return object, nil
 
 	case '[':
-		var array []any
+		array := []any{}
 		for decoder.More() {
 			value, err := decodeUniqueGemmaJSONValue(decoder)
 			if err != nil {

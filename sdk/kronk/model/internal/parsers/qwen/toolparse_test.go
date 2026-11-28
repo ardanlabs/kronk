@@ -13,6 +13,31 @@ import (
 
 var noopLog applog.Logger = func(context.Context, string, ...any) {}
 
+func TestToolCall_EmptyArrays(t *testing.T) {
+	tests := []struct {
+		name, content, want string
+	}{
+		{"JSON", `{"name":"report_findings","arguments":{"findings":[]}}`, `{"findings":[]}`},
+		{"encoded arguments", `{"name":"report_findings","arguments":"{\"findings\":[]}"}`, `{"findings":[]}`},
+		{"nested and null", `{"name":"report_findings","arguments":{"findings":[[],{"items":[]}],"missing":null,"object":{},"text":"[]"}}`, `{"findings":[[],{"items":[]}],"missing":null,"object":{},"text":"[]"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := Parser{}.ToolCall(t.Context(), nil, tt.content)
+			if len(calls) != 1 || calls[0].Status != 0 || calls[0].Function.Name != "report_findings" {
+				t.Fatalf("calls: got %+v, want one successful report_findings call", calls)
+			}
+			encoded, err := json.Marshal(map[string]any(calls[0].Function.Arguments))
+			if err != nil {
+				t.Fatalf("encoding arguments: %v", err)
+			}
+			if string(encoded) != tt.want {
+				t.Errorf("arguments: got %s, want %s", encoded, tt.want)
+			}
+		})
+	}
+}
+
 func TestToolCall_DispatchXML(t *testing.T) {
 	calls := Parser{}.ToolCall(context.Background(), noopLog,
 		"<function=get_weather>\n<parameter=location>\nNYC\n</parameter>\n</function>")
