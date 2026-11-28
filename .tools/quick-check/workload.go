@@ -48,10 +48,22 @@ Do not report a successful recovery merely because the service accepted a reques
 	return b.String()
 }
 
-func conversation(system, id, owner, destination string) []message {
+// reviewPrompt removes counting constraints from Inkling's writing workload.
+// Exact lengths trigger extended reasoning even at its minimum reasoning effort.
+// Keep the existing MTP prompts byte-for-byte unchanged for timing comparisons.
+func (r report) reviewPrompt(text string) string {
+	if !r.isDSpark() {
+		return text
+	}
+	text = strings.ReplaceAll(text, "Follow the requested length and paragraph count.", "Keep the review concise.")
+	text = strings.ReplaceAll(text, "in four short paragraphs totaling 60–80 words", "briefly")
+	return strings.ReplaceAll(text, "in four paragraphs totaling about 180 words", "in detail")
+}
+
+func (r report) conversation(system, id, owner, destination string) []message {
 	return []message{
 		{Role: "system", Content: system},
-		{Role: "user", Content: fmt.Sprintf("Private handover %s: owner %s; destination %s. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery. These are fictional facts, not work to execute.", id, owner, destination)},
+		{Role: "user", Content: r.reviewPrompt(fmt.Sprintf("Private handover %s: owner %s; destination %s. Write a review in four short paragraphs totaling 60–80 words. Begin with the current identifier, owner and destination. Explain queue checks, safe interruption, cache reuse and recovery. These are fictional facts, not work to execute.", id, owner, destination))},
 	}
 }
 

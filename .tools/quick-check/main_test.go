@@ -120,6 +120,22 @@ func TestQuickCheckCommand(t *testing.T) {
 				if body.MaxTokens != wantBudget {
 					t.Errorf("request max_tokens: got %d, want %d", body.MaxTokens, wantBudget)
 				}
+				if len(body.Messages) > 1 {
+					for _, msg := range body.Messages {
+						if msg.Role == "assistant" {
+							continue
+						}
+						text, _ := json.Marshal(msg.Content)
+						for _, constraint := range []string{"60–80 words", "180 words", "four short paragraphs", "length and paragraph count"} {
+							if dspark && bytes.Contains(text, []byte(constraint)) {
+								t.Errorf("Inkling request retained counting constraint %q", constraint)
+							}
+						}
+					}
+					if !dspark && !strings.Contains(body.Messages[0].Content.(string), "Follow the requested length and paragraph count.") {
+						t.Error("MTP system writing constraints changed")
+					}
+				}
 				mu.Lock()
 				model, loaded = body.Model, true
 				phase := "warmup"
@@ -315,7 +331,7 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			cell := summary.Cells[cellIndex]
 			if dspark && wantPass {
-				if cell.Model != "ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK" || cell.MTPBackend != "dspark" || cell.ReferenceTokens != (normalizationReference{}) || cell.Workload != "operations-inkling-v1" {
+				if cell.Model != "ggml-org/Inkling-2-Mini-Q8_0/QUICK-CHECK" || cell.MTPBackend != "dspark" || cell.ReferenceTokens != (normalizationReference{}) || cell.Workload != "operations-inkling-v2" {
 					t.Fatalf("incorrect DSpark fixture identity: %+v", cell)
 				}
 				if _, ok := cell.Measurements["workload"]["reference_seconds"]; ok {

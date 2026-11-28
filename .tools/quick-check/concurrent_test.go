@@ -106,6 +106,22 @@ func checkTwoSlotFixture(t *testing.T, defect string) {
 		if body.MaxTokens != wantBudget {
 			t.Errorf("request max_tokens: got %d, want %d", body.MaxTokens, wantBudget)
 		}
+		if len(body.Messages) > 1 {
+			for _, msg := range body.Messages {
+				if msg.Role == "assistant" {
+					continue
+				}
+				text, _ := json.Marshal(msg.Content)
+				for _, constraint := range []string{"60–80 words", "180 words", "four short paragraphs", "four paragraphs", "length and paragraph count"} {
+					if dspark && bytes.Contains(text, []byte(constraint)) {
+						t.Errorf("Inkling request retained counting constraint %q", constraint)
+					}
+				}
+			}
+			if !dspark && !strings.Contains(body.Messages[0].Content.(string), "Follow the requested length and paragraph count.") {
+				t.Error("MTP system writing constraints changed")
+			}
+		}
 		// Route by the initial conversation, never by arbitrary assistant output.
 		text, _ := json.Marshal(body.Messages[:min(2, len(body.Messages))])
 		isA := bytes.Contains(text, []byte("River"))
